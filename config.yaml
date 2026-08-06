@@ -1,0 +1,4 @@
+# NaniKore 版本号 - 单一来源
+# 遵循语义化版本：major.minor.patch+build
+version: 0.0.1
+build: 0

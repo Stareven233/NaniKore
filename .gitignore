@@ -1,0 +1,34 @@
+# .gitignore
+# 二进制文件
+/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go 构建产物
+*.test
+*.out
+
+# 依赖
+/vendor/
+
+# 临时文件
+*.log
+*.tmp
+*~
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 配置与密钥（本地）
+*.key
+*.pem
+/config/local*.yaml
