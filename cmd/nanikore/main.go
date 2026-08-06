@@ -12,10 +12,21 @@ import (
 	"nanikore/pkg/hotkey"
 	"nanikore/pkg/overlay"
 	"nanikore/pkg/version"
+	"nanikore/pkg/winapi"
 )
 
 func main() {
 	log.SetFlags(log.Ltime | log.Lshortfile)
+
+	// 必须在任何窗口创建前声明 Per-Monitor V2。Gio 自己只调
+	// SetProcessDPIAware()（System aware），混合 DPI 下非主屏的窗口会被 DWM
+	// 位图拉伸，窗口坐标与鼠标坐标都变成虚拟化后的值——选区必然偏移。
+	// DPI 感知级别是进程级一次性设置，先设的赢。
+	if err := winapi.SetPerMonitorV2(); err != nil {
+		log.Printf("Per-Monitor V2 DPI awareness unavailable (%v); "+
+			"falling back to system DPI awareness, selection may drift on mixed-DPI setups", err)
+	}
+
 	log.Printf("NaniKore %s starting...", version.String())
 
 	// 初始化捕获管理器
