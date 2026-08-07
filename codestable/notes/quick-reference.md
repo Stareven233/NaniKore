@@ -1,157 +1,69 @@
-# NaniKore 开发笔记
+# NaniKore 开发速查
 
-快速索引和提示，供后续开发参考。
+## 项目本地环境
 
-## 快速启动
+```powershell
+# 首次准备 .NET SDK、NuGet 包和 PP-OCRv6-small 模型
+powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 
-```bash
-# 编译
-cd d:/Code/projects/NaniKore
-go build -o bin/nanikore.exe ./cmd/nanikore
-
-# 运行（前台）
-./bin/nanikore.exe
-
-# 运行（后台）
-./bin/nanikore.exe &
-
-# 停止
-taskkill //F //IM nanikore.exe
-
-# 查看版本
-./bin/nanikore.exe --version  # TODO: 尚未实现 flag
+# 只准备或校验模型
+powershell -ExecutionPolicy Bypass -File scripts/bootstrap-models.ps1
 ```
 
-## 当前热键
+工具链、依赖缓存和模型默认位于 `.tools/` 与 `models/`，均不污染系统级环境。
 
-- **Ctrl+Shift+A** - 触发屏幕捕获和选区
-- **ESC** - 取消选区（理论上，目前事件不工作）
+## 常用命令
 
-## 调试技巧
+```powershell
+# 构建
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 build
 
-**查看日志：**
-程序使用 `log.Printf` 输出调试信息，后台运行时日志在临时文件：
-```bash
-# 实时查看最新日志
-cat C:/Users/Noe/AppData/Local/Temp/claude/d--Code-projects-NaniKore/.../tasks/*.output | tail -50
+# 10 项无 UI 自测
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 test
+
+# 运行 GUI
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 run
+
+# 发布 EXE + ONNX Runtime 原生 DLL
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 publish
 ```
 
-**编译错误快速定位：**
-```bash
-go build -o bin/nanikore.exe ./cmd/nanikore 2>&1 | head -20
+## 诊断命令
+
+```powershell
+# 查看 ONNX 输入输出
+.tools\dotnet\dotnet run --project src\NaniKore\NaniKore.csproj -- --inspect-models
+
+# 识别指定图片
+.tools\dotnet\dotnet run --project src\NaniKore\NaniKore.csproj -- --ocr-file path\to\image.png
+
+# 直接运行发布版自测
+artifacts\win-x64\NaniKore.exe --self-test
 ```
 
-**检查依赖：**
-```bash
-go mod tidy
-go list -m all
+## 当前交互
+
+- `Ctrl+Shift+A`：截图并进入框选。
+- 左键拖选：确认区域并开始 OCR。
+- `Esc` 或右键：取消框选。
+- OCR 结果：自动复制到剪贴板并显示结果窗口。
+
+## 目录
+
+```text
+src/NaniKore/      C# 应用源码
+scripts/           本地工具链、模型、构建与发布脚本
+models/            本地模型（仅 README 被 Git 跟踪）
+artifacts/win-x64/ 发布产物（Git 忽略）
+.tools/            项目本地 .NET SDK 与 NuGet 缓存（Git 忽略）
 ```
 
-## 常见问题
+## 分支
 
-### 热键已被占用
-```
-Failed to register hotkey: RegisterHotKey failed: Hot key is already registered.
-```
-**原因：** 上次的进程没有完全退出
-**解决：** `taskkill //F //IM nanikore.exe`
+- `main`：当前 C#/.NET 实现。
+- `legacy-go`：已停止开发的 Go/Gio 历史实现。
 
-### Gio 版本冲突
-**现象：** 编译错误提示 `undefined: xxx`
-**原因：** Gio API 在不同版本间变化很大
-**当前版本：** v0.10.1
-**解决：** 查阅对应版本的文档，不要混用不同版本的示例代码
+## 已知边界
 
-### 窗口不显示或显示异常
-**可能原因：**
-1. 其他窗口遮挡（特别是全屏游戏）
-2. Gio 全屏模式在某些系统上的 bug
-3. DPI 设置问题
-
-## 代码组织
-
-```
-NaniKore/
-├── cmd/nanikore/main.go          主入口
-├── pkg/
-│   ├── version/                  版本管理
-│   │   ├── version.go            加载 config.yaml
-│   │   └── config.yaml          → 符号链接到根目录
-│   ├── hotkey/                   全局热键
-│   │   ├── hotkey.go             热键注册和消息循环
-│   │   └── window.go             隐藏消息窗口
-│   ├── capture/                  屏幕捕获
-│   │   ├── capture.go            Capturer 接口和 Frame 定义
-│   │   ├── manager.go            捕获管理器（降级链）
-│   │   ├── dxgi.go               DXGI 实现（占位符）
-│   │   └── gdi.go                GDI 实现（工作中）
-│   └── overlay/                  选区浮层
-│       └── selection.go          Gio 全屏窗口（事件问题）
-├── config.yaml                  版本号单一来源
-├── go.mod                        Go 模块配置
-└── README.md                     用户文档
-```
-
-## 修改版本号
-
-编辑 `config.yaml`：
-```yaml
-version: 0.1.0
-build: 0
-```
-
-格式：`major.minor.patch+build`
-- `build: 0` 时不显示 `+0`
-- 编译时自动嵌入二进制
-
-## 待实现功能清单
-
-- [ ] 修复选区浮层鼠标事件（**阻塞**）
-- [ ] DPI 信息收集
-- [ ] DXGI 捕获实现
-- [ ] 接入 leaf-ocr
-- [ ] 阅读顺序重建
-- [ ] LLM 流式翻译
-- [ ] 结果卡片（不抢焦点）
-- [ ] 精讲面板
-- [ ] 托盘图标
-- [ ] 设置界面
-- [ ] API Key 存储（DPAPI 加密）
-- [ ] 剪贴板翻译（第二热键）
-
-## 记忆位置
-
-项目记忆保存在：
-```
-C:\Users\Noe\.claude\projects\d--Code-projects-NaniKore\memory\
-```
-
-当前记忆：
-- `nanikore-vision-established.md` - 产品定位与选型决策
-- `nanikore-fullscreen-capture-limits.md` - 全屏截取的平台硬边界
-
-## 相关命令速查
-
-```bash
-# Git（尚未初始化）
-git init
-git add .
-git commit -m "Initial commit: hotkey, GDI capture, Gio overlay (WIP)"
-
-# 依赖管理
-go get <package>
-go mod tidy
-go mod download
-
-# 清理
-go clean
-rm -rf bin/
-
-# 查看文档
-go doc <package>
-go doc gioui.org/io/pointer Event
-```
-
----
-
-*创建时间：2026-08-05*
+- 副显示器、负坐标虚拟桌面与混合 DPI 等待有设备时补实机回归。
+- 当前 OCR 检测后处理偏向水平文本，不优先处理旋转、弯曲和竖排文本。

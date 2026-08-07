@@ -1,26 +1,30 @@
-# .gitignore
-# 二进制文件
-/bin/
+# 构建产物
+**/bin/
+**/obj/
+/artifacts/
 *.exe
 *.dll
 *.so
 *.dylib
 
-# Go 构建产物
-*.test
-*.out
+# 项目本地工具链与依赖缓存
+/.tools/
 
-# 依赖
-/vendor/
+# 本地模型文件：模型清单保留，权重不提交
+/models/*
+!/models/README.md
 
-# 临时文件
+# 临时文件与日志
 *.log
 *.tmp
 *~
 
 # IDE
+.vs/
 .vscode/
 .idea/
+*.user
+*.suo
 *.swp
 *.swo
 
@@ -28,7 +32,7 @@
 .DS_Store
 Thumbs.db
 
-# 配置与密钥（本地）
+# 本地配置和密钥
 *.key
 *.pem
 /config/local*.yaml

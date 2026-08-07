@@ -1,89 +1,80 @@
-# NaniKore（何これ）
+# NaniKore
 
-屏幕 OCR 翻译与精讲工具 — 三秒看懂，三十秒学会。
+轻量的 Windows 截图、OCR 与翻译工具。当前 `main` 是单一 C#/.NET 进程实现；旧 Go/Gio 版本保留在 `legacy-go` 分支。
 
-## 当前状态：v0.1.0 开发中
+## 当前能力
 
-**已实现：**
-- ✅ 版本管理系统（config.yaml 单一来源）
-- ✅ 热键注册（Ctrl+Shift+A 触发）
-- ✅ 屏幕捕获（GDI 路径，支持多显示器）
-- ✅ 选区浮层窗口创建（Gio）
-- ⚠️  选区浮层鼠标事件（**阻塞问题**，见下方）
+- **桌面外壳**：.NET 10 + WinForms，单进程、单 Windows 消息循环
+- **截图与选区**：WinForms/GDI，Per-Monitor V2 物理像素坐标
+- **OCR**：ONNX Runtime C# 直接运行 PP-OCRv6-small 检测与识别模型
+- **交互**：全局 `Ctrl+Shift+A`，左键拖选，Esc/右键取消，结果自动复制并显示
+- **本地翻译（后续可选）**：GGUF + llama.cpp 兼容运行时
+- **不再依赖**：Python、leaf-ocr、OpenCV、Gio、Go 工具链
 
-**待实现：**
-- [ ] 修复选区浮层的鼠标交互
-- [ ] DXGI 捕获路径（硬件加速内容支持）
-- [ ] DPI 信息收集（混合 DPI 坐标映射）
-- [ ] OCR 识别（接入 leaf-ocr）
-- [ ] 阅读顺序重建
-- [ ] 流式 LLM 翻译
-- [ ] 流式精讲面板
-- [ ] 托盘常驻
-- [ ] 配置与 API Key 管理
+当前 OCR 后处理使用纯 C# 连通域和水平矩形框近似官方 DB 多边形后处理，优先保证体积与依赖简洁。水平游戏/UI 文本已经跑通；旋转或弯曲文本仍弱于 OpenCV 完整实现。
 
-**已知问题：**
-- 🔴 **选区浮层鼠标事件不响应** - Gio v0.10.1 在 Windows 全屏模式下无法接收鼠标点击和拖动事件，窗口显示为灰色不透明而非预期的半透明黑色。这是当前的阻塞问题，需要优先解决。详见 `codestable/issues/001-o-选区浮层鼠标事件不响应.md`。
+## 一键准备本地工具链
 
-## 快速开始
+SDK、NuGet 包和模型默认都放在项目目录，不修改系统级 .NET SDK：
 
-### 编译
-
-```bash
-go build -o bin/nanikore.exe ./cmd/nanikore
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 ```
 
-### 运行
+它会准备：
 
-```bash
-./bin/nanikore.exe
+- `.tools/dotnet`：由 `global.json` 固定版本的 .NET SDK
+- `.tools/nuget-packages`：项目本地 NuGet 缓存
+- `models/pp-ocr-v6-small`：官方 PaddlePaddle ONNX 模型与配置
+
+这些大文件均被 Git 忽略。
+
+## 开发命令
+
+```powershell
+# 构建
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 build
+
+# 无 UI 自测
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 test
+
+# 运行桌面程序
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 run
+
+# 发布 Windows x64 framework-dependent 版本
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 publish
 ```
 
-然后按 **Ctrl+Shift+A** 触发屏幕捕获和框选。
+运行后按 **Ctrl+Shift+A**，左键拖选；按 **Esc** 或右键取消。选区位图只在内存中传给 OCR，不写入临时文件。
 
-- 拖动鼠标框选区域
-- 松开鼠标完成选择
-- 按 ESC 取消
+## OCR 诊断命令
 
-选区会保存到 `%TEMP%\nanikore_selection.png`，可以验证坐标是否正确。
+```powershell
+# 查看 ONNX 输入输出元数据
+.tools\dotnet\dotnet run --project src\NaniKore\NaniKore.csproj -- --inspect-models
 
-## 项目结构
-
-```
-NaniKore/
-├── cmd/nanikore/          # 主程序入口
-├── pkg/
-│   ├── version/           # 版本管理
-│   ├── hotkey/            # 全局热键
-│   ├── capture/           # 屏幕捕获（DXGI + GDI）
-│   └── overlay/           # 选区浮层
-├── codestable/            # 需求、设计、探索文档
-│   ├── vision/            # 产品愿景
-│   ├── epics/             # Epic 规划
-│   ├── spec/              # 项目实际状态
-│   └── talks/             # 技术调研与选型
-└── config.yaml           # 版本号单一来源
+# 直接识别一张图片
+.tools\dotnet\dotnet run --project src\NaniKore\NaniKore.csproj -- --ocr-file path\to\image.png
 ```
 
-## 技术栈
+## 发布布局与体积
 
-- **语言**: Go 1.26+（无 CGO 依赖）
-- **GUI**: Gio（选区浮层、结果卡片）
-- **捕获**: DXGI Desktop Duplication（主）+ GDI BitBlt（兜底）
-- **OCR**: leaf-ocr（PP-OCRv6）
-- **LLM**: OpenAI 兼容 API
+发布目录保留一个托管单文件 EXE，并把 ONNX Runtime 原生库明确分开：
 
-## 版本管理
+```text
+artifacts/win-x64/
+├─ NaniKore.exe
+├─ onnxruntime.dll
+└─ onnxruntime_providers_shared.dll
+```
 
-版本号在 `config.yaml` 中维护，遵循 `major.minor.patch+build` 格式：
+Windows x64 framework-dependent 发布总计约 **40.18 MiB**；运行必需的 PP-OCRv6-small 检测与识别文件约 **29.75 MiB**，完整应用约 **69.93 MiB**。
 
-- **major**: 重大版本（不兼容的改动）
-- **minor**: 不兼容的改动
-- **patch**: 一次足以发布的改动
-- **build**: 微小改动累积（设为 0 时不显示）
+目标机器需要 .NET 10 Desktop Runtime。真正免安装的 self-contained 构建可后续按需提供，但体积会明显增大。
 
-编译时自动嵌入到二进制文件。
+## 已知边界
 
-## 许可证
-
-TBD
+- 主显示器上的真实键鼠截图与 OCR 已验收通过。
+- 自动化冒烟测试已连续完成两轮截图、拖选、OCR 和关闭结果窗。
+- 副显示器、负坐标虚拟桌面与混合 DPI 代码路径已实现，但当前没有副显示器设备，留待以后补实机回归。
+- 旋转、弯曲和竖排文本暂不作为当前轻量 OCR 后处理的目标。

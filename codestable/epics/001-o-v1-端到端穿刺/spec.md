@@ -7,6 +7,8 @@ created: 2026-08-05
 
 # v1 端到端穿刺：从热键到译文
 
+> **2026-08-07 状态说明**：本文保留最初的 Go/Gio + leaf-ocr 方案作为历史规划。该技术路线已被实机验证否定；当前实现真相以 `codestable/spec/index.md` 和 `codestable/roadmap/002-csharp-single-process-migration/spec.md` 为准。
+
 ## 这个 Epic 要改变什么
 
 项目当前没有任何代码，`codestable/spec/index.md` 为空。本 epic 从零建立一条**最薄但完整**的链路：按下热键 → 冻结画面 → 框选 → OCR → 阅读顺序重建 → 流式翻译 → 结果卡片 → 按需精讲。
