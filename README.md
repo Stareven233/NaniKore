@@ -15,7 +15,7 @@
 
 ## 一键准备本地工具链
 
-SDK、NuGet 包和模型默认都放在项目目录，不修改系统级 .NET SDK：
+SDK 与 NuGet 缓存不绑定项目目录或任何个人磁盘路径；模型仍保留在项目目录：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
@@ -23,11 +23,11 @@ powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 
 它会准备：
 
-- `.tools/dotnet`：由 `global.json` 固定版本的 .NET SDK
-- `.tools/nuget-packages`：项目本地 NuGet 缓存
+- 已安装并配置到 `Path` 的 .NET SDK：脚本会优先直接复用
+- `NUGET_PACKAGES` 指定的 NuGet 缓存：可由多个项目共用
 - `models/pp-ocr-v6-small`：官方 PaddlePaddle ONNX 模型与配置
 
-这些大文件均被 Git 忽略。
+如果本机已安装兼容 `global.json` 的 SDK，直接运行开发命令即可。否则运行上面的 bootstrap 脚本，它会将 SDK 安装到 `DOTNET_ROOT` 指定的共享位置。安装后，将该目录加入系统 `Path`（优先于旧版 dotnet），并将 `DOTNET_ROOT` 指向该目录；如需将包缓存放在共享磁盘，再设置 `NUGET_PACKAGES`。重新打开终端后即可直接使用 `dotnet`。模型文件被 Git 忽略。
 
 ## 开发命令
 
@@ -51,10 +51,10 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 publish
 
 ```powershell
 # 查看 ONNX 输入输出元数据
-.tools\dotnet\dotnet run --project src\NaniKore\NaniKore.csproj -- --inspect-models
+dotnet run --project src\NaniKore\NaniKore.csproj -- --inspect-models
 
 # 直接识别一张图片
-.tools\dotnet\dotnet run --project src\NaniKore\NaniKore.csproj -- --ocr-file path\to\image.png
+dotnet run --project src\NaniKore\NaniKore.csproj -- --ocr-file path\to\image.png
 ```
 
 ## 发布布局与体积

@@ -7,10 +7,6 @@
 *.so
 *.dylib
 
-# 项目本地工具链与依赖缓存
-/.tools/
-todo.md
-
 # 本地模型文件：模型清单保留，权重不提交
 /models/*
 !/models/README.md
@@ -18,6 +14,7 @@ todo.md
 # 临时文件与日志
 *.log
 *.tmp
+todo.md
 *~
 
 # IDE

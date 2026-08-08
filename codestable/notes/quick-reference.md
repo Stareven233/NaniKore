@@ -10,7 +10,7 @@ powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap-models.ps1
 ```
 
-工具链、依赖缓存和模型默认位于 `.tools/` 与 `models/`，均不污染系统级环境。
+The shared .NET SDK is resolved from `Path` or `DOTNET_ROOT`; configure the global NuGet cache with `NUGET_PACKAGES`. Models remain in project-local `models/`.
 
 ## 常用命令
 
@@ -32,10 +32,10 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 publish
 
 ```powershell
 # 查看 ONNX 输入输出
-.tools\dotnet\dotnet run --project src\NaniKore\NaniKore.csproj -- --inspect-models
+dotnet run --project src\NaniKore\NaniKore.csproj -- --inspect-models
 
 # 识别指定图片
-.tools\dotnet\dotnet run --project src\NaniKore\NaniKore.csproj -- --ocr-file path\to\image.png
+dotnet run --project src\NaniKore\NaniKore.csproj -- --ocr-file path\to\image.png
 
 # 直接运行发布版自测
 artifacts\win-x64\NaniKore.exe --self-test
@@ -55,7 +55,7 @@ src/NaniKore/      C# 应用源码
 scripts/           本地工具链、模型、构建与发布脚本
 models/            本地模型（仅 README 被 Git 跟踪）
 artifacts/win-x64/ 发布产物（Git 忽略）
-.tools/            项目本地 .NET SDK 与 NuGet 缓存（Git 忽略）
+Shared .NET SDK: resolved from `Path` / `DOTNET_ROOT`; NuGet cache: configured by `NUGET_PACKAGES`.
 ```
 
 ## 分支

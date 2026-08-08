@@ -16,7 +16,7 @@ branch: main
 ## 硬约束
 
 - 单一 C# 进程，Windows 10/11 x64 优先。
-- 工具链默认安装到项目内 `.tools/dotnet`，不污染系统环境。
+- The toolchain uses a shared .NET SDK: resolve it from `Path` first, or use `DOTNET_ROOT`; configure the NuGet cache with `NUGET_PACKAGES`.
 - 选区使用物理像素坐标，支持虚拟桌面负坐标和 Per-Monitor V2。
 - 模型权重放在项目内 `models/`，但不提交 Git。
 - PP-OCRv6 直接调用 ONNX Runtime，不依赖 Python、leaf-ocr 或 OpenCV。

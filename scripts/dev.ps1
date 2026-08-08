@@ -1,20 +1,23 @@
-param(
+﻿param(
     [ValidateSet('build', 'run', 'test', 'publish')]
     [string]$Command = 'build'
 )
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$dotnet = Join-Path $root '.tools\dotnet\dotnet.exe'
+. (Join-Path $PSScriptRoot 'toolchain.ps1')
+
+$dotnet = Get-NaniKoreDotnetExecutable
 $solution = Join-Path $root 'NaniKore.slnx'
 $project = Join-Path $root 'src\NaniKore\NaniKore.csproj'
 
-if (-not (Test-Path -LiteralPath $dotnet)) {
-    throw 'Project-local .NET SDK is missing. Run: powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1'
+if ($null -eq $dotnet) {
+    throw 'No usable .NET SDK was found. Configure dotnet on Path or run scripts/bootstrap.ps1.'
 }
 
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_NOLOGO = '1'
+Set-NaniKoreNuGetCache
 
 switch ($Command) {
     'build' {

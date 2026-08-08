@@ -1,4 +1,4 @@
----
+﻿---
 kind: design
 status: draft
 created: 2026-08-08
@@ -366,7 +366,7 @@ NaniKore --dump-config
 
 ## 16. 风险与未验证项
 
-- `YamlDotNet` 尚未在 `.tools/nuget-packages` 中，首次 restore 需联网。
+- `YamlDotNet` 尚未在本地 NuGet 缓存里，首次 restore 需联网。
 - `WS_EX_NOACTIVATE` 与 WinForms TextBox 编辑的交互需实机确认：不抢焦点的窗口
   在某些前台窗口下点击行为不一致，可能要配合 `SetForegroundWindow` 的显式激活按钮。
 - OpenAI `responses` 流式事件名以经验为准，实施时以官方文档核对后再定。
