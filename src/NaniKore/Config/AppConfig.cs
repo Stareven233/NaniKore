@@ -1,81 +1,136 @@
-﻿using System.ComponentModel;
-using System.Text.Json.Serialization;
-using YamlDotNet.Serialization;
-
 namespace NaniKore.Config;
 
-/// <summary>
-/// 配置 POCO 树，对应 config.yaml 的全部字段。
-/// 未知字段回落默认值（由 YamlDotNet 的 IgnoreUnmatchedProperties 保证）。
-/// </summary>
+/// <summary>config.yaml 的根配置；Version 为后续配置迁移预留。</summary>
 internal sealed class AppConfig
 {
-    /// <summary>配置版本号，用于未来格式迁移。</summary>
-    [DefaultValue(1)]
-    public int Version { get; init; } = 1;
+    public int Version { get; set; } = 1;
 
-    /// <summary>OCR 相关配置。</summary>
-    public OcrConfig Ocr { get; init; } = new();
+    public GeneralConfig General { get; set; } = new();
 
-    /// <summary>翻译相关配置，含多配置档。</summary>
-    public TranslationConfig Translation { get; init; } = new();
+    public PipelineConfig Pipeline { get; set; } = new();
+
+    public List<ProviderProfile> Profiles { get; set; } =
+    [
+        ProviderProfile.CreateOpenAiDefault(),
+        ProviderProfile.CreateClaudeDefault(),
+        ProviderProfile.CreateGeminiDefault(),
+    ];
+
+    public HotkeyConfig Hotkeys { get; set; } = new();
+
+    public PromptConfig Prompts { get; set; } = new();
 }
 
-internal sealed class OcrConfig
+internal sealed class GeneralConfig
 {
-    /// <summary>OCR 语言（预留，当前仅支持中英）。</summary>
-    [DefaultValue( chs)]
-    public string Language { get; init; } = chs;
+    /// <summary>选区 OCR 完成后是否立即启动翻译；关闭时由面板按钮显式触发。</summary>
+    public bool AutoTranslate { get; set; }
+
+    public string TargetLanguage { get; set; } = "zh-CN";
 }
 
-internal sealed class TranslationConfig
+internal sealed class PipelineConfig
 {
-    /// <summary>当前激活的配置档 ID。</summary>
-    [DefaultValue(default)]
-    public string ActiveProfile { get; init; } = default;
+    /// <summary>local_ocr 或 vision_oneshot。</summary>
+    public string Mode { get; set; } = "local_ocr";
 
-    /// <summary>多配置档列表。</summary>
-    public List<ProviderProfile> Profiles { get; init; } = [new()];
+    public string ActiveProfile { get; set; } = "openai-default";
 }
 
 internal sealed class ProviderProfile
 {
-    /// <summary>配置档唯一标识。</summary>
-    [DefaultValue(default)]
-    public string Id { get; init; } = default;
+    public string Id { get; set; } = "openai-default";
 
-    /// <summary>Provider 类型：openai / claude / gemini。</summary>
-    [DefaultValue(openai)]
-    public string Provider { get; init; } = openai;
+    /// <summary>openai、claude 或 gemini。</summary>
+    public string Kind { get; set; } = "openai";
 
-    /// <summary>API 端点 base URL。</summary>
-    [DefaultValue(https://api.openai.com/v1)]
-    public string BaseUrl { get; init; } = https://api.openai.com/v1;
+    /// <summary>仅 OpenAI 使用：completions 或 responses。</summary>
+    public string ApiType { get; set; } = "completions";
 
-    /// <summary>模型名称。</summary>
-    [DefaultValue(gpt-4o-mini)]
-    public string Model { get; init; } = gpt-4o-mini;
+    public string BaseUrl { get; set; } = "https://api.openai.com/v1";
 
-    /// <summary>OpenAI 专用：completions 或 responses。</summary>
-    [DefaultValue(completions)]
-    public string OpenAiForm { get; init; } = completions;
+    public string Model { get; set; } = "gpt-4o-mini";
 
-    /// <summary>目标语言。</summary>
-    [DefaultValue(中文)]
-    public string TargetLanguage { get; init; } = 中文;
+    /// <summary>由用户声明模型是否接受图像，不用内置模型名单猜测。</summary>
+    public bool SupportsVision { get; set; }
 
-    /// <summary>
-    /// 是否自动翻译（选区后立即翻译，无需手动触发）。
-    /// 默认关闭，用户需手动点击翻译按钮。
-    /// </summary>
-    [DefaultValue(false)]
-    public bool AutoTranslate { get; init; }
+    public int TimeoutSeconds { get; set; } = 60;
 
-    /// <summary>温度参数。</summary>
-    [DefaultValue(0.3)]
-    public double Temperature { get; init; } = 0.3;
+    public static ProviderProfile CreateOpenAiDefault() => new();
 
-    /// <summary>最大输出 token 数。</summary>
-    [DefaultValue(4096)]
-    public int MaxTokens { get; init; } = 4096;
+    public static ProviderProfile CreateClaudeDefault() => new()
+    {
+        Id = "claude-default",
+        Kind = "claude",
+        BaseUrl = "https://api.anthropic.com",
+        Model = "claude-haiku-4-5",
+        SupportsVision = true,
+    };
+
+    public static ProviderProfile CreateGeminiDefault() => new()
+    {
+        Id = "gemini-default",
+        Kind = "gemini",
+        BaseUrl = "https://generativelanguage.googleapis.com/v1beta",
+        Model = "gemini-2.0-flash",
+        SupportsVision = true,
+    };
+
+    public ProviderProfile Clone() => new()
+    {
+        Id = Id,
+        Kind = Kind,
+        ApiType = ApiType,
+        BaseUrl = BaseUrl,
+        Model = Model,
+        SupportsVision = SupportsVision,
+        TimeoutSeconds = TimeoutSeconds,
+    };
+}
+
+internal sealed class HotkeyConfig
+{
+    public string Capture { get; set; } = "Ctrl+Shift+A";
+
+    /// <summary>为后续剪贴板翻译预留，当前不注册。</summary>
+    public string TranslateClipboard { get; set; } = string.Empty;
+}
+
+internal sealed class PromptConfig
+{
+    /// <summary>空字符串时使用内置翻译模板。</summary>
+    public string Translate { get; set; } = string.Empty;
+
+    /// <summary>空字符串时使用内置精讲模板。</summary>
+    public string Explain { get; set; } = string.Empty;
+}
+
+internal static class AppConfigCloner
+{
+    /// <summary>设置面板在副本上编辑，取消时绝不污染正在运行的配置。</summary>
+    public static AppConfig Clone(AppConfig source) => new()
+    {
+        Version = source.Version,
+        General = new GeneralConfig
+        {
+            AutoTranslate = source.General.AutoTranslate,
+            TargetLanguage = source.General.TargetLanguage,
+        },
+        Pipeline = new PipelineConfig
+        {
+            Mode = source.Pipeline.Mode,
+            ActiveProfile = source.Pipeline.ActiveProfile,
+        },
+        Profiles = source.Profiles.Select(profile => profile.Clone()).ToList(),
+        Hotkeys = new HotkeyConfig
+        {
+            Capture = source.Hotkeys.Capture,
+            TranslateClipboard = source.Hotkeys.TranslateClipboard,
+        },
+        Prompts = new PromptConfig
+        {
+            Translate = source.Prompts.Translate,
+            Explain = source.Prompts.Explain,
+        },
+    };
 }

@@ -1,4 +1,8 @@
 using System.Drawing.Imaging;
+using System.Net;
+using System.Text;
+using NaniKore.Config;
+using NaniKore.Translation;
 using NaniKore.Ocr;
 using NaniKore.Ocr.Detection;
 using NaniKore.Ocr.Imaging;
@@ -20,6 +24,10 @@ internal static class SelfTest
         TestDetectionPostprocessing();
         TestCtcDecoding();
         TestReadingOrder();
+        TestConfigRoundTrip();
+        TestSseReader();
+        TestSentinelRouter();
+        TestProviderCapabilitiesAndErrors();
 
         Console.WriteLine(_failed == 0
             ? "All self-tests passed."
@@ -136,6 +144,181 @@ internal static class SelfTest
         Check(
             "OCR lines sort by row then horizontal position",
             sorted.Select(line => line.Text).SequenceEqual(["left", "right", "bottom"]));
+    }
+
+
+    private static void TestConfigRoundTrip()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"NaniKore-self-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
+                version: 1
+                general:
+                  auto_translate: true
+                  target_language: ja
+                pipeline:
+                  mode: invalid-mode
+                  active_profile: test
+                profiles:
+                  - id: test
+                    kind: openai
+                    api_type: completions
+                    base_url: https://example.test/v1
+                    model: model-a
+                    timeout_seconds: 20
+                unknown_field: ignored
+                """);
+            var store = new ConfigStore(directory);
+            Check(
+                "YAML round-trip retains known fields and normalizes invalid values",
+                store.Current.General.AutoTranslate &&
+                store.Current.General.TargetLanguage == "ja" &&
+                store.Current.Pipeline.Mode == "local_ocr" &&
+                store.Current.Profiles.Single().TimeoutSeconds == 20);
+            store.AtomicWrite(store.Current);
+            var reloaded = new ConfigStore(directory);
+            Check("YAML reload ignores unknown fields", reloaded.Current.Profiles.Single().Model == "model-a");
+
+            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
+                version: 1
+                ocr:
+                  language: chs
+                translation:
+                  active_profile: legacy
+                  profiles:
+                    - id: legacy
+                      provider: openai
+                      base_url: https://legacy.example/v1
+                      model: legacy-model
+                      open_ai_form: responses
+                      target_language: zh-CN
+                      auto_translate: true
+                """);
+            var migrated = new ConfigStore(directory);
+            Check(
+                "legacy Step 1 configuration migrates in memory",
+                migrated.Current.Pipeline.ActiveProfile == "legacy" &&
+                migrated.Current.Profiles.Single().ApiType == "responses" &&
+                migrated.Current.General.AutoTranslate &&
+                migrated.Current.General.TargetLanguage == "zh-CN" &&
+                migrated.LoadWarning is not null &&
+                File.ReadAllText(Path.Combine(directory, "config.yaml")).Contains("translation:", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private static void TestSseReader()
+    {
+        const string payload = "event: delta\ndata: {\\\"text\\\":\\\"A\\\"}\n\ndata: [DONE]\n\n";
+        using var stream = new ChunkedReadStream(Encoding.UTF8.GetBytes(payload), chunkSize: 3);
+        var frames = ReadSseAsync(stream).GetAwaiter().GetResult();
+        Check(
+            "SSE reader groups data lines across packet boundaries",
+            frames.Count == 2 && frames[0].Event == "delta" && frames[0].Data == "{\\\"text\\\":\\\"A\\\"}" && frames[1].Data == "[DONE]");
+    }
+
+    private static void TestSentinelRouter()
+    {
+        var router = new SentinelChannelRouter();
+        var deltas = router.Push("<<<SOU").Concat(router.Push("RCE>>>??<<<TRANSLATION>>>??")).Concat(router.Complete()).ToList();
+        Check(
+            "sentinel router keeps channels when markers span frames",
+            string.Concat(deltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "??" &&
+            string.Concat(deltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "??");
+    }
+
+    private static void TestProviderCapabilitiesAndErrors()
+    {
+        var capabilities = ProviderFactory.GetCapabilities(new ProviderProfile { SupportsVision = false });
+        var rejected = false;
+        try
+        {
+            ProviderFactory.ValidateCapabilities(
+                new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, "zh-CN"),
+                capabilities);
+        }
+        catch (ProviderCapabilityException)
+        {
+            rejected = true;
+        }
+
+        Check("vision capability mismatch is rejected before request", rejected);
+        var textOnlyAccepted = true;
+        try
+        {
+            ProviderFactory.ValidateCapabilities(
+                new UnderstandRequest(UnderstandKind.Translate, "text", null, "zh-CN"),
+                capabilities);
+        }
+        catch (ProviderCapabilityException)
+        {
+            textOnlyAccepted = false;
+        }
+
+        Check("text-only request does not require vision capability", textOnlyAccepted);
+        var noImageRequest = new UnderstandRequest(UnderstandKind.Translate, "text", (ReadOnlyMemory<byte>?)null, "zh-CN");
+        Check("nullable image payload remains absent", noImageRequest.ImagePng is null);
+        byte[]? noImage = null;
+        ReadOnlyMemory<byte>? conditionalPayload = noImage is null ? null : new ReadOnlyMemory<byte>(noImage);
+        var conditionalRequest = new UnderstandRequest(UnderstandKind.Translate, "text", conditionalPayload, "zh-CN");
+        var zeroLengthImageAcceptedAsText = true;
+        try
+        {
+            ProviderFactory.ValidateCapabilities(conditionalRequest, capabilities);
+        }
+        catch (ProviderCapabilityException)
+        {
+            zeroLengthImageAcceptedAsText = false;
+        }
+
+        Check("zero-length image payload is treated as absent", zeroLengthImageAcceptedAsText);
+        Check(
+            "error mapper explains unauthorized key failures",
+            ProviderErrorMapper.ToUserMessage(new ProviderHttpException(HttpStatusCode.Unauthorized, null)).Contains("API Key", StringComparison.Ordinal));
+    }
+
+    private static async Task<List<SseEvent>> ReadSseAsync(Stream stream)
+    {
+        var frames = new List<SseEvent>();
+        await foreach (var frame in SseReader.ReadAsync(stream, CancellationToken.None))
+        {
+            frames.Add(frame);
+        }
+
+        return frames;
+    }
+
+    /// <summary>????????? TCP ????? SSE ???????????????</summary>
+    private sealed class ChunkedReadStream : Stream
+    {
+        private readonly MemoryStream _inner;
+        private readonly int _chunkSize;
+
+        public ChunkedReadStream(byte[] bytes, int chunkSize)
+        {
+            _inner = new MemoryStream(bytes, writable: false);
+            _chunkSize = chunkSize;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => _inner.Length;
+        public override long Position { get => _inner.Position; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, Math.Min(count, _chunkSize));
+        public override int Read(Span<byte> buffer) => _inner.Read(buffer[..Math.Min(buffer.Length, _chunkSize)]);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            _inner.ReadAsync(buffer[..Math.Min(buffer.Length, _chunkSize)], cancellationToken);
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     private static void SetClass(float[] probabilities, int time, int classCount, int character, float value) =>

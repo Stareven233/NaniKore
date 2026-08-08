@@ -1,27 +1,23 @@
-﻿using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace NaniKore.Config;
 
-/// <summary>
-/// DPAPI 加解密 API Key。
-/// 加密后落 %APPDATA%\NaniKore\，config.yaml 无 key 字段。
-/// </summary>
+/// <summary>以当前 Windows 用户的 DPAPI 保护各配置档 API Key。</summary>
 internal static class SecretStore
 {
-    private static readonly string SecretsDir = Path.Combine(
+    private static readonly string SecretsDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-         NaniKore);
+        "NaniKore",
+        "secrets");
+    private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("NaniKore.v1");
+    private static readonly Regex ProfileIdPattern = new("^[A-Za-z0-9_-]+$", RegexOptions.CultureInvariant);
 
-    private static readonly byte[] Entropy = Encoding.UTF8.GetBytes(NaniKore_v1);
-
-    /// <summary>
-    /// 保存 API Key：用 DPAPI 加密后写入 <secretsDir>/<profileId>.key。
-    /// </summary>
     public static void Save(string profileId, string apiKey)
     {
-        Directory.CreateDirectory(SecretsDir);
+        ArgumentException.ThrowIfNullOrWhiteSpace(apiKey);
+        Directory.CreateDirectory(SecretsDirectory);
         var encrypted = ProtectedData.Protect(
             Encoding.UTF8.GetBytes(apiKey),
             Entropy,
@@ -29,9 +25,6 @@ internal static class SecretStore
         File.WriteAllBytes(GetKeyPath(profileId), encrypted);
     }
 
-    /// <summary>
-    /// 读取 API Key：不存在时返回 null。
-    /// </summary>
     public static string? Load(string profileId)
     {
         var path = GetKeyPath(profileId);
@@ -42,24 +35,20 @@ internal static class SecretStore
 
         try
         {
-            var encrypted = File.ReadAllBytes(path);
-            var decrypted = ProtectedData.Unprotect(
-                encrypted,
+            return Encoding.UTF8.GetString(ProtectedData.Unprotect(
+                File.ReadAllBytes(path),
                 Entropy,
-                DataProtectionScope.CurrentUser);
-            return Encoding.UTF8.GetString(decrypted);
+                DataProtectionScope.CurrentUser));
         }
         catch (CryptographicException)
         {
-            // DPAPI 解密失败（如换了用户或机器），返回 null 让调用方处理。
+            // 用户或机器变化后旧 DPAPI 密文无法读取；按未配置处理，绝不泄露密文内容。
             return null;
         }
     }
 
-    /// <summary>检查指定配置档的密钥是否就位（不回显 key）。</summary>
     public static bool Exists(string profileId) => File.Exists(GetKeyPath(profileId));
 
-    /// <summary>删除指定配置档的密钥。</summary>
     public static void Delete(string profileId)
     {
         var path = GetKeyPath(profileId);
@@ -69,6 +58,14 @@ internal static class SecretStore
         }
     }
 
-    private static string GetKeyPath(string profileId) =>
-        Path.Combine(SecretsDir, $ );
+    private static string GetKeyPath(string profileId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
+        if (!ProfileIdPattern.IsMatch(profileId))
+        {
+            throw new ArgumentException("配置档 ID 只能包含字母、数字、连字符和下划线。", nameof(profileId));
+        }
+
+        return Path.Combine(SecretsDirectory, $"{profileId}.bin");
+    }
 }

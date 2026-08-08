@@ -1,0 +1,50 @@
+<Window x:Class="NaniKore.App.ResultPanelWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:ClassModifier="internal"
+        Title="NaniKore"
+        Width="680"
+        Height="500"
+        MinWidth="420"
+        MinHeight="280"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterScreen"
+        UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="5" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" Margin="0,0,0,6">
+            <TextBlock Text="原文（可编辑）" FontWeight="SemiBold" />
+            <Button DockPanel.Dock="Right" MinWidth="78" Padding="8,4" Content="_重译" Click="OnTranslateClick" />
+        </DockPanel>
+        <TextBox x:Name="SourceTextBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap"
+                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                 FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="14" />
+
+        <GridSplitter Grid.Row="2" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+
+        <DockPanel Grid.Row="3" Margin="0,6,0,6">
+            <TextBlock Text="译文（流式输出）" FontWeight="SemiBold" />
+            <Button DockPanel.Dock="Right" MinWidth="78" Padding="8,4" Content="设置" Click="OnSettingsClick" />
+        </DockPanel>
+        <TextBox x:Name="TranslationTextBox" Grid.Row="4" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                 FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="14" />
+
+        <Expander Grid.Row="5" Header="精讲（后续阶段启用）" IsEnabled="False" Margin="0,8,0,0">
+            <TextBox x:Name="ExplanationTextBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto" />
+        </Expander>
+        <TextBlock x:Name="StatusText" Grid.Row="6" Margin="0,8,0,0" TextTrimming="CharacterEllipsis"
+                   AutomationProperties.LiveSetting="Polite" />
+    </Grid>
+</Window>
