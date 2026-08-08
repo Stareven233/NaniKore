@@ -1,6 +1,9 @@
+using System.Windows;
 using NaniKore.App;
+using NaniKore.Config;
 using NaniKore.Diagnostics;
 using NaniKore.Ocr;
+using Application = System.Windows.Forms.Application;
 
 namespace NaniKore;
 
@@ -9,7 +12,6 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        // 必须在创建任何 HWND 前启用 Per-Monitor V2，确保多屏与混合 DPI 下使用物理像素坐标。
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
@@ -32,9 +34,11 @@ internal static class Program
             return RunFileOcr(args, ocrFileIndex);
         }
 
-        using var context = new NaniKoreApplicationContext();
-        Application.Run(context);
-        return 0;
+        if (args.Contains("--dump-config", StringComparer.OrdinalIgnoreCase))
+            return DumpConfig();
+
+        var app = new NaniKoreApp();
+        return app.Run();
     }
 
     private static int InspectModels()
@@ -79,5 +83,33 @@ internal static class Program
             Console.Error.WriteLine(exception);
             return 1;
         }
+    }
+
+    private static int DumpConfig()
+    {
+        try
+        {
+            var dir = AppContext.BaseDirectory;
+            var store = new ConfigStore(dir);
+            var c = store.Current;
+            Console.WriteLine($"Config version: {c.Version}");
+            Console.WriteLine($"Config source: {dir}");
+            Console.WriteLine();
+            Console.WriteLine($"Active profile: {c.Translation.ActiveProfile}");
+            Console.WriteLine();
+            foreach (var p in c.Translation.Profiles)
+            {
+                var hasKey = SecretStore.Exists(p.Id);
+                Console.WriteLine($"  [{p.Id}]");
+                Console.WriteLine($"    provider:    {p.Provider}");
+                Console.WriteLine($"    model:       {p.Model}");
+                Console.WriteLine($"    base_url:    {p.BaseUrl}");
+                Console.WriteLine($"    api_key:     {(hasKey ? "present" : "missing")}");
+                Console.WriteLine($"    target_lang: {p.TargetLanguage}");
+                Console.WriteLine();
+            }
+            return 0;
+        }
+        catch (Exception e) { Console.Error.WriteLine($"Config dump failed: {e.Message}"); return 1; }
     }
 }

@@ -1,21 +1,34 @@
 using System.ComponentModel;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
+using System.Windows;
 using NaniKore.Capture;
 using NaniKore.Input;
 using NaniKore.Ocr;
 using NaniKore.Overlay;
+using Application = System.Windows.Application;
+using MessageBox = System.Windows.MessageBox;
 
 namespace NaniKore.App;
 
-internal sealed class NaniKoreApplicationContext : ApplicationContext
+/// <summary>
+/// WPF 应用宿主，替代原先的 WinForms ApplicationContext。
+/// 两套 UI 栈共用同一个 STA 线程与同一条 Windows 消息循环：
+/// WPF 负责面板类窗口，选区浮层仍由 WinForms 承担（物理像素零偏移已收敛，不动）。
+/// </summary>
+internal sealed class NaniKoreApp : Application
 {
-    private readonly GlobalHotkeyWindow _hotkeyWindow;
+    private GlobalHotkeyWindow? _hotkeyWindow;
     private OcrEngine? _ocrEngine;
     private bool _selecting;
 
-    public NaniKoreApplicationContext()
+    protected override void OnStartup(StartupEventArgs e)
     {
+        base.OnStartup(e);
+
+        // 没有主窗口，生命周期只能由托盘/退出路径显式结束，否则关掉结果窗口就会退出进程。
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
         _hotkeyWindow = new GlobalHotkeyWindow(() => _ = CaptureSelectAndRecognizeAsync());
 
         Console.WriteLine("NaniKore C# migration preview");
@@ -47,19 +60,16 @@ internal sealed class NaniKoreApplicationContext : ApplicationContext
             Console.WriteLine($"Selection completed: {selection.Width}x{selection.Height}.");
 
             OcrResult result;
-            using (var progress = new OcrProgressForm())
+            var progress = new OcrProgressWindow();
+            progress.Show();
+            try
             {
-                progress.Show();
-                progress.Refresh();
-                try
-                {
-                    // ONNX 推理放到工作线程，UI 消息循环继续响应，首次加载模型也不会呈现为程序卡死。
-                    result = await Task.Run(() => GetOcrEngine().Recognize(cropped));
-                }
-                finally
-                {
-                    progress.Close();
-                }
+                // ONNX 推理放到工作线程，UI 消息循环继续响应，首次加载模型也不会呈现为程序卡死。
+                result = await Task.Run(() => GetOcrEngine().Recognize(cropped));
+            }
+            finally
+            {
+                progress.Close();
             }
 
             ShowOcrResult(result);
@@ -91,8 +101,8 @@ internal sealed class NaniKoreApplicationContext : ApplicationContext
             MessageBox.Show(
                 "没有检测到可识别文本。",
                 "NaniKore OCR",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
             return;
         }
 
@@ -102,16 +112,16 @@ internal sealed class NaniKoreApplicationContext : ApplicationContext
         var copied = false;
         try
         {
-            Clipboard.SetText(result.Text);
+            System.Windows.Clipboard.SetText(result.Text);
             copied = true;
         }
-        catch (ExternalException)
+        catch (COMException)
         {
             // 结果窗口仍可手动重试复制；剪贴板被其他进程短暂占用不应让整次 OCR 失败。
         }
 
-        using var resultForm = new OcrResultForm(result, copied);
-        resultForm.ShowDialog();
+        var window = new OcrResultWindow(result, copied);
+        window.ShowDialog();
     }
 
     private static void ShowFailure(string message, Exception exception)
@@ -120,18 +130,14 @@ internal sealed class NaniKoreApplicationContext : ApplicationContext
         MessageBox.Show(
             $"{message}\n\n{exception.Message}",
             "NaniKore",
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Error);
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
     }
 
-    protected override void Dispose(bool disposing)
+    protected override void OnExit(ExitEventArgs e)
     {
-        if (disposing)
-        {
-            _ocrEngine?.Dispose();
-            _hotkeyWindow.Dispose();
-        }
-
-        base.Dispose(disposing);
+        _ocrEngine?.Dispose();
+        _hotkeyWindow?.Dispose();
+        base.OnExit(e);
     }
 }

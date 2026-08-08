@@ -3,6 +3,8 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- WinForms 与 WPF 同时启用：像素级选区浮层留在 WinForms，面板类 UI 走 WPF。 -->
+    <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
@@ -14,6 +16,15 @@
     <RootNamespace>NaniKore</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <!--
+      启用 WPF 后 SDK 会从隐式 using 里摘掉 System.IO（避免 System.IO.Path 与
+      System.Windows.Shapes.Path 撞名）。本项目不使用 Shapes.Path，显式补回以保持 OCR 代码不变。
+    -->
+    <Using Include="System.IO" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.28.0" />
+    <!-- 阶段 3：YAML 配置解析 -->
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
 </Project>

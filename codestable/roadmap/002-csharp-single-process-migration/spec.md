@@ -43,11 +43,23 @@ branch: main
 - OCR 在工作线程执行，首次加载期间显示进度窗。
 - 识别结果自动复制到剪贴板并显示。
 
-### 阶段 3：翻译（尚未开始）
+### 阶段 3：翻译（设计已定稿，待实施）
+
+设计方案见 `phase-3-translation-design.md`，本节只留约束。
 
 - 先定义云端翻译与本地翻译共用的 provider 契约。
 - 如果采用 GGUF，使用 llama.cpp 兼容运行时；原生库按需加载，不让未启用用户承担体积。
 - OCR 与 LLM 运行时生命周期分离，允许只启用 OCR。
+
+2026-08-08 与主人讨论确定的设计要点：
+
+- 云端至少支持 OpenAI（completions 与 responses 两种形式）、Claude、Gemini，由用户自由配置。
+- provider 契约输入为载荷（可带图像）、输出为带频道的增量流，为多模态一条龙与后续精讲预留。
+- 配置落 exe 旁的 `config.yaml`（YamlDotNet），只在用户点保存时写盘；程序运行期以程序为准。
+- API Key 走 DPAPI 加密存 `%APPDATA%\NaniKore\`，不进配置文件。
+- 结果面板改为单实例非模态 + `WS_EX_NOACTIVATE`，纵向三段、总高封顶、段内滚动。
+- 设置面板平时隐藏于托盘，Tab 按功能域分，provider 以配置档列表切换。
+- 不迁移 WinUI 3；将来富文本需求由 WPF 面板承接，理由见设计文档第 12 节。
 
 ## 验收结论
 
