@@ -9,7 +9,6 @@
 - **OCR**：ONNX Runtime C# 直接运行 PP-OCRv6-small 检测与识别模型
 - **交互**：全局 `Ctrl+Shift+A`，左键拖选，Esc/右键取消，结果自动复制并显示
 - **本地翻译（后续可选）**：GGUF + llama.cpp 兼容运行时
-- **不再依赖**：Python、leaf-ocr、OpenCV、Gio、Go 工具链
 
 当前 OCR 后处理使用纯 C# 连通域和水平矩形框近似官方 DB 多边形后处理，优先保证体积与依赖简洁。水平游戏/UI 文本已经跑通；旋转或弯曲文本仍弱于 OpenCV 完整实现。
 
@@ -23,11 +22,11 @@ powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 
 它会准备：
 
-- 已安装并配置到 `Path` 的 .NET SDK：脚本会优先直接复用
+- `DOTNET_ROOT` 指定的 .NET SDK：脚本优先使用；未指定时才回退到 `Path`
 - `NUGET_PACKAGES` 指定的 NuGet 缓存：可由多个项目共用
 - `models/pp-ocr-v6-small`：官方 PaddlePaddle ONNX 模型与配置
 
-如果本机已安装兼容 `global.json` 的 SDK，直接运行开发命令即可。否则运行上面的 bootstrap 脚本，它会将 SDK 安装到 `DOTNET_ROOT` 指定的共享位置。安装后，将该目录加入系统 `Path`（优先于旧版 dotnet），并将 `DOTNET_ROOT` 指向该目录；如需将包缓存放在共享磁盘，再设置 `NUGET_PACKAGES`。重新打开终端后即可直接使用 `dotnet`。模型文件被 Git 忽略。
+项目要求 .NET 10 SDK；`global.json` 以 `10.0.100` 为基线并允许滚动到当前安装的最新 .NET 10 feature band。脚本优先使用 `DOTNET_ROOT` 指定的 SDK；即使该用户环境变量刚设置、终端尚未重启，也会直接读取用户变量。未指定时才回退到 `Path`。如需将包缓存放在共享磁盘，再设置 `NUGET_PACKAGES`。模型文件被 Git 忽略。
 
 ## 开发命令
 
@@ -43,6 +42,10 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 run
 
 # 发布 Windows x64 framework-dependent 版本
 powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 publish
+
+# 仅启动已有的 Debug / 发布版 EXE（不重复构建或发布）
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Launch debug
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Launch publish
 ```
 
 运行后按 **Ctrl+Shift+A**，左键拖选；按 **Esc** 或右键取消。选区位图只在内存中传给 OCR，不写入临时文件。

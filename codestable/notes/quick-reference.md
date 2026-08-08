@@ -10,7 +10,7 @@ powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 powershell -ExecutionPolicy Bypass -File scripts/bootstrap-models.ps1
 ```
 
-The shared .NET SDK is resolved from `Path` or `DOTNET_ROOT`; configure the global NuGet cache with `NUGET_PACKAGES`. Models remain in project-local `models/`.
+The shared .NET SDK is resolved from `DOTNET_ROOT` first, then falls back to `Path`; configure the global NuGet cache with `NUGET_PACKAGES`. Models remain in project-local `models/`.
 
 ## 常用命令
 
@@ -26,6 +26,10 @@ powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 run
 
 # 发布 EXE + ONNX Runtime 原生 DLL
 powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 publish
+
+# 仅启动已有的 Debug / 发布版 EXE（不重复构建或发布）
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Launch debug
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Launch publish
 ```
 
 ## 诊断命令
@@ -55,7 +59,7 @@ src/NaniKore/      C# 应用源码
 scripts/           本地工具链、模型、构建与发布脚本
 models/            本地模型（仅 README 被 Git 跟踪）
 artifacts/win-x64/ 发布产物（Git 忽略）
-Shared .NET SDK: resolved from `Path` / `DOTNET_ROOT`; NuGet cache: configured by `NUGET_PACKAGES`.
+Shared .NET SDK: resolved from `DOTNET_ROOT` first, then `Path`; NuGet cache: configured by `NUGET_PACKAGES`.
 ```
 
 ## 分支

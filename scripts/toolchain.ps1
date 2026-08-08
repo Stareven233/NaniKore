@@ -1,30 +1,33 @@
 ﻿# 共享工具链通过标准环境变量配置，仓库本身不绑定个人目录。
 function Get-NaniKoreSharedDotnetRoot {
-    if ([string]::IsNullOrWhiteSpace($env:DOTNET_ROOT)) {
-        return $null
+    if (-not [string]::IsNullOrWhiteSpace($env:DOTNET_ROOT)) {
+        return $env:DOTNET_ROOT
     }
 
-    return $env:DOTNET_ROOT
+    # 兼容刚写入用户环境变量、但当前终端尚未重启的场景。
+    $userDotnetRoot = [Environment]::GetEnvironmentVariable('DOTNET_ROOT', 'User')
+    if (-not [string]::IsNullOrWhiteSpace($userDotnetRoot)) {
+        $env:DOTNET_ROOT = $userDotnetRoot
+        return $userDotnetRoot
+    }
+
+    return $null
 }
 
 function Get-NaniKoreDotnetExecutable {
-    # 优先复用用户已配置到 Path 的 SDK；命令不可用时才回退到 DOTNET_ROOT。
-    $command = Get-Command dotnet -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($null -ne $command) {
-        & $command.Source --version *> $null
-        if ($LASTEXITCODE -eq 0) {
-            return $command.Source
+    # DOTNET_ROOT 是用户显式指定的 SDK，因此优先于 Path 中可能残留的旧版 dotnet。
+    $sharedDotnetRoot = Get-NaniKoreSharedDotnetRoot
+    if ($null -ne $sharedDotnetRoot) {
+        $sharedDotnet = Join-Path $sharedDotnetRoot 'dotnet.exe'
+        if (Test-Path -LiteralPath $sharedDotnet) {
+            return $sharedDotnet
         }
     }
 
-    $sharedDotnetRoot = Get-NaniKoreSharedDotnetRoot
-    if ($null -eq $sharedDotnetRoot) {
-        return $null
-    }
-
-    $sharedDotnet = Join-Path $sharedDotnetRoot 'dotnet.exe'
-    if (Test-Path -LiteralPath $sharedDotnet) {
-        return $sharedDotnet
+    # 未指定或指定目录无效时，才回退到当前进程 Path 中的 dotnet。
+    $command = Get-Command dotnet -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $command) {
+        return $command.Source
     }
 
     return $null
