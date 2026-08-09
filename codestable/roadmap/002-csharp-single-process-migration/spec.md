@@ -43,9 +43,9 @@ branch: main
 - OCR 在工作线程执行，首次加载期间显示进度窗。
 - 识别结果自动复制到剪贴板并显示。
 
-### 阶段 3：翻译（设计已定稿，待实施）
+### 阶段 3：翻译（初版已实现，真机整改待推进）
 
-设计方案见 `phase-3-translation-design.md`，本节只留约束。
+初版实现已完成 provider、流式翻译、结果面板、设置与 YAML/DPAPI 配置，但 2026-08-09 真机验收暴露了结果浮层、提示词、配置档和热键等阻断性问题。整改规格见 `phase-3-post-test-remediation.md`；原始方案见 `phase-3-translation-design.md`。
 
 - 先定义云端翻译与本地翻译共用的 provider 契约。
 - 如果采用 GGUF，使用 llama.cpp 兼容运行时；原生库按需加载，不让未启用用户承担体积。

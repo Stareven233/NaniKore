@@ -24,6 +24,11 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 - 模型会话复用，推理在工作线程执行。
 - 结果自动复制到剪贴板并显示在结果窗口。
 
+### 翻译、结果与配置（初版，待真机整改）
+
+- 已有 OpenAI（completions/responses）、Claude、Gemini 的流式 provider 契约，支持 `local_ocr` 与 `vision_oneshot` 两条输入路径。
+- 结果窗口可显示 OCR 原文和流式译文，设置页包含通用、翻译、热键和关于页；API Key 以当前 Windows 用户的 DPAPI 密文保存。
+- 2026-08-09 真机验收发现结果卡层级/编辑、翻译目标可靠性、配置档切换、配置版本、设置生命周期和热键录制等问题，尚不能视为稳定体验。下一轮实施与验收以 `codestable/roadmap/002-csharp-single-process-migration/phase-3-post-test-remediation.md` 为准。
 ### 工具链与发布
 
 - .NET SDK、NuGet 缓存和模型默认放在项目目录。
@@ -39,8 +44,7 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 
 ## 尚未实现
 
-- 翻译 provider 契约与流式翻译。
 - 可选 GGUF 本地翻译运行时。
-- 结果浮卡、精讲面板、托盘和设置持久化。
-
+- 精讲的实际调用、内容结构与持久化。
+- 阶段 3 初版体验的真机整改，见上述整改规格。
 下一阶段规划见 `codestable/roadmap/002-csharp-single-process-migration/spec.md`。
