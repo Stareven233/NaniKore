@@ -1,0 +1,48 @@
+# 此文件是可提交的运行配置模板：API Key 仅由 Windows DPAPI 保存到当前用户配置目录，不写入此文件。
+# 修改根目录模板后重新构建；运行时在 Debug 或发布目录各自使用其副本。
+version: 0.1.1
+general:
+  auto_translate: false
+  target_language: zh-CN
+pipeline:
+  mode: local_ocr
+  active_profile: openai-default
+profiles:
+  - id: openai-nvidia
+    name: nvidia
+    kind: openai
+    api_type: completions
+    base_url: https://integrate.api.nvidia.com/v1
+    model: nvidia/riva-translate-4b-instruct-v2
+    supports_vision: false
+    timeout_seconds: 30
+  - id: openai-default
+    name: OpenAI 默认
+    kind: openai
+    api_type: completions
+    base_url: https://api.openai.com/v1
+    model: gpt-4o-mini
+    supports_vision: false
+    timeout_seconds: 60
+  - id: claude-default
+    name: Claude 默认
+    kind: claude
+    api_type: completions
+    base_url: https://api.anthropic.com
+    model: claude-haiku-4-5
+    supports_vision: true
+    timeout_seconds: 60
+  - id: gemini-default
+    name: Gemini 默认
+    kind: gemini
+    api_type: completions
+    base_url: https://generativelanguage.googleapis.com/v1beta
+    model: gemini-2.0-flash
+    supports_vision: true
+    timeout_seconds: 60
+hotkeys:
+  capture: Ctrl+Shift+A
+  translate_clipboard: ''
+prompts:
+  translate: ''
+  explain: ''

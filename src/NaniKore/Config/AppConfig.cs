@@ -39,7 +39,11 @@ internal sealed class PipelineConfig
 
 internal sealed class ProviderProfile
 {
+    /// <summary>稳定内部索引；用于活动配置档和 DPAPI 密钥文件名，用户不可编辑。</summary>
     public string Id { get; set; } = "openai-default";
+
+    /// <summary>面向用户的可编辑显示名称。</summary>
+    public string Name { get; set; } = string.Empty;
 
     /// <summary>openai、claude 或 gemini。</summary>
     public string Kind { get; set; } = "openai";
@@ -56,11 +60,12 @@ internal sealed class ProviderProfile
 
     public int TimeoutSeconds { get; set; } = 60;
 
-    public static ProviderProfile CreateOpenAiDefault() => new();
+    public static ProviderProfile CreateOpenAiDefault() => new() { Name = "OpenAI 默认" };
 
     public static ProviderProfile CreateClaudeDefault() => new()
     {
         Id = "claude-default",
+        Name = "Claude 默认",
         Kind = "claude",
         BaseUrl = "https://api.anthropic.com",
         Model = "claude-haiku-4-5",
@@ -70,6 +75,7 @@ internal sealed class ProviderProfile
     public static ProviderProfile CreateGeminiDefault() => new()
     {
         Id = "gemini-default",
+        Name = "Gemini 默认",
         Kind = "gemini",
         BaseUrl = "https://generativelanguage.googleapis.com/v1beta",
         Model = "gemini-2.0-flash",
@@ -79,6 +85,7 @@ internal sealed class ProviderProfile
     public ProviderProfile Clone() => new()
     {
         Id = Id,
+        Name = Name,
         Kind = Kind,
         ApiType = ApiType,
         BaseUrl = BaseUrl,

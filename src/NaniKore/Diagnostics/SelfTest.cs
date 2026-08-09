@@ -25,6 +25,7 @@ internal static class SelfTest
         TestCtcDecoding();
         TestReadingOrder();
         TestConfigRoundTrip();
+        TestProfileRenameKeepsSecret();
         TestSseReader();
         TestSentinelRouter();
         TestProviderCapabilitiesAndErrors();
@@ -176,10 +177,38 @@ internal static class SelfTest
                 store.Current.General.AutoTranslate &&
                 store.Current.General.TargetLanguage == "ja" &&
                 store.Current.Pipeline.Mode == "local_ocr" &&
-                store.Current.Profiles.Single().TimeoutSeconds == 20);
+                store.Current.Profiles.Single().TimeoutSeconds == 20 &&
+                store.Current.Profiles.Single().Name == "test");
             store.AtomicWrite(store.Current);
             var reloaded = new ConfigStore(directory);
-            Check("YAML reload ignores unknown fields", reloaded.Current.Profiles.Single().Model == "model-a");
+            Check(
+                "YAML reload preserves generated display names",
+                reloaded.Current.Profiles.Single().Model == "model-a" &&
+                reloaded.Current.Profiles.Single().Name == "test" &&
+                AppConfigCloner.Clone(reloaded.Current).Profiles.Single().Name == "test");
+
+            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
+                version: 1
+                pipeline:
+                  active_profile: work
+                profiles:
+                  - id: work
+                    name: 工作
+                    kind: openai
+                    base_url: https://work.example/v1
+                    model: work-model
+                  - id: personal
+                    name: 工作
+                    kind: gemini
+                    base_url: https://personal.example/v1
+                    model: personal-model
+                """);
+            var named = new ConfigStore(directory);
+            Check(
+                "duplicate profile names normalize without changing stable IDs or active profile",
+                named.Current.Pipeline.ActiveProfile == "work" &&
+                named.Current.Profiles.Select(profile => profile.Id).SequenceEqual(["work", "personal"]) &&
+                named.Current.Profiles.Select(profile => profile.Name).SequenceEqual(["工作", "工作 (2)"]));
 
             File.WriteAllText(Path.Combine(directory, "config.yaml"), """
                 version: 1
@@ -203,6 +232,7 @@ internal static class SelfTest
                 migrated.Current.Profiles.Single().ApiType == "responses" &&
                 migrated.Current.General.AutoTranslate &&
                 migrated.Current.General.TargetLanguage == "zh-CN" &&
+                migrated.Current.Profiles.Single().Name == "legacy" &&
                 migrated.LoadWarning is not null &&
                 File.ReadAllText(Path.Combine(directory, "config.yaml")).Contains("translation:", StringComparison.Ordinal));
         }
@@ -212,6 +242,24 @@ internal static class SelfTest
         }
     }
 
+    private static void TestProfileRenameKeepsSecret()
+    {
+        var profileId = $"self-test-{Guid.NewGuid():N}";
+        const string secret = "self-test-secret";
+        try
+        {
+            SecretStore.Save(profileId, secret);
+            var profile = new ProviderProfile { Id = profileId, Name = "原名称" };
+            profile.Name = "重命名后";
+            Check(
+                "profile rename keeps the stable DPAPI secret index",
+                profile.Id == profileId && SecretStore.Load(profile.Id) == secret);
+        }
+        finally
+        {
+            SecretStore.Delete(profileId);
+        }
+    }
     private static void TestSseReader()
     {
         const string payload = "event: delta\ndata: {\\\"text\\\":\\\"A\\\"}\n\ndata: [DONE]\n\n";

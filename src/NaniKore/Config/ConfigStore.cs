@@ -163,6 +163,7 @@ internal sealed class ConfigStore
         }
 
         var usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var profile in config.Profiles)
         {
             profile.Id = profile.Id?.Trim() ?? string.Empty;
@@ -170,6 +171,22 @@ internal sealed class ConfigStore
             {
                 profile.Id = $"profile-{usedIds.Count + 1}";
                 usedIds.Add(profile.Id);
+                normalized = true;
+            }
+
+            // 旧配置缺少 name 时以原有 ID 作为显示名；重命名只改 Name，DPAPI 索引不受影响。
+            var originalName = profile.Name;
+            var baseName = string.IsNullOrWhiteSpace(profile.Name) ? profile.Id : profile.Name.Trim();
+            var normalizedName = baseName;
+            var suffix = 2;
+            while (!usedNames.Add(normalizedName))
+            {
+                normalizedName = $"{baseName} ({suffix++})";
+            }
+
+            if (!string.Equals(originalName, normalizedName, StringComparison.Ordinal))
+            {
+                profile.Name = normalizedName;
                 normalized = true;
             }
 
