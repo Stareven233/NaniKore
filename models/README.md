@@ -20,7 +20,7 @@ models/
 运行下面的命令会从 PaddlePaddle 官方模型仓库下载并校验 PP-OCRv6-small：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/bootstrap-models.ps1
+./scripts/bootstrap-models.ps1
 ```
 
 `inference.json` 是官方导出附带的可选图描述，当前 C# 运行时不需要它。

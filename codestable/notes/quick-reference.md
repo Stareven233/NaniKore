@@ -4,10 +4,10 @@
 
 ```powershell
 # 首次准备 .NET SDK、NuGet 包和 PP-OCRv6-small 模型
-powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
+./scripts/bootstrap.ps1
 
 # 只准备或校验模型
-powershell -ExecutionPolicy Bypass -File scripts/bootstrap-models.ps1
+./scripts/bootstrap-models.ps1
 ```
 
 The shared .NET SDK is resolved from `DOTNET_ROOT` first, then falls back to `Path`; configure the global NuGet cache with `NUGET_PACKAGES`. Models remain in project-local `models/`.
@@ -16,20 +16,20 @@ The shared .NET SDK is resolved from `DOTNET_ROOT` first, then falls back to `Pa
 
 ```powershell
 # 构建
-powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 build
+./scripts/dev.ps1 build
 
 # 10 项无 UI 自测
-powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 test
+./scripts/dev.ps1 test
 
 # 运行 GUI
-powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 run
+./scripts/dev.ps1 run
 
 # 发布 EXE + ONNX Runtime 原生 DLL
-powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 publish
+./scripts/dev.ps1 publish
 
 # 仅启动已有的 Debug / 发布版 EXE（不重复构建或发布）
-powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Launch debug
-powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Launch publish
+./scripts/dev.ps1 -Launch debug
+./scripts/dev.ps1 -Launch publish
 ```
 
 ## 诊断命令

@@ -4,11 +4,13 @@ function Get-NaniKoreSharedDotnetRoot {
         return $env:DOTNET_ROOT
     }
 
-    # 兼容刚写入用户环境变量、但当前终端尚未重启的场景。
-    $userDotnetRoot = [Environment]::GetEnvironmentVariable('DOTNET_ROOT', 'User')
-    if (-not [string]::IsNullOrWhiteSpace($userDotnetRoot)) {
-        $env:DOTNET_ROOT = $userDotnetRoot
-        return $userDotnetRoot
+    # 兼容刚写入用户或系统环境变量、但当前终端尚未重启的场景。
+    foreach ($target in @('User', 'Machine')) {
+        $dotnetRoot = [Environment]::GetEnvironmentVariable('DOTNET_ROOT', $target)
+        if (-not [string]::IsNullOrWhiteSpace($dotnetRoot)) {
+            $env:DOTNET_ROOT = $dotnetRoot
+            return $dotnetRoot
+        }
     }
 
     return $null
@@ -31,6 +33,26 @@ function Get-NaniKoreDotnetExecutable {
     }
 
     return $null
+}
+
+function Test-NaniKoreSdkResolution {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Dotnet,
+
+        [Parameter(Mandatory)]
+        [string]$WorkingDirectory
+    )
+
+    # global.json 只会影响其所在目录及子目录；必须在仓库根目录验证实际可用的 SDK。
+    Push-Location -LiteralPath $WorkingDirectory
+    try {
+        $null = & $Dotnet --version 2>&1
+        return $LASTEXITCODE -eq 0
+    }
+    finally {
+        Pop-Location
+    }
 }
 
 function Set-NaniKoreNuGetCache {

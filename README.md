@@ -17,7 +17,7 @@
 SDK 与 NuGet 缓存不绑定项目目录或任何个人磁盘路径；模型仍保留在项目目录：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
+./scripts/bootstrap.ps1
 ```
 
 它会准备：
@@ -26,26 +26,26 @@ powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1
 - `NUGET_PACKAGES` 指定的 NuGet 缓存：可由多个项目共用
 - `models/pp-ocr-v6-small`：官方 PaddlePaddle ONNX 模型与配置
 
-项目要求 .NET 10 SDK；`global.json` 以 `10.0.100` 为基线并允许滚动到当前安装的最新 .NET 10 feature band。脚本优先使用 `DOTNET_ROOT` 指定的 SDK；即使该用户环境变量刚设置、终端尚未重启，也会直接读取用户变量。未指定时才回退到 `Path`。如需将包缓存放在共享磁盘，再设置 `NUGET_PACKAGES`。模型文件被 Git 忽略。
+项目要求 .NET 10 SDK；`global.json` 当前锁定到 `10.0.302`，并允许滚动到当前安装的最新 .NET 10 feature band。脚本会先验证 `dotnet.exe` 是否真的能解析此 SDK；仅安装运行时或版本不兼容时，会自动安装 .NET 10 通道的最新稳定 SDK 到 `DOTNET_ROOT`。即使该环境变量刚设置、终端尚未重启，脚本也会直接读取用户或系统变量。未指定 `DOTNET_ROOT` 时才回退到 `Path`；如果 `Path` 中也没有兼容 SDK，则需要先设置 `DOTNET_ROOT`。如需将包缓存放在共享磁盘，再设置 `NUGET_PACKAGES`。模型文件被 Git 忽略。
 
 ## 开发命令
 
 ```powershell
 # 构建
-powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 build
+./scripts/dev.ps1 build
 
 # 无 UI 自测
-powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 test
+./scripts/dev.ps1 test
 
 # 运行桌面程序
-powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 run
+./scripts/dev.ps1 run
 
 # 发布 Windows x64 framework-dependent 版本
-powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 publish
+./scripts/dev.ps1 publish
 
 # 仅启动已有的 Debug / 发布版 EXE（不重复构建或发布）
-powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Launch debug
-powershell -ExecutionPolicy Bypass -File scripts/dev.ps1 -Launch publish
+./scripts/dev.ps1 -Launch debug
+./scripts/dev.ps1 -Launch publish
 ```
 
 运行后按 **Ctrl+Shift+A**，左键拖选；按 **Esc** 或右键取消。选区位图只在内存中传给 OCR，不写入临时文件。

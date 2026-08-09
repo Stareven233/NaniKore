@@ -59,11 +59,12 @@ $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_NOLOGO = '1'
 Set-NaniKoreNuGetCache
 
-# SDK 选择只从 dotnet 的当前工作目录向上查找 global.json。
-# 仓库中的旧版本锁定不应覆盖用户通过 Path / DOTNET_ROOT 提供的 SDK。
-$sdkResolutionDirectory = [System.IO.Path]::GetTempPath()
+if (-not (Test-NaniKoreSdkResolution -Dotnet $dotnet -WorkingDirectory $root)) {
+    throw 'No SDK compatible with global.json was found. Run scripts/bootstrap.ps1 to install the required SDK.'
+}
+
 $exitCode = 1
-Push-Location -LiteralPath $sdkResolutionDirectory
+Push-Location -LiteralPath $root
 try {
     switch ($Command) {
         'build' {
