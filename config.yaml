@@ -6,40 +6,56 @@ general:
   target_language: zh-CN
 pipeline:
   mode: local_ocr
-  active_profile: openai-default
+  active_profile: openai-agnes
 profiles:
-  - id: openai-nvidia
-    name: nvidia
-    kind: openai
-    api_type: completions
-    base_url: https://integrate.api.nvidia.com/v1
-    model: nvidia/riva-translate-4b-instruct-v2
-    supports_vision: false
-    timeout_seconds: 30
-  - id: openai-default
-    name: OpenAI 默认
-    kind: openai
-    api_type: completions
-    base_url: https://api.openai.com/v1
-    model: gpt-4o-mini
-    supports_vision: false
-    timeout_seconds: 60
-  - id: claude-default
-    name: Claude 默认
-    kind: claude
-    api_type: completions
-    base_url: https://api.anthropic.com
-    model: claude-haiku-4-5
-    supports_vision: true
-    timeout_seconds: 60
-  - id: gemini-default
-    name: Gemini 默认
-    kind: gemini
-    api_type: completions
-    base_url: https://generativelanguage.googleapis.com/v1beta
-    model: gemini-2.0-flash
-    supports_vision: true
-    timeout_seconds: 60
+- id: openai-nvidia
+  name: nvidia
+  kind: openai
+  api_type: completions
+  base_url: https://integrate.api.nvidia.com/v1
+  model: nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+  supports_vision: true
+  timeout_seconds: 30
+- id: openai-agnes
+  name: agnes
+  kind: openai
+  api_type: completions
+  base_url: https://apihub.agnes-ai.com/v1
+  model: agnes-2.5-flash
+  supports_vision: true
+  timeout_seconds: 30
+- id: gemini-default
+  name: 哈基米
+  kind: gemini
+  api_type: completions
+  base_url: https://hachimi-2.stareven233.workers.dev
+  model: gemini-3.5-flash
+  supports_vision: true
+  timeout_seconds: 30
+- id: openai-default
+  name: OpenAI 默认
+  kind: openai
+  api_type: completions
+  base_url: https://api.openai.com/v1
+  model: gpt-4o-mini
+  supports_vision: false
+  timeout_seconds: 60
+- id: claude-default
+  name: Claude 默认
+  kind: claude
+  api_type: completions
+  base_url: https://api.anthropic.com
+  model: claude-haiku-4-5
+  supports_vision: true
+  timeout_seconds: 60
+- id: gemini-default
+  name: Gemini 默认
+  kind: gemini
+  api_type: completions
+  base_url: https://generativelanguage.googleapis.com/v1beta
+  model: gemini-2.0-flash
+  supports_vision: true
+  timeout_seconds: 60
 hotkeys:
   capture: Ctrl+Shift+A
   translate_clipboard: ''

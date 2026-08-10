@@ -20,6 +20,21 @@ internal sealed class TranslationPage : ISettingsPage
     private readonly Button _duplicate = new() { Text = "复制", Width = 62 };
     private readonly Button _test = new() { Text = "测试连接", Width = 90 };
     private readonly Label _testStatus = new() { AutoSize = true };
+    // 提示词与配置档共用同一次“保存”事务，取消设置时不会污染运行中配置。
+    private readonly TextBox _translatePrompt = new()
+    {
+        Multiline = true,
+        ScrollBars = ScrollBars.Vertical,
+        AcceptsReturn = true,
+        Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+    };
+    private readonly Button _restoreDefaultPrompt = new() { Text = "恢复内置默认", Width = 112 };
+    private readonly Label _promptHint = new()
+    {
+        Text = "留空时使用内置翻译提示词；可使用 {{target_language}} 代表当前目标语言。",
+        AutoSize = true,
+        Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+    };
     private readonly Dictionary<string, string> _pendingKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _deletedProfileIds = new(StringComparer.OrdinalIgnoreCase);
     private AppConfig? _config;
@@ -47,6 +62,11 @@ internal sealed class TranslationPage : ISettingsPage
         _supportsVision.SetBounds(130, 352, 240, 28);
         _testStatus.SetBounds(16, 392, 510, 40);
         _view.Controls.AddRange([_supportsVision, _testStatus]);
+        _view.Controls.Add(new Label { Text = "翻译提示词：", AutoSize = true, Left = 16, Top = 440 });
+        _translatePrompt.SetBounds(16, 464, 540, 116);
+        _restoreDefaultPrompt.SetBounds(16, 592, 112, 30);
+        _promptHint.SetBounds(140, 598, 420, 20);
+        _view.Controls.AddRange([_translatePrompt, _restoreDefaultPrompt, _promptHint]);
 
         _profiles.SelectedIndexChanged += (_, _) => SwitchProfile();
         _kind.SelectedIndexChanged += (_, _) => UpdateKindControls();
@@ -54,6 +74,7 @@ internal sealed class TranslationPage : ISettingsPage
         _remove.Click += (_, _) => RemoveProfile();
         _duplicate.Click += (_, _) => DuplicateProfile();
         _test.Click += async (_, _) => await TestConnectionAsync();
+        _restoreDefaultPrompt.Click += (_, _) => RestoreDefaultPrompt();
     }
 
     public string Title => "翻译";
@@ -66,6 +87,7 @@ internal sealed class TranslationPage : ISettingsPage
     public void Load(AppConfig config)
     {
         _config = config;
+        _translatePrompt.Text = config.Prompts.Translate;
         _editingProfile = null;
         _loading = true;
         _profiles.Items.Clear();
@@ -116,6 +138,8 @@ internal sealed class TranslationPage : ISettingsPage
     {
         SaveFields();
         config.Pipeline.ActiveProfile = SelectedProfile?.Id ?? config.Profiles[0].Id;
+        // 空值是“使用内置默认”的显式配置，避免把默认提示词副本写死到用户配置中。
+        config.Prompts.Translate = _translatePrompt.Text.Trim();
     }
 
     public void SaveSecrets()
@@ -202,6 +226,13 @@ internal sealed class TranslationPage : ISettingsPage
     private void UpdateKindControls()
     {
         _apiType.Enabled = string.Equals(_kind.SelectedItem as string, "openai", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void RestoreDefaultPrompt()
+    {
+        // 内置提示词由 PromptTemplates 在请求时提供，清空即可恢复且能随应用升级改进。
+        _translatePrompt.Clear();
+        _translatePrompt.Focus();
     }
 
     private void AddProfile()

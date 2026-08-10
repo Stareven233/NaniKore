@@ -25,6 +25,7 @@ internal static class SelfTest
         TestCtcDecoding();
         TestReadingOrder();
         TestConfigRoundTrip();
+        TestTranslationPromptTemplates();
         TestProfileRenameKeepsSecret();
         TestSseReader();
         TestSentinelRouter();
@@ -169,6 +170,8 @@ internal static class SelfTest
                     base_url: https://example.test/v1
                     model: model-a
                     timeout_seconds: 20
+                prompts:
+                  translate: 'Translate into {{target_language}} only.'
                 unknown_field: ignored
                 """);
             var store = new ConfigStore(directory);
@@ -182,13 +185,15 @@ internal static class SelfTest
                 store.Current.General.TargetLanguage == "ja" &&
                 store.Current.Pipeline.Mode == "local_ocr" &&
                 store.Current.Profiles.Single().TimeoutSeconds == 20 &&
-                store.Current.Profiles.Single().Name == "test");
+                store.Current.Profiles.Single().Name == "test" &&
+                store.Current.Prompts.Translate == "Translate into {{target_language}} only.");
             store.AtomicWrite(store.Current);
             var reloaded = new ConfigStore(directory);
             Check(
                 "YAML reload preserves generated display names",
                 reloaded.Current.Profiles.Single().Model == "model-a" &&
                 reloaded.Current.Profiles.Single().Name == "test" &&
+                reloaded.Current.Prompts.Translate == "Translate into {{target_language}} only." &&
                 AppConfigCloner.Clone(reloaded.Current).Profiles.Single().Name == "test");
 
             File.WriteAllText(Path.Combine(directory, "config.yaml"), """
@@ -244,6 +249,23 @@ internal static class SelfTest
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    private static void TestTranslationPromptTemplates()
+    {
+        var request = new UnderstandRequest(UnderstandKind.Translate, "hello", null, "zh-CN");
+        var defaultPrompt = PromptTemplates.GetSystemPrompt(request, new PromptConfig());
+        Check(
+            "default translation prompt explicitly requires only the selected target language",
+            defaultPrompt.Contains("translation in zh-CN", StringComparison.Ordinal) &&
+            defaultPrompt.Contains("do not include explanations", StringComparison.Ordinal));
+
+        var customPrompt = PromptTemplates.GetSystemPrompt(
+            request,
+            new PromptConfig { Translate = "Translate to {{target_language}}; retain {{unknown_placeholder}}." });
+        Check(
+            "custom translation prompt expands target language without swallowing unknown placeholders",
+            customPrompt == "Translate to zh-CN; retain {{unknown_placeholder}}.");
     }
 
     private static void TestProfileRenameKeepsSecret()

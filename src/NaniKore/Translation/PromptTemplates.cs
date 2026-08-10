@@ -7,23 +7,26 @@ internal static class PromptTemplates
 {
     internal const string SourceSentinel = "<<<SOURCE>>>";
     internal const string TranslationSentinel = "<<<TRANSLATION>>>";
+    internal const string TargetLanguagePlaceholder = "{{target_language}}";
 
     public static string GetSystemPrompt(UnderstandRequest request, PromptConfig prompts)
     {
         var custom = request.Kind == UnderstandKind.Translate ? prompts.Translate : prompts.Explain;
         if (!string.IsNullOrWhiteSpace(custom))
         {
-            return custom.Trim();
+            // 只展开已声明的占位符；未知占位符原样保留，避免悄悄改变用户提示词语义。
+            return custom.Trim().Replace(TargetLanguagePlaceholder, request.TargetLanguage, StringComparison.Ordinal);
         }
 
         return request.Kind switch
         {
-            UnderstandKind.Explain => "Explain the supplied text clearly in the target language. Keep the answer concise.",
+            UnderstandKind.Explain => $"Explain the supplied text clearly in {request.TargetLanguage}. Keep the answer concise.",
             _ when request.ImagePng is { Length: > 0 } =>
-                $"Read the image and translate all visible text into {request.TargetLanguage}. " +
-                $"Stream the transcription after {SourceSentinel}, then the translation after {TranslationSentinel}. " +
-                "Do not add commentary.",
-            _ => $"Translate the supplied text into {request.TargetLanguage}. Return only the translation.",
+                $"Read all visible text in the image and translate it into {request.TargetLanguage}. " +
+                $"Stream the transcription after {SourceSentinel}, then stream only the translation in {request.TargetLanguage} after {TranslationSentinel}. " +
+                "Do not add commentary or any extra sections.",
+            _ => $"Translate the supplied text into {request.TargetLanguage}. " +
+                $"Return only the translation in {request.TargetLanguage}; do not include explanations, notes, or source text.",
         };
     }
 }
