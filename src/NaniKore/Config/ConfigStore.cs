@@ -72,17 +72,6 @@ internal sealed class ConfigStore
         try
         {
             var yaml = File.ReadAllText(_configPath);
-            if (ContainsLegacyTranslationSection(yaml))
-            {
-                // 旧版 Step 1 配置把翻译选项嵌套在 translation 下；迁移仅发生在内存中，
-                // 仍遵守“用户点击保存后才写盘”的约定，避免启动时意外覆盖用户文件。
-                var legacyConfig = _deserializer.Deserialize<LegacyAppConfig>(yaml) ?? new LegacyAppConfig();
-                var migratedConfig = MigrateLegacyConfig(legacyConfig);
-                LoadWarning = "检测到旧版 config.yaml，已在内存中迁移为当前格式；请在设置中确认后保存。";
-                Normalize(migratedConfig, reportWarnings: false);
-                return migratedConfig;
-            }
-
             var config = _deserializer.Deserialize<AppConfig>(yaml) ?? new AppConfig();
             Normalize(config, reportWarnings: true);
             return config;
@@ -92,43 +81,6 @@ internal sealed class ConfigStore
             LoadWarning = $"读取 config.yaml 失败，已使用默认配置：{exception.Message}";
             return new AppConfig();
         }
-    }
-
-    /// <summary>未知字段由反序列化器忽略；已知字段的非法值在这里回退至安全默认值。</summary>
-    private static bool ContainsLegacyTranslationSection(string yaml) =>
-        Regex.IsMatch(yaml, @"(?m)^translation\s*:");
-
-    private static AppConfig MigrateLegacyConfig(LegacyAppConfig legacyConfig)
-    {
-        var legacyProfiles = legacyConfig.Translation?.Profiles ?? [];
-        var activeProfile = legacyProfiles.FirstOrDefault(profile =>
-            string.Equals(profile.Id, legacyConfig.Translation?.ActiveProfile, StringComparison.OrdinalIgnoreCase))
-            ?? legacyProfiles.FirstOrDefault();
-
-        return new AppConfig
-        {
-            Version = legacyConfig.Version is > 0
-                ? legacyConfig.Version.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                : AppConfig.CurrentProductVersion,
-            General = new GeneralConfig
-            {
-                AutoTranslate = activeProfile?.AutoTranslate ?? false,
-                TargetLanguage = activeProfile?.TargetLanguage ?? "中文（简体）",
-            },
-            Pipeline = new PipelineConfig
-            {
-                Mode = "local_ocr",
-                ActiveProfile = legacyConfig.Translation?.ActiveProfile ?? string.Empty,
-            },
-            Profiles = legacyProfiles.Select(profile => new ProviderProfile
-            {
-                Id = profile.Id ?? string.Empty,
-                Kind = profile.Provider ?? "openai",
-                ApiType = profile.OpenAiForm ?? "completions",
-                BaseUrl = profile.BaseUrl ?? string.Empty,
-                Model = profile.Model ?? string.Empty,
-            }).ToList(),
-        };
     }
 
     private void Normalize(AppConfig config, bool reportWarnings)
@@ -248,38 +200,4 @@ internal sealed class ConfigStore
             LoadWarning ??= "config.yaml 中的非法配置已回落到默认值。";
         }
     }
-}
-
-/// <summary>
-/// 仅用于读取阶段 3 之前的配置格式。保留在此处可避免旧字段重新渗入运行期配置模型。
-/// </summary>
-internal sealed class LegacyAppConfig
-{
-    public int Version { get; set; }
-
-    public LegacyTranslationConfig? Translation { get; set; }
-}
-
-internal sealed class LegacyTranslationConfig
-{
-    public string? ActiveProfile { get; set; }
-
-    public List<LegacyProviderProfile>? Profiles { get; set; }
-}
-
-internal sealed class LegacyProviderProfile
-{
-    public string? Id { get; set; }
-
-    public string? Provider { get; set; }
-
-    public string? BaseUrl { get; set; }
-
-    public string? Model { get; set; }
-
-    public string? OpenAiForm { get; set; }
-
-    public string? TargetLanguage { get; set; }
-
-    public bool AutoTranslate { get; set; }
 }

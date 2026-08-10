@@ -223,9 +223,7 @@ internal static class SelfTest
                 named.Current.Profiles.Select(profile => profile.Name).SequenceEqual(["工作", "工作 (2)"]));
 
             File.WriteAllText(Path.Combine(directory, "config.yaml"), """
-                version: 1
-                ocr:
-                  language: chs
+                version: 0.1.3
                 translation:
                   active_profile: legacy
                   profiles:
@@ -233,19 +231,15 @@ internal static class SelfTest
                       provider: openai
                       base_url: https://legacy.example/v1
                       model: legacy-model
-                      open_ai_form: responses
-                      target_language: zh-CN
-                      auto_translate: true
                 """);
-            var migrated = new ConfigStore(directory);
+            var unsupported = new ConfigStore(directory);
             Check(
-                "legacy Step 1 configuration migrates in memory",
-                migrated.Current.Pipeline.ActiveProfile == "legacy" &&
-                migrated.Current.Profiles.Single().ApiType == "responses" &&
-                migrated.Current.General.AutoTranslate &&
-                migrated.Current.General.TargetLanguage == "zh-CN" &&
-                migrated.Current.Profiles.Single().Name == "legacy" &&
-                migrated.LoadWarning is not null &&
+                "unsupported early config format falls back without migration",
+                unsupported.Current.Pipeline.ActiveProfile == "openai-default" &&
+                unsupported.Current.Profiles.Count == 3 &&
+                unsupported.Current.Profiles.All(profile => profile.Id != "legacy") &&
+                !unsupported.Current.General.AutoTranslate &&
+                unsupported.Current.General.TargetLanguage == "中文（简体）" &&
                 File.ReadAllText(Path.Combine(directory, "config.yaml")).Contains("translation:", StringComparison.Ordinal));
         }
         finally
@@ -263,7 +257,7 @@ internal static class SelfTest
         var description = page.View.Controls.OfType<Label>().Single().Text;
         Check(
             "about page displays the configured product version without a schema version",
-            description.Contains($"版本：{productVersion}", StringComparison.Ordinal) &&
+            description.Contains($"v{productVersion}", StringComparison.Ordinal) &&
             !description.Contains("Schema", StringComparison.OrdinalIgnoreCase));
     }
 
