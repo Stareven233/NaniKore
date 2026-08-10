@@ -14,6 +14,7 @@ internal sealed partial class OcrResultWindow : Window
     public OcrResultWindow(OcrResult result, bool copiedToClipboard)
     {
         InitializeComponent();
+        Icon = ApplicationIcon.LoadWpf();
 
         RecognizedText.Text = result.Text;
         StatusText.Text = $"{result.Lines.Count} 行 · {result.Elapsed.TotalMilliseconds:N0} ms" +

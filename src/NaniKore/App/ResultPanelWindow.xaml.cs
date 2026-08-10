@@ -25,6 +25,7 @@ internal sealed partial class ResultPanelWindow : Window
     public ResultPanelWindow()
     {
         InitializeComponent();
+        Icon = ApplicationIcon.LoadWpf();
         MaxHeight = SystemParameters.WorkArea.Height * 0.6;
     }
 

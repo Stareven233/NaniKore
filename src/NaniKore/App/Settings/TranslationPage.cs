@@ -6,6 +6,9 @@ namespace NaniKore.App.Settings;
 
 internal sealed class TranslationPage : ISettingsPage
 {
+    private const int FieldLeft = 130;
+    private const int OuterMargin = 16;
+    private const int ActionGap = 6;
     private readonly Panel _view = new() { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(16) };
     private readonly ComboBox _profiles = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly TextBox _name = new();
@@ -20,21 +23,24 @@ internal sealed class TranslationPage : ISettingsPage
     private readonly Button _remove = new() { Text = "删除", Width = 62 };
     private readonly Button _duplicate = new() { Text = "复制", Width = 62 };
     private readonly Button _test = new() { Text = "测试连接", Width = 90 };
-    private readonly Label _testStatus = new() { AutoSize = true };
+    private readonly Label _testStatus = new()
+    {
+        AutoSize = false,
+        TextAlign = ContentAlignment.MiddleLeft,
+    };
     // 提示词与配置档共用同一次“保存”事务，取消设置时不会污染运行中配置。
     private readonly TextBox _translatePrompt = new()
     {
         Multiline = true,
         ScrollBars = ScrollBars.Vertical,
         AcceptsReturn = true,
-        Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
     };
     private readonly Button _restoreDefaultPrompt = new() { Text = "恢复内置默认", Width = 112 };
     private readonly Label _promptHint = new()
     {
         Text = "默认提示词已显示，可直接修改；{{target_language}} 会替换为“通用”页选择的目标语言。",
-        AutoSize = true,
-        Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+        AutoSize = false,
+        TextAlign = ContentAlignment.MiddleLeft,
     };
     private readonly Dictionary<string, string> _pendingKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _deletedProfileIds = new(StringComparer.OrdinalIgnoreCase);
@@ -47,9 +53,6 @@ internal sealed class TranslationPage : ISettingsPage
         _kind.Items.AddRange(["openai", "claude", "gemini"]);
         _apiType.Items.AddRange(["completions", "responses"]);
         AddRow("配置档：", _profiles, 16);
-        _add.SetBounds(300, 16, 34, 28);
-        _remove.SetBounds(340, 16, 62, 28);
-        _duplicate.SetBounds(408, 16, 62, 28);
         _view.Controls.AddRange([_add, _remove, _duplicate]);
         AddRow("名称：", _name, 58);
         AddRow("类型：", _kind, 100);
@@ -57,17 +60,12 @@ internal sealed class TranslationPage : ISettingsPage
         AddRow("Base URL：", _baseUrl, 184);
         AddRow("模型：", _model, 226);
         AddRow("API Key：", _apiKey, 268);
-        _test.SetBounds(300, 268, 90, 28);
         _view.Controls.Add(_test);
         AddRow("超时秒数：", _timeout, 310);
-        _supportsVision.SetBounds(130, 352, 240, 28);
-        _testStatus.SetBounds(16, 392, 510, 40);
-        _view.Controls.AddRange([_supportsVision, _testStatus]);
-        _view.Controls.Add(new Label { Text = "翻译提示词：", AutoSize = true, Left = 16, Top = 440 });
-        _translatePrompt.SetBounds(16, 464, 540, 116);
-        _restoreDefaultPrompt.SetBounds(16, 592, 112, 30);
-        _promptHint.SetBounds(140, 598, 420, 20);
-        _view.Controls.AddRange([_translatePrompt, _restoreDefaultPrompt, _promptHint]);
+        _view.Controls.Add(new Label { Text = "翻译提示词：", AutoSize = true, Left = OuterMargin, Top = 440 });
+        _view.Controls.AddRange([_supportsVision, _testStatus, _translatePrompt, _restoreDefaultPrompt, _promptHint]);
+        _view.Resize += (_, _) => LayoutFields();
+        LayoutFields();
 
         _profiles.SelectedIndexChanged += (_, _) => SwitchProfile();
         _kind.SelectedIndexChanged += (_, _) => UpdateKindControls();
@@ -342,9 +340,38 @@ internal sealed class TranslationPage : ISettingsPage
 
     private void AddRow(string label, Control control, int top)
     {
-        _view.Controls.Add(new Label { Text = label, AutoSize = true, Left = 16, Top = top + 5 });
-        control.SetBounds(130, top, 164, 28);
+        _view.Controls.Add(new Label { Text = label, AutoSize = true, Left = OuterMargin, Top = top + 5 });
+        control.SetBounds(FieldLeft, top, 164, 28);
         _view.Controls.Add(control);
+    }
+
+    private void LayoutFields()
+    {
+        // 输入框继续跟随窗口变长，但用和左侧一致的外边距收住内容，避免贴到页面边缘。
+        var contentRight = Math.Max(FieldLeft + 164, _view.ClientSize.Width - OuterMargin);
+        var actionWidth = _add.Width + ActionGap + _remove.Width + ActionGap + _duplicate.Width;
+        var actionLeft = Math.Max(FieldLeft + 164 + ActionGap, contentRight - actionWidth);
+        var fieldWidth = Math.Max(164, contentRight - FieldLeft);
+        var actionFieldWidth = Math.Max(164, actionLeft - ActionGap - FieldLeft);
+
+        _profiles.SetBounds(FieldLeft, 16, actionFieldWidth, 28);
+        _add.SetBounds(actionLeft, 16, _add.Width, 28);
+        _remove.SetBounds(actionLeft + _add.Width + ActionGap, 16, _remove.Width, 28);
+        _duplicate.SetBounds(actionLeft + _add.Width + ActionGap + _remove.Width + ActionGap, 16, _duplicate.Width, 28);
+
+        _name.SetBounds(FieldLeft, 58, fieldWidth, 28);
+        _kind.SetBounds(FieldLeft, 100, fieldWidth, 28);
+        _apiType.SetBounds(FieldLeft, 142, fieldWidth, 28);
+        _baseUrl.SetBounds(FieldLeft, 184, fieldWidth, 28);
+        _model.SetBounds(FieldLeft, 226, fieldWidth, 28);
+        _apiKey.SetBounds(FieldLeft, 268, actionFieldWidth, 28);
+        _test.SetBounds(actionLeft, 268, _test.Width, 28);
+        _timeout.SetBounds(FieldLeft, 310, fieldWidth, 28);
+        _supportsVision.SetBounds(FieldLeft, 352, 240, 28);
+        _testStatus.SetBounds(OuterMargin, 392, Math.Max(260, contentRight - OuterMargin), 40);
+        _translatePrompt.SetBounds(OuterMargin, 464, Math.Max(300, contentRight - OuterMargin), 160);
+        _restoreDefaultPrompt.SetBounds(OuterMargin, 636, _restoreDefaultPrompt.Width, 30);
+        _promptHint.SetBounds(FieldLeft, 638, Math.Max(180, contentRight - FieldLeft), 34);
     }
 
     /// <summary>下拉框只显示可编辑名称，稳定 ID 继续作为配置、活动档和密钥的内部索引。</summary>

@@ -12,6 +12,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\nanikore.ico</ApplicationIcon>
     <AssemblyName>NaniKore</AssemblyName>
     <RootNamespace>NaniKore</RootNamespace>
   </PropertyGroup>

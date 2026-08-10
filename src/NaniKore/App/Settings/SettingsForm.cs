@@ -1,4 +1,5 @@
-﻿using System.Windows.Forms;
+﻿using System.Drawing;
+using System.Windows.Forms;
 using NaniKore.Config;
 
 namespace NaniKore.App.Settings;
@@ -16,6 +17,7 @@ internal sealed class SettingsForm : Form
         _working = AppConfigCloner.Clone(current);
         _save = save;
         Text = "NaniKore 设置";
+        Icon = ApplicationIcon.LoadWinForms();
         Width = 600;
         Height = 480;
         MinimizeBox = false;
@@ -38,15 +40,32 @@ internal sealed class SettingsForm : Form
             page.Load(_working);
         }
 
-        var saveButton = new Button { Text = "保存", DialogResult = DialogResult.None, Width = 82 };
+        var saveButton = CreateActionButton("保存");
+        saveButton.DialogResult = DialogResult.None;
         saveButton.Click += (_, _) => Save();
-        var cancelButton = new Button { Text = "取消", Width = 82 };
+        var cancelButton = CreateActionButton("取消");
         cancelButton.Click += (_, _) => Close();
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(8) };
+        var actions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 64,
+            FlowDirection = FlowDirection.RightToLeft,
+            Padding = new Padding(8),
+            WrapContents = false,
+        };
         actions.Controls.AddRange([cancelButton, saveButton]);
         Controls.Add(tabs);
         Controls.Add(actions);
     }
+
+    private static Button CreateActionButton(string text) => new()
+    {
+        Text = text,
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
+        MinimumSize = new Size(82, 36),
+        Margin = new Padding(4),
+    };
 
     private void Save()
     {

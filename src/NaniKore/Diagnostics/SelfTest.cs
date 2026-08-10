@@ -2,6 +2,7 @@ using System.Drawing.Imaging;
 using System.Net;
 using System.Text;
 using System.Windows.Forms;
+using NaniKore.App;
 using NaniKore.App.Settings;
 using NaniKore.Config;
 using NaniKore.Translation;
@@ -28,6 +29,7 @@ internal static class SelfTest
         TestReadingOrder();
         TestConfigRoundTrip();
         TestAboutPageDisplaysProductVersion();
+        TestApplicationIconResource();
         TestTranslationPromptTemplates();
         TestProfileRenameKeepsSecret();
         TestSseReader();
@@ -259,6 +261,14 @@ internal static class SelfTest
             "about page displays the configured product version without a schema version",
             description.Contains($"v{productVersion}", StringComparison.Ordinal) &&
             !description.Contains("Schema", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void TestApplicationIconResource()
+    {
+        using var icon = ApplicationIcon.LoadWinForms();
+        Check(
+            "application icon is loaded from the bundled NaniKore asset",
+            icon.Width > 0 && icon.Height > 0);
     }
 
     private static void TestTranslationPromptTemplates()

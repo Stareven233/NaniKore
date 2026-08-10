@@ -1,5 +1,3 @@
-using System.Drawing;
-using System.Reflection;
 using System.Windows.Forms;
 
 namespace NaniKore.App;
@@ -21,7 +19,7 @@ internal sealed class TrayIconHost : IDisposable
         _icon = new NotifyIcon
         {
             Text = "NaniKore",
-            Icon = LoadIcon(),
+            Icon = ApplicationIcon.LoadWinForms(),
             ContextMenuStrip = menu,
             Visible = true,
         };
@@ -42,9 +40,4 @@ internal sealed class TrayIconHost : IDisposable
         _disposed = true;
     }
 
-    private static Icon LoadIcon()
-    {
-        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("NaniKore.Assets.nanikore.ico");
-        return stream is null ? SystemIcons.Application : new Icon(stream);
-    }
 }

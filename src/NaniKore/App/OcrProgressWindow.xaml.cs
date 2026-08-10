@@ -7,5 +7,9 @@ namespace NaniKore.App;
 /// </summary>
 internal sealed partial class OcrProgressWindow : Window
 {
-    public OcrProgressWindow() => InitializeComponent();
+    public OcrProgressWindow()
+    {
+        InitializeComponent();
+        Icon = ApplicationIcon.LoadWpf();
+    }
 }
