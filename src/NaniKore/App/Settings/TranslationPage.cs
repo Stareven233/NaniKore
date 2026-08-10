@@ -1,5 +1,6 @@
 using System.Windows.Forms;
 using NaniKore.Config;
+using NaniKore.Translation;
 
 namespace NaniKore.App.Settings;
 
@@ -31,7 +32,7 @@ internal sealed class TranslationPage : ISettingsPage
     private readonly Button _restoreDefaultPrompt = new() { Text = "恢复内置默认", Width = 112 };
     private readonly Label _promptHint = new()
     {
-        Text = "留空时使用内置翻译提示词；可使用 {{target_language}} 代表当前目标语言。",
+        Text = "默认提示词已显示，可直接修改；{{target_language}} 会替换为“通用”页选择的目标语言。",
         AutoSize = true,
         Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
     };
@@ -87,7 +88,9 @@ internal sealed class TranslationPage : ISettingsPage
     public void Load(AppConfig config)
     {
         _config = config;
-        _translatePrompt.Text = config.Prompts.Translate;
+        _translatePrompt.Text = string.IsNullOrWhiteSpace(config.Prompts.Translate)
+            ? PromptTemplates.DefaultTranslationPrompt
+            : config.Prompts.Translate;
         _editingProfile = null;
         _loading = true;
         _profiles.Items.Clear();
@@ -138,7 +141,7 @@ internal sealed class TranslationPage : ISettingsPage
     {
         SaveFields();
         config.Pipeline.ActiveProfile = SelectedProfile?.Id ?? config.Profiles[0].Id;
-        // 空值是“使用内置默认”的显式配置，避免把默认提示词副本写死到用户配置中。
+        // 默认提示词以实际文本保存，主人可在配置文件或设置页中直接审阅和修改。
         config.Prompts.Translate = _translatePrompt.Text.Trim();
     }
 
@@ -230,8 +233,8 @@ internal sealed class TranslationPage : ISettingsPage
 
     private void RestoreDefaultPrompt()
     {
-        // 内置提示词由 PromptTemplates 在请求时提供，清空即可恢复且能随应用升级改进。
-        _translatePrompt.Clear();
+        // 默认内容不再隐藏；恢复后立即展示可继续编辑的完整提示词。
+        _translatePrompt.Text = PromptTemplates.DefaultTranslationPrompt;
         _translatePrompt.Focus();
     }
 

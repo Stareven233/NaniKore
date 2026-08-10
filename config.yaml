@@ -1,9 +1,9 @@
 # 此文件是可提交的运行配置模板：API Key 仅由 Windows DPAPI 保存到当前用户配置目录，不写入此文件。
 # 修改根目录模板后重新构建；运行时在 Debug 或发布目录各自使用其副本。
-version: 0.1.2
+version: 0.1.3
 general:
   auto_translate: false
-  target_language: zh-CN
+  target_language: 中文（简体）
 pipeline:
   mode: local_ocr
   active_profile: openai-agnes
@@ -24,7 +24,7 @@ profiles:
   model: agnes-2.5-flash
   supports_vision: true
   timeout_seconds: 30
-- id: gemini-default
+- id: gemini-hachimi
   name: 哈基米
   kind: gemini
   api_type: completions
@@ -60,5 +60,7 @@ hotkeys:
   capture: Ctrl+Shift+A
   translate_clipboard: ''
 prompts:
-  translate: ''
+  translate: |
+    Translate the supplied text into {{target_language}}.
+    Return only the translation in {{target_language}}. Do not include explanations, notes, or source text.
   explain: ''

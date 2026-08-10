@@ -26,7 +26,7 @@
 
         <DockPanel Grid.Row="0" Margin="0,0,0,6">
             <TextBlock Text="原文（可编辑）" FontWeight="SemiBold" />
-            <Button DockPanel.Dock="Right" MinWidth="78" Padding="8,4" Content="_重译" Click="OnTranslateClick" />
+            <Button DockPanel.Dock="Right" MinWidth="78" Padding="8,4" Content="翻译" Click="OnTranslateClick" />
         </DockPanel>
         <TextBox x:Name="SourceTextBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap"
                  PreviewMouseDown="OnSourceTextBoxPreviewMouseDown"

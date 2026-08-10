@@ -113,7 +113,7 @@ internal sealed class ConfigStore
             General = new GeneralConfig
             {
                 AutoTranslate = activeProfile?.AutoTranslate ?? false,
-                TargetLanguage = activeProfile?.TargetLanguage ?? "zh-CN",
+                TargetLanguage = activeProfile?.TargetLanguage ?? "中文（简体）",
             },
             Pipeline = new PipelineConfig
             {
@@ -148,7 +148,7 @@ internal sealed class ConfigStore
 
         if (string.IsNullOrWhiteSpace(config.General.TargetLanguage))
         {
-            config.General.TargetLanguage = "zh-CN";
+            config.General.TargetLanguage = "中文（简体）";
             normalized = true;
         }
 

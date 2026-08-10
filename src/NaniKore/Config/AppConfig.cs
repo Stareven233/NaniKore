@@ -29,7 +29,7 @@ internal sealed class GeneralConfig
     /// <summary>选区 OCR 完成后是否立即启动翻译；关闭时由面板按钮显式触发。</summary>
     public bool AutoTranslate { get; set; }
 
-    public string TargetLanguage { get; set; } = "zh-CN";
+    public string TargetLanguage { get; set; } = "中文（简体）";
 }
 
 internal sealed class PipelineConfig

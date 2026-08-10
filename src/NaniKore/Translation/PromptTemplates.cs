@@ -9,26 +9,41 @@ internal static class PromptTemplates
     internal const string TranslationSentinel = "<<<TRANSLATION>>>";
     internal const string TargetLanguagePlaceholder = "{{target_language}}";
 
+    /// <summary>设置页始终展示的默认翻译提示词；主人可直接在此基础上修改。</summary>
+    internal const string DefaultTranslationPrompt = """
+        Translate the supplied text into {{target_language}}.
+        Return only the translation in {{target_language}}. Do not include explanations, notes, or source text.
+        """;
+
     public static string GetSystemPrompt(UnderstandRequest request, PromptConfig prompts)
     {
-        var custom = request.Kind == UnderstandKind.Translate ? prompts.Translate : prompts.Explain;
-        if (!string.IsNullOrWhiteSpace(custom))
+        if (request.Kind == UnderstandKind.Explain)
         {
-            // 只展开已声明的占位符；未知占位符原样保留，避免悄悄改变用户提示词语义。
-            return custom.Trim().Replace(TargetLanguagePlaceholder, request.TargetLanguage, StringComparison.Ordinal);
+            var explainPrompt = string.IsNullOrWhiteSpace(prompts.Explain)
+                ? "Explain the supplied text clearly in {{target_language}}. Keep the answer concise."
+                : prompts.Explain.Trim();
+            return ExpandTargetLanguage(explainPrompt, request.TargetLanguage);
         }
 
-        return request.Kind switch
+        var translationPrompt = string.IsNullOrWhiteSpace(prompts.Translate)
+            ? DefaultTranslationPrompt
+            : prompts.Translate.Trim();
+        translationPrompt = ExpandTargetLanguage(translationPrompt, request.TargetLanguage);
+
+        if (request.ImagePng is not { Length: > 0 })
         {
-            UnderstandKind.Explain => $"Explain the supplied text clearly in {request.TargetLanguage}. Keep the answer concise.",
-            _ when request.ImagePng is { Length: > 0 } =>
-                $"Read all visible text in the image and translate it into {request.TargetLanguage}. " +
-                $"Stream the transcription after {SourceSentinel}, then stream only the translation in {request.TargetLanguage} after {TranslationSentinel}. " +
-                "Do not add commentary or any extra sections.",
-            _ => $"Translate the supplied text into {request.TargetLanguage}. " +
-                $"Return only the translation in {request.TargetLanguage}; do not include explanations, notes, or source text.",
-        };
+            return translationPrompt;
+        }
+
+        // 图像一条龙仍需要稳定的协议标记供流式结果分栏；这属于传输协议，不限制主人修改翻译要求。
+        return $"{translationPrompt}\n\n" +
+            $"For an image input, stream the transcription after {SourceSentinel}, then stream only the translation after {TranslationSentinel}. " +
+            "Do not add commentary or any extra sections.";
     }
+
+    private static string ExpandTargetLanguage(string prompt, string targetLanguage) =>
+        // 只展开已声明的占位符；未知占位符原样保留，避免悄悄改变用户提示词语义。
+        prompt.Replace(TargetLanguagePlaceholder, targetLanguage, StringComparison.Ordinal);
 }
 
 /// <summary>

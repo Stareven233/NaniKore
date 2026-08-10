@@ -258,7 +258,8 @@ internal static class SelfTest
         Check(
             "default translation prompt explicitly requires only the selected target language",
             defaultPrompt.Contains("translation in zh-CN", StringComparison.Ordinal) &&
-            defaultPrompt.Contains("do not include explanations", StringComparison.Ordinal));
+            defaultPrompt.Contains("do not include explanations", StringComparison.OrdinalIgnoreCase) &&
+            !defaultPrompt.Contains(PromptTemplates.TargetLanguagePlaceholder, StringComparison.Ordinal));
 
         var customPrompt = PromptTemplates.GetSystemPrompt(
             request,
@@ -266,6 +267,14 @@ internal static class SelfTest
         Check(
             "custom translation prompt expands target language without swallowing unknown placeholders",
             customPrompt == "Translate to zh-CN; retain {{unknown_placeholder}}.");
+
+        var visionPrompt = PromptTemplates.GetSystemPrompt(
+            request with { ImagePng = new byte[] { 1 } },
+            new PromptConfig { Translate = "Translate into {{target_language}} only." });
+        Check(
+            "vision translation preserves the streaming section protocol after prompt customization",
+            visionPrompt.Contains(PromptTemplates.SourceSentinel, StringComparison.Ordinal) &&
+            visionPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal));
     }
 
     private static void TestProfileRenameKeepsSecret()
