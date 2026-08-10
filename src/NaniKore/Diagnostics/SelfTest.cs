@@ -1,6 +1,8 @@
 using System.Drawing.Imaging;
 using System.Net;
 using System.Text;
+using System.Windows.Forms;
+using NaniKore.App.Settings;
 using NaniKore.Config;
 using NaniKore.Translation;
 using NaniKore.Ocr;
@@ -25,6 +27,7 @@ internal static class SelfTest
         TestCtcDecoding();
         TestReadingOrder();
         TestConfigRoundTrip();
+        TestAboutPageDisplaysProductVersion();
         TestTranslationPromptTemplates();
         TestProfileRenameKeepsSecret();
         TestSseReader();
@@ -176,7 +179,7 @@ internal static class SelfTest
                 """);
             var store = new ConfigStore(directory);
             Check(
-                "YAML round-trip retains product and schema versions",
+                "YAML round-trip retains the manually maintained product version",
                 store.Current.Version == "0.1.1" &&
                 store.LoadWarning?.Contains("读取 config.yaml 失败", StringComparison.Ordinal) != true);
             Check(
@@ -249,6 +252,19 @@ internal static class SelfTest
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    private static void TestAboutPageDisplaysProductVersion()
+    {
+        const string productVersion = "0.1.3+test.1";
+        var page = new AboutPage();
+        page.Load(new AppConfig { Version = productVersion });
+
+        var description = page.View.Controls.OfType<Label>().Single().Text;
+        Check(
+            "about page displays the configured product version without a schema version",
+            description.Contains($"版本：{productVersion}", StringComparison.Ordinal) &&
+            !description.Contains("Schema", StringComparison.OrdinalIgnoreCase));
     }
 
     private static void TestTranslationPromptTemplates()

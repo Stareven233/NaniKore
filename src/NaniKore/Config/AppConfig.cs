@@ -3,10 +3,11 @@ namespace NaniKore.Config;
 /// <summary>config.yaml 的根配置。</summary>
 internal sealed class AppConfig
 {
-    /// <summary>手工维护的产品版本；不能再使用 int，否则合法的 x.y.z+b 会导致整份配置读取失败。</summary>
+    /// <summary>手工维护的产品发布版本；不能再使用 int，否则合法的 x.y.z+b 会导致整份配置读取失败。</summary>
     public string Version { get; set; } = CurrentProductVersion;
 
-    public const string CurrentProductVersion = "0.1.1";
+    /// <summary>仅在 config.yaml 缺失版本时使用的默认产品版本。</summary>
+    public const string CurrentProductVersion = "0.1.3";
 
     public GeneralConfig General { get; set; } = new();
 
