@@ -36,12 +36,12 @@ source: debug-real-machine-acceptance
 - [x] **R6**：配置档稳定 `id` 与可编辑 `name` 分离；切换先保存离开档；重命名不迁移 DPAPI 密钥（2026-08-09）。
 - [ ] R1：结果卡按钮层级与「翻译/重新翻译」文案。
 - [x] **R2**：结果卡层级、贴近选区及显式编辑激活（2026-08-10）。
+- [ ] R11：窗口、任务栏图标也必须用上src\NaniKore\Assets\nanikore.ico，且版本号显示到设置面板“关于”tab页
 - [ ] R3：可配置翻译提示词与真实中文目标回归。
 - [ ] R5：产品版本与配置 Schema 版本分离，并展示于关于页。
 - [ ] R7：翻译页输入框动态铺满布局。
 - [ ] R8：设置底栏按钮的高 DPI 可访问尺寸。
 - [ ] R10：受控热键录制交互。
-- [ ] R11：窗口、任务栏图标也必须用上src\NaniKore\Assets\nanikore.ico，且版本号显示到设置面板“关于”tab页
 
 ### R6 本轮实现记录
 
@@ -50,6 +50,12 @@ source: debug-real-machine-acceptance
 - 配置档选择使用 profile 对象而不是显示字符串；`SelectedIndexChanged` 保存的是切换前由 `_editingProfile` 记录的档，避免把 A 的输入写入 B。
 - 新建/复制配置档生成新的稳定 ID，不复制 API Key；重命名只修改 `name`，不会迁移或删除原有密钥。
 - 自测覆盖了旧配置名称迁移、名称去重、稳定 ID 与活动档保持，以及设置副本保留名称。
+
+### R1+ 配置启动读取修复记录
+
+- 根目录模板使用产品版本 `version: 0.1.1`，旧 `AppConfig.Version` 却声明为 `int`；YamlDotNet 因此在启动反序列化阶段抛出异常，程序回退到默认配置并丢失模板中的配置档。
+- `AppConfig.Version` 改为字符串以保留 `x.y.z+b`；旧版数值版本仍可迁移。配置格式版本的治理保留给后续 R5，避免为本次启动修复引入未使用字段。
+- 自测新增合法产品版本模板回归，确保启动不会再出现“读取 config.yaml 失败，使用默认配置”。
 
 ### R2 本轮实现记录
 
@@ -200,6 +206,7 @@ prompts:
 ### 自动化或可重复验证
 
 - 根 `config.yaml` 在 Debug 构建和 `scripts/dev.ps1 publish` 后均存在于运行目录；产物内没有 API Key。
+- 启动读取根配置模板时不再因 `version: x.y.z+b` 触发 YAML 反序列化失败，且 `version` 原样保留。
 - 保存设置、重启进程后，`version: x.y.z+b` 原样保留；关于页显示同一字符串；程序不自动递增版本。
 - [x] 配置档 A 修改 Base URL/模型后切换到 B，B 的字段和 A 不相互覆盖；切回 A 能看到自己的修改。重命名 A 后，A 仍可被设为活动档并读取原有 DPAPI 密钥。
 - 翻译提示词能保存、重启后恢复；空提示词走内置默认；`{{target_language}}` 在请求前被替换为当前目标语言。

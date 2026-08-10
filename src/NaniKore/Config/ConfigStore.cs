@@ -107,7 +107,9 @@ internal sealed class ConfigStore
 
         return new AppConfig
         {
-            Version = legacyConfig.Version is > 0 ? legacyConfig.Version : 1,
+            Version = legacyConfig.Version is > 0
+                ? legacyConfig.Version.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                : AppConfig.CurrentProductVersion,
             General = new GeneralConfig
             {
                 AutoTranslate = activeProfile?.AutoTranslate ?? false,
@@ -132,9 +134,10 @@ internal sealed class ConfigStore
     private void Normalize(AppConfig config, bool reportWarnings)
     {
         var normalized = false;
-        if (config.Version > 1)
+        if (string.IsNullOrWhiteSpace(config.Version))
         {
-            LoadWarning = $"config.yaml 的版本 {config.Version} 高于当前支持的版本 1；未知内容可能不会生效。";
+            config.Version = AppConfig.CurrentProductVersion;
+            normalized = true;
         }
 
         config.General ??= new GeneralConfig();

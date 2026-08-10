@@ -155,7 +155,7 @@ internal static class SelfTest
         try
         {
             File.WriteAllText(Path.Combine(directory, "config.yaml"), """
-                version: 1
+                version: 0.1.1
                 general:
                   auto_translate: true
                   target_language: ja
@@ -172,6 +172,10 @@ internal static class SelfTest
                 unknown_field: ignored
                 """);
             var store = new ConfigStore(directory);
+            Check(
+                "YAML round-trip retains product and schema versions",
+                store.Current.Version == "0.1.1" &&
+                store.LoadWarning?.Contains("读取 config.yaml 失败", StringComparison.Ordinal) != true);
             Check(
                 "YAML round-trip retains known fields and normalizes invalid values",
                 store.Current.General.AutoTranslate &&
