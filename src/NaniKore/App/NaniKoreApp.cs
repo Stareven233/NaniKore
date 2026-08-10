@@ -63,11 +63,16 @@ internal sealed class NaniKoreApp : Application
             }
 
             using var cropped = frame.Image.Clone(selection, PixelFormat.Format32bppPArgb);
+            var selectionOnDesktop = new System.Drawing.Rectangle(
+                frame.VirtualBounds.X + selection.X,
+                frame.VirtualBounds.Y + selection.Y,
+                selection.Width,
+                selection.Height);
             if (string.Equals(_configStore.Current.Pipeline.Mode, "vision_oneshot", StringComparison.OrdinalIgnoreCase))
             {
                 var image = EncodePng(cropped);
                 _lastImagePng = image;
-                var visionPanel = EnsureResultPanel();
+                var visionPanel = EnsureResultPanel(selectionOnDesktop);
                 visionPanel.Reset(string.Empty, "正在识别并翻译图像…");
                 _ = StartTranslationAsync(string.Empty, image);
                 return;
@@ -92,7 +97,7 @@ internal sealed class NaniKoreApp : Application
             }
 
             _lastImagePng = null;
-            var panel = EnsureResultPanel();
+            var panel = EnsureResultPanel(selectionOnDesktop);
             panel.Reset(result.Text, $"OCR 完成：{result.Lines.Count} 行 · {result.Elapsed.TotalMilliseconds:N0} ms");
             TryCopyToClipboard(result.Text);
             if (_configStore.Current.General.AutoTranslate)
@@ -160,13 +165,18 @@ internal sealed class NaniKoreApp : Application
         }
     }
 
-    private ResultPanelWindow EnsureResultPanel()
+    private ResultPanelWindow EnsureResultPanel(System.Drawing.Rectangle? selectionOnDesktop = null)
     {
         if (_resultPanel is not null)
         {
             if (!_resultPanel.IsVisible)
             {
                 _resultPanel.Show();
+            }
+
+            if (selectionOnDesktop is { } selectedBounds)
+            {
+                _resultPanel.PositionNearSelection(selectedBounds);
             }
 
             return _resultPanel;
@@ -182,6 +192,11 @@ internal sealed class NaniKoreApp : Application
         };
         _resultPanel = panel;
         panel.Show();
+        if (selectionOnDesktop is { } newPanelBounds)
+        {
+            panel.PositionNearSelection(newPanelBounds);
+        }
+
         return panel;
     }
 

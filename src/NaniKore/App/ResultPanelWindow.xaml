@@ -8,7 +8,9 @@
         MinWidth="420"
         MinHeight="280"
         ShowInTaskbar="False"
-        WindowStartupLocation="CenterScreen"
+        ShowActivated="False"
+        Topmost="True"
+        WindowStartupLocation="Manual"
         UseLayoutRounding="True"
         TextOptions.TextFormattingMode="Display">
     <Grid Margin="12">
@@ -27,6 +29,7 @@
             <Button DockPanel.Dock="Right" MinWidth="78" Padding="8,4" Content="_重译" Click="OnTranslateClick" />
         </DockPanel>
         <TextBox x:Name="SourceTextBox" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap"
+                 PreviewMouseDown="OnSourceTextBoxPreviewMouseDown"
                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                  FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="14" />
 
