@@ -19,6 +19,8 @@ internal sealed class SettingsForm : Form
         Width = 600;
         Height = 480;
         MinimizeBox = false;
+        // 结果卡本身是置顶窗口；设置从结果卡打开时也必须保持同等层级，避免被已有窗口遮挡。
+        TopMost = true;
         StartPosition = FormStartPosition.CenterScreen;
 
         var tabs = new TabControl { Dock = DockStyle.Fill };
