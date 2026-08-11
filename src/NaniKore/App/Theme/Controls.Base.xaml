@@ -9,7 +9,8 @@
 
     <!-- Segoe UI Variable 是 Win11 起的系统字体；逐级回退保证旧系统与中文字形都可用。 -->
     <FontFamily x:Key="Font.Ui">Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, Microsoft YaHei</FontFamily>
-    <FontFamily x:Key="Font.Mono">Cascadia Mono, Consolas, Microsoft YaHei UI</FontFamily>
+    <!-- 提示词编辑器使用无衬线等宽字体；中文缺字由 WPF 自动选择系统 CJK 字体回退。 -->
+    <FontFamily x:Key="Font.Mono">Cascadia Mono, Consolas</FontFamily>
     <system:Double x:Key="Font.Size.Body">14</system:Double>
     <system:Double x:Key="Font.Size.Caption">12</system:Double>
     <CornerRadius x:Key="Radius.Card">8</CornerRadius>

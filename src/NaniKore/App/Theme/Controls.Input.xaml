@@ -411,17 +411,20 @@
                                        Grid.Column="1"
                                        Text="{TemplateBinding Suffix}"
                                        VerticalAlignment="Center"
-                                       Margin="0,0,4,0"
+                                       Margin="0,0,10,0"
                                        Foreground="{DynamicResource Brush.Text.Secondary}" />
+                            <!-- 显式指定图标字体，避免模板内的 ContentPresenter 将私有区字形回退成方框。 -->
                             <RepeatButton x:Name="PART_Down"
                                           Grid.Column="2"
-                                          Style="{StaticResource NumberBox.Stepper}"
-                                          Content="&#xE70D;" />
+                                          Style="{StaticResource NumberBox.Stepper}">
+                                <TextBlock Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" />
+                            </RepeatButton>
                             <RepeatButton x:Name="PART_Up"
                                           Grid.Column="3"
                                           Style="{StaticResource NumberBox.Stepper}"
-                                          Content="&#xE70E;"
-                                          Margin="0,0,4,0" />
+                                          Margin="0,0,4,0">
+                                <TextBlock Text="&#xE70E;" FontFamily="Segoe MDL2 Assets" />
+                            </RepeatButton>
 
                             <Border x:Name="FocusLine"
                                     Grid.Column="0"
@@ -471,8 +474,10 @@
                             Padding="10,6">
                         <TextBlock x:Name="Display"
                                    Text="{TemplateBinding DisplayText}"
-                                   HorizontalAlignment="Center"
+                                   HorizontalAlignment="Stretch"
                                    VerticalAlignment="Center"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap"
                                    FontFamily="{TemplateBinding FontFamily}"
                                    FontSize="{TemplateBinding FontSize}"
                                    Foreground="{TemplateBinding Foreground}" />

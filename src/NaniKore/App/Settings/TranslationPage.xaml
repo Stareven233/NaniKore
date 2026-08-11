@@ -10,12 +10,19 @@
                                       Description="保存后作为翻译流程使用的活动配置档。">
                     <StackPanel Orientation="Horizontal">
                         <ComboBox x:Name="ProfileBox" Width="200" />
+                        <!-- ContentPresenter 对纯字符串的字形字体继承并不稳定；显式 TextBlock 确保私有区图标不会回退为方框。 -->
                         <Button x:Name="AddButton" Style="{DynamicResource Button.Icon}" Margin="8,0,0,0"
-                                Content="&#xE710;" ToolTip="新建配置档" />
+                                ToolTip="新建配置档">
+                            <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" />
+                        </Button>
                         <Button x:Name="DuplicateButton" Style="{DynamicResource Button.Icon}" Margin="6,0,0,0"
-                                Content="&#xE8C8;" ToolTip="复制当前配置档" />
+                                ToolTip="复制当前配置档">
+                            <TextBlock Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" />
+                        </Button>
                         <Button x:Name="RemoveButton" Style="{DynamicResource Button.IconDanger}" Margin="6,0,0,0"
-                                Content="&#xE74D;" ToolTip="删除当前配置档" />
+                                ToolTip="删除当前配置档">
+                            <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" />
+                        </Button>
                     </StackPanel>
                 </controls:SettingsRow>
                 <Border Style="{DynamicResource Divider.Row}" />
