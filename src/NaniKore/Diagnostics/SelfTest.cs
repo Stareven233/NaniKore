@@ -3,6 +3,7 @@ using System.Net;
 using System.Text;
 using System.Windows.Forms;
 using NaniKore.App;
+using NaniKore.App.Controls;
 using NaniKore.App.Settings;
 using NaniKore.Config;
 using NaniKore.Input;
@@ -35,7 +36,8 @@ internal static class SelfTest
         TestProfileRenameKeepsSecret();
         TestHotkeyGestureNormalization();
         TestHotkeyRecorderInteraction();
-        TestSettingsPagesUseScalableLayout();
+        TestThemeResourcesResolve();
+        TestSettingsPagesUseAdaptiveLayout();
         TestSseReader();
         TestSentinelRouter();
         TestProviderCapabilitiesAndErrors();
@@ -260,7 +262,7 @@ internal static class SelfTest
         var page = new AboutPage();
         page.Load(new AppConfig { Version = productVersion });
 
-        var description = page.View.Controls.OfType<Label>().Single().Text;
+        var description = page.DisplayText;
         Check(
             "about page displays the configured product version without a schema version",
             description.Contains($"v{productVersion}", StringComparison.Ordinal) &&
@@ -351,7 +353,7 @@ internal static class SelfTest
 
     private static void TestHotkeyRecorderInteraction()
     {
-        using var recorder = new HotkeyRecorderBox { Gesture = "Ctrl+Shift+A" };
+        var recorder = new HotkeyRecorderBox { Gesture = "Ctrl+Shift+A" };
         var suspensions = new List<bool>();
         recorder.RecordingChanged += (_, recording) => suspensions.Add(recording);
 
@@ -359,7 +361,7 @@ internal static class SelfTest
         recorder.ProcessRecordingKey(Keys.ShiftKey, HotkeyGesture.ModControl | HotkeyGesture.ModShift);
         Check(
             "holding modifiers echoes the partial combination without ending recording",
-            recorder.IsRecording && recorder.Text == "Ctrl+Shift+…" && recorder.Gesture == "Ctrl+Shift+A");
+            recorder.IsRecording && recorder.DisplayText == "Ctrl+Shift+…" && recorder.Gesture == "Ctrl+Shift+A");
 
         recorder.ProcessRecordingKey(Keys.Back, HotkeyGesture.ModControl);
         Check(
@@ -371,7 +373,7 @@ internal static class SelfTest
             "recording stores the normalized combination and releases the global hotkey once",
             !recorder.IsRecording &&
             recorder.Gesture == "Ctrl+Shift+Q" &&
-            recorder.Text == "Ctrl+Shift+Q" &&
+            recorder.DisplayText == "Ctrl+Shift+Q" &&
             suspensions.SequenceEqual([true, false]));
 
         recorder.BeginRecording();
@@ -389,20 +391,91 @@ internal static class SelfTest
             page.Validate() is null && config.Hotkeys.Capture == "Alt+F9");
     }
 
-    private static void TestSettingsPagesUseScalableLayout()
+    /// <summary>
+    /// WPF 化后的布局约定：页面根元素必须按内容自适应高度（由宿主 ScrollViewer 负责滚动），
+    /// 且所有设置行都通过 SettingsRow 承载，从而共享同一套 DPI 与字体缩放行为。
+    /// </summary>
+    private static void TestSettingsPagesUseAdaptiveLayout()
     {
-        // 缩放错位的根因是硬编码坐标；改用表格布局后所有字段行必须是 AutoSize 行，且输入列左右锚定。
-        foreach (var page in new ISettingsPage[] { new GeneralPage(), new TranslationPage(), new HotkeyPage() })
+        // 主题字典必须真的能解析并套到控件上；没有 Application 资源时模板缺失，测得高度会恒为 0。
+        EnsureThemedApplication();
+
+        foreach (var page in new ISettingsPage[] { new GeneralPage(), new TranslationPage(), new HotkeyPage(), new AboutPage() })
         {
-            var table = page.View.Controls.OfType<TableLayoutPanel>().Single();
-            var fields = table.Controls.Cast<Control>().Where(control => table.GetColumn(control) == 1).ToList();
+            var view = page.View;
+            page.Load(new AppConfig());
+            view.Measure(new System.Windows.Size(760, double.PositiveInfinity));
+            var rows = FindDescendants<SettingsRow>(view).ToList();
+            var groups = FindDescendants<SettingsGroup>(view).ToList();
             Check(
-                $"{page.Title} page lays out fields in a font-scaled table",
-                table.AutoSize &&
-                table.ColumnStyles[1].SizeType == SizeType.Percent &&
-                table.RowStyles.Cast<RowStyle>().All(style => style.SizeType == SizeType.AutoSize) &&
-                fields.Count > 0 &&
-                fields.TrueForAll(field => field.Anchor.HasFlag(AnchorStyles.Left) && field.Anchor.HasFlag(AnchorStyles.Right)));
+                $"{page.Title} page builds an adaptive card layout without fixed pixel positions",
+                double.IsNaN(view.Width) &&
+                double.IsNaN(view.Height) &&
+                view.DesiredSize.Height > 0 &&
+                groups.Count > 0 &&
+                rows.TrueForAll(row => double.IsNaN(row.Height) && !string.IsNullOrEmpty(row.Header)));
+        }
+
+        // 说明文字与字段同属一行，缩放时不会像旧版那样与输入框错位。
+        var general = new GeneralPage();
+        general.Load(new AppConfig());
+        var describedRows = FindDescendants<SettingsRow>(general.View)
+            .Count(row => !string.IsNullOrEmpty(row.Description));
+        Check(
+            "general page attaches descriptions to the rows they explain",
+            describedRows > 0);
+    }
+
+    /// <summary>主题资源与控件模板必须可用；顺带验证两份色板与两份控件字典都能解析。</summary>
+    private static void TestThemeResourcesResolve()
+    {
+        EnsureThemedApplication();
+        var application = System.Windows.Application.Current!;
+        var expectedKeys = new[]
+        {
+            "Brush.Window.Background", "Brush.Card.Background", "Brush.Accent", "Brush.Text.Primary",
+            "Font.Ui", "Radius.Control", "ToggleSwitch", "Button.Accent", "Nav.List", "TextBox.Multiline",
+        };
+        Check(
+            "theme dictionaries expose every semantic key used by the settings pages",
+            expectedKeys.All(key => application.TryFindResource(key) is not null));
+
+        // 自绘控件必须有隐式样式，否则运行时会退回系统默认观感。
+        Check(
+            "custom controls resolve their implicit fluent styles",
+            application.TryFindResource(typeof(SettingsRow)) is System.Windows.Style &&
+            application.TryFindResource(typeof(SettingsGroup)) is System.Windows.Style &&
+            application.TryFindResource(typeof(NumberBox)) is System.Windows.Style &&
+            application.TryFindResource(typeof(InfoBar)) is System.Windows.Style &&
+            application.TryFindResource(typeof(HotkeyRecorderBox)) is System.Windows.Style);
+    }
+
+    /// <summary>无 UI 自测里也需要一个 WPF Application 承载资源；不调用 Run，只做资源解析。</summary>
+    private static void EnsureThemedApplication()
+    {
+        if (System.Windows.Application.Current is null)
+        {
+            _ = new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown };
+        }
+
+        NaniKore.App.Theme.ThemeManager.Initialize(System.Windows.Application.Current!);
+    }
+
+    /// <summary>逻辑树遍历：页面尚未渲染时视觉树为空，断言必须走逻辑子元素。</summary>
+    private static IEnumerable<T> FindDescendants<T>(System.Windows.DependencyObject root)
+        where T : System.Windows.DependencyObject
+    {
+        foreach (var child in System.Windows.LogicalTreeHelper.GetChildren(root).OfType<System.Windows.DependencyObject>())
+        {
+            if (child is T match)
+            {
+                yield return match;
+            }
+
+            foreach (var nested in FindDescendants<T>(child))
+            {
+                yield return nested;
+            }
         }
     }
 

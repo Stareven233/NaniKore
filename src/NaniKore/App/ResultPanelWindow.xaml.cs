@@ -3,6 +3,8 @@ using System.Drawing;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using NaniKore.App.Controls;
+using NaniKore.App.Theme;
 using NaniKore.Interop;
 using FormsScreen = System.Windows.Forms.Screen;
 
@@ -26,6 +28,7 @@ internal sealed partial class ResultPanelWindow : Window
     {
         InitializeComponent();
         Icon = ApplicationIcon.LoadWpf();
+        ThemeManager.ApplyWindowChrome(this);
         MaxHeight = SystemParameters.WorkArea.Height * 0.6;
     }
 
@@ -40,7 +43,7 @@ internal sealed partial class ResultPanelWindow : Window
         SourceTextBox.Text = source;
         TranslationTextBox.Clear();
         ExplanationTextBox.Clear();
-        StatusText.Text = status;
+        StatusBar.Show(status, InfoSeverity.Neutral);
     }
 
     /// <summary>将结果卡贴在本次桌面选区下方；下方空间不足时自动翻到选区上方。</summary>
@@ -89,7 +92,9 @@ internal sealed partial class ResultPanelWindow : Window
         target.ScrollToEnd();
     }
 
-    public void SetStatus(string status) => StatusText.Text = status;
+    /// <summary>状态文本统一走内联提示条；失败信息用错误语义配色，成功与进行中保持中性。</summary>
+    public void SetStatus(string status, bool isError = false) =>
+        StatusBar.Show(status, isError ? InfoSeverity.Error : InfoSeverity.Neutral);
 
     protected override void OnSourceInitialized(EventArgs e)
     {

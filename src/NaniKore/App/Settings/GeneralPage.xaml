@@ -1,0 +1,47 @@
+<UserControl x:Class="NaniKore.App.Settings.GeneralPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:NaniKore.App.Controls"
+             x:ClassModifier="internal">
+    <!--
+        页面内一律使用 DynamicResource 引用主题资源：
+        自测进程会在没有 Application 资源的情况下直接构造页面做逻辑断言，
+        StaticResource 在那种场景会直接抛异常。
+    -->
+    <StackPanel>
+        <controls:SettingsGroup Header="翻译">
+            <StackPanel>
+                <controls:SettingsRow Header="翻译目标语言"
+                                      Description="译文语言会直接写入模型提示词。"
+                                      ContentWidth="220">
+                    <ComboBox x:Name="TargetLanguageBox" />
+                </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <controls:SettingsRow Header="OCR 后自动翻译"
+                                      Description="关闭时由结果卡的「翻译」按钮显式触发。">
+                    <ToggleButton x:Name="AutoTranslateToggle" Style="{DynamicResource ToggleSwitch}" />
+                </controls:SettingsRow>
+            </StackPanel>
+        </controls:SettingsGroup>
+
+        <controls:SettingsGroup Header="识别流程">
+            <StackPanel>
+                <controls:SettingsRow Header="翻译流程" ContentWidth="220">
+                    <ComboBox x:Name="PipelineModeBox" />
+                </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <!-- 两条流程各占一行说明，替代旧版挤在一行的长句。 -->
+                <StackPanel Margin="12,10">
+                    <TextBlock Style="{DynamicResource Text.Caption}">
+                        <Run FontWeight="SemiBold" Text="local_ocr" />
+                        <Run Text="：本地 PP-OCR 识别后再交给模型翻译，隐私更好、无图像上传。" />
+                    </TextBlock>
+                    <TextBlock Style="{DynamicResource Text.Caption}" Margin="0,4,0,0">
+                        <Run FontWeight="SemiBold" Text="vision_oneshot" />
+                        <Run Text="：直接把选区图像交给支持图像输入的模型，一次完成识别与翻译。" />
+                    </TextBlock>
+                </StackPanel>
+            </StackPanel>
+        </controls:SettingsGroup>
+    </StackPanel>
+</UserControl>

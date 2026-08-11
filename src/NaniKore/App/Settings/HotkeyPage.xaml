@@ -1,0 +1,24 @@
+<UserControl x:Class="NaniKore.App.Settings.HotkeyPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:NaniKore.App.Controls"
+             x:ClassModifier="internal">
+    <StackPanel>
+        <controls:SettingsGroup Header="全局热键">
+            <StackPanel>
+                <controls:SettingsRow Header="截图翻译"
+                                      Description="点击右侧方框开始录制；需要至少一个修饰键与一个字母、数字或 F1–F24 按键。"
+                                      ContentWidth="190">
+                    <controls:HotkeyRecorderBox x:Name="Recorder" />
+                </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <StackPanel Margin="12,10">
+                    <controls:InfoBar x:Name="RecorderStatus" />
+                </StackPanel>
+            </StackPanel>
+        </controls:SettingsGroup>
+
+        <TextBlock Style="{DynamicResource Text.Caption}" Margin="4,0,0,0"
+                   Text="录制期间全局热键会临时注销，因此可以安全地重新录制当前正在生效的组合。" />
+    </StackPanel>
+</UserControl>

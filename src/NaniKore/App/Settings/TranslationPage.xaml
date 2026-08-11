@@ -1,0 +1,91 @@
+<UserControl x:Class="NaniKore.App.Settings.TranslationPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:NaniKore.App.Controls"
+             x:ClassModifier="internal">
+    <StackPanel>
+        <controls:SettingsGroup Header="配置档">
+            <StackPanel>
+                <controls:SettingsRow Header="当前配置档"
+                                      Description="保存后作为翻译流程使用的活动配置档。">
+                    <StackPanel Orientation="Horizontal">
+                        <ComboBox x:Name="ProfileBox" Width="200" />
+                        <Button x:Name="AddButton" Style="{DynamicResource Button.Icon}" Margin="8,0,0,0"
+                                Content="&#xE710;" ToolTip="新建配置档" />
+                        <Button x:Name="DuplicateButton" Style="{DynamicResource Button.Icon}" Margin="6,0,0,0"
+                                Content="&#xE8C8;" ToolTip="复制当前配置档" />
+                        <Button x:Name="RemoveButton" Style="{DynamicResource Button.IconDanger}" Margin="6,0,0,0"
+                                Content="&#xE74D;" ToolTip="删除当前配置档" />
+                    </StackPanel>
+                </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <controls:SettingsRow Header="名称" ContentWidth="280">
+                    <TextBox x:Name="NameBox" />
+                </controls:SettingsRow>
+            </StackPanel>
+        </controls:SettingsGroup>
+
+        <controls:SettingsGroup Header="服务商">
+            <StackPanel>
+                <controls:SettingsRow Header="类型" ContentWidth="200">
+                    <ComboBox x:Name="KindBox" />
+                </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <controls:SettingsRow x:Name="ApiTypeRow" Header="API 形式"
+                                      Description="仅 OpenAI 类型可选；其他服务商固定使用各自的原生协议。"
+                                      ContentWidth="200">
+                    <ComboBox x:Name="ApiTypeBox" />
+                </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <controls:SettingsRow Header="Base URL" ContentWidth="340">
+                    <TextBox x:Name="BaseUrlBox" />
+                </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <controls:SettingsRow Header="模型" ContentWidth="280">
+                    <TextBox x:Name="ModelBox" />
+                </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <controls:SettingsRow Header="超时" ContentWidth="150">
+                    <controls:NumberBox x:Name="TimeoutBox" Minimum="1" Maximum="600" Value="60" Suffix="秒" />
+                </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <controls:SettingsRow Header="支持图像输入"
+                                      Description="vision_oneshot 流程要求当前配置档声明支持图像。">
+                    <ToggleButton x:Name="SupportsVisionToggle" Style="{DynamicResource ToggleSwitch}" />
+                </controls:SettingsRow>
+            </StackPanel>
+        </controls:SettingsGroup>
+
+        <controls:SettingsGroup Header="凭据">
+            <StackPanel>
+                <controls:SettingsRow Header="API Key"
+                                      Description="已保存的密钥不会回显；留空则保持不变。">
+                    <StackPanel Orientation="Horizontal">
+                        <PasswordBox x:Name="ApiKeyBox" Width="240" />
+                        <Button x:Name="TestButton" Margin="8,0,0,0" Content="测试连接" MinWidth="92" />
+                    </StackPanel>
+                </controls:SettingsRow>
+                <StackPanel Margin="12,0,12,10">
+                    <controls:InfoBar x:Name="TestStatus" />
+                </StackPanel>
+            </StackPanel>
+        </controls:SettingsGroup>
+
+        <controls:SettingsGroup Header="提示词">
+            <StackPanel>
+                <controls:SettingsRow Header="翻译提示词"
+                                      Description="{}{{target_language}} 会替换为「通用」页选择的目标语言。"
+                                      IsStacked="True">
+                    <TextBox x:Name="PromptBox"
+                             Style="{DynamicResource TextBox.Multiline}"
+                             MinHeight="140"
+                             MaxHeight="220"
+                             FontFamily="{DynamicResource Font.Mono}" />
+                </controls:SettingsRow>
+                <StackPanel Margin="12,0,12,10" HorizontalAlignment="Left">
+                    <Button x:Name="RestorePromptButton" Style="{DynamicResource Button.Subtle}" Content="恢复内置默认" />
+                </StackPanel>
+            </StackPanel>
+        </controls:SettingsGroup>
+    </StackPanel>
+</UserControl>

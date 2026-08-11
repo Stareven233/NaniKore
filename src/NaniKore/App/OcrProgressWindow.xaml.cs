@@ -1,4 +1,5 @@
 using System.Windows;
+using NaniKore.App.Theme;
 
 namespace NaniKore.App;
 
@@ -11,5 +12,6 @@ internal sealed partial class OcrProgressWindow : Window
     {
         InitializeComponent();
         Icon = ApplicationIcon.LoadWpf();
+        ThemeManager.ApplyWindowChrome(this);
     }
 }

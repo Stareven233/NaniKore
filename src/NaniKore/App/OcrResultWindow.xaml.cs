@@ -1,8 +1,9 @@
 using System.Runtime.InteropServices;
 using System.Windows;
+using NaniKore.App.Controls;
+using NaniKore.App.Theme;
 using NaniKore.Ocr;
 using Clipboard = System.Windows.Clipboard;
-using MessageBox = System.Windows.MessageBox;
 
 namespace NaniKore.App;
 
@@ -15,6 +16,7 @@ internal sealed partial class OcrResultWindow : Window
     {
         InitializeComponent();
         Icon = ApplicationIcon.LoadWpf();
+        ThemeManager.ApplyWindowChrome(this);
 
         RecognizedText.Text = result.Text;
         StatusText.Text = $"{result.Lines.Count} 行 · {result.Elapsed.TotalMilliseconds:N0} ms" +
@@ -36,12 +38,7 @@ internal sealed partial class OcrResultWindow : Window
         catch (COMException exception)
         {
             // 剪贴板被其他进程短暂占用时只提示，不让结果窗口连带失败。
-            MessageBox.Show(
-                this,
-                $"剪贴板暂时不可用：{exception.Message}",
-                "NaniKore",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            MessageDialog.Show(this, "剪贴板暂时不可用。", exception.Message, InfoSeverity.Warning);
         }
     }
 

@@ -46,10 +46,24 @@ internal static class Program
             return RunTranslateImageAsync(args, translateImageIndex).GetAwaiter().GetResult();
         }
 
+        if (args.Contains("--settings-preview", StringComparer.OrdinalIgnoreCase))
+        {
+            return PreviewSettings();
+        }
+
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         return new NaniKoreApp().Run();
+    }
+
+    private static int PreviewSettings()
+    {
+        var app = new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnLastWindowClose };
+        NaniKore.App.Theme.ThemeManager.Initialize(app);
+        var store = new ConfigStore(AppContext.BaseDirectory);
+        var window = new NaniKore.App.Settings.SettingsWindow(store.Current, _ => { }, (_, _) => Task.FromResult("ok"));
+        return app.Run(window);
     }
 
     private static int InspectModels()

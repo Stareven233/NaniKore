@@ -36,6 +36,10 @@ internal static partial class NativeMethods
         int height,
         uint flags);
 
+    /// <summary>标题栏不属于 WPF 客户区；深色主题必须通过 DWM 属性同步，否则会出现白色标题栏。</summary>
+    [LibraryImport("dwmapi.dll")]
+    internal static partial int DwmSetWindowAttribute(nint window, int attribute, ref int value, int size);
+
     [StructLayout(LayoutKind.Sequential)]
     internal struct NativeRect
     {

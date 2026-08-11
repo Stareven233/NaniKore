@@ -2,7 +2,9 @@ using System.ComponentModel;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Windows;
+using NaniKore.App.Controls;
 using NaniKore.App.Settings;
+using NaniKore.App.Theme;
 using NaniKore.Capture;
 using NaniKore.Config;
 using NaniKore.Input;
@@ -10,7 +12,6 @@ using NaniKore.Ocr;
 using NaniKore.Overlay;
 using NaniKore.Translation;
 using Application = System.Windows.Application;
-using MessageBox = System.Windows.MessageBox;
 
 namespace NaniKore.App;
 
@@ -23,7 +24,7 @@ internal sealed class NaniKoreApp : Application
     private ProviderFactory? _providerFactory;
     private TrayIconHost? _trayIcon;
     private ResultPanelWindow? _resultPanel;
-    private SettingsForm? _settingsForm;
+    private SettingsWindow? _settingsWindow;
     private CancellationTokenSource? _translationCancellation;
     private byte[]? _lastImagePng;
     private bool _selecting;
@@ -32,6 +33,8 @@ internal sealed class NaniKoreApp : Application
     {
         base.OnStartup(e);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        // 主题资源必须先于任何窗口创建就位，否则首个窗口会以系统默认样式闪现一帧。
+        ThemeManager.Initialize(this);
         _providerFactory = new ProviderFactory(_configStore.Current);
         _hotkeyWindow = new GlobalHotkeyWindow(_configStore.Current.Hotkeys.Capture, () => _ = CaptureSelectAndTranslateAsync());
         _trayIcon = new TrayIconHost(() => _ = CaptureSelectAndTranslateAsync(), ShowSettings, Shutdown);
@@ -92,7 +95,7 @@ internal sealed class NaniKoreApp : Application
 
             if (result.Lines.Count == 0)
             {
-                MessageBox.Show("没有检测到可识别文本。", "NaniKore OCR", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageDialog.Show(_resultPanel, "没有检测到可识别文本。", "可尝试放大选区或换用 vision_oneshot 流程。", InfoSeverity.Neutral);
                 return;
             }
 
@@ -152,7 +155,7 @@ internal sealed class NaniKoreApp : Application
         catch (Exception exception)
         {
             var profile = _configStore.GetActiveProfile();
-            panel.SetStatus(ProviderErrorMapper.ToUserMessage(exception, profile.Id, profile.Model, profile.BaseUrl));
+            panel.SetStatus(ProviderErrorMapper.ToUserMessage(exception, profile.Id, profile.Model, profile.BaseUrl), isError: true);
         }
         finally
         {
@@ -202,18 +205,18 @@ internal sealed class NaniKoreApp : Application
 
     private void ShowSettings()
     {
-        if (_settingsForm is { IsDisposed: false })
+        if (_settingsWindow is { } existing)
         {
-            _settingsForm.Show();
-            _settingsForm.BringToFront();
-            _settingsForm.Activate();
+            // 单例设置窗：重复触发时只把已有窗口提到前台，不再叠开第二份编辑副本。
+            existing.Show();
+            existing.Activate();
             return;
         }
 
-        var form = new SettingsForm(_configStore.Current, ApplySettings, TestConnectionAsync, SuspendCaptureHotkey);
-        form.FormClosed += (_, _) => _settingsForm = null;
-        _settingsForm = form;
-        form.Show();
+        var window = new SettingsWindow(_configStore.Current, ApplySettings, TestConnectionAsync, SuspendCaptureHotkey);
+        window.Closed += (_, _) => _settingsWindow = null;
+        _settingsWindow = window;
+        window.Show();
     }
 
     private void ApplySettings(AppConfig next)
@@ -314,21 +317,22 @@ internal sealed class NaniKoreApp : Application
         }
     }
 
-    private static void ShowFailure(string message, Exception exception)
+    private void ShowFailure(string message, Exception exception)
     {
         Console.Error.WriteLine($"{message} {exception}");
-        MessageBox.Show($"{message}\n\n{exception.Message}", "NaniKore", MessageBoxButton.OK, MessageBoxImage.Error);
+        MessageDialog.Show(_resultPanel, message, exception.Message, InfoSeverity.Error);
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
         CancelTranslation();
-        _settingsForm?.Dispose();
+        _settingsWindow?.Close();
         _resultPanel?.Close();
         _trayIcon?.Dispose();
         _providerFactory?.Dispose();
         _ocrEngine?.Dispose();
         _hotkeyWindow?.Dispose();
+        ThemeManager.Shutdown();
         base.OnExit(e);
     }
 }

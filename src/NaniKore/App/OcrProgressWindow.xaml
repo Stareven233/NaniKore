@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:ClassModifier="internal"
         Title="NaniKore"
-        Width="320"
-        Height="120"
+        Width="340"
+        Height="130"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
         Topmost="True"
@@ -12,16 +12,19 @@
         WindowStyle="ToolWindow"
         Cursor="Wait"
         UseLayoutRounding="True"
-        TextOptions.TextFormattingMode="Display">
+        TextOptions.TextFormattingMode="Display"
+        FontFamily="{DynamicResource Font.Ui}"
+        FontSize="14"
+        Foreground="{DynamicResource Brush.Text.Primary}"
+        Background="{DynamicResource Brush.Window.Background}">
     <!-- 首次加载模型可能耗时数秒，这个窗口只负责让用户知道程序没有卡死。 -->
-    <StackPanel Margin="16" VerticalAlignment="Center">
+    <StackPanel Margin="20" VerticalAlignment="Center">
         <TextBlock x:Name="StatusText"
                    Text="正在用本地 PP-OCRv6 识别…"
                    HorizontalAlignment="Center"
                    TextWrapping="Wrap"
                    AutomationProperties.LiveSetting="Polite" />
-        <ProgressBar Height="6"
-                     Margin="0,12,0,0"
+        <ProgressBar Margin="0,16,0,0"
                      IsIndeterminate="True"
                      AutomationProperties.Name="OCR 进行中" />
     </StackPanel>
