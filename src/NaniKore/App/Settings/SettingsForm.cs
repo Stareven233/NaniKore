@@ -1,4 +1,3 @@
-﻿using System.Drawing;
 using System.Windows.Forms;
 using NaniKore.Config;
 
@@ -12,23 +11,31 @@ internal sealed class SettingsForm : Form
     private readonly List<ISettingsPage> _pages;
     private readonly TranslationPage _translationPage;
 
-    public SettingsForm(AppConfig current, Action<AppConfig> save, Func<ProviderProfile, string?, Task<string>> testConnection)
+    public SettingsForm(
+        AppConfig current,
+        Action<AppConfig> save,
+        Func<ProviderProfile, string?, Task<string>> testConnection,
+        Action<bool>? suspendGlobalHotkey = null)
     {
         _working = AppConfigCloner.Clone(current);
         _save = save;
         Text = "NaniKore 设置";
         Icon = ApplicationIcon.LoadWinForms();
-        Width = 600;
-        Height = 480;
         MinimizeBox = false;
         // 结果卡本身是置顶窗口；设置从结果卡打开时也必须保持同等层级，避免被已有窗口遮挡。
         TopMost = true;
         StartPosition = FormStartPosition.CenterScreen;
+        // 尺寸随当前 DPI 与字体缩放，避免 150%、200% 下内容溢出固定像素窗口。
+        AutoScaleMode = AutoScaleMode.Font;
+        ClientSize = LogicalToDevice(new Size(600, 520));
+        MinimumSize = LogicalToDevice(new Size(520, 420));
 
         var tabs = new TabControl { Dock = DockStyle.Fill };
         var general = new GeneralPage();
         _translationPage = new TranslationPage { TestConnection = testConnection };
         var hotkeys = new HotkeyPage();
+        // 录制期间必须临时注销已生效的全局热键，否则系统会把按键交给 NaniKore 自己的截图流程。
+        hotkeys.RecordingChanged += (_, recording) => suspendGlobalHotkey?.Invoke(recording);
         var about = new AboutPage();
         _pages = [general, _translationPage, hotkeys, about];
         foreach (var page in _pages)
@@ -40,15 +47,16 @@ internal sealed class SettingsForm : Form
             page.Load(_working);
         }
 
-        var saveButton = CreateActionButton("保存");
+        var saveButton = SettingsLayout.CreateActionButton("保存", LogicalToDevice(new Size(82, 0)).Width);
         saveButton.DialogResult = DialogResult.None;
         saveButton.Click += (_, _) => Save();
-        var cancelButton = CreateActionButton("取消");
+        var cancelButton = SettingsLayout.CreateActionButton("取消", LogicalToDevice(new Size(82, 0)).Width);
         cancelButton.Click += (_, _) => Close();
         var actions = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 64,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             FlowDirection = FlowDirection.RightToLeft,
             Padding = new Padding(8),
             WrapContents = false,
@@ -58,14 +66,10 @@ internal sealed class SettingsForm : Form
         Controls.Add(actions);
     }
 
-    private static Button CreateActionButton(string text) => new()
-    {
-        Text = text,
-        AutoSize = true,
-        AutoSizeMode = AutoSizeMode.GrowAndShrink,
-        MinimumSize = new Size(82, 36),
-        Margin = new Padding(4),
-    };
+    /// <summary>把设计用的逻辑像素换算到当前 DPI，避免在高缩放下窗口比内容小。</summary>
+    private Size LogicalToDevice(Size logical) => new(
+        (int)Math.Round(logical.Width * DeviceDpi / 96.0),
+        (int)Math.Round(logical.Height * DeviceDpi / 96.0));
 
     private void Save()
     {

@@ -11,7 +11,7 @@ internal static class PromptTemplates
 
     /// <summary>设置页始终展示的默认翻译提示词；主人可直接在此基础上修改。</summary>
     internal const string DefaultTranslationPrompt = """
-        Translate the supplied text into {{target_language}}.
+        Translate the supplied text into {{target_language}}. 
         Return only the translation in {{target_language}}. Do not include explanations, notes, or source text.
         """;
 

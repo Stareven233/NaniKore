@@ -20,23 +20,26 @@ internal sealed class GeneralPage : ISettingsPage
         new("意大利语", "it", "Italiano", "Italian"),
     ];
 
-    private readonly Panel _view = new() { Dock = DockStyle.Fill, Padding = new Padding(16) };
+    private readonly Panel _view = new() { Dock = DockStyle.Fill, AutoScroll = true };
+    private readonly TableLayoutPanel _fields = SettingsLayout.CreateFieldTable();
     private readonly CheckBox _autoTranslate = new() { Text = "OCR 后自动翻译", AutoSize = true };
     // 目标语言会直接写入模型提示词，使用自然语言名称比让主人记忆地区代码更直观。
-    private readonly ComboBox _targetLanguage = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
-    private readonly ComboBox _pipelineMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300 };
+    private readonly ComboBox _targetLanguage = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly ComboBox _pipelineMode = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly Label _pipelineHint = SettingsLayout.CreateWrappingLabel(
+        "local_ocr：本地 PP-OCR 识别后再翻译；vision_oneshot：直接把选区图像交给支持图像输入的模型。");
 
     public GeneralPage()
     {
         _targetLanguage.Items.AddRange(TargetLanguages);
         _pipelineMode.Items.AddRange(["local_ocr", "vision_oneshot"]);
 
-        var targetLabel = new Label { Text = "翻译目标语言：", AutoSize = true, Top = 16, Left = 16 };
-        _targetLanguage.SetBounds(16, 42, 300, 28);
-        var pipelineLabel = new Label { Text = "翻译流程：", AutoSize = true, Top = 82, Left = 16 };
-        _pipelineMode.SetBounds(16, 108, 300, 28);
-        _autoTranslate.SetBounds(16, 152, 260, 28);
-        _view.Controls.AddRange([targetLabel, _targetLanguage, pipelineLabel, _pipelineMode, _autoTranslate]);
+        SettingsLayout.AddField(_fields, "翻译目标语言：", _targetLanguage);
+        SettingsLayout.AddField(_fields, "翻译流程：", _pipelineMode);
+        SettingsLayout.AddFullWidthRow(_fields, _pipelineHint);
+        SettingsLayout.AddFullWidthRow(_fields, _autoTranslate, stretch: false);
+        _view.Controls.Add(_fields);
+        _view.Resize += (_, _) => SettingsLayout.UpdateWrapWidth(_view, _pipelineHint);
     }
 
     public string Title => "通用";
@@ -45,6 +48,7 @@ internal sealed class GeneralPage : ISettingsPage
 
     public void Load(AppConfig config)
     {
+        ArgumentNullException.ThrowIfNull(config);
         _autoTranslate.Checked = config.General.AutoTranslate;
         _targetLanguage.SelectedItem = FindLanguage(config.General.TargetLanguage) ?? TargetLanguages[0];
         _pipelineMode.SelectedItem = config.Pipeline.Mode;
@@ -60,6 +64,7 @@ internal sealed class GeneralPage : ISettingsPage
 
     public void Apply(AppConfig config)
     {
+        ArgumentNullException.ThrowIfNull(config);
         config.General.AutoTranslate = _autoTranslate.Checked;
         config.General.TargetLanguage = ((LanguageChoice)_targetLanguage.SelectedItem!).Name;
         config.Pipeline.Mode = _pipelineMode.SelectedItem as string ?? "local_ocr";

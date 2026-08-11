@@ -5,6 +5,7 @@ using System.Windows.Forms;
 using NaniKore.App;
 using NaniKore.App.Settings;
 using NaniKore.Config;
+using NaniKore.Input;
 using NaniKore.Translation;
 using NaniKore.Ocr;
 using NaniKore.Ocr.Detection;
@@ -32,6 +33,9 @@ internal static class SelfTest
         TestApplicationIconResource();
         TestTranslationPromptTemplates();
         TestProfileRenameKeepsSecret();
+        TestHotkeyGestureNormalization();
+        TestHotkeyRecorderInteraction();
+        TestSettingsPagesUseScalableLayout();
         TestSseReader();
         TestSentinelRouter();
         TestProviderCapabilitiesAndErrors();
@@ -313,6 +317,105 @@ internal static class SelfTest
         finally
         {
             SecretStore.Delete(profileId);
+        }
+    }
+    private static void TestHotkeyGestureNormalization()
+    {
+        Check(
+            "gesture parsing normalizes modifier aliases and casing",
+            HotkeyGesture.Normalize("control+shift+q") == "Ctrl+Shift+Q" &&
+            HotkeyGesture.Normalize("windows + alt + f9") == "Alt+Win+F9");
+
+        Check(
+            "gesture parsing rejects empty, modifier-only and unsupported keys",
+            RejectsGesture(string.Empty) && RejectsGesture("Ctrl") && RejectsGesture("Ctrl+Shift+PrintScreen"));
+
+        Check(
+            "captured combinations reuse the registration parser",
+            HotkeyGesture.TryCapture(HotkeyGesture.ModControl | HotkeyGesture.ModShift, Keys.Q, out var captured, out _) &&
+            captured == "Ctrl+Shift+Q" &&
+            HotkeyGesture.Parse(captured) == (HotkeyGesture.ModControl | HotkeyGesture.ModShift, (uint)Keys.Q));
+
+        Check(
+            "modifier-only and unmodified keys are refused with a readable reason",
+            !HotkeyGesture.TryCapture(HotkeyGesture.ModControl, Keys.ControlKey, out _, out var modifierOnly) &&
+            modifierOnly.Length > 0 &&
+            !HotkeyGesture.TryCapture(0, Keys.Q, out _, out var missingModifier) &&
+            missingModifier.Length > 0);
+
+        Check(
+            "held modifiers echo a partial combination while recording",
+            HotkeyGesture.FormatPreview(HotkeyGesture.ModControl | HotkeyGesture.ModShift) == "Ctrl+Shift+…" &&
+            HotkeyGesture.FormatPreview(0).Length == 0);
+    }
+
+    private static void TestHotkeyRecorderInteraction()
+    {
+        using var recorder = new HotkeyRecorderBox { Gesture = "Ctrl+Shift+A" };
+        var suspensions = new List<bool>();
+        recorder.RecordingChanged += (_, recording) => suspensions.Add(recording);
+
+        recorder.BeginRecording();
+        recorder.ProcessRecordingKey(Keys.ShiftKey, HotkeyGesture.ModControl | HotkeyGesture.ModShift);
+        Check(
+            "holding modifiers echoes the partial combination without ending recording",
+            recorder.IsRecording && recorder.Text == "Ctrl+Shift+…" && recorder.Gesture == "Ctrl+Shift+A");
+
+        recorder.ProcessRecordingKey(Keys.Back, HotkeyGesture.ModControl);
+        Check(
+            "recording keeps state for backspace input",
+            recorder.IsRecording && recorder.Gesture == "Ctrl+Shift+A");
+
+        recorder.ProcessRecordingKey(Keys.Q, HotkeyGesture.ModControl | HotkeyGesture.ModShift);
+        Check(
+            "recording stores the normalized combination and releases the global hotkey once",
+            !recorder.IsRecording &&
+            recorder.Gesture == "Ctrl+Shift+Q" &&
+            recorder.Text == "Ctrl+Shift+Q" &&
+            suspensions.SequenceEqual([true, false]));
+
+        recorder.BeginRecording();
+        recorder.ProcessRecordingKey(Keys.Escape, 0);
+        Check(
+            "escape restores the gesture that was active before recording",
+            !recorder.IsRecording && recorder.Gesture == "Ctrl+Shift+Q");
+
+        var page = new HotkeyPage();
+        page.Load(new AppConfig { Hotkeys = new HotkeyConfig { Capture = "alt+f9" } });
+        var config = new AppConfig();
+        page.Apply(config);
+        Check(
+            "hotkey page normalizes stored gestures and validates before applying",
+            page.Validate() is null && config.Hotkeys.Capture == "Alt+F9");
+    }
+
+    private static void TestSettingsPagesUseScalableLayout()
+    {
+        // 缩放错位的根因是硬编码坐标；改用表格布局后所有字段行必须是 AutoSize 行，且输入列左右锚定。
+        foreach (var page in new ISettingsPage[] { new GeneralPage(), new TranslationPage(), new HotkeyPage() })
+        {
+            var table = page.View.Controls.OfType<TableLayoutPanel>().Single();
+            var fields = table.Controls.Cast<Control>().Where(control => table.GetColumn(control) == 1).ToList();
+            Check(
+                $"{page.Title} page lays out fields in a font-scaled table",
+                table.AutoSize &&
+                table.ColumnStyles[1].SizeType == SizeType.Percent &&
+                table.RowStyles.Cast<RowStyle>().All(style => style.SizeType == SizeType.AutoSize) &&
+                fields.Count > 0 &&
+                fields.TrueForAll(field => field.Anchor.HasFlag(AnchorStyles.Left) && field.Anchor.HasFlag(AnchorStyles.Right)));
+        }
+    }
+
+    private static bool RejectsGesture(string gesture)
+    {
+        try
+        {
+            HotkeyGesture.Parse(gesture);
+            return false;
+        }
+        catch (ArgumentException)
+        {
+            return true;
         }
     }
     private static void TestSseReader()

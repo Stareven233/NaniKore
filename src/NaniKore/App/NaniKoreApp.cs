@@ -210,7 +210,7 @@ internal sealed class NaniKoreApp : Application
             return;
         }
 
-        var form = new SettingsForm(_configStore.Current, ApplySettings, TestConnectionAsync);
+        var form = new SettingsForm(_configStore.Current, ApplySettings, TestConnectionAsync, SuspendCaptureHotkey);
         form.FormClosed += (_, _) => _settingsForm = null;
         _settingsForm = form;
         form.Show();
@@ -227,6 +227,32 @@ internal sealed class NaniKoreApp : Application
         _configStore.AtomicWrite(next);
         _providerFactory?.Dispose();
         _providerFactory = new ProviderFactory(next);
+    }
+
+    /// <summary>热键录制期间临时注销全局热键，避免录制正在生效的组合时反而触发截图。</summary>
+    private void SuspendCaptureHotkey(bool suspend)
+    {
+        if (suspend)
+        {
+            _hotkeyWindow?.Dispose();
+            _hotkeyWindow = null;
+            return;
+        }
+
+        if (_hotkeyWindow is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            _hotkeyWindow = new GlobalHotkeyWindow(_configStore.Current.Hotkeys.Capture, () => _ = CaptureSelectAndTranslateAsync());
+        }
+        catch (Exception exception)
+        {
+            // 恢复失败不能打断设置窗；托盘提示后仍可用托盘菜单截图。
+            _trayIcon?.ShowWarning($"恢复截图热键失败：{exception.Message}");
+        }
     }
 
     private void ReplaceHotkey(string nextGesture, string previousGesture)

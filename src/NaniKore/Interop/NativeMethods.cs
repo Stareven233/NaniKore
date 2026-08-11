@@ -12,6 +12,9 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool UnregisterHotKey(nint windowHandle, int id);
 
+    /// <summary>Win 键不在 WinForms 的 ModifierKeys 里，热键录制需要直接查询实时按键状态。</summary>
+    [LibraryImport("user32.dll")]
+    internal static partial short GetKeyState(int virtualKey);
     [LibraryImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
     internal static partial nint GetWindowLongPtr(nint windowHandle, int index);
 

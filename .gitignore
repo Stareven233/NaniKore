@@ -14,7 +14,7 @@
 # 临时文件与日志
 *.log
 *.tmp
-todo.md
+_todo.md
 *~
 
 # IDE
