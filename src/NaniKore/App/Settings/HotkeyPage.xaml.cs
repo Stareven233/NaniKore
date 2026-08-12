@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using NaniKore.App.Controls;
 using NaniKore.Config;
 using NaniKore.Input;
 using UserControl = System.Windows.Controls.UserControl;
@@ -14,11 +13,8 @@ internal sealed partial class HotkeyPage : UserControl, ISettingsPage
     public HotkeyPage()
     {
         InitializeComponent();
-        RecorderStatus.Show(IdleHint, InfoSeverity.Neutral);
-        Recorder.StatusChanged += (_, message) => RecorderStatus.Show(
-            message,
-            // 录制中与失败提示用不同语义色，用户不必读完整句就知道是否已成功。
-            Recorder.IsRecording ? InfoSeverity.Warning : InfoSeverity.Success);
+        RecorderStatus.Text = IdleHint;
+        Recorder.StatusChanged += (_, message) => RecorderStatus.Text = message;
         Recorder.RecordingChanged += (_, recording) => RecordingChanged?.Invoke(this, recording);
     }
 

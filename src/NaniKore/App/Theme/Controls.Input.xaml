@@ -15,8 +15,9 @@
         <Setter Property="SelectionBrush" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.Border}" />
-        <Setter Property="Padding" Value="10,6" />
-        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="Padding" Value="10,4" />
+        <!-- 单行输入控件与 14px 字体保持更紧凑的视觉比例。 -->
+        <Setter Property="MinHeight" Value="30" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         <Setter Property="Template">
@@ -78,8 +79,8 @@
         <Setter Property="SelectionBrush" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.Border}" />
-        <Setter Property="Padding" Value="10,6" />
-        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="Padding" Value="10,4" />
+        <Setter Property="MinHeight" Value="30" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="PasswordBox">
@@ -153,8 +154,8 @@
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.Border}" />
-        <Setter Property="Padding" Value="10,6" />
-        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="Padding" Value="10,4" />
+        <Setter Property="MinHeight" Value="30" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="ItemContainerStyle" Value="{StaticResource ComboBox.Item}" />
@@ -382,7 +383,7 @@
     <Style TargetType="controls:NumberBox">
         <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.Border}" />
-        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="MinHeight" Value="30" />
         <Setter Property="Focusable" Value="False" />
         <Setter Property="Template">
             <Setter.Value>
@@ -405,7 +406,7 @@
                                      BorderThickness="0"
                                      Background="Transparent"
                                      MinHeight="0"
-                                     Padding="10,4"
+                                     Padding="10,3"
                                      VerticalContentAlignment="Center" />
                             <TextBlock x:Name="SuffixText"
                                        Grid.Column="1"
@@ -460,7 +461,7 @@
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
         <Setter Property="FontSize" Value="14" />
-        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="MinHeight" Value="30" />
         <Setter Property="MinWidth" Value="190" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
@@ -471,7 +472,7 @@
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="1"
                             CornerRadius="{StaticResource Radius.Control}"
-                            Padding="10,6">
+                            Padding="10,5">
                         <TextBlock x:Name="Display"
                                    Text="{TemplateBinding DisplayText}"
                                    HorizontalAlignment="Stretch"

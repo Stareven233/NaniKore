@@ -53,7 +53,18 @@
                 </controls:SettingsRow>
                 <Border Style="{DynamicResource Divider.Row}" />
                 <controls:SettingsRow Header="超时" ContentWidth="150">
-                    <controls:NumberBox x:Name="TimeoutBox" Minimum="1" Maximum="600" Value="60" Suffix="秒" />
+                    <!-- 单位独立于数字框：确保「秒」与输入框边框始终保留稳定间距。 -->
+                    <StackPanel Orientation="Horizontal">
+                        <controls:NumberBox x:Name="TimeoutBox"
+                                            Width="128"
+                                            Minimum="1"
+                                            Maximum="600"
+                                            Value="60" />
+                        <TextBlock Text="秒"
+                                   Margin="10,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                    </StackPanel>
                 </controls:SettingsRow>
                 <Border Style="{DynamicResource Divider.Row}" />
                 <controls:SettingsRow Header="支持图像输入"
@@ -83,11 +94,12 @@
                 <controls:SettingsRow Header="翻译提示词"
                                       Description="{}{{target_language}} 会替换为「通用」页选择的目标语言。"
                                       IsStacked="True">
+                    <!-- 直接写在编辑器上，确保其优先级高于通用 TextBox 样式。 -->
                     <TextBox x:Name="PromptBox"
                              Style="{DynamicResource TextBox.Multiline}"
                              MinHeight="140"
                              MaxHeight="220"
-                             FontFamily="{DynamicResource Font.Mono}" />
+                             FontFamily="Yahei-Monaco-Hybrid-Font, 微软雅黑, Monaco, Consolas, Lucida Console, Cascadia Mono" />
                 </controls:SettingsRow>
                 <StackPanel Margin="12,0,12,10" HorizontalAlignment="Left">
                     <Button x:Name="RestorePromptButton" Style="{DynamicResource Button.Subtle}" Content="恢复内置默认" />

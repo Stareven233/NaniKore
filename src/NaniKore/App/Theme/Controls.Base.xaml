@@ -8,9 +8,9 @@
                     xmlns:controls="clr-namespace:NaniKore.App.Controls">
 
     <!-- Segoe UI Variable 是 Win11 起的系统字体；逐级回退保证旧系统与中文字形都可用。 -->
-    <FontFamily x:Key="Font.Ui">Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI, Microsoft YaHei</FontFamily>
+    <FontFamily x:Key="Font.Ui">Microsoft YaHei UI, Microsoft YaHei, Segoe UI Variable Text, Segoe UI</FontFamily>
     <!-- 提示词编辑器使用无衬线等宽字体；中文缺字由 WPF 自动选择系统 CJK 字体回退。 -->
-    <FontFamily x:Key="Font.Mono">Cascadia Mono, Consolas</FontFamily>
+    <FontFamily x:Key="Font.Mono">YaHei Monaco Hybird, 更纱黑体 SC Semibold, Monaco, Consolas, Lucida Console, Cascadia Mono</FontFamily>
     <system:Double x:Key="Font.Size.Body">14</system:Double>
     <system:Double x:Key="Font.Size.Caption">12</system:Double>
     <CornerRadius x:Key="Radius.Card">8</CornerRadius>

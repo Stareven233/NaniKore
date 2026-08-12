@@ -12,9 +12,11 @@
                     <controls:HotkeyRecorderBox x:Name="Recorder" />
                 </controls:SettingsRow>
                 <Border Style="{DynamicResource Divider.Row}" />
-                <StackPanel Margin="12,10">
-                    <controls:InfoBar x:Name="RecorderStatus" />
-                </StackPanel>
+                <!-- 录制状态仅用于说明，使用普通文本以便窄窗口下自然换行。 -->
+                <TextBlock x:Name="RecorderStatus"
+                           Style="{DynamicResource Text.Caption}"
+                           Margin="12,10"
+                           TextWrapping="Wrap" />
             </StackPanel>
         </controls:SettingsGroup>
 
