@@ -77,9 +77,16 @@
         <controls:SettingsGroup Header="凭据">
             <StackPanel>
                 <controls:SettingsRow Header="API Key"
-                                      Description="已保存的密钥不会回显；留空则保持不变。">
+                                      Description="会回显当前配置档已保存的密钥；可直接修改，留空后保存将保留原密钥。">
                     <StackPanel Orientation="Horizontal">
                         <PasswordBox x:Name="ApiKeyBox" Width="240" />
+                        <TextBox x:Name="ApiKeyTextBox" Width="240" Visibility="Collapsed" />
+                        <Button x:Name="ToggleApiKeyVisibilityButton"
+                                Style="{DynamicResource Button.Icon}"
+                                Margin="8,0,0,0"
+                                ToolTip="显示 API Key">
+                            <TextBlock x:Name="ApiKeyVisibilityGlyph" Text="&#xE890;" FontFamily="Segoe MDL2 Assets" />
+                        </Button>
                         <Button x:Name="TestButton" Margin="8,0,0,0" Content="测试连接" MinWidth="92" />
                     </StackPanel>
                 </controls:SettingsRow>

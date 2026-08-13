@@ -14,6 +14,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
     private readonly HashSet<string> _deletedProfileIds = new(StringComparer.OrdinalIgnoreCase);
     private AppConfig? _config;
     private ProviderProfile? _editingProfile;
+    private bool _isApiKeyVisible;
     private bool _loading;
 
     public TranslationPage()
@@ -31,6 +32,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         RemoveButton.Click += (_, _) => RemoveProfile();
         DuplicateButton.Click += (_, _) => DuplicateProfile();
         TestButton.Click += async (_, _) => await TestConnectionAsync();
+        ToggleApiKeyVisibilityButton.Click += (_, _) => ToggleApiKeyVisibility();
         RestorePromptButton.Click += (_, _) => RestoreDefaultPrompt();
     }
 
@@ -161,7 +163,9 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         ModelBox.Text = profile.Model;
         TimeoutBox.Value = profile.TimeoutSeconds;
         SupportsVisionToggle.IsChecked = profile.SupportsVision;
-        ApiKeyBox.Clear();
+        // 优先回显本次设置会话中尚未提交的修改，避免切换配置档后丢失编辑内容。
+        SetApiKey(_pendingKeys.GetValueOrDefault(profile.Id) ?? SecretStore.Load(profile.Id) ?? string.Empty);
+        SetApiKeyVisibility(false);
         RemoveButton.IsEnabled = _config is { Profiles.Count: > 1 };
         TestStatus.Show(
             _pendingKeys.ContainsKey(profile.Id) || SecretStore.Exists(profile.Id)
@@ -189,7 +193,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         profile.Model = ModelBox.Text.Trim();
         profile.TimeoutSeconds = TimeoutBox.Value;
         profile.SupportsVision = SupportsVisionToggle.IsChecked == true;
-        if (ApiKeyBox.Password is { Length: > 0 } apiKey && !string.IsNullOrWhiteSpace(apiKey))
+        if (GetApiKey() is { Length: > 0 } apiKey && !string.IsNullOrWhiteSpace(apiKey))
         {
             _pendingKeys[profile.Id] = apiKey;
         }
@@ -219,6 +223,28 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
 
     private void UpdateKindControls() =>
         ApiTypeRow.IsEnabled = string.Equals(KindBox.SelectedItem as string, "openai", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>显示状态只影响输入控件；密钥值始终保留在当前编辑会话内，保存时仍由 DPAPI 加密。</summary>
+    private void ToggleApiKeyVisibility() => SetApiKeyVisibility(!_isApiKeyVisible);
+
+    private void SetApiKeyVisibility(bool visible)
+    {
+        var apiKey = GetApiKey();
+        _isApiKeyVisible = visible;
+        SetApiKey(apiKey);
+        ApiKeyTextBox.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        ApiKeyBox.Visibility = visible ? Visibility.Collapsed : Visibility.Visible;
+        ApiKeyVisibilityGlyph.Text = visible ? "\uE7B3" : "\uE890";
+        ToggleApiKeyVisibilityButton.ToolTip = visible ? "隐藏 API Key" : "显示 API Key";
+    }
+
+    private void SetApiKey(string apiKey)
+    {
+        ApiKeyBox.Password = apiKey;
+        ApiKeyTextBox.Text = apiKey;
+    }
+
+    private string GetApiKey() => _isApiKeyVisible ? ApiKeyTextBox.Text : ApiKeyBox.Password;
 
     private void RestoreDefaultPrompt()
     {
@@ -306,7 +332,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         TestStatus.Show("正在测试连接…", InfoSeverity.Neutral);
         try
         {
-            var pendingKey = ApiKeyBox.Password is { Length: > 0 } typedKey && !string.IsNullOrWhiteSpace(typedKey)
+            var pendingKey = GetApiKey() is { Length: > 0 } typedKey && !string.IsNullOrWhiteSpace(typedKey)
                 ? typedKey
                 : _pendingKeys.GetValueOrDefault(profile.Id);
             var message = await TestConnection(profile.Clone(), pendingKey);
