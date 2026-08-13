@@ -95,6 +95,7 @@ internal sealed class ConfigStore
         config.General ??= new GeneralConfig();
         config.Pipeline ??= new PipelineConfig();
         config.Hotkeys ??= new HotkeyConfig();
+        config.Windows ??= new WindowConfig();
         config.Prompts ??= new PromptConfig();
         config.Profiles ??= [];
 
@@ -192,6 +193,21 @@ internal sealed class ConfigStore
         if (string.IsNullOrWhiteSpace(config.Hotkeys.Capture))
         {
             config.Hotkeys.Capture = "Ctrl+Shift+A";
+            normalized = true;
+        }
+
+        // 防止手工配置、损坏文件或异常 DPI 数据把设置窗口恢复成不可用的尺寸。
+        if (double.IsNaN(config.Windows.SettingsWidth) || double.IsInfinity(config.Windows.SettingsWidth) ||
+            config.Windows.SettingsWidth is < 620 or > 3840)
+        {
+            config.Windows.SettingsWidth = 760;
+            normalized = true;
+        }
+
+        if (double.IsNaN(config.Windows.SettingsHeight) || double.IsInfinity(config.Windows.SettingsHeight) ||
+            config.Windows.SettingsHeight is < 460 or > 2160)
+        {
+            config.Windows.SettingsHeight = 620;
             normalized = true;
         }
 

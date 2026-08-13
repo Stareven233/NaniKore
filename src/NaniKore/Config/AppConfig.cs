@@ -22,6 +22,8 @@ internal sealed class AppConfig
 
     public HotkeyConfig Hotkeys { get; set; } = new();
 
+    public WindowConfig Windows { get; set; } = new();
+
     public PromptConfig Prompts { get; set; } = new();
 }
 
@@ -107,6 +109,14 @@ internal sealed class HotkeyConfig
     public string TranslateClipboard { get; set; } = string.Empty;
 }
 
+internal sealed class WindowConfig
+{
+    /// <summary>设置窗口上次关闭时的客户区宽度与高度；无效值由配置加载阶段回退。</summary>
+    public double SettingsWidth { get; set; } = 760;
+
+    public double SettingsHeight { get; set; } = 620;
+}
+
 internal sealed class PromptConfig
 {
     /// <summary>空字符串时使用内置翻译模板。</summary>
@@ -137,6 +147,11 @@ internal static class AppConfigCloner
         {
             Capture = source.Hotkeys.Capture,
             TranslateClipboard = source.Hotkeys.TranslateClipboard,
+        },
+        Windows = new WindowConfig
+        {
+            SettingsWidth = source.Windows.SettingsWidth,
+            SettingsHeight = source.Windows.SettingsHeight,
         },
         Prompts = new PromptConfig
         {

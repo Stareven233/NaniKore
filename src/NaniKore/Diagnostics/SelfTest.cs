@@ -181,6 +181,9 @@ internal static class SelfTest
                     base_url: https://example.test/v1
                     model: model-a
                     timeout_seconds: 20
+                windows:
+                  settings_width: 800
+                  settings_height: 640
                 prompts:
                   translate: 'Translate into {{target_language}} only.'
                 unknown_field: ignored
@@ -189,6 +192,8 @@ internal static class SelfTest
             Check(
                 "YAML round-trip retains the manually maintained product version",
                 store.Current.Version == "0.1.1" &&
+                store.Current.Windows.SettingsWidth == 800 &&
+                store.Current.Windows.SettingsHeight == 640 &&
                 store.LoadWarning?.Contains("读取 config.yaml 失败", StringComparison.Ordinal) != true);
             Check(
                 "YAML round-trip retains known fields and normalizes invalid values",
@@ -205,6 +210,8 @@ internal static class SelfTest
                 reloaded.Current.Profiles.Single().Model == "model-a" &&
                 reloaded.Current.Profiles.Single().Name == "test" &&
                 reloaded.Current.Prompts.Translate == "Translate into {{target_language}} only." &&
+                reloaded.Current.Windows.SettingsWidth == 800 &&
+                reloaded.Current.Windows.SettingsHeight == 640 &&
                 AppConfigCloner.Clone(reloaded.Current).Profiles.Single().Name == "test");
 
             File.WriteAllText(Path.Combine(directory, "config.yaml"), """
