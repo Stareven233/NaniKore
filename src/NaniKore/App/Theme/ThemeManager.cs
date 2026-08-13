@@ -1,23 +1,20 @@
 using System.Windows;
 using System.Windows.Interop;
-using System.Windows.Media;
 using Microsoft.Win32;
 using NaniKore.Interop;
-// WinForms 与 WPF 同时启用，隐式 using 会让 Color 等类型撞名；主题层一律使用 WPF 类型。
-using Color = System.Windows.Media.Color;
-using Colors = System.Windows.Media.Colors;
+// WinForms 与 WPF 同时启用，隐式 using 会让 Application 等类型撞名；主题层一律使用 WPF 类型。
 using Application = System.Windows.Application;
 
 namespace NaniKore.App.Theme;
 
 /// <summary>
-/// 全应用主题入口：探测系统深浅色与个性化强调色，把对应色板合并进 <see cref="Application.Resources"/>，
-/// 并在系统设置变化时热切换。所有控件样式只引用语义化画刷键，故切换时无需重建窗口。
+/// 全应用主题入口：只跟随系统深浅色切换对应色板，把色板合并进 <see cref="Application.Resources"/>，
+/// 并在系统设置变化时热切换。强调色等品牌色由色板固定提供，不再读取系统个性化强调色，
+/// 以保证品牌观感稳定。所有控件样式只引用语义化画刷键，故切换时无需重建窗口。
 /// </summary>
 internal static class ThemeManager
 {
     private const string PersonalizeKey = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
-    private const string DwmKey = @"Software\Microsoft\Windows\DWM";
     private const int DwmUseImmersiveDarkMode = 20;
 
     private static readonly Uri LightPalette = new("/App/Theme/Palette.Light.xaml", UriKind.Relative);
@@ -119,36 +116,8 @@ internal static class ThemeManager
         });
     }
 
-    private static ResourceDictionary LoadPalette(bool dark)
-    {
-        var palette = new ResourceDictionary { Source = dark ? DarkPalette : LightPalette };
-        ApplyAccent(palette, dark);
-        return palette;
-    }
-
-    /// <summary>用系统个性化强调色覆盖色板内置值；深色主题下抬亮以保证正文对比度。</summary>
-    private static void ApplyAccent(ResourceDictionary palette, bool dark)
-    {
-        if (ReadSystemAccent() is not { } accent)
-        {
-            return;
-        }
-
-        var baseColor = dark ? Lighten(accent, 0.32) : accent;
-        Set(palette, "Accent", baseColor);
-        Set(palette, "Accent.Hover", Lighten(baseColor, dark ? 0.16 : 0.12));
-        Set(palette, "Accent.Pressed", Darken(baseColor, 0.16));
-        Set(palette, "Accent.Subtle", dark
-            ? Mix(baseColor, Color.FromRgb(0x20, 0x20, 0x20), 0.84)
-            : Mix(baseColor, Colors.White, 0.88));
-        Set(palette, "Text.OnAccent", Luminance(baseColor) > 0.6 ? Color.FromRgb(0x0B, 0x12, 0x20) : Colors.White);
-    }
-
-    private static void Set(ResourceDictionary palette, string name, Color color)
-    {
-        palette[$"Color.{name}"] = color;
-        palette[$"Brush.{name}"] = new SolidColorBrush(color);
-    }
+    private static ResourceDictionary LoadPalette(bool dark) =>
+        new() { Source = dark ? DarkPalette : LightPalette };
 
     private static bool ReadSystemUsesDarkMode()
     {
@@ -162,36 +131,4 @@ internal static class ThemeManager
             return false;
         }
     }
-
-    private static Color? ReadSystemAccent()
-    {
-        try
-        {
-            // DWM 的 AccentColor 是 0xAABBGGRR 排列，需要按字节重排成 WPF 的 ARGB。
-            if (Registry.CurrentUser.OpenSubKey(DwmKey)?.GetValue("AccentColor") is not int packed)
-            {
-                return null;
-            }
-
-            var value = unchecked((uint)packed);
-            return Color.FromRgb((byte)(value & 0xFF), (byte)((value >> 8) & 0xFF), (byte)((value >> 16) & 0xFF));
-        }
-        catch (Exception exception) when (exception is System.Security.SecurityException or UnauthorizedAccessException or IOException)
-        {
-            return null;
-        }
-    }
-
-    private static Color Lighten(Color color, double amount) => Mix(color, Colors.White, amount);
-
-    private static Color Darken(Color color, double amount) => Mix(color, Colors.Black, amount);
-
-    private static Color Mix(Color color, Color target, double amount) => Color.FromRgb(
-        (byte)Math.Round(color.R + ((target.R - color.R) * amount)),
-        (byte)Math.Round(color.G + ((target.G - color.G) * amount)),
-        (byte)Math.Round(color.B + ((target.B - color.B) * amount)));
-
-    /// <summary>相对亮度，用于决定强调色上的文字用深色还是白色。</summary>
-    private static double Luminance(Color color) =>
-        ((0.299 * color.R) + (0.587 * color.G) + (0.114 * color.B)) / 255.0;
 }
