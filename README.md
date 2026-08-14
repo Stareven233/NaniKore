@@ -1,89 +1,105 @@
 # NaniKore
 
-轻量的 Windows 截图、OCR 与翻译工具。当前 `main` 是单一 C#/.NET 进程实现；旧 Go/Gio 版本保留在 `legacy-go` 分支。
+> 轻量的 Windows 截图 OCR 与翻译工具。
 
-## 当前能力
+按下全局快捷键后框选屏幕文字，NaniKore 会在本地完成 OCR，并可调用已配置的翻译服务显示流式结果。当前 `main` 使用单一 C#/.NET 进程；旧版 Go/Gio 实现保留在 `legacy-go` 分支。
 
-- **桌面外壳**：.NET 10 + WinForms，单进程、单 Windows 消息循环
-- **截图与选区**：WinForms/GDI，Per-Monitor V2 物理像素坐标
-- **OCR**：ONNX Runtime C# 直接运行 PP-OCRv6-small 检测与识别模型
-- **交互**：全局 `Ctrl+Shift+A`，左键拖选，Esc/右键取消，结果自动复制并显示
-- **本地翻译（后续可选）**：GGUF + llama.cpp 兼容运行时
+## 功能
 
-当前 OCR 后处理使用纯 C# 连通域和水平矩形框近似官方 DB 多边形后处理，优先保证体积与依赖简洁。水平游戏/UI 文本已经跑通；旋转或弯曲文本仍弱于 OpenCV 完整实现。
+- 全局快捷键 `Ctrl+Shift+A`，支持拖选、Esc 或右键取消。
+- 基于 GDI 的虚拟桌面截图与 Per-Monitor V2 物理像素坐标处理。
+- 通过 ONNX Runtime 直接运行 PP-OCRv6-small，不依赖 Python、OpenCV 或外部 OCR 服务。
+- 支持 OpenAI、Claude、Gemini 协议的流式翻译配置，以及 `local_ocr`、`vision_oneshot` 两条输入管线。
+- 结果自动复制到剪贴板；设置、热键和 API Key 可在应用内管理。
+- API Key 仅使用当前 Windows 用户的 DPAPI 保存，不会写入仓库或 `config.yaml`。
 
-## 一键准备本地工具链
+## 系统要求
 
-SDK 与 NuGet 缓存不绑定项目目录或任何个人磁盘路径；模型仍保留在项目目录：
+- Windows 10 version 2004（build 19041）或更高版本。
+- 开发：.NET 10 SDK（`global.json` 当前要求 `10.0.302` 或兼容的更高 feature band）。
+- 运行发布包：.NET 10 Desktop Runtime；发布包是 framework-dependent，不包含运行时。
+- 本地 OCR：PP-OCRv6-small 模型文件。
+
+## 快速开始
 
 ```powershell
+# 准备 .NET SDK、NuGet 缓存和 OCR 模型
 ./scripts/bootstrap.ps1
-```
 
-它会准备：
-
-- `DOTNET_ROOT` 指定的 .NET SDK：脚本优先使用；未指定时才回退到 `Path`
-- `NUGET_PACKAGES` 指定的 NuGet 缓存：可由多个项目共用
-- `models/pp-ocr-v6-small`：官方 PaddlePaddle ONNX 模型与配置
-
-项目要求 .NET 10 SDK；`global.json` 当前锁定到 `10.0.302`，并允许滚动到当前安装的最新 .NET 10 feature band。脚本会先验证 `dotnet.exe` 是否真的能解析此 SDK；仅安装运行时或版本不兼容时，会自动安装 .NET 10 通道的最新稳定 SDK 到 `DOTNET_ROOT`。即使该环境变量刚设置、终端尚未重启，脚本也会直接读取用户或系统变量。未指定 `DOTNET_ROOT` 时才回退到 `Path`；如果 `Path` 中也没有兼容 SDK，则需要先设置 `DOTNET_ROOT`。如需将包缓存放在共享磁盘，再设置 `NUGET_PACKAGES`。模型文件被 Git 忽略。
-
-## 开发命令
-
-```powershell
-# 构建
+# 构建并运行
 ./scripts/dev.ps1 build
-
-# 无 UI 自测
-./scripts/dev.ps1 test
-
-# 运行桌面程序
 ./scripts/dev.ps1 run
-
-# 发布 Windows x64 framework-dependent 版本
-./scripts/dev.ps1 publish
-
-# 仅启动已有的 Debug / 发布版 EXE（不重复构建或发布）
-./scripts/dev.ps1 -Launch debug
-./scripts/dev.ps1 -Launch publish
 ```
 
-运行后按 **Ctrl+Shift+A**，左键拖选；按 **Esc** 或右键取消。选区位图只在内存中传给 OCR，不写入临时文件。
+运行后按 `Ctrl+Shift+A` 框选文字。选区图像仅在内存中传递，不会生成临时截图文件。
 
-## 配置模板
+`bootstrap.ps1` 优先使用 `DOTNET_ROOT` 中的 SDK，并使用 `NUGET_PACKAGES` 指定的缓存；两个环境变量都未配置时才回退到 `Path`。模型下载到项目内的 `models/`，但模型权重不会提交到 Git。
 
-仓库根目录的 `config.yaml` 是可审阅、无 API Key 的默认模板。构建会把它复制到 Debug 运行目录，发布会把它复制到 `artifacts/win-x64/`；应用在各自运行目录中读写该副本，因此通过设置页保存的值不会反向改写仓库模板。API Key 始终使用当前 Windows 用户的 DPAPI 独立保存，不会写进 `config.yaml`。
+## 常用命令
 
-如需调整初始开发配置，请编辑根目录模板后重新构建；如需只调整当前运行实例，请使用应用设置页。
+| 命令 | 说明 |
+| --- | --- |
+| `./scripts/dev.ps1 build` | 构建 Debug 版本。 |
+| `./scripts/dev.ps1 test` | 运行无 UI 自测。 |
+| `./scripts/dev.ps1 run` | 启动桌面应用。 |
+| `./scripts/dev.ps1 publish` | 发布 Windows x64 并生成不含 OCR 模型的 ZIP。 |
+| `./scripts/dev.ps1 publish -OcrModels` | 发布 Windows x64，并将 OCR 模型一并打入 ZIP。 |
+| `./scripts/dev.ps1 -Launch build` | 启动已有的 Debug EXE，不重复构建。 |
+| `./scripts/dev.ps1 -Launch publish` | 启动已有的发布 EXE，不重复发布。 |
 
-## OCR 诊断命令
+`-ocr-models` 是 `-OcrModels` 的等价别名。启用该参数前，请先运行 `./scripts/bootstrap-models.ps1`；模型缺失时，发布会明确失败而不会产出不完整的模型包。
+
+## 发布包
+
+发布文件保存在 `artifacts/`。版本号读取自根目录 `config.yaml` 的 `version` 字段：
+
+- `./scripts/dev.ps1 publish`：`NaniKore-v{版本号}-win_amd64-without-ocr-models.zip`
+- `./scripts/dev.ps1 publish -OcrModels`：`NaniKore-v{版本号}-win_amd64.zip`
+
+两种 ZIP 都将发布内容直接置于压缩包根目录。包含模型的包具有以下布局，应用无需额外设置即可查找模型：
+
+```text
+NaniKore.exe
+onnxruntime.dll
+onnxruntime_providers_shared.dll
+config.yaml
+models/
+└─ pp-ocr-v6-small/
+```
+
+未包含模型的包适合与模型单独分发；运行前请将 `models/` 放到 EXE 同级目录，或设置 `NANIKORE_MODEL_DIR` 指向完整的 `pp-ocr-v6-small` 目录。
+
+## 配置与翻译服务
+
+根目录 `config.yaml` 是不含密钥、可审阅的默认模板。构建和发布时会复制到各自运行目录，因此应用设置页保存的配置不会回写仓库模板。要修改新实例的默认配置，请编辑根目录模板后重新构建或发布。
+
+翻译服务、模型、目标语言和快捷键均可通过设置页调整。请只在自己信任的服务商端点中填写 API Key。
+
+## OCR 诊断
 
 ```powershell
-# 查看 ONNX 输入输出元数据
+# 查看 ONNX 模型输入输出元数据
 dotnet run --project src\NaniKore\NaniKore.csproj -- --inspect-models
 
-# 直接识别一张图片
+# 直接识别图片
 dotnet run --project src\NaniKore\NaniKore.csproj -- --ocr-file path\to\image.png
 ```
 
-## 发布布局与体积
-
-发布目录保留一个托管单文件 EXE，并把 ONNX Runtime 原生库明确分开：
+## 项目结构
 
 ```text
-artifacts/win-x64/
-├─ NaniKore.exe
-├─ onnxruntime.dll
-└─ onnxruntime_providers_shared.dll
+src/NaniKore/  应用、OCR、翻译与桌面 UI
+scripts/        工具链、模型准备和开发/发布命令
+models/         本地 OCR 模型目录（仅说明文件纳入 Git）
+artifacts/      发布产物（Git 忽略）
 ```
-
-Windows x64 framework-dependent 发布总计约 **40.18 MiB**；运行必需的 PP-OCRv6-small 检测与识别文件约 **29.75 MiB**，完整应用约 **69.93 MiB**。
-
-目标机器需要 .NET 10 Desktop Runtime。真正免安装的 self-contained 构建可后续按需提供，但体积会明显增大。
 
 ## 已知边界
 
-- 主显示器上的真实键鼠截图与 OCR 已验收通过。
-- 自动化冒烟测试已连续完成两轮截图、拖选、OCR 和关闭结果窗。
-- 副显示器、负坐标虚拟桌面与混合 DPI 代码路径已实现，但当前没有副显示器设备，留待以后补实机回归。
-- 旋转、弯曲和竖排文本暂不作为当前轻量 OCR 后处理的目标。
+- 已完成主显示器的真实键鼠截图与 OCR 验收，以及自动化冒烟自测。
+- 副显示器、负坐标虚拟桌面与混合 DPI 已有代码支持，但尚未完成实机回归。
+- 当前轻量 OCR 后处理面向水平游戏/UI 文本；旋转、弯曲和竖排文字不在保证范围内。
+
+## 许可证
+
+仓库暂未声明开源许可证。在许可证明确前，请勿假定可再分发或用于其他用途。

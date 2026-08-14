@@ -2,8 +2,11 @@
     [ValidateSet('build', 'run', 'test', 'publish')]
     [string]$Command = 'build',
 
-    [ValidateSet('debug', 'publish')]
-    [string]$Launch
+    [ValidateSet('build', 'publish')]
+    [string]$Launch,
+
+    [Alias('ocr-models')]
+    [switch]$OcrModels
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,8 +16,89 @@ $root = Split-Path -Parent $PSScriptRoot
 $solution = Join-Path $root 'NaniKore.slnx'
 $project = Join-Path $root 'src\NaniKore\NaniKore.csproj'
 $debugExecutable = Join-Path $root 'src\NaniKore\bin\Debug\net10.0-windows10.0.19041.0\NaniKore.exe'
+$artifactsDirectory = Join-Path $root 'artifacts'
 $publishOutput = Join-Path $root 'artifacts\win-x64'
 $publishedExecutable = Join-Path $publishOutput 'NaniKore.exe'
+$ocrModelsDirectory = Join-Path $root 'models'
+
+function Get-NaniKoreProductVersion {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ConfigPath
+    )
+
+    $configContent = Get-Content -LiteralPath $ConfigPath -Raw
+    $versionMatch = [regex]::Match($configContent, '(?m)^\s*version\s*:\s*["'']?(?<version>[^#\r\n"''\s]+)')
+    if (-not $versionMatch.Success) {
+        throw "Product version was not found in $ConfigPath."
+    }
+
+    $version = $versionMatch.Groups['version'].Value
+    if ($version.IndexOfAny([System.IO.Path]::GetInvalidFileNameChars()) -ge 0) {
+        throw "Product version '$version' contains characters that cannot be used in an archive filename."
+    }
+
+    return $version
+}
+
+function New-NaniKoreReleaseArchive {
+    param(
+        [Parameter(Mandatory)]
+        [string]$PublishOutput,
+
+        [Parameter(Mandatory)]
+        [string]$ArtifactsDirectory,
+
+        [Parameter(Mandatory)]
+        [string]$ModelsDirectory,
+
+        [Parameter(Mandatory)]
+        [string]$ProductVersion,
+
+        [switch]$IncludeOcrModels
+    )
+
+    if (-not (Test-Path -LiteralPath $PublishOutput -PathType Container)) {
+        throw "Publish output was not found: $PublishOutput"
+    }
+
+    if ($IncludeOcrModels) {
+        $defaultOcrModels = Join-Path $ModelsDirectory 'pp-ocr-v6-small'
+        if (-not (Test-Path -LiteralPath $defaultOcrModels -PathType Container)) {
+            throw "OCR models were not found: $defaultOcrModels. Run scripts/bootstrap-models.ps1 before publishing with -OcrModels."
+        }
+    }
+
+    $archiveSuffix = if ($IncludeOcrModels) { '' } else { '-without-ocr-models' }
+    $archivePath = Join-Path $ArtifactsDirectory "NaniKore-v$ProductVersion-win_amd64$archiveSuffix.zip"
+    $stagingDirectory = Join-Path $ArtifactsDirectory ".package-staging-$([guid]::NewGuid().ToString('N'))"
+
+    try {
+        New-Item -ItemType Directory -Path $stagingDirectory | Out-Null
+
+        # 将发布目录内容直接压入 ZIP 根目录，确保 models/ 与 EXE、DLL、config.yaml 同级。
+        Get-ChildItem -LiteralPath $PublishOutput -Force |
+            Copy-Item -Destination $stagingDirectory -Recurse -Force
+
+        if ($IncludeOcrModels) {
+            Copy-Item -LiteralPath $ModelsDirectory -Destination $stagingDirectory -Recurse -Force
+        }
+
+        $archiveEntries = @(Get-ChildItem -LiteralPath $stagingDirectory -Force)
+        if ($archiveEntries.Count -eq 0) {
+            throw "Package staging directory is empty: $stagingDirectory"
+        }
+
+        Compress-Archive -LiteralPath $archiveEntries.FullName -DestinationPath $archivePath -CompressionLevel Optimal -Force
+    }
+    finally {
+        if (Test-Path -LiteralPath $stagingDirectory) {
+            Remove-Item -LiteralPath $stagingDirectory -Recurse -Force
+        }
+    }
+
+    return $archivePath
+}
 
 function Start-NaniKoreExecutable {
     param(
@@ -39,7 +123,7 @@ if ($PSBoundParameters.ContainsKey('Launch')) {
     }
 
     switch ($Launch) {
-        'debug' {
+        'build' {
             Start-NaniKoreExecutable -Path $debugExecutable -Description 'Debug build'
         }
         'publish' {
@@ -69,12 +153,15 @@ try {
     switch ($Command) {
         'build' {
             & $dotnet build $solution --configuration Debug -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
+            $exitCode = $LASTEXITCODE
         }
         'run' {
             & $dotnet run --project $project -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
+            $exitCode = $LASTEXITCODE
         }
         'test' {
             & $dotnet run --project $project -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true -- --self-test
+            $exitCode = $LASTEXITCODE
         }
         'publish' {
             # 发布物固定保留在 artifacts\win-x64，避免将 EXE 与运行时 DLL 写到仓库根目录。
@@ -84,11 +171,21 @@ try {
             Remove-Item -LiteralPath $stalePdb, $staleOnnxRuntime, $staleOnnxProviders -Force -ErrorAction SilentlyContinue
 
             & $dotnet publish $project --configuration Release --runtime win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false --output $publishOutput -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
-            Remove-Item -LiteralPath (Join-Path $publishOutput 'onnxruntime.lib'), (Join-Path $publishOutput 'onnxruntime_providers_shared.lib') -Force -ErrorAction SilentlyContinue
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -eq 0) {
+                Remove-Item -LiteralPath (Join-Path $publishOutput 'onnxruntime.lib'), (Join-Path $publishOutput 'onnxruntime_providers_shared.lib') -Force -ErrorAction SilentlyContinue
+
+                $productVersion = Get-NaniKoreProductVersion -ConfigPath (Join-Path $root 'config.yaml')
+                $archivePath = New-NaniKoreReleaseArchive `
+                    -PublishOutput $publishOutput `
+                    -ArtifactsDirectory $artifactsDirectory `
+                    -ModelsDirectory $ocrModelsDirectory `
+                    -ProductVersion $productVersion `
+                    -IncludeOcrModels:$OcrModels
+                Write-Host "Created release archive: $archivePath"
+            }
         }
     }
-
-    $exitCode = $LASTEXITCODE
 }
 finally {
     Pop-Location

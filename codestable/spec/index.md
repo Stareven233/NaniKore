@@ -33,6 +33,7 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 
 - .NET SDK、NuGet 缓存和模型默认放在项目目录。
 - Windows x64 framework-dependent 发布为 `NaniKore.exe`、`onnxruntime.dll` 和 `onnxruntime_providers_shared.dll`。
+- `scripts/dev.ps1 publish` 会在 `artifacts/` 生成不含模型的 `NaniKore-v{version}-win_amd64-without-ocr-models.zip`；`-OcrModels` 会校验 `models/pp-ocr-v6-small` 后生成同级包含 `models/` 的 `NaniKore-v{version}-win_amd64.zip`。版本号来自根 `config.yaml`。
 - 发布总计约 40.18 MiB；必需 OCR 模型约 29.75 MiB。
 - 目标机器需要 .NET 10 Desktop Runtime。
 

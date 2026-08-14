@@ -29,5 +29,5 @@ models/
 
 - PP-OCRv6 直接使用 ONNX Runtime C# API，不依赖 Python/leaf-ocr。
 - 输入尺寸、归一化参数、检测阈值和识别字典从 `inference.yml` 读取。
-- 模型目录可通过 `NANIKORE_MODEL_DIR` 覆盖；默认会从程序目录和项目祖先目录查找。
+- 模型目录可通过 `NANIKORE_MODEL_DIR` 覆盖，默认会从程序目录及其祖先目录查找`models/pp-ocr-v6-small`。
 - GGUF 只用于后续本地语言模型；OCR 继续使用 ONNX，二者不混为一种格式。
