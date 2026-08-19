@@ -36,7 +36,7 @@ internal sealed class NaniKoreApp : Application
         // 主题资源必须先于任何窗口创建就位，否则首个窗口会以系统默认样式闪现一帧。
         ThemeManager.Initialize(this);
         _providerFactory = new ProviderFactory(_configStore.Current);
-        _hotkeyWindow = new GlobalHotkeyWindow(_configStore.Current.Hotkeys.Capture, () => _ = CaptureSelectAndTranslateAsync());
+        _hotkeyWindow = new GlobalHotkeyWindow(_configStore.Current.Hotkeys.Capture, OnCaptureHotkeyPressed);
         _trayIcon = new TrayIconHost(() => _ = CaptureSelectAndTranslateAsync(), ShowSettings, Shutdown);
 
         if (!string.IsNullOrWhiteSpace(_configStore.LoadWarning))
@@ -46,6 +46,19 @@ internal sealed class NaniKoreApp : Application
 
         Console.WriteLine("NaniKore translation pipeline is ready.");
         Console.WriteLine($"Press {_configStore.Current.Hotkeys.Capture} to capture and translate a region.");
+    }
+
+    /// <summary>截图热键采用切换行为：结果面板可见时再次按下直接关闭，否则开始新的截图流程。</summary>
+    private void OnCaptureHotkeyPressed()
+    {
+        if (_resultPanel is { IsVisible: true } panel)
+        {
+            // 关闭事件会同时取消仍在进行的翻译请求，避免结果面板关闭后继续更新旧内容。
+            panel.Close();
+            return;
+        }
+
+        _ = CaptureSelectAndTranslateAsync();
     }
 
     private async Task CaptureSelectAndTranslateAsync()
@@ -249,7 +262,7 @@ internal sealed class NaniKoreApp : Application
 
         try
         {
-            _hotkeyWindow = new GlobalHotkeyWindow(_configStore.Current.Hotkeys.Capture, () => _ = CaptureSelectAndTranslateAsync());
+            _hotkeyWindow = new GlobalHotkeyWindow(_configStore.Current.Hotkeys.Capture, OnCaptureHotkeyPressed);
         }
         catch (Exception exception)
         {
@@ -263,11 +276,11 @@ internal sealed class NaniKoreApp : Application
         _hotkeyWindow?.Dispose();
         try
         {
-            _hotkeyWindow = new GlobalHotkeyWindow(nextGesture, () => _ = CaptureSelectAndTranslateAsync());
+            _hotkeyWindow = new GlobalHotkeyWindow(nextGesture, OnCaptureHotkeyPressed);
         }
         catch
         {
-            _hotkeyWindow = new GlobalHotkeyWindow(previousGesture, () => _ = CaptureSelectAndTranslateAsync());
+            _hotkeyWindow = new GlobalHotkeyWindow(previousGesture, OnCaptureHotkeyPressed);
             throw;
         }
     }
