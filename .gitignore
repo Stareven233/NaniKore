@@ -34,3 +34,6 @@ Thumbs.db
 *.key
 *.pem
 /config/local*.yaml
+
+# 图标psd等中间产物
+resources/

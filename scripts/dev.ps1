@@ -20,6 +20,7 @@ $artifactsDirectory = Join-Path $root 'artifacts'
 $publishOutput = Join-Path $root 'artifacts\win-x64'
 $publishedExecutable = Join-Path $publishOutput 'NaniKore.exe'
 $ocrModelsDirectory = Join-Path $root 'models'
+$releaseRuntimeOutput = Join-Path $root 'src\NaniKore\bin\Release\net10.0-windows10.0.19041.0\win-x64'
 
 function Get-NaniKoreProductVersion {
     param(
@@ -100,6 +101,33 @@ function New-NaniKoreReleaseArchive {
     return $archivePath
 }
 
+function Copy-NaniKoreOnnxRuntimeNativeLibraries {
+    param(
+        [Parameter(Mandatory)]
+        [string]$BuildOutput,
+
+        [Parameter(Mandatory)]
+        [string]$PublishOutput
+    )
+
+    # single-file 发布会捆绑 ONNX Runtime 的原生 DLL；发行目录仍须保留外置副本，供加载器和 ZIP 分发使用。
+    $nativeRuntimeFiles = @(
+        'onnxruntime.dll',
+        'onnxruntime_providers_shared.dll'
+    )
+    $missingNativeRuntimeFiles = @(
+        $nativeRuntimeFiles |
+            Where-Object { -not (Test-Path -LiteralPath (Join-Path $BuildOutput $_) -PathType Leaf) }
+    )
+    if ($missingNativeRuntimeFiles.Count -gt 0) {
+        throw "Required ONNX Runtime native DLLs were not generated: $($missingNativeRuntimeFiles -join ', ')."
+    }
+
+    foreach ($nativeRuntimeFile in $nativeRuntimeFiles) {
+        Copy-Item -LiteralPath (Join-Path $BuildOutput $nativeRuntimeFile) -Destination $PublishOutput -Force
+    }
+}
+
 function Start-NaniKoreExecutable {
     param(
         [Parameter(Mandatory)]
@@ -166,15 +194,13 @@ try {
         'publish' {
             # 发布物固定保留在 artifacts\win-x64，避免将 EXE 与运行时 DLL 写到仓库根目录。
             $stalePdb = Join-Path $publishOutput 'NaniKore.pdb'
-            $staleOnnxRuntime = Join-Path $publishOutput 'onnxruntime.dll'
-            $staleOnnxProviders = Join-Path $publishOutput 'onnxruntime_providers_shared.dll'
-            Remove-Item -LiteralPath $stalePdb, $staleOnnxRuntime, $staleOnnxProviders -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $stalePdb -Force -ErrorAction SilentlyContinue
 
             & $dotnet publish $project --configuration Release --runtime win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false --output $publishOutput -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
             $exitCode = $LASTEXITCODE
             if ($exitCode -eq 0) {
                 Remove-Item -LiteralPath (Join-Path $publishOutput 'onnxruntime.lib'), (Join-Path $publishOutput 'onnxruntime_providers_shared.lib') -Force -ErrorAction SilentlyContinue
-
+                Copy-NaniKoreOnnxRuntimeNativeLibraries -BuildOutput $releaseRuntimeOutput -PublishOutput $publishOutput
                 $productVersion = Get-NaniKoreProductVersion -ConfigPath (Join-Path $root 'config.yaml')
                 $archivePath = New-NaniKoreReleaseArchive `
                     -PublishOutput $publishOutput `
