@@ -201,6 +201,10 @@ try {
             if ($exitCode -eq 0) {
                 Remove-Item -LiteralPath (Join-Path $publishOutput 'onnxruntime.lib'), (Join-Path $publishOutput 'onnxruntime_providers_shared.lib') -Force -ErrorAction SilentlyContinue
                 Copy-NaniKoreOnnxRuntimeNativeLibraries -BuildOutput $releaseRuntimeOutput -PublishOutput $publishOutput
+                # 发布时同步根目录配置模板到发布输出，确保运行时配置与构建版本一致，喵
+                $rootConfig = Join-Path $root "config.yaml"
+                $publishConfig = Join-Path $publishOutput "config.yaml"
+                Copy-Item -LiteralPath $rootConfig -Destination $publishConfig -Force
                 $productVersion = Get-NaniKoreProductVersion -ConfigPath (Join-Path $root 'config.yaml')
                 $archivePath = New-NaniKoreReleaseArchive `
                     -PublishOutput $publishOutput `
