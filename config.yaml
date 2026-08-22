@@ -1,6 +1,6 @@
 # 此文件是可提交的运行配置模板：API Key 仅由 Windows DPAPI 保存到当前用户配置目录，不写入此文件。
 # 修改根目录模板后重新构建；运行时在 Debug 或发布目录各自使用其副本。
-version: 0.2.3+7
+version: 0.2.3+10
 general:
   auto_translate: false
   target_language: 中文（简体）
@@ -22,6 +22,14 @@ profiles:
   api_type: completions
   base_url: https://apihub.agnes-ai.com/v1
   model: agnes-2.5-flash
+  supports_vision: true
+  timeout_seconds: 30
+- id: openai-dots
+  name: dots
+  kind: openai
+  api_type: completions
+  base_url: https://note3-prev-api.askdiandian.com/v1
+  model: dots3-note-prev
   supports_vision: true
   timeout_seconds: 30
 - id: gemini-hachimi
@@ -63,7 +71,5 @@ windows:
   settings_width: 1024
   settings_height: 700
 prompts:
-  translate: |
-    Translate the supplied text into {{target_language}}.
-    Return only the translation in {{target_language}}. Do not include explanations, notes, or source text.
+  translate: Translate the supplied text into {{target_language}}. Return only the translation in {{target_language}}. Do not include explanations, notes, or source text.
   explain: ''

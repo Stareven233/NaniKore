@@ -28,6 +28,7 @@ internal sealed class NaniKoreApp : Application
     private CancellationTokenSource? _translationCancellation;
     private byte[]? _lastImagePng;
     private bool _selecting;
+    private bool _isReplacingResultPanel;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -48,14 +49,15 @@ internal sealed class NaniKoreApp : Application
         Console.WriteLine($"Press {_configStore.Current.Hotkeys.Capture} to capture and translate a region.");
     }
 
-    /// <summary>截图热键采用切换行为：结果面板可见时再次按下直接关闭，否则开始新的截图流程。</summary>
+    /// <summary>截图热键先抢占旧结果，再立即进入新一轮选区翻译；正在框选时保持忽略新触发。</summary>
     private void OnCaptureHotkeyPressed()
     {
         if (_resultPanel is { IsVisible: true } panel)
         {
             // 关闭事件会同时取消仍在进行的翻译请求，避免结果面板关闭后继续更新旧内容。
+            // 热键替换属于例外：Close 的 Closed 通知可能晚于新流程启动，不能误杀刚创建的翻译流。
+            _isReplacingResultPanel = true;
             panel.Close();
-            return;
         }
 
         _ = CaptureSelectAndTranslateAsync();
@@ -203,8 +205,17 @@ internal sealed class NaniKoreApp : Application
         panel.SettingsRequested += (_, _) => ShowSettings();
         panel.Closed += (_, _) =>
         {
-            CancelTranslation();
             _resultPanel = null;
+            if (_isReplacingResultPanel)
+            {
+                _isReplacingResultPanel = false;
+            }
+            else
+            {
+                CancelTranslation();
+            }
+
+            SyncSettingsTopmost();
         };
         _resultPanel = panel;
         panel.Show();
@@ -213,6 +224,7 @@ internal sealed class NaniKoreApp : Application
             panel.PositionNearSelection(newPanelBounds);
         }
 
+        SyncSettingsTopmost();
         return panel;
     }
 
@@ -230,6 +242,16 @@ internal sealed class NaniKoreApp : Application
         window.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow = window;
         window.Show();
+        SyncSettingsTopmost();
+    }
+
+    /// <summary>设置只在结果卡存在时共享置顶层；结果卡消失后恢复为可被遮挡的普通工具窗。</summary>
+    private void SyncSettingsTopmost()
+    {
+        if (_settingsWindow is { } settings)
+        {
+            settings.Topmost = _resultPanel is { IsVisible: true };
+        }
     }
 
     private void ApplySettings(AppConfig next)

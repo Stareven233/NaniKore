@@ -4,6 +4,9 @@ namespace NaniKore.Interop;
 
 internal static partial class NativeMethods
 {
+    [LibraryImport("kernel32.dll", EntryPoint = "GetModuleHandleW", StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial nint GetModuleHandle(string? moduleName);
+
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool RegisterHotKey(nint windowHandle, int id, uint modifiers, uint virtualKey);

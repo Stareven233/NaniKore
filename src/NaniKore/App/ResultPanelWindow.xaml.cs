@@ -30,6 +30,8 @@ internal sealed partial class ResultPanelWindow : Window
         Icon = ApplicationIcon.LoadWpf();
         ThemeManager.ApplyWindowChrome(this);
         MaxHeight = SystemParameters.WorkArea.Height * 0.6;
+        // 仅当结果卡实际获得键盘焦点时才响应 Esc；无焦点时不抢用户当前输入。
+        PreviewKeyDown += OnPanelPreviewKeyDown;
     }
 
     public event EventHandler? TranslateRequested;
@@ -119,6 +121,17 @@ internal sealed partial class ResultPanelWindow : Window
     {
         // 关闭窗口意味着这次翻译不再需要；宿主会订阅 Closed 并取消请求。
         base.OnClosing(e);
+    }
+
+    /// <summary>结果卡持有键盘焦点时，Esc 等同关闭按钮；失焦后按键交还给当前焦点窗口。</summary>
+    private void OnPanelPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            Close();
+            e.Handled = true;
+        }
+        base.OnPreviewKeyDown(e);
     }
 
     private void OnSourceTextBoxPreviewMouseDown(object sender, MouseButtonEventArgs e)
