@@ -57,7 +57,7 @@ internal sealed class TrayMenuRenderer : ToolStripProfessionalRenderer
         }
 
         // 悬停高亮画成圆角，和 WPF 侧的列表项观感一致。
-        var bounds = new Rectangle(3, 1, e.Item.Bounds.Width - 6, e.Item.Bounds.Height - 2);
+        var bounds = new Rectangle(4, 2, e.Item.Bounds.Width - 8, e.Item.Bounds.Height - 4);
         using var highlight = new SolidBrush(Resolve("Brush.Accent.Subtle", SystemColors.Highlight));
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         using var path = CreateRoundedPath(bounds, 5);
@@ -78,7 +78,7 @@ internal sealed class TrayMenuRenderer : ToolStripProfessionalRenderer
         ArgumentNullException.ThrowIfNull(e);
         using var pen = new Pen(Resolve("Brush.Divider", SystemColors.ControlDark));
         var y = e.Item.Bounds.Height / 2;
-        e.Graphics.DrawLine(pen, 8, y, e.Item.Bounds.Width - 8, y);
+        e.Graphics.DrawLine(pen, 14, y, e.Item.Bounds.Width - 14, y);
     }
 
     private static GraphicsPath CreateRoundedPath(Rectangle bounds, int radius)

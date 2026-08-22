@@ -18,7 +18,9 @@ internal sealed class TrayIconHost : IDisposable
             // 托盘菜单是 WinForms 控件，样式需要显式跟随应用主题，否则深色下仍是白底方角菜单。
             Renderer = new TrayMenuRenderer(),
             ShowImageMargin = false,
-            Padding = new Padding(0, 4, 0, 4),
+            // 跟随系统菜单字体并稍微放大，保持原生可读性同时提升现代感。
+            Font = new Font(SystemFonts.MenuFont?.FontFamily ?? SystemFonts.DialogFont.FontFamily, (SystemFonts.MenuFont?.Size ?? SystemFonts.DialogFont.Size) + 1.5f),
+            Padding = new Padding(6, 6, 6, 6),
         };
         _menu.Items.Add("截图翻译", null, (_, _) => capture());
         _menu.Items.Add("设置", null, (_, _) => settings());
@@ -64,6 +66,15 @@ internal sealed class TrayIconHost : IDisposable
         {
             item.BackColor = _menu.BackColor;
             item.ForeColor = _menu.ForeColor;
+            // 加大菜单项点击区域；分隔线只保留少量纵向留白。
+            if (item is ToolStripSeparator)
+            {
+                item.Padding = new Padding(0, 4, 0, 4);
+            }
+            else
+            {
+                item.Padding = new Padding(12, 8, 20, 8);
+            }
         }
     }
 }
