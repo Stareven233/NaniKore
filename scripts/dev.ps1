@@ -180,6 +180,12 @@ Push-Location -LiteralPath $root
 try {
     switch ($Command) {
         'build' {
+            # 构建前自动递增 build 版本号；发布流程不触发该更新，避免改变发行包版本。
+            & python (Join-Path $root 'scripts\update_version.py') --bump build
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to update the product version."
+            }
+
             & $dotnet build $solution --configuration Debug -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
             $exitCode = $LASTEXITCODE
         }
