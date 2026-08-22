@@ -67,10 +67,30 @@ internal sealed class TrayMenuRenderer : ToolStripProfessionalRenderer
     protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
     {
         ArgumentNullException.ThrowIfNull(e);
-        e.TextColor = e.Item.Enabled
+        var textColor = e.Item.Enabled
             ? Resolve("Brush.Text.Primary", SystemColors.MenuText)
             : Resolve("Brush.Text.Disabled", SystemColors.GrayText);
-        base.OnRenderItemText(e);
+
+        // TextRenderer 的绘制画布已经被 WinForms 平移到当前菜单项，坐标必须从 (0, 0) 起算。
+        // 菜单项可能因为下拉菜单的边距而整体右移；取宿主客户端宽度并减去项的 X 偏移，
+        // 才能相对整个可见菜单水平居中，而不是相对右移后的项目区域居中。
+        var menuWidth = e.Item.Owner?.ClientSize.Width ?? e.Item.Width;
+        var textBounds = new Rectangle(
+            -e.Item.Bounds.X,
+            0,
+            Math.Max(0, menuWidth),
+            e.Item.Height);
+        TextRenderer.DrawText(
+            e.Graphics,
+            e.Text,
+            e.TextFont,
+            textBounds,
+            textColor,
+            TextFormatFlags.HorizontalCenter |
+            TextFormatFlags.VerticalCenter |
+            TextFormatFlags.SingleLine |
+            TextFormatFlags.EndEllipsis |
+            TextFormatFlags.NoPadding);
     }
 
     protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
