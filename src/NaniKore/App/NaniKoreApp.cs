@@ -38,7 +38,7 @@ internal sealed class NaniKoreApp : Application
         ThemeManager.Initialize(this);
         _providerFactory = new ProviderFactory(_configStore.Current);
         _hotkeyWindow = new GlobalHotkeyWindow(_configStore.Current.Hotkeys.Capture, OnCaptureHotkeyPressed);
-        _trayIcon = new TrayIconHost(() => _ = CaptureSelectAndTranslateAsync(), ShowSettings, Shutdown);
+        _trayIcon = new TrayIconHost(() => _ = CaptureSelectAndTranslateAsync(), () => ShowSettings(), Shutdown);
 
         if (!string.IsNullOrWhiteSpace(_configStore.LoadWarning))
         {
@@ -197,12 +197,14 @@ internal sealed class NaniKoreApp : Application
                 _resultPanel.PositionNearSelection(selectedBounds);
             }
 
+            _resultPanel.BringToTopmostBand();
+
             return _resultPanel;
         }
 
         var panel = new ResultPanelWindow();
         panel.TranslateRequested += (_, _) => _ = StartTranslationAsync(panel.SourceText, _lastImagePng);
-        panel.SettingsRequested += (_, _) => ShowSettings();
+        panel.SettingsRequested += (_, _) => ShowSettings(topmostFromResult: true);
         panel.Closed += (_, _) =>
         {
             _resultPanel = null;
@@ -215,43 +217,40 @@ internal sealed class NaniKoreApp : Application
                 CancelTranslation();
             }
 
-            SyncSettingsTopmost();
+            if (_settingsWindow is { } settings)
+            {
+                // 结果卡关闭后，其带来的置顶来源也消失；设置恢复普通层级。
+                settings.Topmost = false;
+            }
         };
         _resultPanel = panel;
         panel.Show();
+        panel.BringToTopmostBand();
         if (selectionOnDesktop is { } newPanelBounds)
         {
             panel.PositionNearSelection(newPanelBounds);
         }
 
-        SyncSettingsTopmost();
         return panel;
     }
 
-    private void ShowSettings()
+    private void ShowSettings(bool topmostFromResult = false)
     {
         if (_settingsWindow is { } existing)
         {
             // 单例设置窗：重复触发时只把已有窗口提到前台，不再叠开第二份编辑副本。
+            existing.Topmost = topmostFromResult;
             existing.Show();
             existing.Activate();
             return;
         }
 
         var window = new SettingsWindow(_configStore.Current, ApplySettings, TestConnectionAsync, SuspendCaptureHotkey);
+        // 只有结果卡“设置”按钮打开时才置顶；托盘等入口保持普通窗口，允许被遮挡。
+        window.Topmost = topmostFromResult;
         window.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow = window;
         window.Show();
-        SyncSettingsTopmost();
-    }
-
-    /// <summary>设置只在结果卡存在时共享置顶层；结果卡消失后恢复为可被遮挡的普通工具窗。</summary>
-    private void SyncSettingsTopmost()
-    {
-        if (_settingsWindow is { } settings)
-        {
-            settings.Topmost = _resultPanel is { IsVisible: true };
-        }
     }
 
     private void ApplySettings(AppConfig next)

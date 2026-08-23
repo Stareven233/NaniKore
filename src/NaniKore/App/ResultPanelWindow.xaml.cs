@@ -10,19 +10,17 @@ using FormsScreen = System.Windows.Forms.Screen;
 
 namespace NaniKore.App;
 
-/// <summary>单例非模态结果面板；新结果展示不抢焦点，用户点击原文后才显式进入编辑状态。</summary>
+/// <summary>单例普通窗口的结果面板；ShowActivated=false 保证新结果展示不抢焦点，点击交互交给系统原生激活规则。</summary>
 internal sealed partial class ResultPanelWindow : Window
 {
-    private const int GwlExStyle = -20;
-    private const nint WsExNoActivate = 0x08000000;
     private const nint HwndTopmost = -1;
     private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpShowWindow = 0x0040;
     private const int PlacementGapPixels = 8;
 
     private nint _windowHandle;
-    private bool _sourceEditingActivated;
 
     public ResultPanelWindow()
     {
@@ -30,7 +28,7 @@ internal sealed partial class ResultPanelWindow : Window
         Icon = ApplicationIcon.LoadWpf();
         ThemeManager.ApplyWindowChrome(this);
         MaxHeight = SystemParameters.WorkArea.Height * 0.6;
-        // 仅当结果卡实际获得键盘焦点时才响应 Esc；无焦点时不抢用户当前输入。
+        // Esc 仅在结果卡实际持有键盘焦点（即已激活）时响应；未激活时按键交还用户当前窗口。
         PreviewKeyDown += OnPanelPreviewKeyDown;
     }
 
@@ -81,6 +79,24 @@ internal sealed partial class ResultPanelWindow : Window
             SwpNoSize | SwpNoActivate | SwpShowWindow);
     }
 
+    /// <summary>两个 Topmost 窗口之间系统不保证新窗口在上；新结果必须显式声明一次当前置顶层顶端。</summary>
+    public void BringToTopmostBand()
+    {
+        if (!IsVisible || _windowHandle == nint.Zero)
+        {
+            return;
+        }
+
+        _ = NativeMethods.SetWindowPos(
+            _windowHandle,
+            HwndTopmost,
+            0,
+            0,
+            0,
+            0,
+            SwpNoMove | SwpNoSize | SwpNoActivate | SwpShowWindow);
+    }
+
     public void Append(Translation.UnderstandDelta delta)
     {
         var target = delta.Channel switch
@@ -101,20 +117,8 @@ internal sealed partial class ResultPanelWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        // 仅缓存句柄供 SetWindowPos 定位使用；不再干预扩展样式，激活完全遵循系统默认行为。
         _windowHandle = new WindowInteropHelper(this).Handle;
-        SetNoActivate(true);
-    }
-
-    protected override void OnDeactivated(EventArgs e)
-    {
-        base.OnDeactivated(e);
-
-        // 编辑结束后恢复不抢焦点行为，后续 OCR 结果不会意外夺走正在使用的窗口。
-        if (_sourceEditingActivated)
-        {
-            _sourceEditingActivated = false;
-            SetNoActivate(true);
-        }
     }
 
     protected override void OnClosing(CancelEventArgs e)
@@ -132,34 +136,6 @@ internal sealed partial class ResultPanelWindow : Window
             e.Handled = true;
         }
         base.OnPreviewKeyDown(e);
-    }
-
-    private void OnSourceTextBoxPreviewMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (!_sourceEditingActivated)
-        {
-            _sourceEditingActivated = true;
-            SetNoActivate(false);
-        }
-
-        // 仅此显式点击会激活窗口，从而允许键盘输入、选中与粘贴原文。
-        Activate();
-        Keyboard.Focus(SourceTextBox);
-    }
-
-    private void SetNoActivate(bool enabled)
-    {
-        if (_windowHandle == nint.Zero)
-        {
-            return;
-        }
-
-        var style = NativeMethods.GetWindowLongPtr(_windowHandle, GwlExStyle);
-        var nextStyle = enabled ? style | WsExNoActivate : style & ~WsExNoActivate;
-        if (nextStyle != style)
-        {
-            _ = NativeMethods.SetWindowLongPtr(_windowHandle, GwlExStyle, nextStyle);
-        }
     }
 
     private static int ClampToWorkArea(int value, int minimum, int maximum) =>

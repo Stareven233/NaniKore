@@ -41,8 +41,7 @@
                        Text="点击可编辑" />
         </DockPanel>
         <TextBox x:Name="SourceTextBox" Grid.Row="1"
-                 Style="{DynamicResource TextBox.Multiline}"
-                 PreviewMouseDown="OnSourceTextBoxPreviewMouseDown" />
+                 Style="{DynamicResource TextBox.Multiline}" />
 
         <GridSplitter Grid.Row="2" Height="8" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                       ResizeBehavior="PreviousAndNext" />
