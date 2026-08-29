@@ -3,14 +3,11 @@
 ## 项目本地环境
 
 ```powershell
-# 首次准备 .NET SDK、NuGet 包和 PP-OCRv6-small 模型
+# 首次准备 .NET SDK 和 NuGet 包
 ./scripts/bootstrap.ps1
-
-# 只准备或校验模型
-./scripts/bootstrap-models.ps1
 ```
 
-The shared .NET SDK is resolved from `DOTNET_ROOT` first, then falls back to `Path`; configure the global NuGet cache with `NUGET_PACKAGES`. Models remain in project-local `models/`.
+The shared .NET SDK is resolved from `DOTNET_ROOT` first, then falls back to `Path`; configure the global NuGet cache with `NUGET_PACKAGES`.
 
 ## 常用命令
 
@@ -18,19 +15,24 @@ The shared .NET SDK is resolved from `DOTNET_ROOT` first, then falls back to `Pa
 # 构建
 ./scripts/dev.ps1 build
 
-# 10 项无 UI 自测
+# 无 UI 自测
 ./scripts/dev.ps1 test
 
 # 运行 GUI
 ./scripts/dev.ps1 run
 
-# 发布 EXE + ONNX Runtime 原生 DLL
+# 发布轻量 ZIP：不包含固定模型和 native DLL
 ./scripts/dev.ps1 publish
 
+# 发布完整 ZIP：包含 deps/ 下的模型和 DLL
+./scripts/dev.ps1 publish -full
+
 # 仅启动已有的 Debug / 发布版 EXE（不重复构建或发布）
-./scripts/dev.ps1 -Launch debug
+./scripts/dev.ps1 -Launch build
 ./scripts/dev.ps1 -Launch publish
 ```
+
+首次使用本地 OCR 时，从设置页的“通用”进入“本地 OCR 依赖”，点击“下载依赖”并确认。文件会保存到当前可执行程序目录下的 `deps/`，应用不会静默自动下载。
 
 ## 诊断命令
 
@@ -56,10 +58,9 @@ artifacts\win-x64\NaniKore.exe --self-test
 
 ```text
 src/NaniKore/      C# 应用源码
+deps/              唯一的本地 OCR 与 ONNX Runtime 依赖源
 scripts/           本地工具链、模型、构建与发布脚本
-models/            本地模型（仅 README 被 Git 跟踪）
 artifacts/win-x64/ 发布产物（Git 忽略）
-Shared .NET SDK: resolved from `DOTNET_ROOT` first, then `Path`; NuGet cache: configured by `NUGET_PACKAGES`.
 ```
 
 ## 分支

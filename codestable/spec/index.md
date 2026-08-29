@@ -31,10 +31,11 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 - 2026-08-09 真机验收发现结果卡层级/编辑、翻译目标可靠性、配置档切换、配置版本、设置生命周期和热键录制等问题，尚不能视为稳定体验。下一轮实施与验收以 `codestable/roadmap/002-csharp-single-process-migration/phase-3-post-test-remediation.md` 为准。
 ### 工具链与发布
 
-- .NET SDK、NuGet 缓存和模型默认放在项目目录。
-- Windows x64 framework-dependent 发布为 `NaniKore.exe`、`onnxruntime.dll` 和 `onnxruntime_providers_shared.dll`。
-- `scripts/dev.ps1 publish` 会在 `artifacts/` 生成不含模型的 `NaniKore-v{version}-win_amd64-without-ocr-models.zip`；`-OcrModels` 会校验 `models/pp-ocr-v6-small` 后生成同级包含 `models/` 的 `NaniKore-v{version}-win_amd64.zip`。版本号来自根 `config.yaml`。
-- 发布总计约 40.18 MiB；必需 OCR 模型约 29.75 MiB。
+- .NET SDK、NuGet 缓存和可选的本地运行时依赖按各自入口准备。
+- Windows x64 framework-dependent 发布包含 `NaniKore.exe` 与托管依赖；ONNX Runtime native DLL 和 OCR 权重位于 `deps/`。
+- `scripts/dev.ps1 publish` 生成不含固定 OCR 权重和 native DLL 的 `NaniKore-v{version}-win_amd64.zip`；`publish -full` 从唯一真实源 `deps/` 复制完整依赖，生成 `NaniKore-v{version}-win_amd64-full.zip`。
+- 应用设置页的“下载依赖”操作在用户确认后将依赖保存到当前可执行程序目录的 `deps/`；ModelScope `master` 为默认源，OCR 文件失败时逐项回退 Hugging Face。
+- 应用不会静默联网，不支持 `NANIKORE_MODEL_DIR`；模型和 DLL 不得维护在其他目录。
 - 目标机器需要 .NET 10 Desktop Runtime。
 
 ## 已验证边界

@@ -1,6 +1,8 @@
 using System.Windows;
 using System.Windows.Controls;
+using NaniKore.App.Controls;
 using NaniKore.Config;
+using NaniKore.Ocr.Models;
 using UserControl = System.Windows.Controls.UserControl;
 
 namespace NaniKore.App.Settings;
@@ -22,9 +24,17 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         new("意大利语", "it", "Italiano", "Italian"),
     ];
 
-    public GeneralPage()
+    private readonly Func<IProgress<string>, CancellationToken, Task>? _downloadDependencies;
+
+    public GeneralPage(Func<IProgress<string>, CancellationToken, Task>? downloadDependencies = null)
     {
         InitializeComponent();
+        _downloadDependencies = downloadDependencies;
+        DownloadDependenciesButton.IsEnabled = downloadDependencies is not null;
+        var dependenciesReady = OcrDependencyManifest.IsComplete();
+        DependencyStatus.Show(
+            dependenciesReady ? "本地 OCR 依赖已就绪。" : "本地 OCR 依赖尚未下载。",
+            dependenciesReady ? InfoSeverity.Success : InfoSeverity.Warning);
         foreach (var language in TargetLanguages)
         {
             TargetLanguageBox.Items.Add(language);
@@ -62,6 +72,37 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         config.General.AutoTranslate = AutoTranslateToggle.IsChecked == true;
         config.General.TargetLanguage = ((LanguageChoice)TargetLanguageBox.SelectedItem!).Name;
         config.Pipeline.Mode = PipelineModeBox.SelectedItem as string ?? "local_ocr";
+    }
+
+    private async void OnDownloadDependenciesClick(object sender, RoutedEventArgs e)
+    {
+        if (_downloadDependencies is null ||
+            !MessageDialog.Confirm(
+                Window.GetWindow(this),
+                "下载本地 OCR 依赖？",
+                "将从 ModelScope 下载 OCR 模型权重和 ONNX Runtime DLL，并保存到当前程序目录的 deps 文件夹。下载只会在你确认后开始。",
+                "下载",
+                InfoSeverity.Warning))
+        {
+            return;
+        }
+
+        DownloadDependenciesButton.IsEnabled = false;
+        DependencyStatus.Show("正在准备下载…", InfoSeverity.Neutral);
+        var progress = new Progress<string>(message => DependencyStatus.Show(message, InfoSeverity.Neutral));
+        try
+        {
+            await _downloadDependencies(progress, CancellationToken.None);
+            DependencyStatus.Show("本地 OCR 依赖已准备完成。", InfoSeverity.Success);
+        }
+        catch (Exception exception)
+        {
+            DependencyStatus.Show(exception.Message, InfoSeverity.Error);
+        }
+        finally
+        {
+            DownloadDependenciesButton.IsEnabled = true;
+        }
     }
 
     private static LanguageChoice? FindLanguage(string configuredValue) => TargetLanguages.FirstOrDefault(choice =>

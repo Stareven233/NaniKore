@@ -11,6 +11,7 @@ internal sealed class OnnxModelRunner : IDisposable
 
     public OnnxModelRunner(string modelPath)
     {
+        OnnxRuntimeNativeLoader.EnsureConfigured();
         using var options = new SessionOptions
         {
             GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,

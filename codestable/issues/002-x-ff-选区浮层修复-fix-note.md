@@ -34,7 +34,7 @@ Go/Gio 版本按下 `Ctrl+Shift+A` 后无法正常控制选区，会自动截取
 
 - `src/NaniKore/`：C# WinForms 截图、选区、热键、OCR、诊断与结果界面。
 - `scripts/`：项目本地 SDK/模型准备、构建、自测和发布脚本。
-- `models/README.md`：PP-OCRv6-small 本地模型布局与约束。
+- `deps/README.md`：PP-OCRv6-small 本地模型布局与约束。
 - `README.md`：当前实现、开发命令、分文件发布与已知边界。
 - `codestable/roadmap/002-csharp-single-process-migration/spec.md`：迁移阶段和验收状态。
 - 删除 `cmd/`、`pkg/`、`go.mod`、`go.sum`、旧版本配置与旧二进制。

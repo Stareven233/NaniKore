@@ -18,9 +18,9 @@ branch: main
 - 单一 C# 进程，Windows 10/11 x64 优先。
 - The toolchain uses a shared .NET SDK: resolve it from `Path` first, or use `DOTNET_ROOT`; configure the NuGet cache with `NUGET_PACKAGES`.
 - 选区使用物理像素坐标，支持虚拟桌面负坐标和 Per-Monitor V2。
-- 模型权重放在项目内 `models/`，但不提交 Git。
+- 模型权重放在可执行程序目录下的 `deps/`，由设置页在用户确认后下载；不提交 Git。
 - PP-OCRv6 直接调用 ONNX Runtime，不依赖 Python、leaf-ocr 或 OpenCV。
-- 发布保留 `NaniKore.exe` 与 ONNX Runtime 原生 DLL 分文件，便于观察和替换原生依赖。
+- 发布轻量包不携带固定 OCR 权重和 native DLL；完整包从唯一真实源 `deps/` 分发。
 - GGUF 只作为后续本地翻译模型的可选运行时，不进入截图/OCR 核心链路。
 
 ## 分阶段交付

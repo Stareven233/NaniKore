@@ -9,6 +9,7 @@ using NaniKore.Capture;
 using NaniKore.Config;
 using NaniKore.Input;
 using NaniKore.Ocr;
+using NaniKore.Ocr.Models;
 using NaniKore.Overlay;
 using NaniKore.Translation;
 using Application = System.Windows.Application;
@@ -122,6 +123,10 @@ internal sealed class NaniKoreApp : Application
             {
                 _ = StartTranslationAsync(result.Text, null);
             }
+        }
+        catch (DirectoryNotFoundException exception)
+        {
+            ShowFailure("本地 OCR 依赖尚未下载。请打开设置并点击“下载依赖”。", exception);
         }
         catch (Win32Exception exception)
         {
@@ -245,7 +250,7 @@ internal sealed class NaniKoreApp : Application
             return;
         }
 
-        var window = new SettingsWindow(_configStore.Current, ApplySettings, TestConnectionAsync, SuspendCaptureHotkey);
+        var window = new SettingsWindow(_configStore.Current, ApplySettings, TestConnectionAsync, SuspendCaptureHotkey, DownloadOcrDependenciesAsync);
         // 只有结果卡“设置”按钮打开时才置顶；托盘等入口保持普通窗口，允许被遮挡。
         window.Topmost = topmostFromResult;
         window.Closed += (_, _) => _settingsWindow = null;
@@ -320,6 +325,11 @@ internal sealed class NaniKoreApp : Application
             return ProviderErrorMapper.ToUserMessage(exception, profile.Id, profile.Model, profile.BaseUrl);
         }
     }
+
+    private static async Task DownloadOcrDependenciesAsync(
+        IProgress<string> progress,
+        CancellationToken cancellationToken) =>
+        await new OcrDependencyDownloader().DownloadAsync(progress, cancellationToken);
 
     private OcrEngine GetOcrEngine() => _ocrEngine ??= OcrEngine.CreateDefault();
 

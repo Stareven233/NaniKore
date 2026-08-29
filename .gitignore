@@ -8,8 +8,9 @@
 *.dylib
 
 # 本地模型文件：模型清单保留，权重不提交
-/models/*
-!/models/README.md
+deps/*
+**/.ms_upload_cache
+!/deps/README.md
 
 # 临时文件与日志
 *.log

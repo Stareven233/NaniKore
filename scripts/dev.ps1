@@ -5,8 +5,7 @@
     [ValidateSet('build', 'publish')]
     [string]$Launch,
 
-    [Alias('ocr-models')]
-    [switch]$OcrModels
+    [switch]$Full
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,8 +18,7 @@ $debugExecutable = Join-Path $root 'src\NaniKore\bin\Debug\net10.0-windows10.0.1
 $artifactsDirectory = Join-Path $root 'artifacts'
 $publishOutput = Join-Path $root 'artifacts\win-x64'
 $publishedExecutable = Join-Path $publishOutput 'NaniKore.exe'
-$ocrModelsDirectory = Join-Path $root 'models'
-$releaseRuntimeOutput = Join-Path $root 'src\NaniKore\bin\Release\net10.0-windows10.0.19041.0\win-x64'
+$dependenciesDirectory = Join-Path $root 'deps'
 
 function Get-NaniKoreProductVersion {
     param(
@@ -51,38 +49,49 @@ function New-NaniKoreReleaseArchive {
         [string]$ArtifactsDirectory,
 
         [Parameter(Mandatory)]
-        [string]$ModelsDirectory,
+        [string]$DependenciesDirectory,
 
         [Parameter(Mandatory)]
         [string]$ProductVersion,
 
-        [switch]$IncludeOcrModels
+        [switch]$IncludeFullDependencies
     )
 
     if (-not (Test-Path -LiteralPath $PublishOutput -PathType Container)) {
         throw "Publish output was not found: $PublishOutput"
     }
 
-    if ($IncludeOcrModels) {
-        $defaultOcrModels = Join-Path $ModelsDirectory 'pp-ocr-v6-small'
-        if (-not (Test-Path -LiteralPath $defaultOcrModels -PathType Container)) {
-            throw "OCR models were not found: $defaultOcrModels. Run scripts/bootstrap-models.ps1 before publishing with -OcrModels."
+    if ($IncludeFullDependencies) {
+        $requiredDependencies = @(
+            'ocr-onnx\pp-ocr-v6-small\det\inference.onnx',
+            'ocr-onnx\pp-ocr-v6-small\det\inference.yml',
+            'ocr-onnx\pp-ocr-v6-small\rec\inference.onnx',
+            'ocr-onnx\pp-ocr-v6-small\rec\inference.yml',
+            'onnxruntime\onnxruntime.dll',
+            'onnxruntime\onnxruntime_providers_shared.dll'
+        )
+        $missingDependencies = @(
+            $requiredDependencies |
+                Where-Object { -not (Test-Path -LiteralPath (Join-Path $DependenciesDirectory $_) -PathType Leaf) }
+        )
+        if ($missingDependencies.Count -gt 0) {
+            throw "Required full-package dependencies were not found in ${DependenciesDirectory}: $($missingDependencies -join ', ')."
         }
     }
 
-    $archiveSuffix = if ($IncludeOcrModels) { '' } else { '-without-ocr-models' }
+    $archiveSuffix = if ($IncludeFullDependencies) { '-full' } else { '' }
     $archivePath = Join-Path $ArtifactsDirectory "NaniKore-v$ProductVersion-win_amd64$archiveSuffix.zip"
     $stagingDirectory = Join-Path $ArtifactsDirectory ".package-staging-$([guid]::NewGuid().ToString('N'))"
 
     try {
         New-Item -ItemType Directory -Path $stagingDirectory | Out-Null
 
-        # 将发布目录内容直接压入 ZIP 根目录，确保 models/ 与 EXE、DLL、config.yaml 同级。
+        # 发布目录内容直接置于 ZIP 根目录；完整包额外携带 deps/，解压后即可使用本地 OCR。
         Get-ChildItem -LiteralPath $PublishOutput -Force |
             Copy-Item -Destination $stagingDirectory -Recurse -Force
 
-        if ($IncludeOcrModels) {
-            Copy-Item -LiteralPath $ModelsDirectory -Destination $stagingDirectory -Recurse -Force
+        if ($IncludeFullDependencies) {
+            Copy-Item -LiteralPath $DependenciesDirectory -Destination $stagingDirectory -Recurse -Force
         }
 
         $archiveEntries = @(Get-ChildItem -LiteralPath $stagingDirectory -Force)
@@ -101,33 +110,6 @@ function New-NaniKoreReleaseArchive {
     return $archivePath
 }
 
-function Copy-NaniKoreOnnxRuntimeNativeLibraries {
-    param(
-        [Parameter(Mandatory)]
-        [string]$BuildOutput,
-
-        [Parameter(Mandatory)]
-        [string]$PublishOutput
-    )
-
-    # single-file 发布会捆绑 ONNX Runtime 的原生 DLL；发行目录仍须保留外置副本，供加载器和 ZIP 分发使用。
-    $nativeRuntimeFiles = @(
-        'onnxruntime.dll',
-        'onnxruntime_providers_shared.dll'
-    )
-    $missingNativeRuntimeFiles = @(
-        $nativeRuntimeFiles |
-            Where-Object { -not (Test-Path -LiteralPath (Join-Path $BuildOutput $_) -PathType Leaf) }
-    )
-    if ($missingNativeRuntimeFiles.Count -gt 0) {
-        throw "Required ONNX Runtime native DLLs were not generated: $($missingNativeRuntimeFiles -join ', ')."
-    }
-
-    foreach ($nativeRuntimeFile in $nativeRuntimeFiles) {
-        Copy-Item -LiteralPath (Join-Path $BuildOutput $nativeRuntimeFile) -Destination $PublishOutput -Force
-    }
-}
-
 function Start-NaniKoreExecutable {
     param(
         [Parameter(Mandatory)]
@@ -141,7 +123,7 @@ function Start-NaniKoreExecutable {
         throw "$Description executable was not found: $Path. Run the corresponding build or publish command first."
     }
 
-    # 从仓库根目录启动，确保程序可直接找到项目本地的 models/ 目录。
+    # 从仓库根目录启动，确保程序可直接找到 deps/ 目录。
     Start-Process -FilePath $Path -WorkingDirectory $root
 }
 
@@ -205,19 +187,19 @@ try {
             & $dotnet publish $project --configuration Release --runtime win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false --output $publishOutput -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
             $exitCode = $LASTEXITCODE
             if ($exitCode -eq 0) {
-                Remove-Item -LiteralPath (Join-Path $publishOutput 'onnxruntime.lib'), (Join-Path $publishOutput 'onnxruntime_providers_shared.lib') -Force -ErrorAction SilentlyContinue
-                Copy-NaniKoreOnnxRuntimeNativeLibraries -BuildOutput $releaseRuntimeOutput -PublishOutput $publishOutput
+                # 默认发布包不携带固定的 ONNX Runtime DLL；完整包从 deps/ 原样打包。
+                Remove-Item -LiteralPath (Join-Path $publishOutput 'deps'), (Join-Path $publishOutput 'onnxruntime.dll'), (Join-Path $publishOutput 'onnxruntime_providers_shared.dll') -Recurse -Force -ErrorAction SilentlyContinue
                 # 发布时同步根目录配置模板到发布输出，确保运行时配置与构建版本一致，喵
                 $rootConfig = Join-Path $root "config.yaml"
                 $publishConfig = Join-Path $publishOutput "config.yaml"
                 Copy-Item -LiteralPath $rootConfig -Destination $publishConfig -Force
-                $productVersion = Get-NaniKoreProductVersion -ConfigPath (Join-Path $root 'config.yaml')
+                $productVersion = Get-NaniKoreProductVersion -ConfigPath $rootConfig
                 $archivePath = New-NaniKoreReleaseArchive `
                     -PublishOutput $publishOutput `
                     -ArtifactsDirectory $artifactsDirectory `
-                    -ModelsDirectory $ocrModelsDirectory `
+                    -DependenciesDirectory $dependenciesDirectory `
                     -ProductVersion $productVersion `
-                    -IncludeOcrModels:$OcrModels
+                    -IncludeFullDependencies:$Full
                 Write-Host "Created release archive: $archivePath"
             }
         }

@@ -25,7 +25,8 @@ internal sealed partial class SettingsWindow : Window
         AppConfig current,
         Action<AppConfig> save,
         Func<ProviderProfile, string?, Task<string>> testConnection,
-        Action<bool>? suspendGlobalHotkey = null)
+        Action<bool>? suspendGlobalHotkey = null,
+        Func<IProgress<string>, CancellationToken, Task>? downloadDependencies = null)
     {
         ArgumentNullException.ThrowIfNull(current);
         InitializeComponent();
@@ -42,7 +43,7 @@ internal sealed partial class SettingsWindow : Window
         Width = _working.Windows.SettingsWidth;
         Height = _working.Windows.SettingsHeight;
 
-        var general = new GeneralPage();
+        var general = new GeneralPage(downloadDependencies);
         _translationPage = new TranslationPage { TestConnection = testConnection };
         var hotkeys = new HotkeyPage();
         // 录制期间必须临时注销已生效的全局热键，否则系统会把按键交给 NaniKore 自己的截图流程。
