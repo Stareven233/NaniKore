@@ -173,7 +173,7 @@ internal sealed class NaniKoreApp : Application
             {
                 // 服务正常结束但没有任何可识别文本时不能伪装成成功，便于定位 provider 响应格式问题。
                 panel.SetStatus(
-                    receivedOutput ? "翻译完成。" : $"翻译服务返回了空内容，诊断日志：{TranslationDiagnostics.LogFilePath}",
+                    receivedOutput ? "翻译完成。" : "翻译服务返回空内容。",
                     isError: !receivedOutput);
             }
         }
@@ -184,7 +184,11 @@ internal sealed class NaniKoreApp : Application
         catch (Exception exception)
         {
             var profile = _configStore.GetActiveProfile();
-            panel.SetStatus(ProviderErrorMapper.ToUserMessage(exception, profile.Id, profile.Model, profile.BaseUrl), isError: true);
+            var summary = ProviderErrorMapper.ToUserMessage(exception, profile.Id, profile.Model, profile.BaseUrl);
+            var details = exception is ProviderHttpException { ServerMessage: { } serverMessage }
+                ? serverMessage
+                : exception.Message;
+            panel.SetError(summary, details);
         }
         finally
         {

@@ -2,11 +2,11 @@ using NaniKore.Config;
 
 namespace NaniKore.Translation;
 
-/// <summary>内置提示词与视觉一条龙的稳健分段哨兵。</summary>
+/// <summary>内置提示词与视觉一条龙的轻量分段协议。</summary>
 internal static class PromptTemplates
 {
-    internal const string SourceSentinel = "<<<SOURCE>>>";
-    internal const string TranslationSentinel = "<<<TRANSLATION>>>";
+    // 协议唯一分隔符：换行、三个连字符、换行，共五个字符。
+    internal const string SectionSeparator = "\n---\n";
     internal const string TargetLanguagePlaceholder = "{{target_language}}";
 
     /// <summary>设置页始终展示的默认翻译提示词；主人可直接在此基础上修改。</summary>
@@ -35,10 +35,11 @@ internal static class PromptTemplates
             return translationPrompt;
         }
 
-        // 图像一条龙仍需要稳定的协议标记供流式结果分栏；这属于传输协议，不限制主人修改翻译要求。
+        // 小型视觉模型更容易遵守短固定分隔符；该分隔符是唯一的运行时协议。
         return $"{translationPrompt}\n\n" +
-            $"For an image input, stream the transcription after {SourceSentinel}, then stream only the translation after {TranslationSentinel}. " +
-            "Do not add commentary or any extra sections.";
+            "For an image input, return exactly two sections: transcription, then the five-character separator below, then translation." +
+            $"{SectionSeparator}" +
+            "Do not include labels, commentary, or extra sections.";
     }
 
     private static string ExpandTargetLanguage(string prompt, string targetLanguage) =>
@@ -47,13 +48,11 @@ internal static class PromptTemplates
 }
 
 /// <summary>
-/// 视觉模型的文本流不依赖 JSON 整体完好；哨兵缺失只会造成频道错位，不会令整块结果丢失。
+/// 视觉流以唯一的五字符分隔符拆成原文和译文；无分隔符时保留完整输出作为译文。
 /// </summary>
 internal sealed class SentinelChannelRouter
 {
-    private const string LegacySourceSentinel = "<<<SOURCE>>";
-    private const string LegacyTranslationSentinel = "<<<TRANSLATION>>";
-    private const int MaxSentinelLength = 17;
+    private const int SeparatorLength = 5;
 
     private DeltaChannel _channel = DeltaChannel.Translation;
     private string _pending = string.Empty;
@@ -79,8 +78,8 @@ internal sealed class SentinelChannelRouter
                     yield break;
                 }
 
-                // 保留最长哨兵长度减一的尾部，兼容标记恰好跨 SSE 包切断。
-                var flushLength = Math.Max(0, _pending.Length - MaxSentinelLength + 1);
+                // 保留分隔符长度减一的尾部，兼容五字符分隔符恰好跨 SSE 包切断。
+                var flushLength = Math.Max(0, _pending.Length - SeparatorLength + 1);
                 if (flushLength == 0)
                 {
                     yield break;
@@ -95,11 +94,17 @@ internal sealed class SentinelChannelRouter
                 continue;
             }
 
-            if (marker.Value.Index > 0 && !_awaitingFirstSection)
+            if (marker.Value.Index > 0)
             {
-                foreach (var delta in Emit(_channel, _pending[..marker.Value.Index]))
+                var precedingChannel = _awaitingFirstSection
+                    ? marker.Value.PrefixChannel
+                    : _channel;
+                if (precedingChannel is { } channel)
                 {
-                    yield return delta;
+                    foreach (var delta in Emit(channel, _pending[..marker.Value.Index]))
+                    {
+                        yield return delta;
+                    }
                 }
             }
 
@@ -144,28 +149,23 @@ internal sealed class SentinelChannelRouter
         SentinelMatch? result = null;
         foreach (var candidate in new[]
         {
-            (Marker: PromptTemplates.SourceSentinel, Channel: DeltaChannel.SourceText, IsLegacy: false),
-            (Marker: PromptTemplates.TranslationSentinel, Channel: DeltaChannel.Translation, IsLegacy: false),
-            (Marker: LegacySourceSentinel, Channel: DeltaChannel.SourceText, IsLegacy: true),
-            (Marker: LegacyTranslationSentinel, Channel: DeltaChannel.Translation, IsLegacy: true),
+            (Marker: PromptTemplates.SectionSeparator, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
         })
         {
             var index = text.IndexOf(candidate.Marker, StringComparison.Ordinal);
             if (index < 0 ||
-                candidate.IsLegacy && index + candidate.Marker.Length == text.Length ||
                 (result is not null &&
                  (index > result.Value.Index ||
                   index == result.Value.Index && candidate.Marker.Length <= result.Value.Length)))
             {
-                // 短标记落在增量末尾时先等待下一包，避免把三右尖括号标记拆包误识别成短标记。
                 continue;
             }
 
-            result = new SentinelMatch(index, candidate.Channel, candidate.Marker.Length);
+            result = new SentinelMatch(index, candidate.Channel, candidate.Marker.Length, candidate.PrefixChannel);
         }
 
         return result;
     }
 
-    private readonly record struct SentinelMatch(int Index, DeltaChannel Channel, int Length);
+    private readonly record struct SentinelMatch(int Index, DeltaChannel Channel, int Length, DeltaChannel? PrefixChannel);
 }

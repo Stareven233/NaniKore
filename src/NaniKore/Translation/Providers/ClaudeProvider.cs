@@ -15,37 +15,13 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         ProviderFactory.ValidateCapabilities(request, Capabilities);
         using var message = CreateRequest(request);
         using var response = await SendAsync(message, cancellationToken).ConfigureAwait(false);
-        var requestId = TranslationDiagnostics.GetRequestId(response);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var router = request.ImagePng is { Length: > 0 } ? new SentinelChannelRouter() : null;
-        var frameCount = 0;
-        var extractedTextLength = 0;
 
         await foreach (var frame in SseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
         {
-            frameCount++;
             var text = ExtractDelta(frame);
-            TranslationDiagnostics.ResponseFrame(
-                Profile,
-                requestId,
-                "claude",
-                frame.Event,
-                frame.Data,
-                text.Length);
-            extractedTextLength += text.Length;
             foreach (var delta in Route(router, text))
-            {
-                yield return delta;
-            }
-        }
-
-        TranslationDiagnostics.ResponseStreamCompleted(Profile, requestId, "claude", frameCount, extractedTextLength);
-
-        if (extractedTextLength == 0 && !cancellationToken.IsCancellationRequested)
-        {
-            // 部分 Anthropic 兼容代理会以孤立的 message_stop 结束 SSE；改走非流式响应可绕过该代理缺陷。
-            var fallbackText = await RequestNonStreamingFallbackAsync(request, cancellationToken).ConfigureAwait(false);
-            foreach (var delta in Route(router, fallbackText))
             {
                 yield return delta;
             }
@@ -60,14 +36,14 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         }
     }
 
-    private HttpRequestMessage CreateRequest(UnderstandRequest request, bool stream = true)
+    private HttpRequestMessage CreateRequest(UnderstandRequest request)
     {
         var content = CreateContent(request.ImagePng, request.SourceText);
 
         var body = new
         {
             model = Profile.Model,
-            stream,
+            stream = true,
             max_tokens = 4096,
             system = PromptTemplates.GetSystemPrompt(request, Prompts),
             messages = new[] { new { role = "user", content } },
@@ -97,30 +73,7 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         return blocks;
     }
 
-    private async Task<string> RequestNonStreamingFallbackAsync(UnderstandRequest request, CancellationToken cancellationToken)
-    {
-        using var message = CreateRequest(request, stream: false);
-        using var response = await SendAsync(message, cancellationToken).ConfigureAwait(false);
-        var requestId = TranslationDiagnostics.GetRequestId(response);
-        var data = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        var text = ExtractDelta(new SseEvent(null, data));
-        TranslationDiagnostics.ResponseFrame(
-            Profile,
-            requestId,
-            "claude-nonstream-fallback",
-            eventName: null,
-            data: data,
-            extractedTextLength: text.Length);
-        TranslationDiagnostics.ResponseStreamCompleted(
-            Profile,
-            requestId,
-            "claude-nonstream-fallback",
-            frameCount: 1,
-            extractedTextLength: text.Length);
-        return text;
-    }
-
-    internal static string ExtractDelta(SseEvent frame)
+    private static string ExtractDelta(SseEvent frame)
     {
         try
         {

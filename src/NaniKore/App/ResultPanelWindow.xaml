@@ -28,6 +28,7 @@
             <RowDefinition Height="*" MinHeight="80" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <DockPanel Grid.Row="0" Margin="0,0,0,6">
@@ -57,5 +58,11 @@
         </Expander>
 
         <controls:InfoBar x:Name="StatusBar" Grid.Row="6" Margin="0,10,0,0" />
+
+        <Expander x:Name="ErrorDetailsExpander" Grid.Row="7" Header="查看完整错误"
+                  Margin="0,8,0,0" Visibility="Collapsed">
+            <TextBox x:Name="ErrorDetailsTextBox" Style="{DynamicResource TextBox.Multiline}"
+                     IsReadOnly="True" MaxHeight="160" />
+        </Expander>
     </Grid>
 </Window>

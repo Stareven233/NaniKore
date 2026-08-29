@@ -16,50 +16,24 @@ internal sealed class OpenAiProvider : TranslationProviderBase
         var isResponses = string.Equals(Profile.ApiType, "responses", StringComparison.OrdinalIgnoreCase);
         using var message = isResponses ? CreateResponsesRequest(request) : CreateCompletionsRequest(request);
         using var response = await SendAsync(message, cancellationToken).ConfigureAwait(false);
-        var requestId = TranslationDiagnostics.GetRequestId(response);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var router = request.ImagePng is { Length: > 0 } ? new SentinelChannelRouter() : null;
-        var frameCount = 0;
-        var extractedTextLength = 0;
 
         await foreach (var frame in SseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
         {
-            frameCount++;
             if (frame.Data == "[DONE]")
             {
-                TranslationDiagnostics.ResponseFrame(
-                    Profile,
-                    requestId,
-                    isResponses ? "openai-responses" : "openai-completions",
-                    frame.Event,
-                    frame.Data,
-                    extractedTextLength: 0);
                 break;
             }
 
             var text = isResponses
                 ? ExtractResponsesDelta(frame)
                 : ExtractCompletionsDelta(frame.Data);
-            TranslationDiagnostics.ResponseFrame(
-                Profile,
-                requestId,
-                isResponses ? "openai-responses" : "openai-completions",
-                frame.Event,
-                frame.Data,
-                text.Length);
-            extractedTextLength += text.Length;
             foreach (var delta in Route(router, text))
             {
                 yield return delta;
             }
         }
-
-        TranslationDiagnostics.ResponseStreamCompleted(
-            Profile,
-            requestId,
-            isResponses ? "openai-responses" : "openai-completions",
-            frameCount,
-            extractedTextLength);
 
         if (router is not null)
         {

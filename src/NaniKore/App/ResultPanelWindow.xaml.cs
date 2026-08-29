@@ -46,6 +46,9 @@ internal sealed partial class ResultPanelWindow : Window
         TranslationTextBox.Clear();
         ExplanationTextBox.Clear();
         _translationHasContent = false;
+        ErrorDetailsTextBox.Clear();
+        ErrorDetailsExpander.Visibility = Visibility.Collapsed;
+        ErrorDetailsExpander.IsExpanded = false;
         StatusBar.Show(status, InfoSeverity.Neutral);
     }
 
@@ -127,9 +130,29 @@ internal sealed partial class ResultPanelWindow : Window
         target.ScrollToEnd();
     }
 
-    /// <summary>状态文本统一走内联提示条；失败信息用错误语义配色，成功与进行中保持中性。</summary>
-    public void SetStatus(string status, bool isError = false) =>
+    /// <summary>状态文本统一走内联提示条；新的非错误状态会清除上一轮的可展开错误详情。</summary>
+    public void SetStatus(string status, bool isError = false)
+    {
+        if (!isError)
+        {
+            ErrorDetailsTextBox.Clear();
+            ErrorDetailsExpander.Visibility = Visibility.Collapsed;
+            ErrorDetailsExpander.IsExpanded = false;
+        }
+
         StatusBar.Show(status, isError ? InfoSeverity.Error : InfoSeverity.Neutral);
+    }
+
+    /// <summary>摘要保持易读，完整服务端错误留在可展开区域供排障时查看。</summary>
+    public void SetError(string summary, string details)
+    {
+        ErrorDetailsTextBox.Text = details;
+        ErrorDetailsExpander.Visibility = string.IsNullOrWhiteSpace(details)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        ErrorDetailsExpander.IsExpanded = false;
+        StatusBar.Show(summary, InfoSeverity.Error);
+    }
 
     protected override void OnSourceInitialized(EventArgs e)
     {

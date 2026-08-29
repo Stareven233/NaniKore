@@ -42,7 +42,6 @@ internal static class SelfTest
         TestSettingsPagesUseAdaptiveLayout();
         TestGeneralPagePipelineDependencyVisibility();
         TestSseReader();
-        TestTranslationDiagnostics();
         TestSentinelRouter();
         TestProviderTextExtraction();
         TestProviderCapabilitiesAndErrors();
@@ -310,9 +309,8 @@ internal static class SelfTest
             request with { ImagePng = new byte[] { 1 } },
             new PromptConfig { Translate = "Translate into {{target_language}} only." });
         Check(
-            "vision translation preserves the streaming section protocol after prompt customization",
-            visionPrompt.Contains(PromptTemplates.SourceSentinel, StringComparison.Ordinal) &&
-            visionPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal));
+            "vision translation uses the five-character section separator after prompt customization",
+            visionPrompt.Contains(PromptTemplates.SectionSeparator, StringComparison.Ordinal));
     }
 
     private static void TestProfileRenameKeepsSecret()
@@ -536,65 +534,23 @@ internal static class SelfTest
             plainJsonFrames[0].Data == "{\\\"message\\\":\\\"vision\\\"}");
     }
 
-    private static void TestTranslationDiagnostics()
-    {
-        var shape = TranslationDiagnostics.DescribeJson("""
-            {"type":"content_block_delta","delta":{"text":"secret"}}
-            """);
-        var malformed = TranslationDiagnostics.DescribeJson("not-json");
-        var limitedError = TranslationDiagnostics.LimitErrorMessage(new string('x', 2_001));
-        Check(
-            "translation diagnostics records JSON field paths without values",
-            shape.IsValid && shape.Paths.Contains("delta.text", StringComparer.Ordinal) &&
-            shape.Paths.All(path => !path.Contains("secret", StringComparison.Ordinal)));
-        Check(
-            "translation diagnostics marks malformed response data",
-            !malformed.IsValid && malformed.Paths.Count == 0);
-        Check(
-            "translation diagnostics retains a bounded server error message",
-            limitedError is { Length: 2_001 } && limitedError.EndsWith("…", StringComparison.Ordinal));
-        Check(
-            "translation diagnostics writes beside the running executable",
-            Path.GetFullPath(TranslationDiagnostics.LogFilePath).StartsWith(
-                Path.GetFullPath(AppContext.BaseDirectory),
-                StringComparison.OrdinalIgnoreCase));
-
-    }
-
     private static void TestSentinelRouter()
     {
-        var router = new SentinelChannelRouter();
-        var deltas = router.Push("<<<SOU").Concat(router.Push("RCE>>>??<<<TRANSLATION>>>??")).Concat(router.Complete()).ToList();
-        Check(
-            "sentinel router keeps channels when markers span frames",
-            string.Concat(deltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "??" &&
-            string.Concat(deltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "??");
-
-        var shortMarkerRouter = new SentinelChannelRouter();
-        var shortMarkerDeltas = shortMarkerRouter
-            .Push("\n\n<<<SOURCE>>\n原文\n<<<TRANSLATION>>\n译文")
-            .Concat(shortMarkerRouter.Complete())
+        var simpleSeparatorRouter = new SentinelChannelRouter();
+        var simpleSeparatorDeltas = simpleSeparatorRouter
+            .Push("原文\n--")
+            .Concat(simpleSeparatorRouter.Push("-\n译文"))
+            .Concat(simpleSeparatorRouter.Complete())
             .ToList();
         Check(
-            "sentinel router ignores vision preamble and accepts short closing markers",
-            string.Concat(shortMarkerDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)).Trim() == "原文" &&
-            string.Concat(shortMarkerDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "译文");
-
-        var canonicalBoundaryRouter = new SentinelChannelRouter();
-        var canonicalBoundaryDeltas = canonicalBoundaryRouter
-            .Push("<<<SOURCE>>")
-            .Concat(canonicalBoundaryRouter.Push(">原文<<<TRANSLATION>>>译文"))
-            .Concat(canonicalBoundaryRouter.Complete())
-            .ToList();
-        Check(
-            "short marker compatibility does not break canonical markers split at the boundary",
-            string.Concat(canonicalBoundaryDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "原文" &&
-            string.Concat(canonicalBoundaryDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "译文");
+            "section router accepts the five-character separator split across frames",
+            string.Concat(simpleSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "原文" &&
+            string.Concat(simpleSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "译文");
 
         var fallbackRouter = new SentinelChannelRouter();
         var fallbackDeltas = fallbackRouter.Push("\n\nplain translation").Concat(fallbackRouter.Complete()).ToList();
         Check(
-            "sentinel router keeps unmarked vision output as a trimmed translation",
+            "section router keeps unseparated vision output as a trimmed translation",
             string.Concat(fallbackDeltas.Select(delta => delta.Text)) == "plain translation" &&
             fallbackDeltas.All(delta => delta.Channel == DeltaChannel.Translation));
     }
@@ -606,9 +562,6 @@ internal static class SelfTest
             """);
         using var gemini = JsonDocument.Parse("""
             {"candidates":[{"content":{"parts":[{"text":"第一段"},{"text":"第二段"}]}}]}
-            """);
-        using var claude = JsonDocument.Parse("""
-            {"type":"message","content":[{"type":"text","text":"视觉"},{"type":"text","text":"结果"}]}
             """);
         using var emptyVisionContent = JsonDocument.Parse(JsonSerializer.Serialize(
             ClaudeProvider.CreateContent((ReadOnlyMemory<byte>?)new byte[] { 1 }, string.Empty)));
@@ -623,9 +576,6 @@ internal static class SelfTest
             emptyVisionContent.RootElement.ValueKind == JsonValueKind.Array &&
             emptyVisionContent.RootElement.GetArrayLength() == 1 &&
             emptyVisionContent.RootElement[0].GetProperty("type").GetString() == "image");
-        Check(
-            "Claude non-stream fallback extracts a complete message",
-            ClaudeProvider.ExtractDelta(new SseEvent(null, claude.RootElement.GetRawText())) == "视觉结果");
     }
 
     private static void TestProviderCapabilitiesAndErrors()
@@ -676,6 +626,11 @@ internal static class SelfTest
         Check(
             "error mapper explains unauthorized key failures",
             ProviderErrorMapper.ToUserMessage(new ProviderHttpException(HttpStatusCode.Unauthorized, null)).Contains("API Key", StringComparison.Ordinal));
+        Check(
+            "error mapper explains multimodal capability failures",
+            ProviderErrorMapper.ToUserMessage(
+                new ProviderHttpException(HttpStatusCode.InternalServerError, "multimodal processing is not enabled"))
+                .Contains("未启用图像输入", StringComparison.Ordinal));
     }
 
     private static async Task<List<SseEvent>> ReadSseAsync(Stream stream)

@@ -35,36 +35,23 @@ internal abstract class TranslationProviderBase : ITranslationProvider
 
     protected async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        var requestId = TranslationDiagnostics.RequestStarted(Profile, request);
-        HttpResponseMessage response;
         try
         {
-            response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            TranslationDiagnostics.ResponseReceived(Profile, requestId, response);
+            var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                using (response)
+                {
+                    throw await ProviderHttpException.CreateAsync(response, cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            return response;
         }
         catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            var exception = new TaskCanceledException($"请求超过 {Profile.TimeoutSeconds} 秒超时。", innerException: null, cancellationToken);
-            TranslationDiagnostics.RequestFailed(Profile, requestId, exception);
-            throw exception;
+            throw new TaskCanceledException($"请求超过 {Profile.TimeoutSeconds} 秒超时。", innerException: null, cancellationToken);
         }
-        catch (Exception exception)
-        {
-            TranslationDiagnostics.RequestFailed(Profile, requestId, exception);
-            throw;
-        }
-
-        if (!response.IsSuccessStatusCode)
-        {
-            using (response)
-            {
-                var exception = await ProviderHttpException.CreateAsync(response, cancellationToken).ConfigureAwait(false);
-                TranslationDiagnostics.ResponseRejected(Profile, requestId, response, exception);
-                throw exception;
-            }
-        }
-
-        return response;
     }
 
     protected static HttpRequestMessage CreateJsonRequest(HttpMethod method, Uri uri, object body)
