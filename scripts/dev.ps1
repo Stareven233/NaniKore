@@ -261,6 +261,8 @@ try {
                 Set-NaniKoreOnnxRuntimeLinks -OutputDirectory $buildOutputDirectory -DependenciesDirectory $dependenciesDirectory
                 Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $buildOutputDirectory
             }
+            $depsLink = Join-Path $PSScriptRoot "..\src\NaniKore\bin\Debug\net10.0-windows10.0.19041.0\deps"
+            if (-not (Test-Path $depsLink)) { New-Item -ItemType Junction -Path $depsLink -Target (Join-Path $PSScriptRoot "..\deps") }
         }
         'run' {
             & $dotnet run --project $project -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
@@ -280,7 +282,7 @@ try {
             if ($exitCode -ne 0) {
                 break
             }
-            $depsLink = "D:\Code\projects\NaniKore\artifacts\win-x64\deps"
+            $depsLink = Join-Path $PSScriptRoot "..\artifacts\win-x64\deps"
             Set-NaniKoreOnnxRuntimeLinks -OutputDirectory $buildOutputDirectory -DependenciesDirectory $dependenciesDirectory
             Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $buildOutputDirectory
             # 默认发布包不携带固定的 ONNX Runtime DLL；完整包从 deps/ 原样打包。
@@ -298,7 +300,7 @@ try {
                 -ProductVersion $productVersion `
                 -IncludeFullDependencies:$Full
             if (-not (Test-Path $depsLink)) {
-                New-Item -ItemType Junction -Path $depsLink -Target "D:\Code\projects\NaniKore\deps"
+                New-Item -ItemType Junction -Path $depsLink -Target (Join-Path $PSScriptRoot "..\deps")
             }
             Write-Host "Created release archive: $archivePath"
         }

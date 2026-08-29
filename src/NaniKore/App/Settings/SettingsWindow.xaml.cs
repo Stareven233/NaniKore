@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using NaniKore.App.Controls;
 using NaniKore.App.Theme;
 using NaniKore.Config;
@@ -17,6 +18,7 @@ internal sealed partial class SettingsWindow : Window
     private readonly Action<AppConfig> _save;
     private readonly List<ISettingsPage> _pages;
     private readonly TranslationPage _translationPage;
+    private readonly DispatcherTimer _successStatusTimer;
 
     /// <summary>业务配置是否已成功落盘；决定关闭时尺寸记录克隆哪份副本。</summary>
     private bool _settingsSaved;
@@ -40,6 +42,8 @@ internal sealed partial class SettingsWindow : Window
         _initialConfig = AppConfigCloner.Clone(current);
         _working = AppConfigCloner.Clone(current);
         _save = save;
+        _successStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _successStatusTimer.Tick += OnSuccessStatusTimerTick;
         Width = _working.Windows.SettingsWidth;
         Height = _working.Windows.SettingsHeight;
 
@@ -59,7 +63,11 @@ internal sealed partial class SettingsWindow : Window
 
         NavigationList.SelectedIndex = 0;
         // 无论保存还是取消，关闭时都记录窗口尺寸；尺寸走独立副本，不携带尚未保存的页面编辑。
-        Closed += (_, _) => SaveWindowSize();
+        Closed += (_, _) =>
+        {
+            _successStatusTimer.Stop();
+            SaveWindowSize();
+        };
     }
 
     /// <summary>导航项：图标 + 标题，图标用 Segoe Fluent Icons 字形，不引入图片资源。</summary>
@@ -131,11 +139,29 @@ internal sealed partial class SettingsWindow : Window
             // 关闭流程的尺寸记录才会退回初始快照而不是污染后的 _working。
             _settingsSaved = true;
             _translationPage.SaveSecrets();
-            Close();
+            ShowSavedStatus();
         }
         catch (Exception exception)
         {
             FooterStatus.Show(exception.Message, InfoSeverity.Error);
+        }
+    }
+
+    /// <summary>保存成功提示只短暂显示，避免长期占用页脚状态区域。</summary>
+    private void ShowSavedStatus()
+    {
+        FooterStatus.Show("设置已保存。", InfoSeverity.Success);
+        _successStatusTimer.Stop();
+        _successStatusTimer.Start();
+    }
+
+    private void OnSuccessStatusTimerTick(object? sender, EventArgs e)
+    {
+        _successStatusTimer.Stop();
+        // 只有当前仍是本次保存产生的成功提示时才清除，避免覆盖后续的校验或错误信息。
+        if (FooterStatus.Severity == InfoSeverity.Success && FooterStatus.Message == "设置已保存。")
+        {
+            FooterStatus.Clear();
         }
     }
 

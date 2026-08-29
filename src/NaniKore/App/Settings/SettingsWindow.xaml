@@ -78,7 +78,7 @@
                                 MinWidth="90"
                                 Click="OnSaveClick" />
                         <Button x:Name="CancelButton"
-                                Content="取消"
+                                Content="关闭"
                                 MinWidth="90"
                                 Margin="8,0,0,0"
                                 IsCancel="True"
