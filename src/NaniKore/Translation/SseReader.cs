@@ -13,8 +13,9 @@ internal static class SseReader
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
-        string? eventName = null;
+        var eventName = (string?)null;
         var data = new StringBuilder();
+        var plainData = new StringBuilder();
 
         while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
         {
@@ -29,9 +30,15 @@ internal static class SseReader
 
                     yield return new SseEvent(eventName, data.ToString());
                 }
+                else if (plainData.Length > 0)
+                {
+                    // 部分视觉端点会忽略 stream=true，直接返回一个普通 JSON 响应。
+                    yield return new SseEvent(null, plainData.ToString());
+                }
 
                 eventName = null;
                 data.Clear();
+                plainData.Clear();
                 continue;
             }
 
@@ -40,9 +47,20 @@ internal static class SseReader
                 continue;
             }
 
+            if (plainData.Length > 0 || IsJsonStart(line))
+            {
+                plainData.Append(line);
+                continue;
+            }
+
             var separator = line.IndexOf(':');
-            var field = separator < 0 ? line : line[..separator];
-            var value = separator < 0 ? string.Empty : line[(separator + 1)..].TrimStart(' ');
+            if (separator < 0)
+            {
+                continue;
+            }
+
+            var field = line[..separator];
+            var value = line[(separator + 1)..].TrimStart(' ');
             switch (field)
             {
                 case "event":
@@ -63,5 +81,12 @@ internal static class SseReader
 
             yield return new SseEvent(eventName, data.ToString());
         }
+        else if (plainData.Length > 0)
+        {
+            yield return new SseEvent(null, plainData.ToString());
+        }
     }
+
+    private static bool IsJsonStart(string line) =>
+        line.TrimStart().StartsWith('{') || line.TrimStart().StartsWith('[');
 }

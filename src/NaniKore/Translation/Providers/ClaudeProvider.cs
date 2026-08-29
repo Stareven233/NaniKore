@@ -15,22 +15,31 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         ProviderFactory.ValidateCapabilities(request, Capabilities);
         using var message = CreateRequest(request);
         using var response = await SendAsync(message, cancellationToken).ConfigureAwait(false);
+        var requestId = TranslationDiagnostics.GetRequestId(response);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var router = request.ImagePng is { Length: > 0 } ? new SentinelChannelRouter() : null;
+        var frameCount = 0;
+        var extractedTextLength = 0;
 
         await foreach (var frame in SseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
         {
-            if (!string.Equals(frame.Event, "content_block_delta", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            var text = ExtractDelta(frame.Data);
+            frameCount++;
+            var text = ExtractDelta(frame);
+            TranslationDiagnostics.ResponseFrame(
+                Profile,
+                requestId,
+                "claude",
+                frame.Event,
+                frame.Data,
+                text.Length);
+            extractedTextLength += text.Length;
             foreach (var delta in Route(router, text))
             {
                 yield return delta;
             }
         }
+
+        TranslationDiagnostics.ResponseStreamCompleted(Profile, requestId, "claude", frameCount, extractedTextLength);
 
         if (router is not null)
         {
@@ -64,12 +73,27 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         return message;
     }
 
-    private static string ExtractDelta(string data)
+    private static string ExtractDelta(SseEvent frame)
     {
         try
         {
-            using var document = JsonDocument.Parse(data);
-            return GetText(document.RootElement, "delta", "text");
+            using var document = JsonDocument.Parse(frame.Data);
+            var root = document.RootElement;
+            var type = GetText(root, "type");
+            var isDelta = string.Equals(frame.Event, "content_block_delta", StringComparison.Ordinal) ||
+                          string.Equals(type, "content_block_delta", StringComparison.Ordinal);
+            if (isDelta)
+            {
+                return GetTextContent(root, "delta", "text");
+            }
+
+            // 兼容视觉端点忽略 stream=true 后返回的 Anthropic message JSON。
+            if (frame.Event is null && (string.IsNullOrEmpty(type) || string.Equals(type, "message", StringComparison.Ordinal)))
+            {
+                return GetTextContent(root, "content");
+            }
+
+            return string.Empty;
         }
         catch (JsonException)
         {

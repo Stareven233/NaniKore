@@ -1,13 +1,20 @@
 # 此文件是可提交的运行配置模板：API Key 仅由 Windows DPAPI 保存到当前用户配置目录，不写入此文件。
 # 修改根目录模板后重新构建；运行时在 Debug 或发布目录各自使用其副本。
-version: 0.2.4+6
+version: 0.2.5+5
 general:
   auto_translate: false
   target_language: 中文（简体）
 pipeline:
-  mode: local_ocr
-  active_profile: openai-dots
+  mode: vision_oneshot
+  active_profile: claude-ccs
 profiles:
+- id: claude-ccs
+  name: cc-switch-claude
+  kind: claude
+  base_url: http://localhost:15721
+  model: auto-route-default
+  supports_vision: true
+  timeout_seconds: 30
 - id: openai-nvidia
   name: nvidia
   kind: openai
@@ -35,7 +42,6 @@ profiles:
 - id: gemini-hachimi
   name: 哈基米
   kind: gemini
-  api_type: completions
   base_url: https://hachimi-2.stareven233.workers.dev
   model: gemini-3.5-flash
   supports_vision: true
@@ -51,7 +57,6 @@ profiles:
 - id: claude-default
   name: Claude 默认
   kind: claude
-  api_type: completions
   base_url: https://api.anthropic.com
   model: claude-haiku-4-5
   supports_vision: true
@@ -59,7 +64,6 @@ profiles:
 - id: gemini-default
   name: Gemini 默认
   kind: gemini
-  api_type: completions
   base_url: https://generativelanguage.googleapis.com/v1beta
   model: gemini-2.0-flash
   supports_vision: true

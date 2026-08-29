@@ -35,14 +35,23 @@ internal abstract class TranslationProviderBase : ITranslationProvider
 
     protected async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        var requestId = TranslationDiagnostics.RequestStarted(Profile, request);
         HttpResponseMessage response;
         try
         {
             response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            TranslationDiagnostics.ResponseReceived(Profile, requestId, response);
         }
         catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new TaskCanceledException($"请求超过 {Profile.TimeoutSeconds} 秒超时。", innerException: null, cancellationToken);
+            var exception = new TaskCanceledException($"请求超过 {Profile.TimeoutSeconds} 秒超时。", innerException: null, cancellationToken);
+            TranslationDiagnostics.RequestFailed(Profile, requestId, exception);
+            throw exception;
+        }
+        catch (Exception exception)
+        {
+            TranslationDiagnostics.RequestFailed(Profile, requestId, exception);
+            throw;
         }
 
         if (!response.IsSuccessStatusCode)
@@ -72,6 +81,16 @@ internal abstract class TranslationProviderBase : ITranslationProvider
 
     protected static string GetText(JsonElement root, params string[] path)
     {
+        var current = GetValue(root, path);
+        return current.ValueKind == JsonValueKind.String ? current.GetString() ?? string.Empty : string.Empty;
+    }
+
+    /// <summary>兼容视觉模型常见的文本字符串、content 数组与 Gemini parts 数组。</summary>
+    internal static string GetTextContent(JsonElement root, params string[] path) =>
+        ExtractText(GetValue(root, path));
+
+    private static JsonElement GetValue(JsonElement root, params string[] path)
+    {
         var current = root;
         foreach (var segment in path)
         {
@@ -79,18 +98,46 @@ internal abstract class TranslationProviderBase : ITranslationProvider
             {
                 if (current.ValueKind != JsonValueKind.Array || current.GetArrayLength() <= index)
                 {
-                    return string.Empty;
+                    return default;
                 }
 
                 current = current[index];
             }
             else if (!current.TryGetProperty(segment, out current))
             {
-                return string.Empty;
+                return default;
             }
         }
 
-        return current.ValueKind == JsonValueKind.String ? current.GetString() ?? string.Empty : string.Empty;
+        return current;
+    }
+
+    private static string ExtractText(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString() ?? string.Empty,
+            JsonValueKind.Array => string.Concat(value.EnumerateArray().Select(ExtractText)),
+            JsonValueKind.Object => ExtractObjectText(value),
+            _ => string.Empty,
+        };
+    }
+
+    private static string ExtractObjectText(JsonElement value)
+    {
+        foreach (var propertyName in new[] { "text", "content", "parts", "delta", "output_text" })
+        {
+            if (value.TryGetProperty(propertyName, out var property))
+            {
+                var text = ExtractText(property);
+                if (text.Length > 0)
+                {
+                    return text;
+                }
+            }
+        }
+
+        return string.Empty;
     }
 
     protected static void SetBearerToken(HttpRequestMessage request, string apiKey) =>

@@ -51,8 +51,14 @@ internal static class PromptTemplates
 /// </summary>
 internal sealed class SentinelChannelRouter
 {
+    private const string LegacySourceSentinel = "<<<SOURCE>>";
+    private const string LegacyTranslationSentinel = "<<<TRANSLATION>>";
+    private const int MaxSentinelLength = 17;
+
     private DeltaChannel _channel = DeltaChannel.Translation;
     private string _pending = string.Empty;
+    private bool _awaitingFirstSection = true;
+    private readonly HashSet<DeltaChannel> _channelsWithContent = [];
 
     public IEnumerable<UnderstandDelta> Push(string text)
     {
@@ -64,32 +70,42 @@ internal sealed class SentinelChannelRouter
         _pending += text;
         while (_pending.Length > 0)
         {
-            var sourceIndex = _pending.IndexOf(PromptTemplates.SourceSentinel, StringComparison.Ordinal);
-            var translationIndex = _pending.IndexOf(PromptTemplates.TranslationSentinel, StringComparison.Ordinal);
-            var markerIndex = MinNonNegative(sourceIndex, translationIndex);
-            if (markerIndex < 0)
+            var marker = FindNextMarker(_pending);
+            if (marker is null)
             {
+                if (_awaitingFirstSection)
+                {
+                    // 首个 SOURCE/TRANSLATION 哨兵之前的内容是模型格式化前导，不应进入译文框。
+                    yield break;
+                }
+
                 // 保留最长哨兵长度减一的尾部，兼容标记恰好跨 SSE 包切断。
-                var flushLength = Math.Max(0, _pending.Length - PromptTemplates.TranslationSentinel.Length + 1);
+                var flushLength = Math.Max(0, _pending.Length - MaxSentinelLength + 1);
                 if (flushLength == 0)
                 {
                     yield break;
                 }
 
-                yield return new UnderstandDelta(_channel, _pending[..flushLength]);
+                foreach (var delta in Emit(_channel, _pending[..flushLength]))
+                {
+                    yield return delta;
+                }
+
                 _pending = _pending[flushLength..];
                 continue;
             }
 
-            if (markerIndex > 0)
+            if (marker.Value.Index > 0 && !_awaitingFirstSection)
             {
-                yield return new UnderstandDelta(_channel, _pending[..markerIndex]);
+                foreach (var delta in Emit(_channel, _pending[..marker.Value.Index]))
+                {
+                    yield return delta;
+                }
             }
 
-            var isSource = markerIndex == sourceIndex;
-            var markerLength = isSource ? PromptTemplates.SourceSentinel.Length : PromptTemplates.TranslationSentinel.Length;
-            _channel = isSource ? DeltaChannel.SourceText : DeltaChannel.Translation;
-            _pending = _pending[(markerIndex + markerLength)..];
+            _channel = marker.Value.Channel;
+            _awaitingFirstSection = false;
+            _pending = _pending[(marker.Value.Index + marker.Value.Length)..];
         }
     }
 
@@ -97,15 +113,59 @@ internal sealed class SentinelChannelRouter
     {
         if (_pending.Length > 0)
         {
-            yield return new UnderstandDelta(_channel, _pending);
+            // 没有哨兵时保留模型的完整输出作为译文，同时去掉常见的前导空白。
+            foreach (var delta in Emit(_awaitingFirstSection ? DeltaChannel.Translation : _channel, _pending))
+            {
+                yield return delta;
+            }
+
             _pending = string.Empty;
         }
     }
 
-    private static int MinNonNegative(int left, int right) => left switch
+    private IEnumerable<UnderstandDelta> Emit(DeltaChannel channel, string text)
     {
-        < 0 => right,
-        _ when right < 0 => left,
-        _ => Math.Min(left, right),
-    };
+        if (!_channelsWithContent.Contains(channel))
+        {
+            text = text.TrimStart();
+            if (text.Length == 0)
+            {
+                yield break;
+            }
+
+            _channelsWithContent.Add(channel);
+        }
+
+        yield return new UnderstandDelta(channel, text);
+    }
+
+    private static SentinelMatch? FindNextMarker(string text)
+    {
+        SentinelMatch? result = null;
+        foreach (var candidate in new[]
+        {
+            (Marker: PromptTemplates.SourceSentinel, Channel: DeltaChannel.SourceText, IsLegacy: false),
+            (Marker: PromptTemplates.TranslationSentinel, Channel: DeltaChannel.Translation, IsLegacy: false),
+            (Marker: LegacySourceSentinel, Channel: DeltaChannel.SourceText, IsLegacy: true),
+            (Marker: LegacyTranslationSentinel, Channel: DeltaChannel.Translation, IsLegacy: true),
+        })
+        {
+            var index = text.IndexOf(candidate.Marker, StringComparison.Ordinal);
+            if (index < 0 ||
+                candidate.IsLegacy && index + candidate.Marker.Length == text.Length ||
+                (result is not null &&
+                 (index > result.Value.Index ||
+                  index == result.Value.Index && candidate.Marker.Length <= result.Value.Length)))
+            {
+                // 短标记落在增量末尾时先等待下一包，避免把三右尖括号标记拆包误识别成短标记。
+                continue;
+            }
+
+            result = new SentinelMatch(index, candidate.Channel, candidate.Marker.Length);
+        }
+
+        return result;
+    }
+
+    private readonly record struct SentinelMatch(int Index, DeltaChannel Channel, int Length);
 }

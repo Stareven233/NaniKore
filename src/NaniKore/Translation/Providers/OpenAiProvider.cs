@@ -16,24 +16,50 @@ internal sealed class OpenAiProvider : TranslationProviderBase
         var isResponses = string.Equals(Profile.ApiType, "responses", StringComparison.OrdinalIgnoreCase);
         using var message = isResponses ? CreateResponsesRequest(request) : CreateCompletionsRequest(request);
         using var response = await SendAsync(message, cancellationToken).ConfigureAwait(false);
+        var requestId = TranslationDiagnostics.GetRequestId(response);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var router = request.ImagePng is { Length: > 0 } ? new SentinelChannelRouter() : null;
+        var frameCount = 0;
+        var extractedTextLength = 0;
 
         await foreach (var frame in SseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
         {
+            frameCount++;
             if (frame.Data == "[DONE]")
             {
+                TranslationDiagnostics.ResponseFrame(
+                    Profile,
+                    requestId,
+                    isResponses ? "openai-responses" : "openai-completions",
+                    frame.Event,
+                    frame.Data,
+                    extractedTextLength: 0);
                 break;
             }
 
             var text = isResponses
                 ? ExtractResponsesDelta(frame)
                 : ExtractCompletionsDelta(frame.Data);
+            TranslationDiagnostics.ResponseFrame(
+                Profile,
+                requestId,
+                isResponses ? "openai-responses" : "openai-completions",
+                frame.Event,
+                frame.Data,
+                text.Length);
+            extractedTextLength += text.Length;
             foreach (var delta in Route(router, text))
             {
                 yield return delta;
             }
         }
+
+        TranslationDiagnostics.ResponseStreamCompleted(
+            Profile,
+            requestId,
+            isResponses ? "openai-responses" : "openai-completions",
+            frameCount,
+            extractedTextLength);
 
         if (router is not null)
         {
@@ -98,7 +124,17 @@ internal sealed class OpenAiProvider : TranslationProviderBase
         try
         {
             using var document = JsonDocument.Parse(data);
-            return GetText(document.RootElement, "choices", "0", "delta", "content");
+            var root = document.RootElement;
+            var delta = GetTextContent(root, "choices", "0", "delta", "content");
+            if (delta.Length > 0)
+            {
+                return delta;
+            }
+
+            delta = GetTextContent(root, "choices", "0", "delta");
+            return delta.Length > 0
+                ? delta
+                : GetTextContent(root, "choices", "0", "message", "content");
         }
         catch (JsonException)
         {
@@ -108,15 +144,24 @@ internal sealed class OpenAiProvider : TranslationProviderBase
 
     private static string ExtractResponsesDelta(SseEvent frame)
     {
-        if (!string.Equals(frame.Event, "response.output_text.delta", StringComparison.Ordinal))
-        {
-            return string.Empty;
-        }
-
         try
         {
             using var document = JsonDocument.Parse(frame.Data);
-            return GetText(document.RootElement, "delta");
+            var root = document.RootElement;
+            var eventType = GetText(root, "type");
+            if (!string.Equals(frame.Event, "response.output_text.delta", StringComparison.Ordinal) &&
+                !string.Equals(eventType, "response.output_text.delta", StringComparison.Ordinal))
+            {
+                if (frame.Event is null && string.IsNullOrEmpty(eventType))
+                {
+                    var outputText = GetTextContent(root, "output_text");
+                    return outputText.Length > 0 ? outputText : GetTextContent(root, "output");
+                }
+
+                return string.Empty;
+            }
+
+            return GetTextContent(root, "delta");
         }
         catch (JsonException)
         {

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Drawing;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using NaniKore.App.Controls;
@@ -21,6 +22,7 @@ internal sealed partial class ResultPanelWindow : Window
     private const int PlacementGapPixels = 8;
 
     private nint _windowHandle;
+    private bool _translationHasContent;
 
     public ResultPanelWindow()
     {
@@ -43,6 +45,7 @@ internal sealed partial class ResultPanelWindow : Window
         SourceTextBox.Text = source;
         TranslationTextBox.Clear();
         ExplanationTextBox.Clear();
+        _translationHasContent = false;
         StatusBar.Show(status, InfoSeverity.Neutral);
     }
 
@@ -106,7 +109,21 @@ internal sealed partial class ResultPanelWindow : Window
             Translation.DeltaChannel.Explanation => ExplanationTextBox,
             _ => TranslationTextBox,
         };
-        target.AppendText(delta.Text);
+
+        var text = delta.Text;
+        if (delta.Channel == Translation.DeltaChannel.Translation && !_translationHasContent)
+        {
+            // 不让模型流式输出的换行把译文框顶出两行空白；跨增量保留“尚未出现正文”的状态。
+            text = text.TrimStart();
+            if (text.Length == 0)
+            {
+                return;
+            }
+
+            _translationHasContent = true;
+        }
+
+        target.AppendText(text);
         target.ScrollToEnd();
     }
 

@@ -15,17 +15,31 @@ internal sealed class GeminiProvider : TranslationProviderBase
         ProviderFactory.ValidateCapabilities(request, Capabilities);
         using var message = CreateRequest(request);
         using var response = await SendAsync(message, cancellationToken).ConfigureAwait(false);
+        var requestId = TranslationDiagnostics.GetRequestId(response);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var router = request.ImagePng is { Length: > 0 } ? new SentinelChannelRouter() : null;
+        var frameCount = 0;
+        var extractedTextLength = 0;
 
         await foreach (var frame in SseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
         {
+            frameCount++;
             var text = ExtractDelta(frame.Data);
+            TranslationDiagnostics.ResponseFrame(
+                Profile,
+                requestId,
+                "gemini",
+                frame.Event,
+                frame.Data,
+                text.Length);
+            extractedTextLength += text.Length;
             foreach (var delta in Route(router, text))
             {
                 yield return delta;
             }
         }
+
+        TranslationDiagnostics.ResponseStreamCompleted(Profile, requestId, "gemini", frameCount, extractedTextLength);
 
         if (router is not null)
         {
@@ -60,7 +74,7 @@ internal sealed class GeminiProvider : TranslationProviderBase
         try
         {
             using var document = JsonDocument.Parse(data);
-            return GetText(document.RootElement, "candidates", "0", "content", "parts", "0", "text");
+            return GetTextContent(document.RootElement, "candidates");
         }
         catch (JsonException)
         {

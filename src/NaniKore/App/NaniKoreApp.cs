@@ -153,6 +153,7 @@ internal sealed class NaniKoreApp : Application
         _translationCancellation = cancellation;
         var panel = EnsureResultPanel();
         panel.SetStatus("正在连接翻译服务…");
+        var receivedOutput = false;
         try
         {
             var config = _configStore.Current;
@@ -160,12 +161,20 @@ internal sealed class NaniKoreApp : Application
             var provider = (_providerFactory ?? throw new InvalidOperationException("翻译服务尚未初始化。")).GetProvider(config.Pipeline.ActiveProfile, request);
             await foreach (var delta in provider.StreamAsync(request, cancellation.Token))
             {
+                if (!string.IsNullOrEmpty(delta.Text))
+                {
+                    receivedOutput = true;
+                }
+
                 await Dispatcher.InvokeAsync(() => panel.Append(delta));
             }
 
             if (!cancellation.IsCancellationRequested)
             {
-                panel.SetStatus("翻译完成。");
+                // 服务正常结束但没有任何可识别文本时不能伪装成成功，便于定位 provider 响应格式问题。
+                panel.SetStatus(
+                    receivedOutput ? "翻译完成。" : $"翻译服务返回了空内容，诊断日志：{TranslationDiagnostics.LogFilePath}",
+                    isError: !receivedOutput);
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
