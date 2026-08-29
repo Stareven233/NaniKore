@@ -4,14 +4,12 @@ using NaniKore.Config;
 
 namespace NaniKore.Translation;
 
-/// <summary>记录翻译链路的安全诊断信息；只落盘请求元数据和响应字段路径，不落盘密钥、图片或文本值。</summary>
+/// <summary>记录翻译链路的安全诊断信息；不落盘密钥、图片、原文或成功响应内容，失败时保留限长服务端错误文本。</summary>
 internal static class TranslationDiagnostics
 {
     private static readonly object SyncRoot = new();
     private static readonly HttpRequestOptionsKey<string> RequestIdKey = new("NaniKore.TranslationRequestId");
-    private static readonly string LogDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "NaniKore");
+    private static readonly string LogDirectory = Path.Combine(AppContext.BaseDirectory, "logs");
 
     public static string LogFilePath => Path.Combine(LogDirectory, "translation-diagnostics.log");
 
@@ -51,10 +49,31 @@ internal static class TranslationDiagnostics
             content_length = response.Content.Headers.ContentLength,
         });
 
+    public static void ResponseRejected(
+        ProviderProfile profile,
+        string requestId,
+        HttpResponseMessage response,
+        ProviderHttpException exception) =>
+        Write("response_rejected", new
+        {
+            request_id = requestId,
+            provider = profile.Kind,
+            profile = profile.Id,
+            status = (int)response.StatusCode,
+            content_type = response.Content.Headers.ContentType?.MediaType,
+            content_length = response.Content.Headers.ContentLength,
+            server_message = LimitErrorMessage(exception.ServerMessage),
+        });
+
     public static string GetRequestId(HttpResponseMessage response) =>
         response.RequestMessage?.Options.TryGetValue(RequestIdKey, out string? requestId) == true
             ? requestId
             : "unknown";
+
+    internal static string? LimitErrorMessage(string? message) =>
+        string.IsNullOrWhiteSpace(message)
+            ? null
+            : message.Length <= 2_000 ? message : message[..2_000] + "…";
 
     public static void ResponseFrame(
         ProviderProfile profile,

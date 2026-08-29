@@ -41,6 +41,16 @@ internal sealed class ClaudeProvider : TranslationProviderBase
 
         TranslationDiagnostics.ResponseStreamCompleted(Profile, requestId, "claude", frameCount, extractedTextLength);
 
+        if (extractedTextLength == 0 && !cancellationToken.IsCancellationRequested)
+        {
+            // 部分 Anthropic 兼容代理会以孤立的 message_stop 结束 SSE；改走非流式响应可绕过该代理缺陷。
+            var fallbackText = await RequestNonStreamingFallbackAsync(request, cancellationToken).ConfigureAwait(false);
+            foreach (var delta in Route(router, fallbackText))
+            {
+                yield return delta;
+            }
+        }
+
         if (router is not null)
         {
             foreach (var delta in router.Complete())
@@ -50,19 +60,14 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         }
     }
 
-    private HttpRequestMessage CreateRequest(UnderstandRequest request)
+    private HttpRequestMessage CreateRequest(UnderstandRequest request, bool stream = true)
     {
-        object content = request.ImagePng is { Length: > 0 } image
-            ? new object[]
-            {
-                new { type = "image", source = new { type = "base64", media_type = "image/png", data = Base64(image) } },
-                new { type = "text", text = request.SourceText ?? string.Empty },
-            }
-            : request.SourceText ?? string.Empty;
+        var content = CreateContent(request.ImagePng, request.SourceText);
+
         var body = new
         {
             model = Profile.Model,
-            stream = true,
+            stream,
             max_tokens = 4096,
             system = PromptTemplates.GetSystemPrompt(request, Prompts),
             messages = new[] { new { role = "user", content } },
@@ -73,7 +78,49 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         return message;
     }
 
-    private static string ExtractDelta(SseEvent frame)
+    internal static object CreateContent(ReadOnlyMemory<byte>? imagePng, string? sourceText)
+    {
+        if (imagePng is not { Length: > 0 } image)
+        {
+            return sourceText ?? string.Empty;
+        }
+
+        var blocks = new List<object>
+        {
+            new { type = "image", source = new { type = "base64", media_type = "image/png", data = Convert.ToBase64String(image.Span) } },
+        };
+        if (!string.IsNullOrWhiteSpace(sourceText))
+        {
+            blocks.Add(new { type = "text", text = sourceText });
+        }
+
+        return blocks;
+    }
+
+    private async Task<string> RequestNonStreamingFallbackAsync(UnderstandRequest request, CancellationToken cancellationToken)
+    {
+        using var message = CreateRequest(request, stream: false);
+        using var response = await SendAsync(message, cancellationToken).ConfigureAwait(false);
+        var requestId = TranslationDiagnostics.GetRequestId(response);
+        var data = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var text = ExtractDelta(new SseEvent(null, data));
+        TranslationDiagnostics.ResponseFrame(
+            Profile,
+            requestId,
+            "claude-nonstream-fallback",
+            eventName: null,
+            data: data,
+            extractedTextLength: text.Length);
+        TranslationDiagnostics.ResponseStreamCompleted(
+            Profile,
+            requestId,
+            "claude-nonstream-fallback",
+            frameCount: 1,
+            extractedTextLength: text.Length);
+        return text;
+    }
+
+    internal static string ExtractDelta(SseEvent frame)
     {
         try
         {

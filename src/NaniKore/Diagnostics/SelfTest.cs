@@ -542,6 +542,7 @@ internal static class SelfTest
             {"type":"content_block_delta","delta":{"text":"secret"}}
             """);
         var malformed = TranslationDiagnostics.DescribeJson("not-json");
+        var limitedError = TranslationDiagnostics.LimitErrorMessage(new string('x', 2_001));
         Check(
             "translation diagnostics records JSON field paths without values",
             shape.IsValid && shape.Paths.Contains("delta.text", StringComparer.Ordinal) &&
@@ -549,6 +550,15 @@ internal static class SelfTest
         Check(
             "translation diagnostics marks malformed response data",
             !malformed.IsValid && malformed.Paths.Count == 0);
+        Check(
+            "translation diagnostics retains a bounded server error message",
+            limitedError is { Length: 2_001 } && limitedError.EndsWith("…", StringComparison.Ordinal));
+        Check(
+            "translation diagnostics writes beside the running executable",
+            Path.GetFullPath(TranslationDiagnostics.LogFilePath).StartsWith(
+                Path.GetFullPath(AppContext.BaseDirectory),
+                StringComparison.OrdinalIgnoreCase));
+
     }
 
     private static void TestSentinelRouter()
@@ -597,12 +607,25 @@ internal static class SelfTest
         using var gemini = JsonDocument.Parse("""
             {"candidates":[{"content":{"parts":[{"text":"第一段"},{"text":"第二段"}]}}]}
             """);
+        using var claude = JsonDocument.Parse("""
+            {"type":"message","content":[{"type":"text","text":"视觉"},{"type":"text","text":"结果"}]}
+            """);
+        using var emptyVisionContent = JsonDocument.Parse(JsonSerializer.Serialize(
+            ClaudeProvider.CreateContent((ReadOnlyMemory<byte>?)new byte[] { 1 }, string.Empty)));
         Check(
             "provider text extraction handles OpenAI content arrays",
             TranslationProviderBase.GetTextContent(openAi.RootElement, "choices", "0", "delta", "content") == "视觉结果");
         Check(
             "provider text extraction handles all Gemini text parts",
             TranslationProviderBase.GetTextContent(gemini.RootElement, "candidates") == "第一段第二段");
+        Check(
+            "Claude vision request omits an empty text content block",
+            emptyVisionContent.RootElement.ValueKind == JsonValueKind.Array &&
+            emptyVisionContent.RootElement.GetArrayLength() == 1 &&
+            emptyVisionContent.RootElement[0].GetProperty("type").GetString() == "image");
+        Check(
+            "Claude non-stream fallback extracts a complete message",
+            ClaudeProvider.ExtractDelta(new SseEvent(null, claude.RootElement.GetRawText())) == "视觉结果");
     }
 
     private static void TestProviderCapabilitiesAndErrors()

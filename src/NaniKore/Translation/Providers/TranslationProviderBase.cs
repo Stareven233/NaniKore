@@ -58,7 +58,9 @@ internal abstract class TranslationProviderBase : ITranslationProvider
         {
             using (response)
             {
-                throw await ProviderHttpException.CreateAsync(response, cancellationToken).ConfigureAwait(false);
+                var exception = await ProviderHttpException.CreateAsync(response, cancellationToken).ConfigureAwait(false);
+                TranslationDiagnostics.ResponseRejected(Profile, requestId, response, exception);
+                throw exception;
             }
         }
 
