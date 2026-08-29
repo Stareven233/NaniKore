@@ -38,6 +38,7 @@ internal static class SelfTest
         TestHotkeyRecorderInteraction();
         TestThemeResourcesResolve();
         TestSettingsPagesUseAdaptiveLayout();
+        TestGeneralPagePipelineDependencyVisibility();
         TestSseReader();
         TestSentinelRouter();
         TestProviderCapabilitiesAndErrors();
@@ -431,6 +432,22 @@ internal static class SelfTest
         Check(
             "general page attaches descriptions to the rows they explain",
             describedRows > 0);
+    }
+
+    private static void TestGeneralPagePipelineDependencyVisibility()
+    {
+        EnsureThemedApplication();
+        var page = new GeneralPage();
+        var config = new AppConfig { Pipeline = new PipelineConfig { Mode = "vision_oneshot" } };
+        page.Load(config);
+        Check(
+            "general page hides local OCR dependencies for vision pipeline",
+            page.FindName("LocalOcrDependenciesGroup") is System.Windows.Controls.Control { Visibility: System.Windows.Visibility.Collapsed });
+
+        page.Load(new AppConfig { Pipeline = new PipelineConfig { Mode = "local_ocr" } });
+        Check(
+            "general page shows local OCR dependencies for local pipeline",
+            page.FindName("LocalOcrDependenciesGroup") is System.Windows.Controls.Control { Visibility: System.Windows.Visibility.Visible });
     }
 
     /// <summary>主题资源与控件模板必须可用；顺带验证两份色板与两份控件字典都能解析。</summary>

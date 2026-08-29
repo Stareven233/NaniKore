@@ -126,7 +126,7 @@ internal sealed class NaniKoreApp : Application
         }
         catch (DirectoryNotFoundException exception)
         {
-            ShowFailure("本地 OCR 依赖尚未下载。请打开设置并点击“下载依赖”。", exception);
+            ShowFailure("本地 OCR 依赖缺失，请打开设置-通用-本地ocr依赖进行下载", exception);
         }
         catch (Win32Exception exception)
         {

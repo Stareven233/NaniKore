@@ -42,6 +42,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
 
         PipelineModeBox.Items.Add("local_ocr");
         PipelineModeBox.Items.Add("vision_oneshot");
+        UpdateLocalOcrDependenciesVisibility();
     }
 
     public string Title => "通用";
@@ -60,6 +61,8 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         {
             PipelineModeBox.SelectedItem = "local_ocr";
         }
+
+        UpdateLocalOcrDependenciesVisibility();
     }
 
     public string? Validate() => TargetLanguageBox.SelectedItem is LanguageChoice
@@ -74,13 +77,23 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         config.Pipeline.Mode = PipelineModeBox.SelectedItem as string ?? "local_ocr";
     }
 
+    private void OnPipelineModeChanged(object sender, SelectionChangedEventArgs e) =>
+        UpdateLocalOcrDependenciesVisibility();
+
+    private void UpdateLocalOcrDependenciesVisibility()
+    {
+        // 依赖下载只服务于本地 OCR，切换到视觉流程时隐藏整组设置，避免造成无关干扰。
+        var isLocalOcr = string.Equals(PipelineModeBox.SelectedItem as string, "local_ocr", StringComparison.OrdinalIgnoreCase);
+        LocalOcrDependenciesGroup.Visibility = isLocalOcr ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private async void OnDownloadDependenciesClick(object sender, RoutedEventArgs e)
     {
         if (_downloadDependencies is null ||
             !MessageDialog.Confirm(
                 Window.GetWindow(this),
                 "下载本地 OCR 依赖？",
-                "将从 ModelScope 下载 OCR 模型权重和 ONNX Runtime DLL，并保存到当前程序目录的 deps 文件夹。下载只会在你确认后开始。",
+                "将从 ModelScope 下载 OCR 模型权重和 ONNX Runtime DLL，并保存到当前程序目录的 deps 文件夹。",
                 "下载",
                 InfoSeverity.Warning))
         {
@@ -93,7 +106,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         try
         {
             await _downloadDependencies(progress, CancellationToken.None);
-            DependencyStatus.Show("本地 OCR 依赖已准备完成。", InfoSeverity.Success);
+            DependencyStatus.Show("本地 OCR 依赖已就绪", InfoSeverity.Success);
         }
         catch (Exception exception)
         {

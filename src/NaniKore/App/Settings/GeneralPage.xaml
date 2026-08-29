@@ -24,7 +24,28 @@
             </StackPanel>
         </controls:SettingsGroup>
 
-        <controls:SettingsGroup Header="本地 OCR 依赖">
+        <controls:SettingsGroup Header="识别流程">
+            <StackPanel>
+                <controls:SettingsRow Header="翻译流程" ContentWidth="220">
+                    <ComboBox x:Name="PipelineModeBox"
+                              SelectionChanged="OnPipelineModeChanged" />
+                </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <!-- 两条流程各占一行说明，替代旧版挤在一行的长句。 -->
+                <StackPanel Margin="12,10">
+                    <TextBlock Style="{DynamicResource Text.Caption}">
+                        <Run FontWeight="SemiBold" Text="local_ocr" />
+                        <Run Text="：本地 PP-OCR 识别后再交给模型翻译，隐私更好、无图像上传。" />
+                    </TextBlock>
+                    <TextBlock Style="{DynamicResource Text.Caption}" Margin="0,4,0,0">
+                        <Run FontWeight="SemiBold" Text="vision_oneshot" />
+                        <Run Text="：直接把选区图像交给支持图像输入的模型，一次完成识别与翻译。" />
+                    </TextBlock>
+                </StackPanel>
+            </StackPanel>
+        </controls:SettingsGroup>
+
+        <controls:SettingsGroup x:Name="LocalOcrDependenciesGroup" Header="本地 OCR 依赖">
             <StackPanel>
                 <controls:SettingsRow Header="模型与运行库"
                                       Description="下载到当前程序目录的 deps 文件夹；程序不会在后台自动联网。"
@@ -41,26 +62,6 @@
                     </Button>
                 </controls:SettingsRow>
                 <controls:InfoBar x:Name="DependencyStatus" Margin="12,0,12,12" />
-            </StackPanel>
-        </controls:SettingsGroup>
-
-        <controls:SettingsGroup Header="识别流程">
-            <StackPanel>
-                <controls:SettingsRow Header="翻译流程" ContentWidth="220">
-                    <ComboBox x:Name="PipelineModeBox" />
-                </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
-                <!-- 两条流程各占一行说明，替代旧版挤在一行的长句。 -->
-                <StackPanel Margin="12,10">
-                    <TextBlock Style="{DynamicResource Text.Caption}">
-                        <Run FontWeight="SemiBold" Text="local_ocr" />
-                        <Run Text="：本地 PP-OCR 识别后再交给模型翻译，隐私更好、无图像上传。" />
-                    </TextBlock>
-                    <TextBlock Style="{DynamicResource Text.Caption}" Margin="0,4,0,0">
-                        <Run FontWeight="SemiBold" Text="vision_oneshot" />
-                        <Run Text="：直接把选区图像交给支持图像输入的模型，一次完成识别与翻译。" />
-                    </TextBlock>
-                </StackPanel>
             </StackPanel>
         </controls:SettingsGroup>
     </StackPanel>

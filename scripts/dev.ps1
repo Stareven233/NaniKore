@@ -18,7 +18,13 @@ $debugExecutable = Join-Path $root 'src\NaniKore\bin\Debug\net10.0-windows10.0.1
 $artifactsDirectory = Join-Path $root 'artifacts'
 $publishOutput = Join-Path $root 'artifacts\win-x64'
 $publishedExecutable = Join-Path $publishOutput 'NaniKore.exe'
+$buildOutputDirectory = Join-Path $root 'src\NaniKore\bin'
 $dependenciesDirectory = Join-Path $root 'deps'
+
+$onnxRuntimeNativeFiles = @(
+    'onnxruntime.dll',
+    'onnxruntime_providers_shared.dll'
+)
 
 function Get-NaniKoreProductVersion {
     param(
@@ -38,6 +44,86 @@ function Get-NaniKoreProductVersion {
     }
 
     return $version
+}
+
+function Set-NaniKoreOnnxRuntimeLinks {
+    param(
+        [Parameter(Mandatory)]
+        [string]$OutputDirectory,
+
+        [Parameter(Mandatory)]
+        [string]$DependenciesDirectory
+    )
+
+    if (-not (Test-Path -LiteralPath $OutputDirectory -PathType Container)) {
+        return
+    }
+
+    $runtimeDirectories = @(Get-ChildItem -LiteralPath $OutputDirectory -Recurse -Directory -Force -Filter 'runtimes')
+    foreach ($runtimeDirectory in $runtimeDirectories) {
+        # 当前应用固定发布 win-x64，NuGet 附带的 arm64/Linux/Android 等 RID 资产没有保留价值。
+        Get-ChildItem -LiteralPath $runtimeDirectory.FullName -Directory -Force |
+            Where-Object { $_.Name -ne 'win-x64' } |
+            Remove-Item -Recurse -Force
+    }
+
+    foreach ($fileName in $onnxRuntimeNativeFiles) {
+        $source = Join-Path $DependenciesDirectory "onnxruntime\\$fileName"
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            continue
+        }
+
+        $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+        $destinations = @(Get-ChildItem -LiteralPath $OutputDirectory -Recurse -Force -File -Filter $fileName |
+            Where-Object { $_.FullName -ne $source })
+        foreach ($destination in $destinations) {
+            if ((Get-FileHash -LiteralPath $destination.FullName -Algorithm SHA256).Hash -ne $sourceHash) {
+                continue
+            }
+
+            # 先创建临时硬链接再替换原文件，避免硬链接创建失败时丢失构建产物。
+            $temporaryLink = "$($destination.FullName).link-$([guid]::NewGuid().ToString('N'))"
+            try {
+                New-Item -ItemType HardLink -Path $temporaryLink -Target $source | Out-Null
+                Remove-Item -LiteralPath $destination.FullName -Force
+                Move-Item -LiteralPath $temporaryLink -Destination $destination.FullName
+            }
+            finally {
+                Remove-Item -LiteralPath $temporaryLink -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
+function Remove-NaniKoreGeneratedImportLibraries {
+    param(
+        [Parameter(Mandatory)]
+        [string]$OutputDirectory
+    )
+
+    if (-not (Test-Path -LiteralPath $OutputDirectory -PathType Container)) {
+        return
+    }
+
+    # .lib 是 Windows 链接器导入库，应用运行时只需要 DLL；发布目录不应携带它们。
+    Get-ChildItem -LiteralPath $OutputDirectory -Recurse -Force -File -Filter '*.lib' |
+        Remove-Item -Force
+}
+
+function Remove-NaniKorePackageCacheFiles {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Directory
+    )
+
+    if (-not (Test-Path -LiteralPath $Directory -PathType Container)) {
+        return
+    }
+
+    # ModelScope 下载工具生成的缓存不是 OCR 运行时依赖，不进入发行 ZIP。
+    Get-ChildItem -LiteralPath $Directory -Recurse -Force |
+        Where-Object { $_.Name -eq '.ms_upload_cache' } |
+        Remove-Item -Recurse -Force
 }
 
 function New-NaniKoreReleaseArchive {
@@ -94,6 +180,7 @@ function New-NaniKoreReleaseArchive {
             Copy-Item -LiteralPath $DependenciesDirectory -Destination $stagingDirectory -Recurse -Force
         }
 
+        Remove-NaniKorePackageCacheFiles -Directory $stagingDirectory
         $archiveEntries = @(Get-ChildItem -LiteralPath $stagingDirectory -Force)
         if ($archiveEntries.Count -eq 0) {
             throw "Package staging directory is empty: $stagingDirectory"
@@ -170,6 +257,10 @@ try {
 
             & $dotnet build $solution --configuration Debug -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
             $exitCode = $LASTEXITCODE
+            if ($exitCode -eq 0) {
+                Set-NaniKoreOnnxRuntimeLinks -OutputDirectory $buildOutputDirectory -DependenciesDirectory $dependenciesDirectory
+                Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $buildOutputDirectory
+            }
         }
         'run' {
             & $dotnet run --project $project -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
@@ -186,22 +277,30 @@ try {
 
             & $dotnet publish $project --configuration Release --runtime win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false --output $publishOutput -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
             $exitCode = $LASTEXITCODE
-            if ($exitCode -eq 0) {
-                # 默认发布包不携带固定的 ONNX Runtime DLL；完整包从 deps/ 原样打包。
-                Remove-Item -LiteralPath (Join-Path $publishOutput 'deps'), (Join-Path $publishOutput 'onnxruntime.dll'), (Join-Path $publishOutput 'onnxruntime_providers_shared.dll') -Recurse -Force -ErrorAction SilentlyContinue
-                # 发布时同步根目录配置模板到发布输出，确保运行时配置与构建版本一致，喵
-                $rootConfig = Join-Path $root "config.yaml"
-                $publishConfig = Join-Path $publishOutput "config.yaml"
-                Copy-Item -LiteralPath $rootConfig -Destination $publishConfig -Force
-                $productVersion = Get-NaniKoreProductVersion -ConfigPath $rootConfig
-                $archivePath = New-NaniKoreReleaseArchive `
-                    -PublishOutput $publishOutput `
-                    -ArtifactsDirectory $artifactsDirectory `
-                    -DependenciesDirectory $dependenciesDirectory `
-                    -ProductVersion $productVersion `
-                    -IncludeFullDependencies:$Full
-                Write-Host "Created release archive: $archivePath"
+            if ($exitCode -ne 0) {
+                break
             }
+            $depsLink = "D:\Code\projects\NaniKore\artifacts\win-x64\deps"
+            Set-NaniKoreOnnxRuntimeLinks -OutputDirectory $buildOutputDirectory -DependenciesDirectory $dependenciesDirectory
+            Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $buildOutputDirectory
+            # 默认发布包不携带固定的 ONNX Runtime DLL；完整包从 deps/ 原样打包。
+            Remove-Item -LiteralPath (Join-Path $publishOutput 'deps'), (Join-Path $publishOutput 'onnxruntime.dll'), (Join-Path $publishOutput 'onnxruntime_providers_shared.dll') -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $publishOutput
+            # 发布时同步根目录配置模板到发布输出，确保运行时配置与构建版本一致，喵
+            $rootConfig = Join-Path $root "config.yaml"
+            $publishConfig = Join-Path $publishOutput "config.yaml"
+            Copy-Item -LiteralPath $rootConfig -Destination $publishConfig -Force
+            $productVersion = Get-NaniKoreProductVersion -ConfigPath $rootConfig
+            $archivePath = New-NaniKoreReleaseArchive `
+                -PublishOutput $publishOutput `
+                -ArtifactsDirectory $artifactsDirectory `
+                -DependenciesDirectory $dependenciesDirectory `
+                -ProductVersion $productVersion `
+                -IncludeFullDependencies:$Full
+            if (-not (Test-Path $depsLink)) {
+                New-Item -ItemType Junction -Path $depsLink -Target "D:\Code\projects\NaniKore\deps"
+            }
+            Write-Host "Created release archive: $archivePath"
         }
     }
 }
