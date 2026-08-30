@@ -22,6 +22,7 @@ internal sealed partial class ResultPanelWindow : Window
     private const int PlacementGapPixels = 8;
 
     private nint _windowHandle;
+    private int _translationInsertIndex;
     private bool _translationHasContent;
 
     public ResultPanelWindow()
@@ -46,6 +47,7 @@ internal sealed partial class ResultPanelWindow : Window
         NormalizeSourceButton.IsEnabled = true;
         TranslationTextBox.Clear();
         ExplanationTextBox.Clear();
+        _translationInsertIndex = 0;
         _translationHasContent = false;
         ErrorDetailsTextBox.Clear();
         ErrorDetailsExpander.Visibility = Visibility.Collapsed;
@@ -54,6 +56,21 @@ internal sealed partial class ResultPanelWindow : Window
     }
 
     public void SetTranslationInProgress(bool inProgress) => NormalizeSourceButton.IsEnabled = !inProgress;
+
+    /// <summary>开始一轮新的译文流；已有译文会在首个有效结果到达时保留在新结果之后。</summary>
+    public void BeginTranslation()
+    {
+        _translationInsertIndex = 0;
+        _translationHasContent = false;
+    }
+
+    /// <summary>清空译文及当前流式片段的插入位置。</summary>
+    public void ClearTranslation()
+    {
+        TranslationTextBox.Clear();
+        _translationInsertIndex = 0;
+        _translationHasContent = false;
+    }
 
     /// <summary>将结果卡贴在本次桌面选区下方；下方空间不足时自动翻到选区上方。</summary>
     public void PositionNearSelection(Rectangle selectionOnDesktop)
@@ -117,16 +134,32 @@ internal sealed partial class ResultPanelWindow : Window
         };
 
         var text = delta.Text;
-        if (delta.Channel == Translation.DeltaChannel.Translation && !_translationHasContent)
+        if (delta.Channel == Translation.DeltaChannel.Translation)
         {
-            // 不让模型流式输出的换行把译文框顶出两行空白；跨增量保留“尚未出现正文”的状态。
-            text = text.TrimStart();
-            if (text.Length == 0)
+            if (!_translationHasContent)
             {
+                // 不让模型流式输出的换行把译文框顶出两行空白；跨增量保留“尚未出现正文”的状态。
+                text = text.TrimStart();
+                if (text.Length == 0)
+                {
+                    return;
+                }
+
+                // 新一轮译文插到最前面，并用换行和上一轮结果分隔。
+                var previous = TranslationTextBox.Text;
+                TranslationTextBox.Text = previous.Length == 0
+                    ? text
+                    : text + Environment.NewLine + previous;
+                _translationInsertIndex = text.Length;
+                _translationHasContent = true;
+                TranslationTextBox.ScrollToHome();
                 return;
             }
 
-            _translationHasContent = true;
+            TranslationTextBox.Text = TranslationTextBox.Text.Insert(_translationInsertIndex, text);
+            _translationInsertIndex += text.Length;
+            TranslationTextBox.ScrollToHome();
+            return;
         }
 
         target.AppendText(text);
@@ -202,6 +235,8 @@ internal sealed partial class ResultPanelWindow : Window
     }
 
     private void OnTranslateClick(object sender, RoutedEventArgs e) => TranslateRequested?.Invoke(this, EventArgs.Empty);
+
+    private void OnClearTranslationClick(object sender, RoutedEventArgs e) => ClearTranslation();
 
     private void OnSettingsClick(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke(this, EventArgs.Empty);
 }

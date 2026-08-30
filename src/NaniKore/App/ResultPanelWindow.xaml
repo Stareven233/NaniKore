@@ -53,7 +53,17 @@
         <GridSplitter Grid.Row="2" Height="8" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                       ResizeBehavior="PreviousAndNext" />
 
-        <TextBlock Grid.Row="3" Text="译文" FontWeight="SemiBold" Margin="0,0,0,6" />
+        <Grid Grid.Row="3" Margin="0,0,0,6">
+            <TextBlock Text="译文" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <Button x:Name="ClearTranslationButton"
+                    Style="{DynamicResource Button.Icon}"
+                    HorizontalAlignment="Right"
+                    ToolTip="清除译文"
+                    AutomationProperties.Name="清除译文"
+                    Click="OnClearTranslationClick">
+                <TextBlock Text="&#xE894;" FontFamily="Segoe MDL2 Assets" />
+            </Button>
+        </Grid>
         <TextBox x:Name="TranslationTextBox" Grid.Row="4"
                  Style="{DynamicResource TextBox.Multiline}"
                  IsReadOnly="True" />

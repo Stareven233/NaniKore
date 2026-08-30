@@ -152,6 +152,7 @@ internal sealed class NaniKoreApp : Application
         var cancellation = new CancellationTokenSource();
         _translationCancellation = cancellation;
         var panel = EnsureResultPanel();
+        panel.BeginTranslation();
         panel.SetStatus("正在连接翻译服务…");
         panel.SetTranslationInProgress(true);
         var receivedOutput = false;
