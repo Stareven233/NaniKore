@@ -34,12 +34,18 @@
         <DockPanel Grid.Row="0" Margin="0,0,0,6">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <Button MinWidth="72" Content="设置" Click="OnSettingsClick" />
+                <Button x:Name="NormalizeSourceButton" MinWidth="72" Margin="8,0,0,0"
+                        Content="规范化"
+                        ToolTip="整理换行和空格，并补齐中日韩文字与拉丁字母、数字之间的空格"
+                        Click="OnNormalizeSourceClick" />
                 <Button Style="{DynamicResource Button.Accent}" MinWidth="72" Margin="8,0,0,0"
                         Content="翻译" Click="OnTranslateClick" />
             </StackPanel>
-            <TextBlock Text="原文" FontWeight="SemiBold" VerticalAlignment="Center" />
-            <TextBlock Style="{DynamicResource Text.Caption}" Margin="8,0,0,0" VerticalAlignment="Center"
-                       Text="点击可编辑" />
+            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                <TextBlock Text="原文" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <TextBlock Style="{DynamicResource Text.Caption}" Margin="8,0,0,0" VerticalAlignment="Center"
+                           Text="点击可编辑" />
+            </StackPanel>
         </DockPanel>
         <TextBox x:Name="SourceTextBox" Grid.Row="1"
                  Style="{DynamicResource TextBox.Multiline}" />

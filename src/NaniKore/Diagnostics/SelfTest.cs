@@ -31,6 +31,7 @@ internal static class SelfTest
         TestDetectionPostprocessing();
         TestCtcDecoding();
         TestReadingOrder();
+        TestSourceTextNormalization();
         TestConfigRoundTrip();
         TestAboutPageDisplaysProductVersion();
         TestApplicationIconResource();
@@ -162,6 +163,27 @@ internal static class SelfTest
         Check(
             "OCR lines sort by row then horizontal position",
             sorted.Select(line => line.Text).SequenceEqual(["left", "right", "bottom"]));
+    }
+
+
+    private static void TestSourceTextNormalization()
+    {
+        var normalized = SourceTextNormalizer.Normalize("  这是\nOCR\t结果123测试ABC中文  ");
+        Check(
+            "source normalization collapses whitespace and separates CJK from ASCII words",
+            normalized == "这是 OCR 结果 123 测试 ABC 中文");
+
+        Check(
+            "source normalization removes whitespace around CJK punctuation",
+            SourceTextNormalizer.Normalize("你好\n， 世界！") == "你好，世界！");
+
+        Check(
+            "source normalization removes whitespace between adjacent CJK characters",
+            SourceTextNormalizer.Normalize("你 好\n世 界") == "你好世界");
+
+        Check(
+            "source normalization preserves already normalized text",
+            SourceTextNormalizer.Normalize("A 1 中文") == "A 1 中文");
     }
 
 

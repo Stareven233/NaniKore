@@ -153,6 +153,7 @@ internal sealed class NaniKoreApp : Application
         _translationCancellation = cancellation;
         var panel = EnsureResultPanel();
         panel.SetStatus("正在连接翻译服务…");
+        panel.SetTranslationInProgress(true);
         var receivedOutput = false;
         try
         {
@@ -194,6 +195,7 @@ internal sealed class NaniKoreApp : Application
         {
             if (ReferenceEquals(_translationCancellation, cancellation))
             {
+                panel.SetTranslationInProgress(false);
                 _translationCancellation = null;
             }
 

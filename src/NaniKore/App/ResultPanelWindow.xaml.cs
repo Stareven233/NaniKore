@@ -43,6 +43,7 @@ internal sealed partial class ResultPanelWindow : Window
     public void Reset(string source, string status)
     {
         SourceTextBox.Text = source;
+        NormalizeSourceButton.IsEnabled = true;
         TranslationTextBox.Clear();
         ExplanationTextBox.Clear();
         _translationHasContent = false;
@@ -51,6 +52,8 @@ internal sealed partial class ResultPanelWindow : Window
         ErrorDetailsExpander.IsExpanded = false;
         StatusBar.Show(status, InfoSeverity.Neutral);
     }
+
+    public void SetTranslationInProgress(bool inProgress) => NormalizeSourceButton.IsEnabled = !inProgress;
 
     /// <summary>将结果卡贴在本次桌面选区下方；下方空间不足时自动翻到选区上方。</summary>
     public void PositionNearSelection(Rectangle selectionOnDesktop)
@@ -180,6 +183,23 @@ internal sealed partial class ResultPanelWindow : Window
 
     private static int ClampToWorkArea(int value, int minimum, int maximum) =>
         maximum < minimum ? minimum : Math.Clamp(value, minimum, maximum);
+
+    private void OnNormalizeSourceClick(object sender, RoutedEventArgs e)
+    {
+        var original = SourceTextBox.Text;
+        var normalized = Translation.SourceTextNormalizer.Normalize(original);
+        if (string.Equals(original, normalized, StringComparison.Ordinal))
+        {
+            SetStatus(string.IsNullOrWhiteSpace(original) ? "没有可规范化的原文。" : "原文已经是规范格式。");
+            return;
+        }
+
+        // 规范化可能改变文本长度；尽量保留用户当前编辑位置，避免按钮操作打断校对。
+        var caretIndex = SourceTextBox.CaretIndex;
+        SourceTextBox.Text = normalized;
+        SourceTextBox.CaretIndex = Math.Min(caretIndex, normalized.Length);
+        SetStatus("原文已规范化，请点击“翻译”使用新文本。");
+    }
 
     private void OnTranslateClick(object sender, RoutedEventArgs e) => TranslateRequested?.Invoke(this, EventArgs.Empty);
 
