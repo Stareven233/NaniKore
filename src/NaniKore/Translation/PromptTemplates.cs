@@ -5,10 +5,9 @@ namespace NaniKore.Translation;
 /// <summary>内置提示词与视觉一条龙的轻量分段协议。</summary>
 internal static class PromptTemplates
 {
-    // 协议唯一分隔符：换行、三个连字符、换行，共五个字符。
+    // 兼容模型省略分隔符两侧额外空行的输出；默认提示词使用完整的七字符格式。
     internal const string SectionSeparator = "\n---\n";
     internal const string TargetLanguagePlaceholder = "{{target_language}}";
-    internal const string SectionSeparatorPlaceholder = "{{section_separator}}";
 
     /// <summary>设置页始终展示的默认翻译提示词；主人可直接在此基础上修改。</summary>
     internal const string DefaultTranslationPrompt = """
@@ -16,11 +15,15 @@ internal static class PromptTemplates
         Return only the translation in {{target_language}}. Do not include explanations, notes, or source text.
         """;
 
-    /// <summary>视觉一条龙的默认模板；内置模板包含分隔符占位符，供结果面板稳定拆分原文与译文。</summary>
+    /// <summary>视觉一条龙的默认模板；直接展示分栏协议，用户可按实际模型自由修改。</summary>
     internal const string DefaultVisionOneshotPrompt = """
         Transcribe all readable text in the supplied image, then translate it into {{target_language}}.
         Return exactly this shape:
-        <transcription>{{section_separator}}<translation>
+        <transcription>
+
+        ---
+
+        <translation>
         Do not include labels, markdown, commentary, or extra sections.
         """;
 
@@ -39,7 +42,7 @@ internal static class PromptTemplates
             var visionPrompt = string.IsNullOrWhiteSpace(prompts.VisionOneshot)
                 ? DefaultVisionOneshotPrompt
                 : prompts.VisionOneshot.Trim();
-            return ExpandPlaceholders(visionPrompt, request.TargetLanguage);
+            return ExpandTargetLanguage(visionPrompt, request.TargetLanguage);
         }
 
         var translationPrompt = string.IsNullOrWhiteSpace(prompts.Translate)
@@ -48,22 +51,18 @@ internal static class PromptTemplates
         return ExpandTargetLanguage(translationPrompt, request.TargetLanguage);
     }
 
-    private static string ExpandPlaceholders(string prompt, string targetLanguage) =>
-        ExpandTargetLanguage(
-            prompt.Replace(SectionSeparatorPlaceholder, SectionSeparator, StringComparison.Ordinal),
-            targetLanguage);
-
     private static string ExpandTargetLanguage(string prompt, string targetLanguage) =>
         // 只展开已声明的占位符；未知占位符原样保留，避免悄悄改变用户提示词语义。
         prompt.Replace(TargetLanguagePlaceholder, targetLanguage, StringComparison.Ordinal);
 }
 
 /// <summary>
-/// 视觉流以唯一的五字符分隔符拆成原文和译文；无分隔符时保留完整输出作为译文。
+/// 视觉流优先按两侧带空行的分隔符拆成原文和译文，并兼容紧凑分隔符；无分隔符时保留完整输出作为译文。
 /// </summary>
 internal sealed class SectionChannelRouter
 {
-    private const int SeparatorLength = 5;
+    private const string PaddedSectionSeparator = "\n\n---\n\n";
+    private const int MaxSeparatorLength = 7;
 
     private DeltaChannel _channel = DeltaChannel.Translation;
     private string _pending = string.Empty;
@@ -89,8 +88,8 @@ internal sealed class SectionChannelRouter
                     yield break;
                 }
 
-                // 保留分隔符长度减一的尾部，兼容五字符分隔符恰好跨 SSE 包切断。
-                var flushLength = Math.Max(0, _pending.Length - SeparatorLength + 1);
+                // 保留最长分隔符长度减一的尾部，兼容分隔符恰好跨 SSE 包切断。
+                var flushLength = Math.Max(0, _pending.Length - MaxSeparatorLength + 1);
                 if (flushLength == 0)
                 {
                     yield break;
@@ -160,6 +159,7 @@ internal sealed class SectionChannelRouter
         SentinelMatch? result = null;
         foreach (var candidate in new[]
         {
+            (Marker: PaddedSectionSeparator, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
             (Marker: PromptTemplates.SectionSeparator, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
         })
         {

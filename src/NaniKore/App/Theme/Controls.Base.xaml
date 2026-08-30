@@ -282,6 +282,13 @@
                                        Margin="0,2,0,0" />
                         </StackPanel>
 
+                        <ContentPresenter x:Name="HeaderAction"
+                                          Grid.Row="0"
+                                          Grid.Column="1"
+                                          Content="{TemplateBinding HeaderAction}"
+                                          VerticalAlignment="Center"
+                                          HorizontalAlignment="Right" />
+
                         <ContentPresenter x:Name="Field"
                                           Grid.Row="0"
                                           Grid.Column="1"
@@ -292,6 +299,9 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="Description" Value="">
                             <Setter TargetName="Description" Property="Visibility" Value="Collapsed" />
+                        </Trigger>
+                        <Trigger Property="HeaderAction" Value="{x:Null}">
+                            <Setter TargetName="HeaderAction" Property="Visibility" Value="Collapsed" />
                         </Trigger>
                         <!-- 堆叠模式：字段落到第二行并跨列，多行文本框才有完整宽度。 -->
                         <Trigger Property="IsStacked" Value="True">

@@ -98,9 +98,16 @@
 
         <controls:SettingsGroup Header="提示词">
             <StackPanel>
-                <controls:SettingsRow Header="本地 OCR（local_ocr）提示词"
+                <controls:SettingsRow x:Name="LocalPromptRow"
+                                      Header="本地 OCR（local_ocr）提示词"
                                       Description="{}{{target_language}} 会替换为「通用」页选择的目标语言。"
                                       IsStacked="True">
+                    <controls:SettingsRow.HeaderAction>
+                        <Button x:Name="RestorePromptButton"
+                                Style="{DynamicResource Button.Subtle}"
+                                Foreground="Black"
+                                Content="恢复默认" />
+                    </controls:SettingsRow.HeaderAction>
                     <!-- 直接写在编辑器上，确保其优先级高于通用 TextBox 样式。 -->
                     <TextBox x:Name="PromptBox"
                              Style="{DynamicResource TextBox.Multiline}"
@@ -108,22 +115,23 @@
                              MaxHeight="220"
                              FontFamily="Yahei-Monaco-Hybrid-Font, 微软雅黑, Monaco, Consolas, Lucida Console, Cascadia Mono" />
                 </controls:SettingsRow>
-                <StackPanel Margin="12,0,12,10" HorizontalAlignment="Left">
-                    <Button x:Name="RestorePromptButton" Style="{DynamicResource Button.Subtle}" Content="恢复 local_ocr 默认" />
-                </StackPanel>
                 <Border Style="{DynamicResource Divider.Row}" />
-                <controls:SettingsRow Header="视觉一条龙（vision_oneshot）提示词"
-                                      Description="{}{{target_language}} 会替换目标语言；{{section_separator}} 会替换为原文与译文之间的换行---换行分隔符。可删除该分隔符占位符，但结果将只显示为译文。"
+                <controls:SettingsRow x:Name="VisionPromptRow"
+                                      Header="视觉一条龙（vision_oneshot）提示词"
+                                      Description="{}{{target_language}} 会替换为「通用」页选择的目标语言；提示词中的 --- 分隔原文与译文。"
                                       IsStacked="True">
+                    <controls:SettingsRow.HeaderAction>
+                        <Button x:Name="RestoreVisionPromptButton"
+                                Style="{DynamicResource Button.Subtle}"
+                                Foreground="Black"
+                                Content="恢复默认" />
+                    </controls:SettingsRow.HeaderAction>
                     <TextBox x:Name="VisionPromptBox"
                              Style="{DynamicResource TextBox.Multiline}"
                              MinHeight="160"
                              MaxHeight="260"
                              FontFamily="Yahei-Monaco-Hybrid-Font, 微软雅黑, Monaco, Consolas, Lucida Console, Cascadia Mono" />
                 </controls:SettingsRow>
-                <StackPanel Margin="12,0,12,10" HorizontalAlignment="Left">
-                    <Button x:Name="RestoreVisionPromptButton" Style="{DynamicResource Button.Subtle}" Content="恢复 vision_oneshot 默认" />
-                </StackPanel>
             </StackPanel>
         </controls:SettingsGroup>
     </StackPanel>

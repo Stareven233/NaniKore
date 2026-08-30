@@ -191,7 +191,7 @@ internal static class SelfTest
                   settings_height: 640
                 prompts:
                   translate: 'Translate into {{target_language}} only.'
-                  vision_oneshot: 'Transcribe{{section_separator}}Translate into {{target_language}}.'
+                  vision_oneshot: "Transcribe\n\n---\n\nTranslate into {{target_language}}."
                 unknown_field: ignored
                 """);
             var store = new ConfigStore(directory);
@@ -209,7 +209,7 @@ internal static class SelfTest
                 store.Current.Profiles.Single().TimeoutSeconds == 20 &&
                 store.Current.Profiles.Single().Name == "test" &&
                 store.Current.Prompts.Translate == "Translate into {{target_language}} only." &&
-                store.Current.Prompts.VisionOneshot == "Transcribe{{section_separator}}Translate into {{target_language}}.");
+                store.Current.Prompts.VisionOneshot == "Transcribe\n\n---\n\nTranslate into {{target_language}}.");
             store.AtomicWrite(store.Current);
             var reloaded = new ConfigStore(directory);
             Check(
@@ -217,11 +217,11 @@ internal static class SelfTest
                 reloaded.Current.Profiles.Single().Model == "model-a" &&
                 reloaded.Current.Profiles.Single().Name == "test" &&
                 reloaded.Current.Prompts.Translate == "Translate into {{target_language}} only." &&
-                reloaded.Current.Prompts.VisionOneshot == "Transcribe{{section_separator}}Translate into {{target_language}}." &&
+                reloaded.Current.Prompts.VisionOneshot == "Transcribe\n\n---\n\nTranslate into {{target_language}}." &&
                 reloaded.Current.Windows.SettingsWidth == 800 &&
                 reloaded.Current.Windows.SettingsHeight == 640 &&
                 AppConfigCloner.Clone(reloaded.Current).Profiles.Single().Name == "test" &&
-                AppConfigCloner.Clone(reloaded.Current).Prompts.VisionOneshot == "Transcribe{{section_separator}}Translate into {{target_language}}.");
+                AppConfigCloner.Clone(reloaded.Current).Prompts.VisionOneshot == "Transcribe\n\n---\n\nTranslate into {{target_language}}.");
 
             File.WriteAllText(Path.Combine(directory, "config.yaml"), """
                 version: 1
@@ -312,19 +312,25 @@ internal static class SelfTest
 
         var imageRequest = request with { ImagePng = new byte[] { 1 } };
         var defaultVisionPrompt = PromptTemplates.GetSystemPrompt(imageRequest, new PromptConfig());
+        var expectedVisionShape = string.Join(
+            Environment.NewLine,
+            "<transcription>",
+            string.Empty,
+            "---",
+            string.Empty,
+            "<translation>");
         Check(
-            "default vision prompt expands its target language and section separator",
+            "default vision prompt expands its target language and keeps the visible section separator",
             defaultVisionPrompt.Contains("zh-CN", StringComparison.Ordinal) &&
-            defaultVisionPrompt.Contains(PromptTemplates.SectionSeparator, StringComparison.Ordinal) &&
-            !defaultVisionPrompt.Contains(PromptTemplates.TargetLanguagePlaceholder, StringComparison.Ordinal) &&
-            !defaultVisionPrompt.Contains(PromptTemplates.SectionSeparatorPlaceholder, StringComparison.Ordinal));
+            defaultVisionPrompt.Contains(expectedVisionShape, StringComparison.Ordinal) &&
+            !defaultVisionPrompt.Contains(PromptTemplates.TargetLanguagePlaceholder, StringComparison.Ordinal));
 
         var visionPrompt = PromptTemplates.GetSystemPrompt(
-            imageRequest with { TargetLanguage = "zh-CN {{section_separator}}" },
-            new PromptConfig { VisionOneshot = "OCR{{section_separator}}Translate {{target_language}}; retain {{unknown_placeholder}}" });
+            imageRequest,
+            new PromptConfig { VisionOneshot = "OCR\n\n---\n\nTranslate {{target_language}}; retain {{unknown_placeholder}}" });
         Check(
-            "custom vision prompt expands declared placeholders without parsing replacement values",
-            visionPrompt == $"OCR{PromptTemplates.SectionSeparator}Translate zh-CN {{{{section_separator}}}}; retain {{{{unknown_placeholder}}}}");
+            "custom vision prompt expands only the target language placeholder",
+            visionPrompt == "OCR\n\n---\n\nTranslate zh-CN; retain {{unknown_placeholder}}");
     }
 
     private static void TestTranslationPagePromptEditing()
@@ -335,11 +341,24 @@ internal static class SelfTest
 
         var localPromptBox = (System.Windows.Controls.TextBox?)page.FindName("PromptBox");
         var visionPromptBox = (System.Windows.Controls.TextBox?)page.FindName("VisionPromptBox");
+        var localPromptRow = (SettingsRow?)page.FindName("LocalPromptRow");
+        var visionPromptRow = (SettingsRow?)page.FindName("VisionPromptRow");
+        var restoreLocalButton = (System.Windows.Controls.Button?)page.FindName("RestorePromptButton");
         var restoreVisionButton = (System.Windows.Controls.Button?)page.FindName("RestoreVisionPromptButton");
         Check(
             "translation settings show both built-in prompts for empty config values",
             localPromptBox?.Text == PromptTemplates.DefaultTranslationPrompt &&
             visionPromptBox?.Text == PromptTemplates.DefaultVisionOneshotPrompt);
+        Check(
+            "prompt restore buttons share the title row with concise black labels",
+            restoreLocalButton?.Content as string == "恢复默认" &&
+            restoreVisionButton?.Content as string == "恢复默认" &&
+            ReferenceEquals(localPromptRow?.HeaderAction, restoreLocalButton) &&
+            ReferenceEquals(visionPromptRow?.HeaderAction, restoreVisionButton) &&
+            restoreLocalButton.Foreground is System.Windows.Media.SolidColorBrush { Color: var localColor } &&
+            localColor == System.Windows.Media.Colors.Black &&
+            restoreVisionButton.Foreground is System.Windows.Media.SolidColorBrush { Color: var visionColor } &&
+            visionColor == System.Windows.Media.Colors.Black);
 
         visionPromptBox!.Text = "temporary";
         restoreVisionButton!.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
@@ -347,11 +366,11 @@ internal static class SelfTest
             "translation settings can restore the built-in vision prompt",
             visionPromptBox.Text == PromptTemplates.DefaultVisionOneshotPrompt);
 
-        visionPromptBox.Text = "Custom vision {{target_language}}{{section_separator}}";
+        visionPromptBox.Text = "Custom vision {{target_language}}\n\n---\n\n<translation>";
         page.Apply(config);
         Check(
             "translation settings save an editable vision prompt into app config",
-            config.Prompts.VisionOneshot == "Custom vision {{target_language}}{{section_separator}}");
+            config.Prompts.VisionOneshot == "Custom vision {{target_language}}\n\n---\n\n<translation>");
     }
 
     private static void TestProfileRenameKeepsSecret()
@@ -588,6 +607,17 @@ internal static class SelfTest
             "section router accepts the five-character separator split across frames",
             string.Concat(simpleSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "原文" &&
             string.Concat(simpleSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "译文");
+
+        var paddedSeparatorRouter = new SectionChannelRouter();
+        var paddedSeparatorDeltas = paddedSeparatorRouter
+            .Push("原文\n\n--")
+            .Concat(paddedSeparatorRouter.Push("-\n\n译文"))
+            .Concat(paddedSeparatorRouter.Complete())
+            .ToList();
+        Check(
+            "section router consumes the blank lines around the configured separator",
+            string.Concat(paddedSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "原文" &&
+            string.Concat(paddedSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "译文");
 
         var fallbackRouter = new SectionChannelRouter();
         var fallbackDeltas = fallbackRouter.Push("\n\nplain translation").Concat(fallbackRouter.Complete()).ToList();

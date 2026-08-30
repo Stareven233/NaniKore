@@ -1,6 +1,6 @@
 # 此文件是可提交的运行配置模板：API Key 仅由 Windows DPAPI 保存到当前用户配置目录，不写入此文件。
 # 修改根目录模板后重新构建；运行时在 Debug 或发布目录各自使用其副本。
-version: 0.2.5+7
+version: 0.2.5+10
 general:
   auto_translate: false
   target_language: 中文（简体）
@@ -80,6 +80,10 @@ prompts:
   vision_oneshot: |
     Transcribe all readable text in the supplied image, then translate it into {{target_language}}.
     Return exactly this shape:
-    <transcription>{{section_separator}}<translation>
+    <transcription>
+
+    ---
+
+    <translation>
     Do not include labels, markdown, commentary, or extra sections.
   explain: ''

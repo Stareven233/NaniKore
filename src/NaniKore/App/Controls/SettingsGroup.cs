@@ -33,6 +33,13 @@ internal sealed class SettingsRow : ContentControl
         typeof(SettingsRow),
         new PropertyMetadata(string.Empty));
 
+    /// <summary>堆叠模式标题行右侧的可选操作，例如恢复默认；普通设置行保持为空。</summary>
+    public static readonly DependencyProperty HeaderActionProperty = DependencyProperty.Register(
+        nameof(HeaderAction),
+        typeof(object),
+        typeof(SettingsRow),
+        new PropertyMetadata(null));
+
     /// <summary>字段控件的建议宽度；为 <see cref="double.NaN"/> 时占满右侧剩余宽度。</summary>
     public static readonly DependencyProperty ContentWidthProperty = DependencyProperty.Register(
         nameof(ContentWidth),
@@ -61,6 +68,12 @@ internal sealed class SettingsRow : ContentControl
     {
         get => (string)GetValue(DescriptionProperty);
         set => SetValue(DescriptionProperty, value);
+    }
+
+    public object? HeaderAction
+    {
+        get => GetValue(HeaderActionProperty);
+        set => SetValue(HeaderActionProperty, value);
     }
 
     public double ContentWidth
