@@ -8,11 +8,20 @@ internal static class PromptTemplates
     // 协议唯一分隔符：换行、三个连字符、换行，共五个字符。
     internal const string SectionSeparator = "\n---\n";
     internal const string TargetLanguagePlaceholder = "{{target_language}}";
+    internal const string SectionSeparatorPlaceholder = "{{section_separator}}";
 
     /// <summary>设置页始终展示的默认翻译提示词；主人可直接在此基础上修改。</summary>
     internal const string DefaultTranslationPrompt = """
         Translate the supplied text into {{target_language}}. 
         Return only the translation in {{target_language}}. Do not include explanations, notes, or source text.
+        """;
+
+    /// <summary>视觉一条龙的默认模板；内置模板包含分隔符占位符，供结果面板稳定拆分原文与译文。</summary>
+    internal const string DefaultVisionOneshotPrompt = """
+        Transcribe all readable text in the supplied image, then translate it into {{target_language}}.
+        Return exactly this shape:
+        <transcription>{{section_separator}}<translation>
+        Do not include labels, markdown, commentary, or extra sections.
         """;
 
     public static string GetSystemPrompt(UnderstandRequest request, PromptConfig prompts)
@@ -25,22 +34,24 @@ internal static class PromptTemplates
             return ExpandTargetLanguage(explainPrompt, request.TargetLanguage);
         }
 
+        if (request.ImagePng is { Length: > 0 })
+        {
+            var visionPrompt = string.IsNullOrWhiteSpace(prompts.VisionOneshot)
+                ? DefaultVisionOneshotPrompt
+                : prompts.VisionOneshot.Trim();
+            return ExpandPlaceholders(visionPrompt, request.TargetLanguage);
+        }
+
         var translationPrompt = string.IsNullOrWhiteSpace(prompts.Translate)
             ? DefaultTranslationPrompt
             : prompts.Translate.Trim();
-        translationPrompt = ExpandTargetLanguage(translationPrompt, request.TargetLanguage);
-
-        if (request.ImagePng is not { Length: > 0 })
-        {
-            return translationPrompt;
-        }
-
-        // 小型视觉模型更容易遵守短固定分隔符；该分隔符是唯一的运行时协议。
-        return $"{translationPrompt}\n\n" +
-            "For an image input, return exactly two sections: transcription, then the five-character separator below, then translation." +
-            $"{SectionSeparator}" +
-            "Do not include labels, commentary, or extra sections.";
+        return ExpandTargetLanguage(translationPrompt, request.TargetLanguage);
     }
+
+    private static string ExpandPlaceholders(string prompt, string targetLanguage) =>
+        ExpandTargetLanguage(
+            prompt.Replace(SectionSeparatorPlaceholder, SectionSeparator, StringComparison.Ordinal),
+            targetLanguage);
 
     private static string ExpandTargetLanguage(string prompt, string targetLanguage) =>
         // 只展开已声明的占位符；未知占位符原样保留，避免悄悄改变用户提示词语义。
@@ -50,7 +61,7 @@ internal static class PromptTemplates
 /// <summary>
 /// 视觉流以唯一的五字符分隔符拆成原文和译文；无分隔符时保留完整输出作为译文。
 /// </summary>
-internal sealed class SentinelChannelRouter
+internal sealed class SectionChannelRouter
 {
     private const int SeparatorLength = 5;
 

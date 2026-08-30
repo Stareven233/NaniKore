@@ -16,7 +16,7 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         using var message = CreateRequest(request);
         using var response = await SendAsync(message, cancellationToken).ConfigureAwait(false);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        var router = request.ImagePng is { Length: > 0 } ? new SentinelChannelRouter() : null;
+        var router = request.ImagePng is { Length: > 0 } ? new SectionChannelRouter() : null;
 
         await foreach (var frame in SseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
         {
@@ -101,7 +101,7 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         }
     }
 
-    private static IEnumerable<UnderstandDelta> Route(SentinelChannelRouter? router, string text) =>
+    private static IEnumerable<UnderstandDelta> Route(SectionChannelRouter? router, string text) =>
         string.IsNullOrEmpty(text)
             ? []
             : router is null ? [new UnderstandDelta(DeltaChannel.Translation, text)] : router.Push(text);

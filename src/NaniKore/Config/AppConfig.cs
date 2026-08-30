@@ -119,8 +119,11 @@ internal sealed class WindowConfig
 
 internal sealed class PromptConfig
 {
-    /// <summary>空字符串时使用内置翻译模板。</summary>
+    /// <summary>空字符串时使用内置 local_ocr 翻译模板。</summary>
     public string Translate { get; set; } = string.Empty;
+
+    /// <summary>空字符串时使用内置 vision_oneshot 模板。</summary>
+    public string VisionOneshot { get; set; } = string.Empty;
 
     /// <summary>空字符串时使用内置精讲模板。</summary>
     public string Explain { get; set; } = string.Empty;
@@ -156,6 +159,7 @@ internal static class AppConfigCloner
         Prompts = new PromptConfig
         {
             Translate = source.Prompts.Translate,
+            VisionOneshot = source.Prompts.VisionOneshot,
             Explain = source.Prompts.Explain,
         },
     };

@@ -35,6 +35,7 @@ internal static class SelfTest
         TestAboutPageDisplaysProductVersion();
         TestApplicationIconResource();
         TestTranslationPromptTemplates();
+        TestTranslationPagePromptEditing();
         TestProfileRenameKeepsSecret();
         TestHotkeyGestureNormalization();
         TestHotkeyRecorderInteraction();
@@ -190,6 +191,7 @@ internal static class SelfTest
                   settings_height: 640
                 prompts:
                   translate: 'Translate into {{target_language}} only.'
+                  vision_oneshot: 'Transcribe{{section_separator}}Translate into {{target_language}}.'
                 unknown_field: ignored
                 """);
             var store = new ConfigStore(directory);
@@ -206,7 +208,8 @@ internal static class SelfTest
                 store.Current.Pipeline.Mode == "local_ocr" &&
                 store.Current.Profiles.Single().TimeoutSeconds == 20 &&
                 store.Current.Profiles.Single().Name == "test" &&
-                store.Current.Prompts.Translate == "Translate into {{target_language}} only.");
+                store.Current.Prompts.Translate == "Translate into {{target_language}} only." &&
+                store.Current.Prompts.VisionOneshot == "Transcribe{{section_separator}}Translate into {{target_language}}.");
             store.AtomicWrite(store.Current);
             var reloaded = new ConfigStore(directory);
             Check(
@@ -214,9 +217,11 @@ internal static class SelfTest
                 reloaded.Current.Profiles.Single().Model == "model-a" &&
                 reloaded.Current.Profiles.Single().Name == "test" &&
                 reloaded.Current.Prompts.Translate == "Translate into {{target_language}} only." &&
+                reloaded.Current.Prompts.VisionOneshot == "Transcribe{{section_separator}}Translate into {{target_language}}." &&
                 reloaded.Current.Windows.SettingsWidth == 800 &&
                 reloaded.Current.Windows.SettingsHeight == 640 &&
-                AppConfigCloner.Clone(reloaded.Current).Profiles.Single().Name == "test");
+                AppConfigCloner.Clone(reloaded.Current).Profiles.Single().Name == "test" &&
+                AppConfigCloner.Clone(reloaded.Current).Prompts.VisionOneshot == "Transcribe{{section_separator}}Translate into {{target_language}}.");
 
             File.WriteAllText(Path.Combine(directory, "config.yaml"), """
                 version: 1
@@ -305,12 +310,48 @@ internal static class SelfTest
             "custom translation prompt expands target language without swallowing unknown placeholders",
             customPrompt == "Translate to zh-CN; retain {{unknown_placeholder}}.");
 
-        var visionPrompt = PromptTemplates.GetSystemPrompt(
-            request with { ImagePng = new byte[] { 1 } },
-            new PromptConfig { Translate = "Translate into {{target_language}} only." });
+        var imageRequest = request with { ImagePng = new byte[] { 1 } };
+        var defaultVisionPrompt = PromptTemplates.GetSystemPrompt(imageRequest, new PromptConfig());
         Check(
-            "vision translation uses the five-character section separator after prompt customization",
-            visionPrompt.Contains(PromptTemplates.SectionSeparator, StringComparison.Ordinal));
+            "default vision prompt expands its target language and section separator",
+            defaultVisionPrompt.Contains("zh-CN", StringComparison.Ordinal) &&
+            defaultVisionPrompt.Contains(PromptTemplates.SectionSeparator, StringComparison.Ordinal) &&
+            !defaultVisionPrompt.Contains(PromptTemplates.TargetLanguagePlaceholder, StringComparison.Ordinal) &&
+            !defaultVisionPrompt.Contains(PromptTemplates.SectionSeparatorPlaceholder, StringComparison.Ordinal));
+
+        var visionPrompt = PromptTemplates.GetSystemPrompt(
+            imageRequest with { TargetLanguage = "zh-CN {{section_separator}}" },
+            new PromptConfig { VisionOneshot = "OCR{{section_separator}}Translate {{target_language}}; retain {{unknown_placeholder}}" });
+        Check(
+            "custom vision prompt expands declared placeholders without parsing replacement values",
+            visionPrompt == $"OCR{PromptTemplates.SectionSeparator}Translate zh-CN {{{{section_separator}}}}; retain {{{{unknown_placeholder}}}}");
+    }
+
+    private static void TestTranslationPagePromptEditing()
+    {
+        var config = new AppConfig();
+        var page = new TranslationPage();
+        page.Load(config);
+
+        var localPromptBox = (System.Windows.Controls.TextBox?)page.FindName("PromptBox");
+        var visionPromptBox = (System.Windows.Controls.TextBox?)page.FindName("VisionPromptBox");
+        var restoreVisionButton = (System.Windows.Controls.Button?)page.FindName("RestoreVisionPromptButton");
+        Check(
+            "translation settings show both built-in prompts for empty config values",
+            localPromptBox?.Text == PromptTemplates.DefaultTranslationPrompt &&
+            visionPromptBox?.Text == PromptTemplates.DefaultVisionOneshotPrompt);
+
+        visionPromptBox!.Text = "temporary";
+        restoreVisionButton!.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+        Check(
+            "translation settings can restore the built-in vision prompt",
+            visionPromptBox.Text == PromptTemplates.DefaultVisionOneshotPrompt);
+
+        visionPromptBox.Text = "Custom vision {{target_language}}{{section_separator}}";
+        page.Apply(config);
+        Check(
+            "translation settings save an editable vision prompt into app config",
+            config.Prompts.VisionOneshot == "Custom vision {{target_language}}{{section_separator}}");
     }
 
     private static void TestProfileRenameKeepsSecret()
@@ -331,6 +372,7 @@ internal static class SelfTest
             SecretStore.Delete(profileId);
         }
     }
+
     private static void TestHotkeyGestureNormalization()
     {
         Check(
@@ -536,7 +578,7 @@ internal static class SelfTest
 
     private static void TestSentinelRouter()
     {
-        var simpleSeparatorRouter = new SentinelChannelRouter();
+        var simpleSeparatorRouter = new SectionChannelRouter();
         var simpleSeparatorDeltas = simpleSeparatorRouter
             .Push("原文\n--")
             .Concat(simpleSeparatorRouter.Push("-\n译文"))
@@ -547,7 +589,7 @@ internal static class SelfTest
             string.Concat(simpleSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "原文" &&
             string.Concat(simpleSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "译文");
 
-        var fallbackRouter = new SentinelChannelRouter();
+        var fallbackRouter = new SectionChannelRouter();
         var fallbackDeltas = fallbackRouter.Push("\n\nplain translation").Concat(fallbackRouter.Complete()).ToList();
         Check(
             "section router keeps unseparated vision output as a trimmed translation",

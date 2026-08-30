@@ -5,7 +5,8 @@ general:
   auto_translate: false
   target_language: 中文（简体）
 pipeline:
-  mode: vision_oneshot
+  mode: local_ocr
+  # mode: vision_oneshot
   active_profile: claude-ccs
 profiles:
 - id: claude-ccs
@@ -76,4 +77,9 @@ windows:
   settings_height: 700
 prompts:
   translate: Translate the supplied text into {{target_language}}. Return only the translation in {{target_language}}. Do not include explanations, notes, or source text.
+  vision_oneshot: |
+    Transcribe all readable text in the supplied image, then translate it into {{target_language}}.
+    Return exactly this shape:
+    <transcription>{{section_separator}}<translation>
+    Do not include labels, markdown, commentary, or extra sections.
   explain: ''

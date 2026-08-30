@@ -34,6 +34,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         TestButton.Click += async (_, _) => await TestConnectionAsync();
         ToggleApiKeyVisibilityButton.Click += (_, _) => ToggleApiKeyVisibility();
         RestorePromptButton.Click += (_, _) => RestoreDefaultPrompt();
+        RestoreVisionPromptButton.Click += (_, _) => RestoreDefaultVisionPrompt();
     }
 
     public string Title => "翻译";
@@ -52,6 +53,9 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         PromptBox.Text = string.IsNullOrWhiteSpace(config.Prompts.Translate)
             ? PromptTemplates.DefaultTranslationPrompt
             : config.Prompts.Translate;
+        VisionPromptBox.Text = string.IsNullOrWhiteSpace(config.Prompts.VisionOneshot)
+            ? PromptTemplates.DefaultVisionOneshotPrompt
+            : config.Prompts.VisionOneshot;
         _editingProfile = null;
         _loading = true;
         ProfileBox.Items.Clear();
@@ -103,8 +107,9 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         ArgumentNullException.ThrowIfNull(config);
         SaveFields();
         config.Pipeline.ActiveProfile = SelectedProfile?.Id ?? config.Profiles[0].Id;
-        // 默认提示词以实际文本保存，主人可在配置文件或设置页中直接审阅和修改。
+        // 两类提示词分别保存：local_ocr 只使用翻译模板，vision_oneshot 使用独立的一条龙模板。
         config.Prompts.Translate = PromptBox.Text.Trim();
+        config.Prompts.VisionOneshot = VisionPromptBox.Text.Trim();
     }
 
     public void SaveSecrets()
@@ -253,6 +258,11 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         _ = PromptBox.Focus();
     }
 
+    private void RestoreDefaultVisionPrompt()
+    {
+        VisionPromptBox.Text = PromptTemplates.DefaultVisionOneshotPrompt;
+        _ = VisionPromptBox.Focus();
+    }
     private void AddProfile()
     {
         SaveFields();
