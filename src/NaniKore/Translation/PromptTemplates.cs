@@ -5,14 +5,70 @@ namespace NaniKore.Translation;
 /// <summary>内置提示词与视觉一条龙的轻量分段协议。</summary>
 internal static class PromptTemplates
 {
-    // 兼容模型省略分隔符两侧额外空行的输出；默认提示词使用完整的七字符格式。
+    // 两阶段流式输出极简分隔标记：用于区分假名标注原句与目标语言译文
+    internal const string TranslationSentinel = "---TRANSLATION---";
+    internal const string TranslationSeparator = "\n---TRANSLATION---\n";
+
+    // 兼容历史视觉一条龙分栏标记（保持向下兼容）
     internal const string SectionSeparator = "\n---\n";
     internal const string TargetLanguagePlaceholder = "{{target_language}}";
 
-    /// <summary>设置页始终展示的默认翻译提示词；主人可直接在此基础上修改。</summary>
+    /// <summary>两阶段精讲默认追问提示词（复用前缀历史以命中 Prompt Cache）。</summary>
+    internal const string DefaultExplainUserPrompt = "请对上述内容进行深度精讲拆解。";
+
+    /// <summary>设置页始终展示的默认基础翻译提示词模版；主人可直接在此基础上修改。</summary>
     internal const string DefaultTranslationPrompt = """
-        Translate the supplied text into {{target_language}}. 
-        Return only the translation in {{target_language}}. Do not include explanations, notes, or source text.
+        Translate the supplied text into {{target_language}}.
+        Return the output in exactly this shape:
+        <annotated_source>
+        ---TRANSLATION---
+        <translation>
+        Do not include markdown headers, notes, or commentary.
+        """;
+
+    /// <summary>模块化 Base 提示词：规定两阶段输出格式与基础纪律。</summary>
+    internal const string DefaultTranslationBasePrompt = """
+        You are an accurate, natural language translator and linguistic assistant.
+        [Translation Phase]
+        Translate the supplied text into {{target_language}}.
+        Return the result in exactly this two-part structure:
+        <annotated_source>
+        ---TRANSLATION---
+        <translation>
+        Do not include markdown title headers, conversational filler, or commentary in this phase.
+        """;
+
+    /// <summary>日语特化插件：约束汉字注音方括号语法、辞书形原形，摒弃陈旧文法术语。</summary>
+    internal const string JapanesePlugin = """
+        [Japanese Language Plugin]
+        - For <annotated_source>: Annotate kanji readings strictly using ruby bracket format `漢字[かな]` (e.g. `私[わたし]は 学生[がくせい]です。`).
+        - Never put brackets around kana, punctuation, digits, or non-kanji words.
+        - For verbs and vocabulary: Always identify the dictionary form (辞書形, plain base form). Strictly avoid outdated traditional school grammar terms like 未然形 or 連用形.
+        """;
+
+    /// <summary>英语特化插件：约束音标 (IPA) 与动词原形规范。</summary>
+    internal const string EnglishPlugin = """
+        [English Language Plugin]
+        - For vocabulary and pronunciation: Annotate with International Phonetic Alphabet (IPA).
+        - For verbs: Always use the base infinitive form.
+        """;
+
+    /// <summary>目标语言对齐约束：强制所有译文与语法解析均使用当前目标语言。</summary>
+    internal const string LanguageAlignmentRule = """
+        [Target Language Constraint]
+        All translations, vocabulary definitions, grammar explanations, and context notes must strictly be written in {{target_language}}.
+        """;
+
+    /// <summary>精讲微结构化格式规约：在系统提示词预置，确保第二阶段 100% 命中前缀缓存。</summary>
+    internal const string ExplainStructureRule = """
+        [Deep Explanation Specification]
+        When requested to explain or break down the text, provide a clean structured markdown response adhering to this format:
+        ### [词汇/短语]
+        - **词汇** | 读音或IPA | 词性与原形 | 释义与语境分析
+        ### [语法/句型]
+        - **句型** | 语法功能与释义
+        ### [语境与地道表达]
+        语境分析与自然表达说明
         """;
 
     /// <summary>视觉一条龙的默认模板；直接展示分栏协议，用户可按实际模型自由修改。</summary>
@@ -31,10 +87,12 @@ internal static class PromptTemplates
     {
         if (request.Kind == UnderstandKind.Explain)
         {
-            var explainPrompt = string.IsNullOrWhiteSpace(prompts.Explain)
-                ? "Explain the supplied text clearly in {{target_language}}. Keep the answer concise."
-                : prompts.Explain.Trim();
-            return ExpandTargetLanguage(explainPrompt, request.TargetLanguage);
+            if (!string.IsNullOrWhiteSpace(prompts.Explain))
+            {
+                return ExpandTargetLanguage(prompts.Explain.Trim(), request.TargetLanguage);
+            }
+
+            return BuildExplainSystemPrompt(request);
         }
 
         if (request.ImagePng is { Length: > 0 })
@@ -45,10 +103,73 @@ internal static class PromptTemplates
             return ExpandTargetLanguage(visionPrompt, request.TargetLanguage);
         }
 
-        var translationPrompt = string.IsNullOrWhiteSpace(prompts.Translate)
-            ? DefaultTranslationPrompt
-            : prompts.Translate.Trim();
-        return ExpandTargetLanguage(translationPrompt, request.TargetLanguage);
+        if (!string.IsNullOrWhiteSpace(prompts.Translate))
+        {
+            // 用户在配置中显式自定义了翻译提示词，优先遵从用户定制
+            return ExpandTargetLanguage(prompts.Translate.Trim(), request.TargetLanguage);
+        }
+
+        // 未定制时走模块化 Base + Plugins 动态拼装机制
+        return BuildModularSystemPrompt(request);
+    }
+
+    /// <summary>
+    /// 根据文本字符探测结果动态组装 Base + 特化 Plugins + 目标语言对齐。
+    /// </summary>
+    internal static string BuildModularSystemPrompt(UnderstandRequest request)
+    {
+        var detection = LanguageDetector.Detect(request.SourceText, request.TargetLanguage);
+        var sb = new System.Text.StringBuilder();
+
+        sb.AppendLine(DefaultTranslationBasePrompt);
+        sb.AppendLine();
+        sb.AppendLine(ExplainStructureRule);
+
+        if (detection.NeedsJapaneseRuby || detection.HasJapanese)
+        {
+            sb.AppendLine();
+            sb.AppendLine(JapanesePlugin);
+        }
+
+        if (detection.NeedsEnglishIpa || (detection.HasEnglish && !detection.HasJapanese))
+        {
+            sb.AppendLine();
+            sb.AppendLine(EnglishPlugin);
+        }
+
+        sb.AppendLine();
+        sb.AppendLine(LanguageAlignmentRule);
+
+        return ExpandTargetLanguage(sb.ToString().TrimEnd(), request.TargetLanguage);
+    }
+
+    /// <summary>
+    /// 为独立的精讲任务组装结构化系统提示词。
+    /// </summary>
+    internal static string BuildExplainSystemPrompt(UnderstandRequest request)
+    {
+        var detection = LanguageDetector.Detect(request.SourceText, request.TargetLanguage);
+        var sb = new System.Text.StringBuilder();
+
+        sb.AppendLine("You are an expert linguistic tutor and translator.");
+        sb.AppendLine(ExplainStructureRule);
+
+        if (detection.NeedsJapaneseRuby || detection.HasJapanese)
+        {
+            sb.AppendLine();
+            sb.AppendLine(JapanesePlugin);
+        }
+
+        if (detection.NeedsEnglishIpa || (detection.HasEnglish && !detection.HasJapanese))
+        {
+            sb.AppendLine();
+            sb.AppendLine(EnglishPlugin);
+        }
+
+        sb.AppendLine();
+        sb.AppendLine(LanguageAlignmentRule);
+
+        return ExpandTargetLanguage(sb.ToString().TrimEnd(), request.TargetLanguage);
     }
 
     private static string ExpandTargetLanguage(string prompt, string targetLanguage) =>
