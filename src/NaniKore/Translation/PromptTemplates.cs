@@ -43,8 +43,11 @@ internal static class PromptTemplates
         [Japanese Language Plugin]
         - For <annotated_source>: Annotate kanji readings strictly using ruby bracket format `漢字[かな]` (e.g. `私[わたし]は 学生[がくせい]です。`).
         - Never put brackets around kana, punctuation, digits, or non-kanji words.
-        - For verbs and vocabulary: Always identify the dictionary form (辞書形, plain base form). Strictly avoid outdated traditional school grammar terms like 未然形 or 連用形.
+        - For verbs and vocabulary: Always identify the dictionary form (辞書形, plain base form). Strictly avoid outdated traditional school grammar.
         """;
+
+    /// <summary>默认日语插件模板，供设置面板展示与一键恢复。</summary>
+    internal const string DefaultJapanesePlugin = JapanesePlugin;
 
     /// <summary>英语特化插件：约束音标 (IPA) 与动词原形规范。</summary>
     internal const string EnglishPlugin = """
@@ -52,6 +55,9 @@ internal static class PromptTemplates
         - For vocabulary and pronunciation: Annotate with International Phonetic Alphabet (IPA).
         - For verbs: Always use the base infinitive form.
         """;
+
+    /// <summary>默认英语插件模板，供设置面板展示与一键恢复。</summary>
+    internal const string DefaultEnglishPlugin = EnglishPlugin;
 
     /// <summary>目标语言对齐约束：强制所有译文与语法解析均使用当前目标语言。</summary>
     internal const string LanguageAlignmentRule = """
@@ -92,7 +98,7 @@ internal static class PromptTemplates
                 return ExpandTargetLanguage(prompts.Explain.Trim(), request.TargetLanguage);
             }
 
-            return BuildExplainSystemPrompt(request);
+            return BuildExplainSystemPrompt(request, prompts);
         }
 
         if (request.ImagePng is { Length: > 0 })
@@ -105,36 +111,46 @@ internal static class PromptTemplates
 
         if (!string.IsNullOrWhiteSpace(prompts.Translate))
         {
-            // 用户在配置中显式自定义了翻译提示词，优先遵从用户定制
+            // 用户在配置中显式自定义了旧版翻译提示词，优先遵从用户定制
             return ExpandTargetLanguage(prompts.Translate.Trim(), request.TargetLanguage);
         }
 
-        // 未定制时走模块化 Base + Plugins 动态拼装机制
-        return BuildModularSystemPrompt(request);
+        // 走模块化 Base + Plugins 动态拼装机制（优先读取用户定制的 Base/Plugins）
+        return BuildModularSystemPrompt(request, prompts);
     }
 
     /// <summary>
     /// 根据文本字符探测结果动态组装 Base + 特化 Plugins + 目标语言对齐。
+    /// 优先使用用户在 PromptConfig 中自定义的模板，未定制项优雅回退至内置模板。
     /// </summary>
-    internal static string BuildModularSystemPrompt(UnderstandRequest request)
+    internal static string BuildModularSystemPrompt(UnderstandRequest request, PromptConfig? prompts = null)
     {
         var detection = LanguageDetector.Detect(request.SourceText, request.TargetLanguage);
         var sb = new System.Text.StringBuilder();
 
-        sb.AppendLine(DefaultTranslationBasePrompt);
+        var basePrompt = !string.IsNullOrWhiteSpace(prompts?.Base)
+            ? prompts.Base.Trim()
+            : DefaultTranslationBasePrompt;
+        sb.AppendLine(basePrompt);
         sb.AppendLine();
         sb.AppendLine(ExplainStructureRule);
 
         if (detection.NeedsJapaneseRuby || detection.HasJapanese)
         {
+            var jaPlugin = !string.IsNullOrWhiteSpace(prompts?.JapanesePlugin)
+                ? prompts.JapanesePlugin.Trim()
+                : JapanesePlugin;
             sb.AppendLine();
-            sb.AppendLine(JapanesePlugin);
+            sb.AppendLine(jaPlugin);
         }
 
         if (detection.NeedsEnglishIpa || (detection.HasEnglish && !detection.HasJapanese))
         {
+            var enPlugin = !string.IsNullOrWhiteSpace(prompts?.EnglishPlugin)
+                ? prompts.EnglishPlugin.Trim()
+                : EnglishPlugin;
             sb.AppendLine();
-            sb.AppendLine(EnglishPlugin);
+            sb.AppendLine(enPlugin);
         }
 
         sb.AppendLine();
@@ -146,7 +162,7 @@ internal static class PromptTemplates
     /// <summary>
     /// 为独立的精讲任务组装结构化系统提示词。
     /// </summary>
-    internal static string BuildExplainSystemPrompt(UnderstandRequest request)
+    internal static string BuildExplainSystemPrompt(UnderstandRequest request, PromptConfig? prompts = null)
     {
         var detection = LanguageDetector.Detect(request.SourceText, request.TargetLanguage);
         var sb = new System.Text.StringBuilder();
@@ -156,14 +172,20 @@ internal static class PromptTemplates
 
         if (detection.NeedsJapaneseRuby || detection.HasJapanese)
         {
+            var jaPlugin = !string.IsNullOrWhiteSpace(prompts?.JapanesePlugin)
+                ? prompts.JapanesePlugin.Trim()
+                : JapanesePlugin;
             sb.AppendLine();
-            sb.AppendLine(JapanesePlugin);
+            sb.AppendLine(jaPlugin);
         }
 
         if (detection.NeedsEnglishIpa || (detection.HasEnglish && !detection.HasJapanese))
         {
+            var enPlugin = !string.IsNullOrWhiteSpace(prompts?.EnglishPlugin)
+                ? prompts.EnglishPlugin.Trim()
+                : EnglishPlugin;
             sb.AppendLine();
-            sb.AppendLine(EnglishPlugin);
+            sb.AppendLine(enPlugin);
         }
 
         sb.AppendLine();

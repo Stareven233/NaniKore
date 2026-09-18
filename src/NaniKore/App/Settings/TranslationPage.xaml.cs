@@ -12,6 +12,8 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
     // 提示词与配置档共用同一次「保存」事务，取消设置时不会污染运行中配置。
     private readonly Dictionary<string, string> _pendingKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _deletedProfileIds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _pluginDrafts = new(StringComparer.OrdinalIgnoreCase);
+    private string _currentPluginLanguage = "ja-JP";
     private AppConfig? _config;
     private ProviderProfile? _editingProfile;
     private bool _isApiKeyVisible;
@@ -26,6 +28,11 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         ApiTypeBox.Items.Add("completions");
         ApiTypeBox.Items.Add("responses");
 
+        PluginLanguageBox.Items.Add("日语插件 (ja-JP)");
+        PluginLanguageBox.Items.Add("英语插件 (en-US)");
+        PluginLanguageBox.SelectedIndex = 0;
+        PluginLanguageBox.SelectionChanged += (_, _) => SwitchPluginLanguage();
+
         ProfileBox.SelectionChanged += (_, _) => SwitchProfile();
         KindBox.SelectionChanged += (_, _) => UpdateKindControls();
         AddButton.Click += (_, _) => AddProfile();
@@ -34,6 +41,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         TestButton.Click += async (_, _) => await TestConnectionAsync();
         ToggleApiKeyVisibilityButton.Click += (_, _) => ToggleApiKeyVisibility();
         RestorePromptButton.Click += (_, _) => RestoreDefaultPrompt();
+        RestorePluginPromptButton.Click += (_, _) => RestoreDefaultPluginPrompt();
         RestoreVisionPromptButton.Click += (_, _) => RestoreDefaultVisionPrompt();
     }
 
@@ -50,9 +58,20 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
     {
         ArgumentNullException.ThrowIfNull(config);
         _config = config;
-        PromptBox.Text = string.IsNullOrWhiteSpace(config.Prompts.Translate)
-            ? PromptTemplates.DefaultTranslationPrompt
-            : config.Prompts.Translate;
+        PromptBox.Text = string.IsNullOrWhiteSpace(config.Prompts.Base)
+            ? (string.IsNullOrWhiteSpace(config.Prompts.Translate)
+                ? PromptTemplates.DefaultTranslationPrompt
+                : config.Prompts.Translate)
+            : config.Prompts.Base;
+
+        _pluginDrafts["ja-JP"] = string.IsNullOrWhiteSpace(config.Prompts.JapanesePlugin)
+            ? PromptTemplates.DefaultJapanesePlugin
+            : config.Prompts.JapanesePlugin;
+        _pluginDrafts["en-US"] = string.IsNullOrWhiteSpace(config.Prompts.EnglishPlugin)
+            ? PromptTemplates.DefaultEnglishPlugin
+            : config.Prompts.EnglishPlugin;
+        LoadCurrentPluginPrompt();
+
         VisionPromptBox.Text = string.IsNullOrWhiteSpace(config.Prompts.VisionOneshot)
             ? PromptTemplates.DefaultVisionOneshotPrompt
             : config.Prompts.VisionOneshot;
@@ -106,9 +125,12 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
     {
         ArgumentNullException.ThrowIfNull(config);
         SaveFields();
+        SaveCurrentPluginPrompt();
         config.Pipeline.ActiveProfile = SelectedProfile?.Id ?? config.Profiles[0].Id;
-        // 两类提示词分别保存：local_ocr 只使用翻译模板，vision_oneshot 使用独立的一条龙模板。
-        config.Prompts.Translate = PromptBox.Text.Trim();
+        // 提示词模块化保存：Base 提示词与各语言插件独立落盘
+        config.Prompts.Base = PromptBox.Text.Trim();
+        config.Prompts.JapanesePlugin = _pluginDrafts.TryGetValue("ja-JP", out var ja) ? ja.Trim() : string.Empty;
+        config.Prompts.EnglishPlugin = _pluginDrafts.TryGetValue("en-US", out var en) ? en.Trim() : string.Empty;
         config.Prompts.VisionOneshot = VisionPromptBox.Text.Trim();
     }
 
@@ -256,6 +278,45 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         // 默认内容不再隐藏；恢复后立即展示可继续编辑的完整提示词。
         PromptBox.Text = PromptTemplates.DefaultTranslationPrompt;
         _ = PromptBox.Focus();
+    }
+
+    private void SwitchPluginLanguage()
+    {
+        SaveCurrentPluginPrompt();
+        _currentPluginLanguage = PluginLanguageBox.SelectedIndex == 1 ? "en-US" : "ja-JP";
+        LoadCurrentPluginPrompt();
+    }
+
+    private void SaveCurrentPluginPrompt()
+    {
+        if (!string.IsNullOrEmpty(_currentPluginLanguage))
+        {
+            _pluginDrafts[_currentPluginLanguage] = PluginPromptBox.Text;
+        }
+    }
+
+    private void LoadCurrentPluginPrompt()
+    {
+        if (_pluginDrafts.TryGetValue(_currentPluginLanguage, out var text))
+        {
+            PluginPromptBox.Text = text;
+        }
+        else
+        {
+            PluginPromptBox.Text = _currentPluginLanguage == "en-US"
+                ? PromptTemplates.DefaultEnglishPlugin
+                : PromptTemplates.DefaultJapanesePlugin;
+        }
+    }
+
+    private void RestoreDefaultPluginPrompt()
+    {
+        var defaultPlugin = _currentPluginLanguage == "en-US"
+            ? PromptTemplates.DefaultEnglishPlugin
+            : PromptTemplates.DefaultJapanesePlugin;
+        PluginPromptBox.Text = defaultPlugin;
+        _pluginDrafts[_currentPluginLanguage] = defaultPlugin;
+        _ = PluginPromptBox.Focus();
     }
 
     private void RestoreDefaultVisionPrompt()

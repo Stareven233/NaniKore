@@ -28,24 +28,60 @@ internal static partial class SelfTest
 
         var localPromptBox = (System.Windows.Controls.TextBox?)page.FindName("PromptBox");
         var visionPromptBox = (System.Windows.Controls.TextBox?)page.FindName("VisionPromptBox");
+        var pluginLanguageBox = (System.Windows.Controls.ComboBox?)page.FindName("PluginLanguageBox");
+        var pluginPromptBox = (System.Windows.Controls.TextBox?)page.FindName("PluginPromptBox");
         var localPromptRow = (SettingsRow?)page.FindName("LocalPromptRow");
         var visionPromptRow = (SettingsRow?)page.FindName("VisionPromptRow");
         var restoreLocalButton = (System.Windows.Controls.Button?)page.FindName("RestorePromptButton");
+        var restorePluginButton = (System.Windows.Controls.Button?)page.FindName("RestorePluginPromptButton");
         var restoreVisionButton = (System.Windows.Controls.Button?)page.FindName("RestoreVisionPromptButton");
+
         Check(
-            "translation settings show both built-in prompts for empty config values",
+            "translation settings show built-in Base and vision prompts for empty config values",
             localPromptBox?.Text == PromptTemplates.DefaultTranslationPrompt &&
             visionPromptBox?.Text == PromptTemplates.DefaultVisionOneshotPrompt);
+
+        Check(
+            "translation settings load Japanese plugin prompt by default with correct language options",
+            pluginLanguageBox?.Items.Count == 2 &&
+            pluginLanguageBox.SelectedIndex == 0 &&
+            pluginPromptBox?.Text == PromptTemplates.DefaultJapanesePlugin);
+
         Check(
             "prompt restore buttons share the title row with concise black labels",
             restoreLocalButton?.Content as string == "恢复默认" &&
+            restorePluginButton?.Content as string == "恢复默认" &&
             restoreVisionButton?.Content as string == "恢复默认" &&
             ReferenceEquals(localPromptRow?.HeaderAction, restoreLocalButton) &&
             ReferenceEquals(visionPromptRow?.HeaderAction, restoreVisionButton) &&
             restoreLocalButton.Foreground is System.Windows.Media.SolidColorBrush { Color: var localColor } &&
             localColor == System.Windows.Media.Colors.Black &&
+            restorePluginButton.Foreground is System.Windows.Media.SolidColorBrush { Color: var pluginColor } &&
+            pluginColor == System.Windows.Media.Colors.Black &&
             restoreVisionButton.Foreground is System.Windows.Media.SolidColorBrush { Color: var visionColor } &&
             visionColor == System.Windows.Media.Colors.Black);
+
+        // 修改日文插件草稿
+        pluginPromptBox!.Text = "Custom Japanese plugin";
+        // 切换到英文插件
+        pluginLanguageBox!.SelectedIndex = 1;
+        Check(
+            "switching plugin language displays default English plugin prompt and preserves Japanese draft",
+            pluginPromptBox.Text == PromptTemplates.DefaultEnglishPlugin);
+
+        // 修改英文插件
+        pluginPromptBox.Text = "Custom English plugin";
+        // 测试英文插件一键恢复默认
+        restorePluginButton!.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+        Check(
+            "plugin prompt restore button resets English plugin to default template",
+            pluginPromptBox.Text == PromptTemplates.DefaultEnglishPlugin);
+
+        // 切换回日文插件，确认刚才的草稿被完整保存
+        pluginLanguageBox.SelectedIndex = 0;
+        Check(
+            "switching back to Japanese plugin restores the modified draft",
+            pluginPromptBox.Text == "Custom Japanese plugin");
 
         visionPromptBox!.Text = "temporary";
         restoreVisionButton!.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
@@ -53,10 +89,14 @@ internal static partial class SelfTest
             "translation settings can restore the built-in vision prompt",
             visionPromptBox.Text == PromptTemplates.DefaultVisionOneshotPrompt);
 
+        localPromptBox!.Text = "Custom base prompt {{target_language}}";
         visionPromptBox.Text = "Custom vision {{target_language}}\n\n---\n\n<translation>";
         page.Apply(config);
         Check(
-            "translation settings save an editable vision prompt into app config",
+            "translation settings save editable base, plugin and vision prompts into app config",
+            config.Prompts.Base == "Custom base prompt {{target_language}}" &&
+            config.Prompts.JapanesePlugin == "Custom Japanese plugin" &&
+            config.Prompts.EnglishPlugin == PromptTemplates.DefaultEnglishPlugin &&
             config.Prompts.VisionOneshot == "Custom vision {{target_language}}\n\n---\n\n<translation>");
     }
 

@@ -39,6 +39,9 @@ internal static partial class SelfTest
                   settings_width: 800
                   settings_height: 640
                 prompts:
+                  base: 'Custom Base {{target_language}}'
+                  japanese_plugin: 'Custom ja-JP'
+                  english_plugin: 'Custom en-US'
                   translate: 'Translate into {{target_language}} only.'
                   vision_oneshot: "Transcribe\n\n---\n\nTranslate into {{target_language}}."
                 unknown_field: ignored
@@ -57,19 +60,26 @@ internal static partial class SelfTest
                 store.Current.Pipeline.Mode == "local_ocr" &&
                 store.Current.Profiles.Single().TimeoutSeconds == 20 &&
                 store.Current.Profiles.Single().Name == "test" &&
+                store.Current.Prompts.Base == "Custom Base {{target_language}}" &&
+                store.Current.Prompts.JapanesePlugin == "Custom ja-JP" &&
+                store.Current.Prompts.EnglishPlugin == "Custom en-US" &&
                 store.Current.Prompts.Translate == "Translate into {{target_language}} only." &&
                 store.Current.Prompts.VisionOneshot == "Transcribe\n\n---\n\nTranslate into {{target_language}}.");
             store.AtomicWrite(store.Current);
             var reloaded = new ConfigStore(directory);
             Check(
-                "YAML reload preserves generated display names",
+                "YAML reload preserves generated display names and modular prompt fields",
                 reloaded.Current.Profiles.Single().Model == "model-a" &&
                 reloaded.Current.Profiles.Single().Name == "test" &&
+                reloaded.Current.Prompts.Base == "Custom Base {{target_language}}" &&
+                reloaded.Current.Prompts.JapanesePlugin == "Custom ja-JP" &&
+                reloaded.Current.Prompts.EnglishPlugin == "Custom en-US" &&
                 reloaded.Current.Prompts.Translate == "Translate into {{target_language}} only." &&
                 reloaded.Current.Prompts.VisionOneshot == "Transcribe\n\n---\n\nTranslate into {{target_language}}." &&
                 reloaded.Current.Windows.SettingsWidth == 800 &&
                 reloaded.Current.Windows.SettingsHeight == 640 &&
                 AppConfigCloner.Clone(reloaded.Current).Profiles.Single().Name == "test" &&
+                AppConfigCloner.Clone(reloaded.Current).Prompts.JapanesePlugin == "Custom ja-JP" &&
                 AppConfigCloner.Clone(reloaded.Current).Prompts.VisionOneshot == "Transcribe\n\n---\n\nTranslate into {{target_language}}.");
 
             File.WriteAllText(Path.Combine(directory, "config.yaml"), """

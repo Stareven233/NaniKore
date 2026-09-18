@@ -103,6 +103,29 @@ internal static partial class SelfTest
             explainPrompt.Contains("### [语法/句型]", StringComparison.Ordinal) &&
             explainPrompt.Contains("### [语境与地道表达]", StringComparison.Ordinal) &&
             explainPrompt.Contains("中文（简体）", StringComparison.Ordinal));
+
+        // 6. 用户自定义 Base 提示词与语言特化插件优先级
+        var customPrompts = new PromptConfig
+        {
+            Base = "Custom base for {{target_language}}\n---TRANSLATION---",
+            JapanesePlugin = "[Custom ja-JP Plugin]",
+            EnglishPlugin = "[Custom en-US Plugin]",
+        };
+        var customJaReq = new UnderstandRequest(UnderstandKind.Translate, "ここは通れないよ", null, "zh-CN");
+        var customJaPrompt = PromptTemplates.GetSystemPrompt(customJaReq, customPrompts);
+        Check(
+            "modular prompt assembly respects user custom base prompt and custom Japanese plugin",
+            customJaPrompt.Contains("Custom base for zh-CN", StringComparison.Ordinal) &&
+            customJaPrompt.Contains("[Custom ja-JP Plugin]", StringComparison.Ordinal) &&
+            !customJaPrompt.Contains(PromptTemplates.DefaultJapanesePlugin, StringComparison.Ordinal));
+
+        var customEnReq = new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "zh-CN");
+        var customEnPrompt = PromptTemplates.GetSystemPrompt(customEnReq, customPrompts);
+        Check(
+            "modular prompt assembly respects user custom English plugin",
+            customEnPrompt.Contains("Custom base for zh-CN", StringComparison.Ordinal) &&
+            customEnPrompt.Contains("[Custom en-US Plugin]", StringComparison.Ordinal) &&
+            !customEnPrompt.Contains(PromptTemplates.DefaultEnglishPlugin, StringComparison.Ordinal));
     }
 
     private static void TestLanguageDetector()
