@@ -2,11 +2,13 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
 using NaniKore.App.Controls;
 using NaniKore.App.Theme;
 using NaniKore.Interop;
+using NaniKore.Translation;
 using FormsScreen = System.Windows.Forms.Screen;
 
 namespace NaniKore.App;
@@ -24,6 +26,9 @@ internal sealed partial class ResultPanelWindow : Window
     private nint _windowHandle;
     private int _translationInsertIndex;
     private bool _translationHasContent;
+    private string _annotatedSource = string.Empty;
+    private string _originalEditingText = string.Empty;
+    private bool _isEditingSource;
 
     public ResultPanelWindow()
     {
@@ -33,17 +38,22 @@ internal sealed partial class ResultPanelWindow : Window
         MaxHeight = SystemParameters.WorkArea.Height * 0.6;
         // Esc 仅在结果卡实际持有键盘焦点（即已激活）时响应；未激活时按键交还用户当前窗口。
         PreviewKeyDown += OnPanelPreviewKeyDown;
+        SourceViewer.CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, OnSourceViewerCopy));
     }
 
     public event EventHandler? TranslateRequested;
 
     public event EventHandler? SettingsRequested;
 
-    public string SourceText => SourceTextBox.Text;
+    public string SourceText => _isEditingSource
+        ? SourceTextBox.Text
+        : (RubyTextParser.ToPlainText(_annotatedSource) is { Length: > 0 } plain ? plain : SourceTextBox.Text);
 
-    public void Reset(string source, string status)
+    public void Reset(string source, string status, bool autoTranslate = false)
     {
-        SourceTextBox.Text = source;
+        _annotatedSource = source;
+        SourceTextBox.Text = RubyTextParser.ToPlainText(source);
+        _originalEditingText = SourceTextBox.Text;
         NormalizeSourceButton.IsEnabled = true;
         TranslationTextBox.Clear();
         ExplanationTextBox.Clear();
@@ -53,6 +63,29 @@ internal sealed partial class ResultPanelWindow : Window
         ErrorDetailsExpander.Visibility = Visibility.Collapsed;
         ErrorDetailsExpander.IsExpanded = false;
         StatusBar.Show(status, InfoSeverity.Neutral);
+
+        if (autoTranslate)
+        {
+            // 已开启“OCR 后自动翻译”：OCR 识别完成后直接以 FlowDocument 呈现，流式接收注音，杜绝跳闪
+            _isEditingSource = false;
+            SourceViewerBorder.Visibility = Visibility.Visible;
+            SourceTextBox.Visibility = Visibility.Collapsed;
+            SwitchToTextButton.Visibility = Visibility.Visible;
+            SourceCaptionTextBlock.Text = "双击可编辑";
+            TranslateButton.Content = "⟳ 重译";
+            SourceViewer.Document = RubyDocumentBuilder.Build(source);
+        }
+        else
+        {
+            // 未开启“OCR 后自动翻译”：保持原生只读/编辑 TextBox，用户可原地编辑后再点击翻译
+            _isEditingSource = true;
+            SourceViewerBorder.Visibility = Visibility.Collapsed;
+            SourceTextBox.Visibility = Visibility.Visible;
+            SwitchToTextButton.Visibility = Visibility.Collapsed;
+            SourceCaptionTextBlock.Text = "点击可编辑";
+            TranslateButton.Content = "翻译";
+            SourceViewer.Document = RubyDocumentBuilder.Build(source);
+        }
     }
 
     public void SetTranslationInProgress(bool inProgress) => NormalizeSourceButton.IsEnabled = !inProgress;
@@ -62,6 +95,20 @@ internal sealed partial class ResultPanelWindow : Window
     {
         _translationInsertIndex = 0;
         _translationHasContent = false;
+
+        // 发起翻译时，原文区升格/切回振假名阅读态，准备流式呈现注音
+        if (_isEditingSource)
+        {
+            _isEditingSource = false;
+            SourceTextBox.Visibility = Visibility.Collapsed;
+            SourceViewerBorder.Visibility = Visibility.Visible;
+            SwitchToTextButton.Visibility = Visibility.Visible;
+            SourceCaptionTextBlock.Text = "双击可编辑";
+            TranslateButton.Content = "⟳ 重译";
+        }
+
+        _annotatedSource = string.Empty;
+        SourceViewer.Document = RubyDocumentBuilder.Build(string.Empty);
     }
 
     /// <summary>清空译文及当前流式片段的插入位置。</summary>
@@ -125,6 +172,15 @@ internal sealed partial class ResultPanelWindow : Window
 
     public void Append(Translation.UnderstandDelta delta)
     {
+        if (delta.Channel == Translation.DeltaChannel.SourceText)
+        {
+            _annotatedSource += delta.Text;
+            SourceViewer.Document = RubyDocumentBuilder.Build(_annotatedSource);
+            SourceTextBox.Text = RubyTextParser.ToPlainText(_annotatedSource);
+            _originalEditingText = SourceTextBox.Text;
+            return;
+        }
+
         var target = delta.Channel switch
         {
             Translation.DeltaChannel.SourceText => SourceTextBox,
@@ -203,11 +259,18 @@ internal sealed partial class ResultPanelWindow : Window
         base.OnClosing(e);
     }
 
-    /// <summary>结果卡持有键盘焦点时，Esc 等同关闭按钮；失焦后按键交还给当前焦点窗口。</summary>
+    /// <summary>结果卡持有键盘焦点时，若在未修改的编辑态按 Esc 则还原阅读态；其余情况 Esc 等同关闭按钮。</summary>
     private void OnPanelPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
         {
+            if (_isEditingSource && string.Equals(SourceTextBox.Text, _originalEditingText, StringComparison.Ordinal))
+            {
+                ExitEditMode();
+                e.Handled = true;
+                return;
+            }
+
             Close();
             e.Handled = true;
         }
@@ -219,7 +282,7 @@ internal sealed partial class ResultPanelWindow : Window
 
     private void OnNormalizeSourceClick(object sender, RoutedEventArgs e)
     {
-        var original = SourceTextBox.Text;
+        var original = SourceText;
         var normalized = Translation.SourceTextNormalizer.Normalize(original);
         if (string.Equals(original, normalized, StringComparison.Ordinal))
         {
@@ -231,7 +294,140 @@ internal sealed partial class ResultPanelWindow : Window
         var caretIndex = SourceTextBox.CaretIndex;
         SourceTextBox.Text = normalized;
         SourceTextBox.CaretIndex = Math.Min(caretIndex, normalized.Length);
-        SetStatus("原文已规范化，请点击“翻译”使用新文本。");
+        _annotatedSource = normalized;
+        SourceViewer.Document = RubyDocumentBuilder.Build(normalized);
+        SetStatus("原文已规范化，请点击“重译”使用新文本。");
+        TranslateButton.Content = "⟳ 重译";
+    }
+
+    private void OnSourceViewerCopy(object sender, ExecutedRoutedEventArgs e)
+    {
+        var text = RubyDocumentBuilder.ExtractFromSelection(SourceViewer.Selection, RubyCopyKind.Plain);
+        if (string.IsNullOrEmpty(text))
+        {
+            text = RubyTextParser.ToPlainText(_annotatedSource);
+        }
+
+        if (!string.IsNullOrEmpty(text))
+        {
+            System.Windows.Clipboard.SetText(text);
+            SetStatus("已复制纯日文到剪贴板。");
+            e.Handled = true;
+        }
+    }
+
+    private void OnCopyPlainSourceClick(object sender, RoutedEventArgs e)
+    {
+        var text = RubyDocumentBuilder.ExtractFromSelection(SourceViewer.Selection, RubyCopyKind.Plain);
+        if (string.IsNullOrEmpty(text))
+        {
+            text = RubyTextParser.ToPlainText(_annotatedSource);
+        }
+
+        if (!string.IsNullOrEmpty(text))
+        {
+            System.Windows.Clipboard.SetText(text);
+            SetStatus("已复制纯日文到剪贴板。");
+        }
+    }
+
+    private void OnCopyAnnotatedSourceClick(object sender, RoutedEventArgs e)
+    {
+        var text = RubyDocumentBuilder.ExtractFromSelection(SourceViewer.Selection, RubyCopyKind.Annotated);
+        if (string.IsNullOrEmpty(text))
+        {
+            text = _annotatedSource;
+        }
+
+        if (!string.IsNullOrEmpty(text))
+        {
+            System.Windows.Clipboard.SetText(text);
+            SetStatus("已复制带注音文本到剪贴板。");
+        }
+    }
+
+    private void OnCopyReadingSourceClick(object sender, RoutedEventArgs e)
+    {
+        var text = RubyDocumentBuilder.ExtractFromSelection(SourceViewer.Selection, RubyCopyKind.ReadingOnly);
+        if (string.IsNullOrEmpty(text))
+        {
+            text = RubyTextParser.ToReadingText(_annotatedSource);
+        }
+
+        if (!string.IsNullOrEmpty(text))
+        {
+            System.Windows.Clipboard.SetText(text);
+            SetStatus("已复制纯假名读音到剪贴板。");
+        }
+    }
+
+    private void OnSourceViewerPreviewMouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left)
+        {
+            return;
+        }
+
+        var caretIndex = SourceTextBox.Text.Length;
+        if (SourceViewer.Document is not null && SourceViewer.Selection is { IsEmpty: false } selection)
+        {
+            var prefixRange = new TextRange(SourceViewer.Document.ContentStart, selection.Start);
+            caretIndex = RubyDocumentBuilder.ExtractFromSelection(prefixRange, RubyCopyKind.Plain).Length;
+        }
+
+        EnterEditMode(caretIndex);
+        e.Handled = true;
+    }
+
+    private void OnSwitchToTextClick(object sender, RoutedEventArgs e) =>
+        EnterEditMode(SourceTextBox.Text.Length);
+
+    private void EnterEditMode(int caretIndex)
+    {
+        _originalEditingText = SourceTextBox.Text;
+        _isEditingSource = true;
+        SourceViewerBorder.Visibility = Visibility.Collapsed;
+        SourceTextBox.Visibility = Visibility.Visible;
+        SwitchToTextButton.Visibility = Visibility.Collapsed;
+        SourceCaptionTextBlock.Text = "编辑中 · Esc/失焦还原";
+        SourceTextBox.Focus();
+        SourceTextBox.CaretIndex = Math.Clamp(caretIndex, 0, SourceTextBox.Text.Length);
+        SourceTextBox.SelectionLength = 0; // 严禁全选，防键盘误触丢失整句
+    }
+
+    private void ExitEditMode()
+    {
+        _isEditingSource = false;
+        SourceTextBox.Visibility = Visibility.Collapsed;
+        SourceViewerBorder.Visibility = Visibility.Visible;
+        SwitchToTextButton.Visibility = Visibility.Visible;
+        SourceCaptionTextBlock.Text = "双击可编辑";
+    }
+
+    private void OnSourceTextBoxPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            if (string.Equals(SourceTextBox.Text, _originalEditingText, StringComparison.Ordinal))
+            {
+                ExitEditMode();
+                e.Handled = true;
+            }
+        }
+    }
+
+    private void OnSourceTextBoxLostFocus(object sender, RoutedEventArgs e)
+    {
+        if (string.Equals(SourceTextBox.Text, _originalEditingText, StringComparison.Ordinal))
+        {
+            ExitEditMode();
+        }
+        else
+        {
+            // 实质修改了文本：保持 TextBox，并激活右上角 [⟳ 重译]
+            TranslateButton.Content = "⟳ 重译";
+            SourceCaptionTextBlock.Text = "原文已修改，请重译";
+        }
     }
 
     private void OnTranslateClick(object sender, RoutedEventArgs e) => TranslateRequested?.Invoke(this, EventArgs.Empty);

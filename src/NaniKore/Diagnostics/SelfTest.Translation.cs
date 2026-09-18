@@ -14,6 +14,7 @@ internal static partial class SelfTest
         TestTranslationPromptTemplates();
         TestModularPromptTemplates();
         TestLanguageDetector();
+        TestRubyTextParser();
         TestSseReader();
         TestSentinelRouter();
         TestProviderTextExtraction();
@@ -183,6 +184,62 @@ internal static partial class SelfTest
         Check(
             "detector identifies mixed Japanese and English text",
             japaneseEnglish.HasJapanese && japaneseEnglish.HasEnglish && japaneseEnglish.NeedsJapaneseRuby);
+    }
+
+    private static void TestRubyTextParser()
+    {
+        // 1. 日文基础假名注音切分与互转
+        var sample1 = "こ こ は  通[とお]れないよ";
+        var segments1 = RubyTextParser.Parse(sample1);
+        Check(
+            "ruby parser correctly backtracks kanji base and segments text",
+            segments1.Count == 3 &&
+            !segments1[0].IsRuby && segments1[0].Text == "こ こ は  " &&
+            segments1[1].IsRuby && segments1[1].Text == "通" && segments1[1].Ruby == "とお" &&
+            !segments1[2].IsRuby && segments1[2].Text == "れないよ" &&
+            RubyTextParser.ToPlainText(sample1) == "こ こ は  通れないよ" &&
+            RubyTextParser.ToReadingText(sample1) == "こ こ は  とおれないよ" &&
+            RubyTextParser.ToAnnotatedText(segments1) == sample1);
+
+        // 2. 复合汉字词组与连续注音
+        var sample2 = "私[わたし]は 学生[がくせい]です。進入禁止[しんにゅうきんし]";
+        var segments2 = RubyTextParser.Parse(sample2);
+        Check(
+            "ruby parser handles multiple kanji compounds and sentence annotations",
+            segments2.Count == 5 &&
+            segments2[0].IsRuby && segments2[0].Text == "私" && segments2[0].Ruby == "わたし" &&
+            segments2[2].IsRuby && segments2[2].Text == "学生" && segments2[2].Ruby == "がくせい" &&
+            segments2[4].IsRuby && segments2[4].Text == "進入禁止" && segments2[4].Ruby == "しんにゅうきんし" &&
+            RubyTextParser.ToPlainText(sample2) == "私は 学生です。進入禁止" &&
+            RubyTextParser.ToReadingText(sample2) == "わたしは がくせいです。しんにゅうきんし");
+
+        // 3. 汉字叠字标记“々”
+        var sample3 = "佐々木[ささき]様";
+        var segments3 = RubyTextParser.Parse(sample3);
+        Check(
+            "ruby parser supports iteration mark kanji base",
+            segments3.Count == 2 &&
+            segments3[0].IsRuby && segments3[0].Text == "佐々木" && segments3[0].Ruby == "ささき" &&
+            !segments3[1].IsRuby && segments3[1].Text == "様");
+
+        // 4. 英文 IPA 音标注解
+        var sample4 = "apple[ˈæpl] and banana[bəˈnɑːnə]";
+        var segments4 = RubyTextParser.Parse(sample4);
+        Check(
+            "ruby parser parses english words with IPA pronunciation annotations",
+            segments4.Count == 3 &&
+            segments4[0].IsRuby && segments4[0].Text == "apple" && segments4[0].Ruby == "ˈæpl" &&
+            segments4[2].IsRuby && segments4[2].Text == "banana" && segments4[2].Ruby == "bəˈnɑːnə" &&
+            RubyTextParser.ToPlainText(sample4) == "apple and banana" &&
+            RubyTextParser.ToReadingText(sample4) == "ˈæpl and bəˈnɑːnə");
+
+        // 5. 排除代码下标与孤立括号
+        var sample5 = "int x = arr[0] + list[1]; [tag]";
+        var segments5 = RubyTextParser.Parse(sample5);
+        Check(
+            "ruby parser rejects code array brackets and solitary brackets",
+            segments5.All(s => !s.IsRuby) &&
+            RubyTextParser.ToPlainText(sample5) == sample5);
     }
 
     private static void TestSseReader()

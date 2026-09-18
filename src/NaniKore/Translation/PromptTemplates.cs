@@ -43,7 +43,7 @@ internal static class PromptTemplates
         [Japanese Language Plugin]
         - For <annotated_source>: Annotate kanji readings strictly using ruby bracket format `漢字[かな]` (e.g. `私[わたし]は 学生[がくせい]です。`).
         - Never put brackets around kana, punctuation, digits, or non-kanji words.
-        - For verbs and vocabulary: Always identify the dictionary form (辞書形, plain base form). Strictly avoid outdated traditional school grammar.
+        - For verbs and vocabulary: Always identify the dictionary form (辞書形, plain base form). Strictly avoid outdated traditional school grammar terms like 未然形 or 連用形.
         """;
 
     /// <summary>默认日语插件模板，供设置面板展示与一键恢复。</summary>

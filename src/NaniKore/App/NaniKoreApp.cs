@@ -92,7 +92,7 @@ internal sealed class NaniKoreApp : Application
                 var image = EncodePng(cropped);
                 _lastImagePng = image;
                 var visionPanel = EnsureResultPanel(selectionOnDesktop);
-                visionPanel.Reset(string.Empty, "正在识别并翻译图像…");
+                visionPanel.Reset(string.Empty, "正在识别并翻译图像…", autoTranslate: true);
                 _ = StartTranslationAsync(string.Empty, image);
                 return;
             }
@@ -116,10 +116,11 @@ internal sealed class NaniKoreApp : Application
             }
 
             _lastImagePng = null;
+            var autoTranslate = _configStore.Current.General.AutoTranslate;
             var panel = EnsureResultPanel(selectionOnDesktop);
-            panel.Reset(result.Text, $"OCR 完成：{result.Lines.Count} 行 · {result.Elapsed.TotalMilliseconds:N0} ms");
+            panel.Reset(result.Text, $"OCR 完成：{result.Lines.Count} 行 · {result.Elapsed.TotalMilliseconds:N0} ms", autoTranslate);
             TryCopyToClipboard(result.Text);
-            if (_configStore.Current.General.AutoTranslate)
+            if (autoTranslate)
             {
                 _ = StartTranslationAsync(result.Text, null);
             }
