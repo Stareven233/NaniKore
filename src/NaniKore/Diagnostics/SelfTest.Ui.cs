@@ -304,21 +304,19 @@ internal static partial class SelfTest
             ruby.BaseText == "通" && ruby.RubyText == "とお" &&
             p.Inlines.LastInline is System.Windows.Documents.Run { Text: "れないよ" });
 
-        // 2. ResultPanelWindow 联动 AutoTranslate == true (直接以 FlowDocument 呈现)
+        // 2. ResultPanelWindow 联动 AutoTranslate == true (直接以 FlowDocument 呈现，且初始按钮为“翻译”)
         var panel = new ResultPanelWindow();
         panel.Reset("こ こ は  通[とお]れないよ", "OCR 完成", autoTranslate: true);
 
         var viewerBorder = (System.Windows.Controls.Border?)panel.FindName("SourceViewerBorder");
         var sourceBox = (System.Windows.Controls.TextBox?)panel.FindName("SourceTextBox");
-        var switchBtn = (System.Windows.Controls.Button?)panel.FindName("SwitchToTextButton");
         var translateBtn = (System.Windows.Controls.Button?)panel.FindName("TranslateButton");
 
         Check(
-            "result panel with autoTranslate true displays FlowDocument viewer and re-translate button",
+            "result panel with autoTranslate true displays FlowDocument viewer and translate button initially",
             viewerBorder?.Visibility == System.Windows.Visibility.Visible &&
             sourceBox?.Visibility == System.Windows.Visibility.Collapsed &&
-            switchBtn?.Visibility == System.Windows.Visibility.Visible &&
-            translateBtn?.Content as string == "⟳ 重译" &&
+            translateBtn?.Content as string == "翻译" &&
             panel.SourceText == "こ こ は  通れないよ");
 
         // 3. ResultPanelWindow 联动 AutoTranslate == false (保持原生 TextBox)
@@ -327,19 +325,17 @@ internal static partial class SelfTest
 
         var manualViewerBorder = (System.Windows.Controls.Border?)panelManual.FindName("SourceViewerBorder");
         var manualSourceBox = (System.Windows.Controls.TextBox?)panelManual.FindName("SourceTextBox");
-        var manualSwitchBtn = (System.Windows.Controls.Button?)panelManual.FindName("SwitchToTextButton");
         var manualTranslateBtn = (System.Windows.Controls.Button?)panelManual.FindName("TranslateButton");
 
         Check(
             "result panel with autoTranslate false displays TextBox editor and translate button",
             manualViewerBorder?.Visibility == System.Windows.Visibility.Collapsed &&
             manualSourceBox?.Visibility == System.Windows.Visibility.Visible &&
-            manualSwitchBtn?.Visibility == System.Windows.Visibility.Collapsed &&
             manualTranslateBtn?.Content as string == "翻译" &&
             panelManual.SourceText == "こ こ は  通れないよ");
 
-        // 4. 双击/按钮原地切换编辑态：不全选且定位光标
-        switchBtn?.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        // 4. 双击/EnterEditMode原地切换编辑态：不全选且定位光标
+        panel.EnterEditMode();
         Check(
             "switching to text editor preserves caret and avoids selecting all text",
             sourceBox?.Visibility == System.Windows.Visibility.Visible &&
@@ -355,7 +351,7 @@ internal static partial class SelfTest
             sourceBox?.Visibility == System.Windows.Visibility.Collapsed);
 
         // 6. 编辑态实质修改：保持 TextBox 并激活重译按钮
-        switchBtn?.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        panel.EnterEditMode();
         if (sourceBox is not null)
         {
             sourceBox.Text = "ここは通れません";
@@ -366,19 +362,22 @@ internal static partial class SelfTest
             "substantively modified text editor remains active and prompts for re-translation",
             sourceBox?.Visibility == System.Windows.Visibility.Visible &&
             viewerBorder?.Visibility == System.Windows.Visibility.Collapsed &&
-            translateBtn?.Content as string == "⟳ 重译" &&
+            translateBtn?.Content as string == "重译" &&
             panel.SourceText == "ここは通れません");
 
-        // 7. 流式接收 SourceText 增量更新振假名与纯文本
+        // 7. 流式接收 SourceText 增量更新振假名与纯文本，翻译完成后按钮转为“重译”
         panel.BeginTranslation();
         panel.Append(new UnderstandDelta(DeltaChannel.SourceText, "私[わたし]は"));
         panel.Append(new UnderstandDelta(DeltaChannel.SourceText, " 学生[がくせい]"));
         panel.Append(new UnderstandDelta(DeltaChannel.SourceText, "です。"));
+        panel.Append(new UnderstandDelta(DeltaChannel.Translation, "我是学生。"));
+        panel.SetTranslationInProgress(false);
         Check(
-            "streaming source text delta updates flow document and plain text in real time",
+            "streaming source text delta updates flow document and plain text in real time, and finishes with re-translate button",
             viewerBorder?.Visibility == System.Windows.Visibility.Visible &&
             panel.SourceText == "私は 学生です。" &&
-            sourceBox?.Text == "私は 学生です。");
+            sourceBox?.Text == "私は 学生です。" &&
+            translateBtn?.Content as string == "重译");
     }
 }
 

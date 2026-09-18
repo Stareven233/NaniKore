@@ -289,6 +289,17 @@ internal static partial class SelfTest
             "section router keeps unseparated vision output as a trimmed translation",
             string.Concat(fallbackDeltas.Select(delta => delta.Text)) == "plain translation" &&
             fallbackDeltas.All(delta => delta.Channel == DeltaChannel.Translation));
+
+        var translationMarkerRouter = new SectionChannelRouter();
+        var translationMarkerDeltas = translationMarkerRouter
+            .Push("私[わたし]は\n---TRANS")
+            .Concat(translationMarkerRouter.Push("LATION---\n我是"))
+            .Concat(translationMarkerRouter.Complete())
+            .ToList();
+        Check(
+            "section router handles ---TRANSLATION--- marker split across chunks",
+            string.Concat(translationMarkerDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "私[わたし]は" &&
+            string.Concat(translationMarkerDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "我是");
     }
 
     private static void TestProviderTextExtraction()

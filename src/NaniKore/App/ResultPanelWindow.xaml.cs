@@ -29,6 +29,7 @@ internal sealed partial class ResultPanelWindow : Window
     private string _annotatedSource = string.Empty;
     private string _originalEditingText = string.Empty;
     private bool _isEditingSource;
+    private bool _receivedAnnotatedSource;
 
     public ResultPanelWindow()
     {
@@ -54,7 +55,9 @@ internal sealed partial class ResultPanelWindow : Window
         _annotatedSource = source;
         SourceTextBox.Text = RubyTextParser.ToPlainText(source);
         _originalEditingText = SourceTextBox.Text;
+        _receivedAnnotatedSource = false;
         NormalizeSourceButton.IsEnabled = true;
+        TranslateButton.Content = "翻译"; // 初次进入始终为“翻译”
         TranslationTextBox.Clear();
         ExplanationTextBox.Clear();
         _translationInsertIndex = 0;
@@ -70,9 +73,7 @@ internal sealed partial class ResultPanelWindow : Window
             _isEditingSource = false;
             SourceViewerBorder.Visibility = Visibility.Visible;
             SourceTextBox.Visibility = Visibility.Collapsed;
-            SwitchToTextButton.Visibility = Visibility.Visible;
             SourceCaptionTextBlock.Text = "双击可编辑";
-            TranslateButton.Content = "⟳ 重译";
             SourceViewer.Document = RubyDocumentBuilder.Build(source);
         }
         else
@@ -81,34 +82,42 @@ internal sealed partial class ResultPanelWindow : Window
             _isEditingSource = true;
             SourceViewerBorder.Visibility = Visibility.Collapsed;
             SourceTextBox.Visibility = Visibility.Visible;
-            SwitchToTextButton.Visibility = Visibility.Collapsed;
             SourceCaptionTextBlock.Text = "点击可编辑";
-            TranslateButton.Content = "翻译";
             SourceViewer.Document = RubyDocumentBuilder.Build(source);
         }
     }
 
-    public void SetTranslationInProgress(bool inProgress) => NormalizeSourceButton.IsEnabled = !inProgress;
+    public void SetTranslationInProgress(bool inProgress)
+    {
+        NormalizeSourceButton.IsEnabled = !inProgress;
+        if (!inProgress && _translationHasContent)
+        {
+            TranslateButton.Content = "重译";
+        }
+    }
 
     /// <summary>开始一轮新的译文流；已有译文会在首个有效结果到达时保留在新结果之后。</summary>
     public void BeginTranslation()
     {
         _translationInsertIndex = 0;
         _translationHasContent = false;
+        _receivedAnnotatedSource = false;
 
-        // 发起翻译时，原文区升格/切回振假名阅读态，准备流式呈现注音
+        // 发起翻译时切回假名阅读态
         if (_isEditingSource)
         {
             _isEditingSource = false;
             SourceTextBox.Visibility = Visibility.Collapsed;
             SourceViewerBorder.Visibility = Visibility.Visible;
-            SwitchToTextButton.Visibility = Visibility.Visible;
             SourceCaptionTextBlock.Text = "双击可编辑";
-            TranslateButton.Content = "⟳ 重译";
         }
 
-        _annotatedSource = string.Empty;
-        SourceViewer.Document = RubyDocumentBuilder.Build(string.Empty);
+        // 保留现有原文（OCR识别文本或用户当前编辑文本），禁止在翻译中原文区瞬间变白或被清空
+        if (string.IsNullOrEmpty(_annotatedSource) && !string.IsNullOrEmpty(SourceTextBox.Text))
+        {
+            _annotatedSource = SourceTextBox.Text;
+            SourceViewer.Document = RubyDocumentBuilder.Build(_annotatedSource);
+        }
     }
 
     /// <summary>清空译文及当前流式片段的插入位置。</summary>
@@ -174,6 +183,13 @@ internal sealed partial class ResultPanelWindow : Window
     {
         if (delta.Channel == Translation.DeltaChannel.SourceText)
         {
+            if (!_receivedAnnotatedSource)
+            {
+                // 收到模型首个注音片段时平滑替换初始文本，避免直接追加在 OCR 占位文本后面
+                _annotatedSource = string.Empty;
+                _receivedAnnotatedSource = true;
+            }
+
             _annotatedSource += delta.Text;
             SourceViewer.Document = RubyDocumentBuilder.Build(_annotatedSource);
             SourceTextBox.Text = RubyTextParser.ToPlainText(_annotatedSource);
@@ -297,7 +313,7 @@ internal sealed partial class ResultPanelWindow : Window
         _annotatedSource = normalized;
         SourceViewer.Document = RubyDocumentBuilder.Build(normalized);
         SetStatus("原文已规范化，请点击“重译”使用新文本。");
-        TranslateButton.Content = "⟳ 重译";
+        TranslateButton.Content = "重译";
     }
 
     private void OnSourceViewerCopy(object sender, ExecutedRoutedEventArgs e)
@@ -379,18 +395,18 @@ internal sealed partial class ResultPanelWindow : Window
         e.Handled = true;
     }
 
-    private void OnSwitchToTextClick(object sender, RoutedEventArgs e) =>
-        EnterEditMode(SourceTextBox.Text.Length);
-
-    private void EnterEditMode(int caretIndex)
+    internal void EnterEditMode(int caretIndex = -1)
     {
         _originalEditingText = SourceTextBox.Text;
         _isEditingSource = true;
         SourceViewerBorder.Visibility = Visibility.Collapsed;
         SourceTextBox.Visibility = Visibility.Visible;
-        SwitchToTextButton.Visibility = Visibility.Collapsed;
         SourceCaptionTextBlock.Text = "编辑中 · Esc/失焦还原";
         SourceTextBox.Focus();
+        if (caretIndex < 0)
+        {
+            caretIndex = SourceTextBox.Text.Length;
+        }
         SourceTextBox.CaretIndex = Math.Clamp(caretIndex, 0, SourceTextBox.Text.Length);
         SourceTextBox.SelectionLength = 0; // 严禁全选，防键盘误触丢失整句
     }
@@ -400,7 +416,6 @@ internal sealed partial class ResultPanelWindow : Window
         _isEditingSource = false;
         SourceTextBox.Visibility = Visibility.Collapsed;
         SourceViewerBorder.Visibility = Visibility.Visible;
-        SwitchToTextButton.Visibility = Visibility.Visible;
         SourceCaptionTextBlock.Text = "双击可编辑";
     }
 
@@ -424,8 +439,8 @@ internal sealed partial class ResultPanelWindow : Window
         }
         else
         {
-            // 实质修改了文本：保持 TextBox，并激活右上角 [⟳ 重译]
-            TranslateButton.Content = "⟳ 重译";
+            // 实质修改了文本：保持 TextBox，并激活右上角 [重译]
+            TranslateButton.Content = "重译";
             SourceCaptionTextBlock.Text = "原文已修改，请重译";
         }
     }

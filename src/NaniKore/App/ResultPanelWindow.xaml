@@ -38,10 +38,6 @@
                         Content="规范化"
                         ToolTip="整理换行和空格，并补齐中日韩文字与拉丁字母、数字之间的空格"
                         Click="OnNormalizeSourceClick" />
-                <Button x:Name="SwitchToTextButton" MinWidth="72" Margin="8,0,0,0"
-                        Content="✎ 纯文本"
-                        ToolTip="原地切换为纯文本编辑模式"
-                        Click="OnSwitchToTextClick" />
                 <Button x:Name="TranslateButton" Style="{DynamicResource Button.Accent}" MinWidth="72" Margin="8,0,0,0"
                         Content="翻译" Click="OnTranslateClick" />
             </StackPanel>

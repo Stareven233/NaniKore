@@ -204,8 +204,10 @@ internal static class PromptTemplates
 /// </summary>
 internal sealed class SectionChannelRouter
 {
+    private const string PaddedTranslationSeparator = "\n\n---TRANSLATION---\n\n";
+    private const string TranslationSeparator = "\n---TRANSLATION---\n";
     private const string PaddedSectionSeparator = "\n\n---\n\n";
-    private const int MaxSeparatorLength = 7;
+    private const int MaxSeparatorLength = 23;
 
     private DeltaChannel _channel = DeltaChannel.Translation;
     private string _pending = string.Empty;
@@ -227,7 +229,7 @@ internal sealed class SectionChannelRouter
             {
                 if (_awaitingFirstSection)
                 {
-                    // 首个 SOURCE/TRANSLATION 哨兵之前的内容是模型格式化前导，不应进入译文框。
+                    // 首个 SOURCE/TRANSLATION 哨兵之前的内容是带注音原文或前导，等待哨兵到达
                     yield break;
                 }
 
@@ -254,7 +256,8 @@ internal sealed class SectionChannelRouter
                     : _channel;
                 if (precedingChannel is { } channel)
                 {
-                    foreach (var delta in Emit(channel, _pending[..marker.Value.Index]))
+                    var sourceSlice = _pending[..marker.Value.Index].TrimEnd('\r', '\n');
+                    foreach (var delta in Emit(channel, sourceSlice))
                     {
                         yield return delta;
                     }
@@ -302,6 +305,9 @@ internal sealed class SectionChannelRouter
         SentinelMatch? result = null;
         foreach (var candidate in new[]
         {
+            (Marker: PaddedTranslationSeparator, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
+            (Marker: TranslationSeparator, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
+            (Marker: PromptTemplates.TranslationSentinel, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
             (Marker: PaddedSectionSeparator, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
             (Marker: PromptTemplates.SectionSeparator, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
         })
