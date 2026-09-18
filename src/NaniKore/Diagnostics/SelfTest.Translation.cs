@@ -54,6 +54,14 @@ internal static partial class SelfTest
         Check(
             "custom vision prompt expands only the target language placeholder",
             visionPrompt == "OCR\n\n---\n\nTranslate zh-CN; retain {{unknown_placeholder}}");
+
+        var legacyPrompt = PromptTemplates.GetSystemPrompt(
+            request,
+            new PromptConfig { Translate = PromptTemplates.LegacyDefaultTranslatePrompt });
+        Check(
+            "legacy default translate prompt upgrades automatically to modular prompt with sentinel",
+            legacyPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
+            legacyPrompt.Contains("Strict Translation Discipline", StringComparison.Ordinal));
     }
 
     private static void TestModularPromptTemplates()

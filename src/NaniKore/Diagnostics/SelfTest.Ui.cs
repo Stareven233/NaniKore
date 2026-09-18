@@ -365,7 +365,7 @@ internal static partial class SelfTest
             translateBtn?.Content as string == "重译" &&
             panel.SourceText == "ここは通れません");
 
-        // 7. 流式接收 SourceText 增量更新振假名与纯文本，翻译完成后按钮转为“重译”
+        // 7. 流式接收 SourceText 增量更新振假名与纯文本，翻译完成后保持“翻译”
         panel.BeginTranslation();
         panel.Append(new UnderstandDelta(DeltaChannel.SourceText, "私[わたし]は"));
         panel.Append(new UnderstandDelta(DeltaChannel.SourceText, " 学生[がくせい]"));
@@ -373,11 +373,11 @@ internal static partial class SelfTest
         panel.Append(new UnderstandDelta(DeltaChannel.Translation, "我是学生。"));
         panel.SetTranslationInProgress(false);
         Check(
-            "streaming source text delta updates flow document and plain text in real time, and finishes with re-translate button",
+            "streaming source text delta updates flow document and plain text in real time, and finishes with translate button",
             viewerBorder?.Visibility == System.Windows.Visibility.Visible &&
             panel.SourceText == "私は 学生です。" &&
             sourceBox?.Text == "私は 学生です。" &&
-            translateBtn?.Content as string == "重译");
+            translateBtn?.Content as string == "翻译");
     }
 }
 

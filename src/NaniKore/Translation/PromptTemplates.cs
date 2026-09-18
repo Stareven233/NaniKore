@@ -16,17 +16,14 @@ internal static class PromptTemplates
     /// <summary>两阶段精讲默认追问提示词（复用前缀历史以命中 Prompt Cache）。</summary>
     internal const string DefaultExplainUserPrompt = "请对上述内容进行深度精讲拆解。";
 
-    /// <summary>设置页始终展示的默认基础翻译提示词模版；主人可直接在此基础上修改。</summary>
-    internal const string DefaultTranslationPrompt = """
-        Translate the supplied text into {{target_language}}.
-        Return the output in exactly this shape:
-        <annotated_source>
-        ---TRANSLATION---
-        <translation>
-        Do not include markdown headers, notes, or commentary.
-        """;
+    /// <summary>v0.2.7 及更早版本 config.yaml 中预置的旧版单体翻译提示词。</summary>
+    internal const string LegacyDefaultTranslatePrompt =
+        "Translate the supplied text into {{target_language}}. Return only the translation in {{target_language}}. Do not include explanations, notes, or source text.";
 
-    /// <summary>模块化 Base 提示词：规定两阶段输出格式与基础纪律。</summary>
+    /// <summary>设置页始终展示的默认基础翻译提示词模版；主人可直接在此基础上修改。</summary>
+    internal const string DefaultTranslationPrompt = DefaultTranslationBasePrompt;
+
+    /// <summary>模块化 Base 提示词：规定两阶段输出格式与严格翻译纪律（严禁与用户对话、反问或补全）。</summary>
     internal const string DefaultTranslationBasePrompt = """
         You are an accurate, natural language translator and linguistic assistant.
         [Translation Phase]
@@ -35,14 +32,20 @@ internal static class PromptTemplates
         <annotated_source>
         ---TRANSLATION---
         <translation>
-        Do not include markdown title headers, conversational filler, or commentary in this phase.
+
+        [Strict Translation Discipline]
+        - Strictly translate the input text as-is.
+        - Even if the input text is an incomplete sentence, fragmented clause, question, command, greeting, code, or conversational dialogue, NEVER engage in conversation, NEVER answer questions in the text, NEVER ask questions back, NEVER offer to complete, continue, or clarify the sentence, and NEVER explain missing context.
+        - Faithfully translate ONLY what is present. If the sentence is cut off or ends with ellipses, faithfully reflect that same truncated structure in the translation.
+        - Strictly output only the two parts separated by `---TRANSLATION---`. Do not include conversational filler, pleasantries, apologies, markdown title headers, notes, or follow-up remarks in this phase.
         """;
 
     /// <summary>日语特化插件：约束汉字注音方括号语法、辞书形原形，摒弃陈旧文法术语。</summary>
     internal const string JapanesePlugin = """
         [Japanese Language Plugin]
-        - For <annotated_source>: Annotate kanji readings strictly using ruby bracket format `漢字[かな]` (e.g. `私[わたし]は 学生[がくせい]です。`).
+        - For <annotated_source>: Annotate all kanji readings strictly using ruby bracket format `漢字[かな]` (e.g. `私[わたし]は 学生[がくせい]です。`).
         - Never put brackets around kana, punctuation, digits, or non-kanji words.
+        - Even if the input text is a fragment, clause, or dialogue ending with particles (e.g. `て...`, `けど`), annotate kanji ruby readings faithfully for all kanji present.
         - For verbs and vocabulary: Always identify the dictionary form (辞書形, plain base form). Strictly avoid outdated traditional school grammar terms like 未然形 or 連用形.
         """;
 
@@ -86,8 +89,25 @@ internal static class PromptTemplates
         ---
 
         <translation>
-        Do not include labels, markdown, commentary, or extra sections.
+
+        [Strict Translation Discipline]
+        - For Japanese kanji in <transcription>, annotate readings strictly using ruby bracket format `漢字[かな]` (e.g. `私[わたし]は 学生[がくせい]です。`). Never bracket kana, punctuation, digits, or non-kanji words.
+        - Strictly translate the input text as-is. Even if the text is incomplete, fragmented, or dialogue, NEVER engage in conversation, NEVER ask questions back, and NEVER offer to complete the sentence.
+        - Do not include labels, markdown headers, commentary, notes, or extra sections.
         """;
+
+    /// <summary>判断给定的提示词是否为旧版遗留默认模板；若是则自动升级为模块化提示词。</summary>
+    internal static bool IsLegacyTranslatePrompt(string? prompt)
+    {
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            return true;
+        }
+
+        var trimmed = prompt.Trim();
+        return string.Equals(trimmed, LegacyDefaultTranslatePrompt, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(trimmed, DefaultTranslationBasePrompt.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
 
     public static string GetSystemPrompt(UnderstandRequest request, PromptConfig prompts)
     {
@@ -109,13 +129,19 @@ internal static class PromptTemplates
             return ExpandTargetLanguage(visionPrompt, request.TargetLanguage);
         }
 
-        if (!string.IsNullOrWhiteSpace(prompts.Translate))
+        // 优先使用用户在配置中自定义的模块化 Base
+        if (!string.IsNullOrWhiteSpace(prompts.Base))
         {
-            // 用户在配置中显式自定义了旧版翻译提示词，优先遵从用户定制
+            return BuildModularSystemPrompt(request, prompts);
+        }
+
+        // 用户配置了非默认的旧版单体提示词时，遵从用户个性化配置
+        if (!IsLegacyTranslatePrompt(prompts.Translate))
+        {
             return ExpandTargetLanguage(prompts.Translate.Trim(), request.TargetLanguage);
         }
 
-        // 走模块化 Base + Plugins 动态拼装机制（优先读取用户定制的 Base/Plugins）
+        // 走模块化 Base + Plugins 动态拼装机制（注入日语振假名、英语音标及严格翻译纪律）
         return BuildModularSystemPrompt(request, prompts);
     }
 
@@ -204,10 +230,13 @@ internal static class PromptTemplates
 /// </summary>
 internal sealed class SectionChannelRouter
 {
+    private const string PaddedTranslationSeparatorWithSpaces = "\n\n--- TRANSLATION ---\n\n";
+    private const string TranslationSeparatorWithSpaces = "\n--- TRANSLATION ---\n";
+    private const string TranslationSentinelWithSpaces = "--- TRANSLATION ---";
     private const string PaddedTranslationSeparator = "\n\n---TRANSLATION---\n\n";
     private const string TranslationSeparator = "\n---TRANSLATION---\n";
     private const string PaddedSectionSeparator = "\n\n---\n\n";
-    private const int MaxSeparatorLength = 23;
+    private const int MaxSeparatorLength = 32;
 
     private DeltaChannel _channel = DeltaChannel.Translation;
     private string _pending = string.Empty;
@@ -289,6 +318,17 @@ internal sealed class SectionChannelRouter
         if (!_channelsWithContent.Contains(channel))
         {
             text = text.TrimStart();
+
+            // 去除模型可能误输出的伪标签前缀
+            if (channel == DeltaChannel.SourceText && text.StartsWith("<annotated_source>", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text["<annotated_source>".Length..].TrimStart();
+            }
+            else if (channel == DeltaChannel.Translation && text.StartsWith("<translation>", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text["<translation>".Length..].TrimStart();
+            }
+
             if (text.Length == 0)
             {
                 yield break;
@@ -297,7 +337,20 @@ internal sealed class SectionChannelRouter
             _channelsWithContent.Add(channel);
         }
 
-        yield return new UnderstandDelta(channel, text);
+        // 去除尾部可能存在的闭合标签
+        if (text.EndsWith("</annotated_source>", StringComparison.OrdinalIgnoreCase))
+        {
+            text = text[..^"</annotated_source>".Length].TrimEnd();
+        }
+        else if (text.EndsWith("</translation>", StringComparison.OrdinalIgnoreCase))
+        {
+            text = text[..^"</translation>".Length].TrimEnd();
+        }
+
+        if (text.Length > 0)
+        {
+            yield return new UnderstandDelta(channel, text);
+        }
     }
 
     private static SentinelMatch? FindNextMarker(string text)
@@ -305,6 +358,9 @@ internal sealed class SectionChannelRouter
         SentinelMatch? result = null;
         foreach (var candidate in new[]
         {
+            (Marker: PaddedTranslationSeparatorWithSpaces, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
+            (Marker: TranslationSeparatorWithSpaces, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
+            (Marker: TranslationSentinelWithSpaces, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
             (Marker: PaddedTranslationSeparator, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
             (Marker: TranslationSeparator, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
             (Marker: PromptTemplates.TranslationSentinel, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),

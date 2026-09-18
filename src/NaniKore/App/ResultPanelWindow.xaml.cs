@@ -90,9 +90,10 @@ internal sealed partial class ResultPanelWindow : Window
     public void SetTranslationInProgress(bool inProgress)
     {
         NormalizeSourceButton.IsEnabled = !inProgress;
-        if (!inProgress && _translationHasContent)
+        TranslateButton.IsEnabled = !inProgress;
+        if (!inProgress)
         {
-            TranslateButton.Content = "重译";
+            TranslateButton.Content = "翻译";
         }
     }
 
@@ -102,6 +103,7 @@ internal sealed partial class ResultPanelWindow : Window
         _translationInsertIndex = 0;
         _translationHasContent = false;
         _receivedAnnotatedSource = false;
+        TranslateButton.Content = "翻译";
 
         // 发起翻译时切回假名阅读态
         if (_isEditingSource)
@@ -417,6 +419,7 @@ internal sealed partial class ResultPanelWindow : Window
         SourceTextBox.Visibility = Visibility.Collapsed;
         SourceViewerBorder.Visibility = Visibility.Visible;
         SourceCaptionTextBlock.Text = "双击可编辑";
+        TranslateButton.Content = "翻译";
     }
 
     private void OnSourceTextBoxPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
