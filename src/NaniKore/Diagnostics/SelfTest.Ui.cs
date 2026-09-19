@@ -350,7 +350,13 @@ internal static partial class SelfTest
             viewerBorder?.Visibility == System.Windows.Visibility.Visible &&
             sourceBox?.Visibility == System.Windows.Visibility.Collapsed);
 
-        // 6. 编辑态实质修改：保持 TextBox 并激活重译按钮
+        // 6. 编辑态实质修改与规范化：未产出有效译文前，主按钮固定为“翻译”
+        var normalizeBtn = (System.Windows.Controls.Button?)panel.FindName("NormalizeSourceButton");
+        normalizeBtn?.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        Check(
+            "normalizing source before any translation keeps translate button content as 翻译",
+            translateBtn?.Content as string == "翻译");
+
         panel.EnterEditMode();
         if (sourceBox is not null)
         {
@@ -359,10 +365,10 @@ internal static partial class SelfTest
         }
 
         Check(
-            "substantively modified text editor remains active and prompts for re-translation",
+            "substantively modified text editor remains active and stays as 翻译 when no prior translation exists",
             sourceBox?.Visibility == System.Windows.Visibility.Visible &&
             viewerBorder?.Visibility == System.Windows.Visibility.Collapsed &&
-            translateBtn?.Content as string == "重译" &&
+            translateBtn?.Content as string == "翻译" &&
             panel.SourceText == "ここは通れません");
 
         // 7. 流式接收 SourceText 增量更新振假名与纯文本，翻译完成后保持“翻译”
@@ -378,6 +384,17 @@ internal static partial class SelfTest
             panel.SourceText == "私は 学生です。" &&
             sourceBox?.Text == "私は 学生です。" &&
             translateBtn?.Content as string == "翻译");
+
+        // 8. 产出有效译文后，再次实质修改或规范化激活“重译”
+        panel.EnterEditMode();
+        if (sourceBox is not null)
+        {
+            sourceBox.Text = "私[わたし]は 先生[せんせい]です。";
+            sourceBox.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.UIElement.LostFocusEvent));
+        }
+        Check(
+            "substantively modified text editor triggers 重译 when previous translation exists",
+            translateBtn?.Content as string == "重译");
     }
 }
 

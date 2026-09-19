@@ -16,10 +16,6 @@ internal static class PromptTemplates
     /// <summary>两阶段精讲默认追问提示词（复用前缀历史以命中 Prompt Cache）。</summary>
     internal const string DefaultExplainUserPrompt = "请对上述内容进行深度精讲拆解。";
 
-    /// <summary>v0.2.7 及更早版本 config.yaml 中预置的旧版单体翻译提示词。</summary>
-    internal const string LegacyDefaultTranslatePrompt =
-        "Translate the supplied text into {{target_language}}. Return only the translation in {{target_language}}. Do not include explanations, notes, or source text.";
-
     /// <summary>设置页始终展示的默认基础翻译提示词模版；主人可直接在此基础上修改。</summary>
     internal const string DefaultTranslationPrompt = DefaultTranslationBasePrompt;
 
@@ -37,6 +33,7 @@ internal static class PromptTemplates
         - Strictly translate the input text as-is.
         - Even if the input text is an incomplete sentence, fragmented clause, question, command, greeting, code, or conversational dialogue, NEVER engage in conversation, NEVER answer questions in the text, NEVER ask questions back, NEVER offer to complete, continue, or clarify the sentence, and NEVER explain missing context.
         - Faithfully translate ONLY what is present. If the sentence is cut off or ends with ellipses, faithfully reflect that same truncated structure in the translation.
+        - For <annotated_source> and <translation>, output the text directly (with ruby annotations where applicable); do NOT output literal XML tags like `<annotated_source>`, `</annotated_source>`, `<translation>`, or `</translation>`.
         - Strictly output only the two parts separated by `---TRANSLATION---`. Do not include conversational filler, pleasantries, apologies, markdown title headers, notes, or follow-up remarks in this phase.
         """;
 
@@ -96,19 +93,6 @@ internal static class PromptTemplates
         - Do not include labels, markdown headers, commentary, notes, or extra sections.
         """;
 
-    /// <summary>判断给定的提示词是否为旧版遗留默认模板；若是则自动升级为模块化提示词。</summary>
-    internal static bool IsLegacyTranslatePrompt(string? prompt)
-    {
-        if (string.IsNullOrWhiteSpace(prompt))
-        {
-            return true;
-        }
-
-        var trimmed = prompt.Trim();
-        return string.Equals(trimmed, LegacyDefaultTranslatePrompt, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(trimmed, DefaultTranslationBasePrompt.Trim(), StringComparison.OrdinalIgnoreCase);
-    }
-
     public static string GetSystemPrompt(UnderstandRequest request, PromptConfig prompts)
     {
         if (request.Kind == UnderstandKind.Explain)
@@ -129,19 +113,7 @@ internal static class PromptTemplates
             return ExpandTargetLanguage(visionPrompt, request.TargetLanguage);
         }
 
-        // 优先使用用户在配置中自定义的模块化 Base
-        if (!string.IsNullOrWhiteSpace(prompts.Base))
-        {
-            return BuildModularSystemPrompt(request, prompts);
-        }
-
-        // 用户配置了非默认的旧版单体提示词时，遵从用户个性化配置
-        if (!IsLegacyTranslatePrompt(prompts.Translate))
-        {
-            return ExpandTargetLanguage(prompts.Translate.Trim(), request.TargetLanguage);
-        }
-
-        // 走模块化 Base + Plugins 动态拼装机制（注入日语振假名、英语音标及严格翻译纪律）
+        // 彻底拥抱纯粹模块化架构（Base + 语言特化插件），绝无旧单体兼容历史包袱
         return BuildModularSystemPrompt(request, prompts);
     }
 
@@ -230,12 +202,6 @@ internal static class PromptTemplates
 /// </summary>
 internal sealed class SectionChannelRouter
 {
-    private const string PaddedTranslationSeparatorWithSpaces = "\n\n--- TRANSLATION ---\n\n";
-    private const string TranslationSeparatorWithSpaces = "\n--- TRANSLATION ---\n";
-    private const string TranslationSentinelWithSpaces = "--- TRANSLATION ---";
-    private const string PaddedTranslationSeparator = "\n\n---TRANSLATION---\n\n";
-    private const string TranslationSeparator = "\n---TRANSLATION---\n";
-    private const string PaddedSectionSeparator = "\n\n---\n\n";
     private const int MaxSeparatorLength = 32;
 
     private DeltaChannel _channel = DeltaChannel.Translation;
@@ -286,6 +252,7 @@ internal sealed class SectionChannelRouter
                 if (precedingChannel is { } channel)
                 {
                     var sourceSlice = _pending[..marker.Value.Index].TrimEnd('\r', '\n');
+                    sourceSlice = StripSourceTags(sourceSlice);
                     foreach (var delta in Emit(channel, sourceSlice))
                     {
                         yield return delta;
@@ -296,6 +263,7 @@ internal sealed class SectionChannelRouter
             _channel = marker.Value.Channel;
             _awaitingFirstSection = false;
             _pending = _pending[(marker.Value.Index + marker.Value.Length)..];
+            _pending = StripTranslationLeadingTags(_pending);
         }
     }
 
@@ -303,8 +271,24 @@ internal sealed class SectionChannelRouter
     {
         if (_pending.Length > 0)
         {
-            // 没有哨兵时保留模型的完整输出作为译文，同时去掉常见的前导空白。
-            foreach (var delta in Emit(_awaitingFirstSection ? DeltaChannel.Translation : _channel, _pending))
+            var text = _pending;
+            if (text.EndsWith("</translation>", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text[..^"</translation>".Length].TrimEnd();
+            }
+
+            if (text.EndsWith("```", StringComparison.Ordinal))
+            {
+                text = text[..^"```".Length].TrimEnd();
+            }
+
+            var channel = _awaitingFirstSection ? DeltaChannel.Translation : _channel;
+            if (_awaitingFirstSection)
+            {
+                text = StripSourceTags(text);
+            }
+
+            foreach (var delta in Emit(channel, text))
             {
                 yield return delta;
             }
@@ -318,13 +302,7 @@ internal sealed class SectionChannelRouter
         if (!_channelsWithContent.Contains(channel))
         {
             text = text.TrimStart();
-
-            // 去除模型可能误输出的伪标签前缀
-            if (channel == DeltaChannel.SourceText && text.StartsWith("<annotated_source>", StringComparison.OrdinalIgnoreCase))
-            {
-                text = text["<annotated_source>".Length..].TrimStart();
-            }
-            else if (channel == DeltaChannel.Translation && text.StartsWith("<translation>", StringComparison.OrdinalIgnoreCase))
+            if (channel == DeltaChannel.Translation && text.StartsWith("<translation>", StringComparison.OrdinalIgnoreCase))
             {
                 text = text["<translation>".Length..].TrimStart();
             }
@@ -337,14 +315,14 @@ internal sealed class SectionChannelRouter
             _channelsWithContent.Add(channel);
         }
 
-        // 去除尾部可能存在的闭合标签
-        if (text.EndsWith("</annotated_source>", StringComparison.OrdinalIgnoreCase))
-        {
-            text = text[..^"</annotated_source>".Length].TrimEnd();
-        }
-        else if (text.EndsWith("</translation>", StringComparison.OrdinalIgnoreCase))
+        if (text.EndsWith("</translation>", StringComparison.OrdinalIgnoreCase))
         {
             text = text[..^"</translation>".Length].TrimEnd();
+        }
+
+        if (text.EndsWith("```", StringComparison.Ordinal))
+        {
+            text = text[..^"```".Length].TrimEnd();
         }
 
         if (text.Length > 0)
@@ -353,22 +331,75 @@ internal sealed class SectionChannelRouter
         }
     }
 
+    private static string StripSourceTags(string text)
+    {
+        text = text.Trim();
+        if (text.StartsWith("```markdown", StringComparison.OrdinalIgnoreCase))
+        {
+            text = text["```markdown".Length..].TrimStart();
+        }
+        else if (text.StartsWith("```text", StringComparison.OrdinalIgnoreCase))
+        {
+            text = text["```text".Length..].TrimStart();
+        }
+        else if (text.StartsWith("```", StringComparison.OrdinalIgnoreCase))
+        {
+            text = text["```".Length..].TrimStart();
+        }
+
+        if (text.StartsWith("<annotated_source>", StringComparison.OrdinalIgnoreCase))
+        {
+            text = text["<annotated_source>".Length..].TrimStart();
+        }
+
+        if (text.EndsWith("</annotated_source>", StringComparison.OrdinalIgnoreCase))
+        {
+            text = text[..^"</annotated_source>".Length].TrimEnd();
+        }
+
+        if (text.EndsWith("```", StringComparison.Ordinal))
+        {
+            text = text[..^"```".Length].TrimEnd();
+        }
+
+        return text.Trim();
+    }
+
+    private static string StripTranslationLeadingTags(string text)
+    {
+        text = text.TrimStart('\r', '\n', ' ');
+        if (text.StartsWith("<translation>", StringComparison.OrdinalIgnoreCase))
+        {
+            text = text["<translation>".Length..].TrimStart('\r', '\n', ' ');
+        }
+
+        return text;
+    }
+
+    private static readonly (string Marker, DeltaChannel Channel, DeltaChannel? PrefixChannel)[] CandidateMarkers =
+    [
+        ("\r\n\r\n--- TRANSLATION ---\r\n\r\n", DeltaChannel.Translation, DeltaChannel.SourceText),
+        ("\n\n--- TRANSLATION ---\n\n", DeltaChannel.Translation, DeltaChannel.SourceText),
+        ("\r\n--- TRANSLATION ---\r\n", DeltaChannel.Translation, DeltaChannel.SourceText),
+        ("\n--- TRANSLATION ---\n", DeltaChannel.Translation, DeltaChannel.SourceText),
+        ("--- TRANSLATION ---", DeltaChannel.Translation, DeltaChannel.SourceText),
+        ("\r\n\r\n---TRANSLATION---\r\n\r\n", DeltaChannel.Translation, DeltaChannel.SourceText),
+        ("\n\n---TRANSLATION---\n\n", DeltaChannel.Translation, DeltaChannel.SourceText),
+        ("\r\n---TRANSLATION---\r\n", DeltaChannel.Translation, DeltaChannel.SourceText),
+        ("\n---TRANSLATION---\n", DeltaChannel.Translation, DeltaChannel.SourceText),
+        (PromptTemplates.TranslationSentinel, DeltaChannel.Translation, DeltaChannel.SourceText),
+        ("\r\n\r\n---\r\n\r\n", DeltaChannel.Translation, DeltaChannel.SourceText),
+        ("\n\n---\n\n", DeltaChannel.Translation, DeltaChannel.SourceText),
+        ("\r\n---\r\n", DeltaChannel.Translation, DeltaChannel.SourceText),
+        (PromptTemplates.SectionSeparator, DeltaChannel.Translation, DeltaChannel.SourceText),
+    ];
+
     private static SentinelMatch? FindNextMarker(string text)
     {
         SentinelMatch? result = null;
-        foreach (var candidate in new[]
+        foreach (var candidate in CandidateMarkers)
         {
-            (Marker: PaddedTranslationSeparatorWithSpaces, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
-            (Marker: TranslationSeparatorWithSpaces, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
-            (Marker: TranslationSentinelWithSpaces, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
-            (Marker: PaddedTranslationSeparator, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
-            (Marker: TranslationSeparator, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
-            (Marker: PromptTemplates.TranslationSentinel, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
-            (Marker: PaddedSectionSeparator, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
-            (Marker: PromptTemplates.SectionSeparator, Channel: DeltaChannel.Translation, PrefixChannel: DeltaChannel.SourceText),
-        })
-        {
-            var index = text.IndexOf(candidate.Marker, StringComparison.Ordinal);
+            var index = text.IndexOf(candidate.Marker, StringComparison.OrdinalIgnoreCase);
             if (index < 0 ||
                 (result is not null &&
                  (index > result.Value.Index ||

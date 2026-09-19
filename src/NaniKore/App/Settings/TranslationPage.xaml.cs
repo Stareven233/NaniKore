@@ -59,9 +59,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         ArgumentNullException.ThrowIfNull(config);
         _config = config;
         PromptBox.Text = string.IsNullOrWhiteSpace(config.Prompts.Base)
-            ? (PromptTemplates.IsLegacyTranslatePrompt(config.Prompts.Translate)
-                ? PromptTemplates.DefaultTranslationPrompt
-                : config.Prompts.Translate)
+            ? PromptTemplates.DefaultTranslationPrompt
             : config.Prompts.Base;
 
         _pluginDrafts["ja-JP"] = string.IsNullOrWhiteSpace(config.Prompts.JapanesePlugin)
@@ -132,8 +130,6 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         config.Prompts.JapanesePlugin = _pluginDrafts.TryGetValue("ja-JP", out var ja) ? ja.Trim() : string.Empty;
         config.Prompts.EnglishPlugin = _pluginDrafts.TryGetValue("en-US", out var en) ? en.Trim() : string.Empty;
         config.Prompts.VisionOneshot = VisionPromptBox.Text.Trim();
-        // 清理旧版单体 Translate 字段，防止向后回退导致模块化提示词失效
-        config.Prompts.Translate = string.Empty;
     }
 
     public void SaveSecrets()

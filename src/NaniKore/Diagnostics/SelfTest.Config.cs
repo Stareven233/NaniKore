@@ -63,7 +63,6 @@ internal static partial class SelfTest
                 store.Current.Prompts.Base == "Custom Base {{target_language}}" &&
                 store.Current.Prompts.JapanesePlugin == "Custom ja-JP" &&
                 store.Current.Prompts.EnglishPlugin == "Custom en-US" &&
-                store.Current.Prompts.Translate == "Translate into {{target_language}} only." &&
                 store.Current.Prompts.VisionOneshot == "Transcribe\n\n---\n\nTranslate into {{target_language}}.");
             store.AtomicWrite(store.Current);
             var reloaded = new ConfigStore(directory);
@@ -74,7 +73,6 @@ internal static partial class SelfTest
                 reloaded.Current.Prompts.Base == "Custom Base {{target_language}}" &&
                 reloaded.Current.Prompts.JapanesePlugin == "Custom ja-JP" &&
                 reloaded.Current.Prompts.EnglishPlugin == "Custom en-US" &&
-                reloaded.Current.Prompts.Translate == "Translate into {{target_language}} only." &&
                 reloaded.Current.Prompts.VisionOneshot == "Transcribe\n\n---\n\nTranslate into {{target_language}}." &&
                 reloaded.Current.Windows.SettingsWidth == 800 &&
                 reloaded.Current.Windows.SettingsHeight == 640 &&

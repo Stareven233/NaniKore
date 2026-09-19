@@ -314,8 +314,16 @@ internal sealed partial class ResultPanelWindow : Window
         SourceTextBox.CaretIndex = Math.Min(caretIndex, normalized.Length);
         _annotatedSource = normalized;
         SourceViewer.Document = RubyDocumentBuilder.Build(normalized);
-        SetStatus("原文已规范化，请点击“重译”使用新文本。");
-        TranslateButton.Content = "重译";
+        if (_translationHasContent)
+        {
+            SetStatus("原文已规范化，请点击“重译”使用新文本。");
+            TranslateButton.Content = "重译";
+        }
+        else
+        {
+            SetStatus("原文已规范化。");
+            TranslateButton.Content = "翻译";
+        }
     }
 
     private void OnSourceViewerCopy(object sender, ExecutedRoutedEventArgs e)
@@ -442,9 +450,17 @@ internal sealed partial class ResultPanelWindow : Window
         }
         else
         {
-            // 实质修改了文本：保持 TextBox，并激活右上角 [重译]
-            TranslateButton.Content = "重译";
-            SourceCaptionTextBlock.Text = "原文已修改，请重译";
+            // 实质修改了文本：保持 TextBox；若此前已产出译文则提示重译，未翻译过则保持翻译
+            if (_translationHasContent)
+            {
+                TranslateButton.Content = "重译";
+                SourceCaptionTextBlock.Text = "原文已修改，请重译";
+            }
+            else
+            {
+                TranslateButton.Content = "翻译";
+                SourceCaptionTextBlock.Text = "原文已修改，请翻译";
+            }
         }
     }
 

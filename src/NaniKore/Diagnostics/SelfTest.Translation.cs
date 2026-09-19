@@ -33,10 +33,10 @@ internal static partial class SelfTest
 
         var customPrompt = PromptTemplates.GetSystemPrompt(
             request,
-            new PromptConfig { Translate = "Translate to {{target_language}}; retain {{unknown_placeholder}}." });
+            new PromptConfig { Base = "Translate to {{target_language}}; retain {{unknown_placeholder}}." });
         Check(
             "custom translation prompt expands target language without swallowing unknown placeholders",
-            customPrompt == "Translate to zh-CN; retain {{unknown_placeholder}}.");
+            customPrompt.StartsWith("Translate to zh-CN; retain {{unknown_placeholder}}.", StringComparison.Ordinal));
 
         var imageRequest = request with { ImagePng = new byte[] { 1 } };
         var defaultVisionPrompt = PromptTemplates.GetSystemPrompt(imageRequest, new PromptConfig());
@@ -55,13 +55,13 @@ internal static partial class SelfTest
             "custom vision prompt expands only the target language placeholder",
             visionPrompt == "OCR\n\n---\n\nTranslate zh-CN; retain {{unknown_placeholder}}");
 
-        var legacyPrompt = PromptTemplates.GetSystemPrompt(
+        var pureModularPrompt = PromptTemplates.GetSystemPrompt(
             request,
-            new PromptConfig { Translate = PromptTemplates.LegacyDefaultTranslatePrompt });
+            new PromptConfig());
         Check(
-            "legacy default translate prompt upgrades automatically to modular prompt with sentinel",
-            legacyPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
-            legacyPrompt.Contains("Strict Translation Discipline", StringComparison.Ordinal));
+            "empty prompt config strictly builds modular prompt with sentinel and translation discipline",
+            pureModularPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
+            pureModularPrompt.Contains("Strict Translation Discipline", StringComparison.Ordinal));
     }
 
     private static void TestModularPromptTemplates()
@@ -308,6 +308,16 @@ internal static partial class SelfTest
             "section router handles ---TRANSLATION--- marker split across chunks",
             string.Concat(translationMarkerDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "私[わたし]は" &&
             string.Concat(translationMarkerDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "我是");
+
+        var crlfCaseRouter = new SectionChannelRouter();
+        var crlfCaseDeltas = crlfCaseRouter
+            .Push("<annotated_source>\r\nここは通[とお]れないよ\r\n</annotated_source>\r\n---translation---\r\n<translation>\r\n这里过不去哦\r\n</translation>")
+            .Concat(crlfCaseRouter.Complete())
+            .ToList();
+        Check(
+            "section router handles CRLF, case-insensitive sentinel, and strips pseudo XML tags",
+            string.Concat(crlfCaseDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "ここは通[とお]れないよ" &&
+            string.Concat(crlfCaseDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "这里过不去哦");
     }
 
     private static void TestProviderTextExtraction()
