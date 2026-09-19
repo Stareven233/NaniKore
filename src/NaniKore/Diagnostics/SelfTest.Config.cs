@@ -24,6 +24,7 @@ internal static partial class SelfTest
                 version: 0.1.1
                 general:
                   auto_translate: true
+                  auto_explain: true
                   target_language: ja
                 pipeline:
                   mode: invalid-mode
@@ -56,6 +57,7 @@ internal static partial class SelfTest
             Check(
                 "YAML round-trip retains known fields and normalizes invalid values",
                 store.Current.General.AutoTranslate &&
+                store.Current.General.AutoExplain &&
                 store.Current.General.TargetLanguage == "ja" &&
                 store.Current.Pipeline.Mode == "local_ocr" &&
                 store.Current.Profiles.Single().TimeoutSeconds == 20 &&
@@ -76,6 +78,7 @@ internal static partial class SelfTest
                 reloaded.Current.Prompts.VisionOneshot == "Transcribe\n\n---\n\nTranslate into {{target_language}}." &&
                 reloaded.Current.Windows.SettingsWidth == 800 &&
                 reloaded.Current.Windows.SettingsHeight == 640 &&
+                AppConfigCloner.Clone(reloaded.Current).General.AutoExplain &&
                 AppConfigCloner.Clone(reloaded.Current).Profiles.Single().Name == "test" &&
                 AppConfigCloner.Clone(reloaded.Current).Prompts.JapanesePlugin == "Custom ja-JP" &&
                 AppConfigCloner.Clone(reloaded.Current).Prompts.VisionOneshot == "Transcribe\n\n---\n\nTranslate into {{target_language}}.");

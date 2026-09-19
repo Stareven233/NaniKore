@@ -96,7 +96,7 @@ internal sealed class NaniKoreApp : Application
                 var image = EncodePng(cropped);
                 _lastImagePng = image;
                 var visionPanel = EnsureResultPanel(selectionOnDesktop);
-                visionPanel.Reset(string.Empty, "正在识别并翻译图像…", autoTranslate: true);
+                visionPanel.Reset(string.Empty, "正在识别并翻译图像…", autoTranslate: true, autoExplain: _configStore.Current.General.AutoExplain);
                 _ = StartTranslationAsync(string.Empty, image);
                 return;
             }
@@ -122,7 +122,7 @@ internal sealed class NaniKoreApp : Application
             _lastImagePng = null;
             var autoTranslate = _configStore.Current.General.AutoTranslate;
             var panel = EnsureResultPanel(selectionOnDesktop);
-            panel.Reset(result.Text, $"OCR 完成：{result.Lines.Count} 行 · {result.Elapsed.TotalMilliseconds:N0} ms", autoTranslate);
+            panel.Reset(result.Text, $"OCR 完成：{result.Lines.Count} 行 · {result.Elapsed.TotalMilliseconds:N0} ms", autoTranslate, autoExplain: _configStore.Current.General.AutoExplain);
             TryCopyToClipboard(result.Text);
             if (autoTranslate)
             {
@@ -212,6 +212,10 @@ internal sealed class NaniKoreApp : Application
                     {
                         session.FinalizeStage1Output();
                         panel.SetExplanationEnabled(true);
+                        if (_configStore.Current.General.AutoExplain)
+                        {
+                            panel.ExpandExplanation();
+                        }
 
                         var actualTtft = ttftMs ?? totalDurationMs;
                         TokenUsage finalUsage;
@@ -445,6 +449,15 @@ internal sealed class NaniKoreApp : Application
 
         panel.TranslateRequested += (_, _) => _ = StartTranslationAsync(panel.SourceText, _lastImagePng);
         panel.ExplanationRequested += (_, _) => _ = StartExplanationAsync();
+        panel.AutoExplainChanged += (_, autoExplain) =>
+        {
+            var config = _configStore.Current;
+            if (config.General.AutoExplain != autoExplain)
+            {
+                config.General.AutoExplain = autoExplain;
+                _configStore.AtomicWrite(config);
+            }
+        };
         panel.SettingsRequested += (_, _) => ShowSettings(topmostFromResult: true);
         panel.Closed += (_, _) =>
         {

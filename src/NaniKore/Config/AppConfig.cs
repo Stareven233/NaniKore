@@ -32,6 +32,9 @@ internal sealed class GeneralConfig
     /// <summary>选区 OCR 完成后是否立即启动翻译；关闭时由面板按钮显式触发。</summary>
     public bool AutoTranslate { get; set; }
 
+    /// <summary>阶段 1 翻译完成后是否自动开始并展开语法深度精讲。</summary>
+    public bool AutoExplain { get; set; }
+
     public string TargetLanguage { get; set; } = "中文（简体）";
 }
 
@@ -144,6 +147,7 @@ internal static class AppConfigCloner
         General = new GeneralConfig
         {
             AutoTranslate = source.General.AutoTranslate,
+            AutoExplain = source.General.AutoExplain,
             TargetLanguage = source.General.TargetLanguage,
         },
         Pipeline = new PipelineConfig

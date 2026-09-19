@@ -55,6 +55,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     {
         ArgumentNullException.ThrowIfNull(config);
         AutoTranslateToggle.IsChecked = config.General.AutoTranslate;
+        AutoExplainToggle.IsChecked = config.General.AutoExplain;
         TargetLanguageBox.SelectedItem = FindLanguage(config.General.TargetLanguage) ?? TargetLanguages[0];
         PipelineModeBox.SelectedItem = config.Pipeline.Mode;
         if (PipelineModeBox.SelectedIndex < 0)
@@ -73,6 +74,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     {
         ArgumentNullException.ThrowIfNull(config);
         config.General.AutoTranslate = AutoTranslateToggle.IsChecked == true;
+        config.General.AutoExplain = AutoExplainToggle.IsChecked == true;
         config.General.TargetLanguage = ((LanguageChoice)TargetLanguageBox.SelectedItem!).Name;
         config.Pipeline.Mode = PipelineModeBox.SelectedItem as string ?? "local_ocr";
     }

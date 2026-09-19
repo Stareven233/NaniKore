@@ -100,14 +100,24 @@
                  Style="{DynamicResource TextBox.Multiline}"
                  IsReadOnly="True" />
 
-        <Expander x:Name="ExplanationExpander" Grid.Row="5"
-                  Header="📖 精讲与语法解析 (点击展开)"
-                  IsEnabled="False"
-                  Margin="0,10,0,0"
-                  Expanded="OnExplanationExpanderExpanded">
-            <TextBox x:Name="ExplanationTextBox" Style="{DynamicResource TextBox.Multiline}"
-                     IsReadOnly="True" MinHeight="80" VerticalScrollBarVisibility="Auto" />
-        </Expander>
+        <Grid Grid.Row="5" Margin="0,10,0,0">
+            <Expander x:Name="ExplanationExpander"
+                      Header="📖 精讲与语法解析 (点击展开)"
+                      IsEnabled="False"
+                      Expanded="OnExplanationExpanderExpanded">
+                <TextBox x:Name="ExplanationTextBox" Style="{DynamicResource TextBox.Multiline}"
+                         IsReadOnly="True" MinHeight="80" VerticalScrollBarVisibility="Auto" Margin="0,6,0,0" />
+            </Expander>
+
+            <!-- 仅在精讲折叠条的标题行右侧放置自动精讲开关，展开后下方的文本框依然占满全宽 -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,4,0">
+                <TextBlock Text="自动" VerticalAlignment="Center" Margin="0,0,6,0" Style="{DynamicResource Text.Caption}" />
+                <ToggleButton x:Name="AutoExplainToggle"
+                              Style="{DynamicResource ToggleSwitch}"
+                              ToolTip="阶段 1 翻译完成后自动触发深度语法精讲并展开"
+                              Click="OnAutoExplainToggleClicked" />
+            </StackPanel>
+        </Grid>
 
         <StackPanel Grid.Row="6" Margin="0,10,0,0">
             <controls:InfoBar x:Name="StatusBar" />

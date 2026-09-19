@@ -220,6 +220,21 @@ internal static partial class SelfTest
         Check(
             "general page shows local OCR dependencies for local pipeline",
             page.FindName("LocalOcrDependenciesGroup") is System.Windows.Controls.Control { Visibility: System.Windows.Visibility.Visible });
+
+        var autoExplainPage = new GeneralPage();
+        var autoExplainConfig = new AppConfig { General = new GeneralConfig { AutoExplain = true } };
+        autoExplainPage.Load(autoExplainConfig);
+        var autoExplainToggle = (System.Windows.Controls.Primitives.ToggleButton?)autoExplainPage.FindName("AutoExplainToggle");
+        Check(
+            "general page loads and applies AutoExplain setting accurately",
+            autoExplainToggle?.IsChecked == true);
+
+        autoExplainToggle!.IsChecked = false;
+        var appliedConfig = new AppConfig();
+        autoExplainPage.Apply(appliedConfig);
+        Check(
+            "general page applies AutoExplain toggle change to configuration",
+            !appliedConfig.General.AutoExplain);
     }
 
     /// <summary>主题资源与控件模板必须可用；顺带验证两份色板与两份控件字典都能解析。</summary>
@@ -539,6 +554,39 @@ internal static partial class SelfTest
             expander?.IsExpanded == false &&
             expander?.Header as string == "📖 精讲与语法解析 (点击展开)" &&
             string.IsNullOrEmpty(expPanel.ExplanationText));
+
+        // 13. 验证 ResultPanelWindow 自动精讲开关状态与事件
+        var autoExplainToggle = (System.Windows.Controls.Primitives.ToggleButton?)expPanel.FindName("AutoExplainToggle");
+        Check(
+            "AutoExplainToggle is resolved and initially matches Reset configuration",
+            autoExplainToggle is not null &&
+            !expPanel.IsAutoExplainEnabled);
+
+        var autoExplainEventFired = false;
+        var autoExplainEventValue = false;
+        expPanel.AutoExplainChanged += (_, val) =>
+        {
+            autoExplainEventFired = true;
+            autoExplainEventValue = val;
+        };
+
+        expPanel.SetAutoExplain(true);
+        Check("SetAutoExplain updates toggle checked state", expPanel.IsAutoExplainEnabled && autoExplainToggle?.IsChecked == true);
+
+        // 模拟点击切换开关
+        autoExplainToggle!.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        Check(
+            "AutoExplainToggle raises AutoExplainChanged event on user interaction",
+            autoExplainEventFired && autoExplainEventValue == expPanel.IsAutoExplainEnabled);
+
+        // 验证 ExpandExplanation 自动展开并激发 ExplanationRequested
+        var autoExpandRequested = false;
+        expPanel.ExplanationRequested += (_, _) => autoExpandRequested = true;
+        expPanel.SetExplanationEnabled(true);
+        expPanel.ExpandExplanation();
+        Check(
+            "ExpandExplanation triggers IsExpanded and invokes ExplanationRequested",
+            expander?.IsExpanded == true && autoExpandRequested);
     }
 }
 

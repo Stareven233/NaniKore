@@ -49,6 +49,8 @@ internal sealed partial class ResultPanelWindow : Window
 
     public event EventHandler? ExplanationRequested;
 
+    public event EventHandler<bool>? AutoExplainChanged;
+
     public event EventHandler? SettingsRequested;
 
     public string SourceText => _isEditingSource
@@ -85,7 +87,7 @@ internal sealed partial class ResultPanelWindow : Window
         MetricsBar.Visibility = Visibility.Collapsed;
     }
 
-    public void Reset(string source, string status, bool autoTranslate = false)
+    public void Reset(string source, string status, bool autoTranslate = false, bool autoExplain = false)
     {
         _annotatedSource = source;
         SourceTextBox.Text = RubyTextParser.ToPlainText(source);
@@ -98,6 +100,7 @@ internal sealed partial class ResultPanelWindow : Window
         ExplanationExpander.IsExpanded = false;
         ExplanationExpander.IsEnabled = false;
         ExplanationExpander.Header = "📖 精讲与语法解析 (点击展开)";
+        AutoExplainToggle.IsChecked = autoExplain;
         ClearMetrics();
         _translationInsertIndex = 0;
         _translationHasContent = false;
@@ -558,5 +561,41 @@ internal sealed partial class ResultPanelWindow : Window
     private void OnExplanationExpanderExpanded(object sender, RoutedEventArgs e)
     {
         ExplanationRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>获取或设置当前面板是否开启“自动精讲”。</summary>
+    public bool IsAutoExplainEnabled
+    {
+        get => AutoExplainToggle.IsChecked == true;
+        set => AutoExplainToggle.IsChecked = value;
+    }
+
+    /// <summary>线程安全地设置自动精讲开关状态。</summary>
+    public void SetAutoExplain(bool enabled)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(() => SetAutoExplain(enabled));
+            return;
+        }
+
+        AutoExplainToggle.IsChecked = enabled;
+    }
+
+    /// <summary>展开精讲折叠卡（若未展开则置位，从而自然触发 Expanded 事件）。</summary>
+    public void ExpandExplanation()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(ExpandExplanation);
+            return;
+        }
+
+        ExplanationExpander.IsExpanded = true;
+    }
+
+    private void OnAutoExplainToggleClicked(object sender, RoutedEventArgs e)
+    {
+        AutoExplainChanged?.Invoke(this, AutoExplainToggle.IsChecked == true);
     }
 }

@@ -21,6 +21,11 @@
                                       Description="关闭时由结果卡的「翻译」按钮显式触发。">
                     <ToggleButton x:Name="AutoTranslateToggle" Style="{DynamicResource ToggleSwitch}" />
                 </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <controls:SettingsRow Header="翻译后自动精讲"
+                                      Description="阶段 1 翻译完成后自动触发深度语法精讲并展开。">
+                    <ToggleButton x:Name="AutoExplainToggle" Style="{DynamicResource ToggleSwitch}" />
+                </controls:SettingsRow>
             </StackPanel>
         </controls:SettingsGroup>
 
