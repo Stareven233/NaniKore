@@ -20,6 +20,7 @@ namespace NaniKore.App.Controls;
 internal sealed class RubyInlineControl : Grid
 {
     private WpfPoint _rubyMouseDownPoint;
+    private bool _isRubyPressed;
 
     /// <summary>通知宿主面板展示操作状态文本的静态事件。</summary>
     public static event Action<string>? StatusNotificationRequested;
@@ -63,19 +64,32 @@ internal sealed class RubyInlineControl : Grid
         rubyBlock.MouseLeave += (_, _) => rubyBlock.Foreground = defaultSecondaryBrush;
         rubyBlock.PreviewMouseLeftButtonDown += (_, e) =>
         {
-            _rubyMouseDownPoint = e.GetPosition(this);
+            _isRubyPressed = true;
+            _rubyMouseDownPoint = e.GetPosition(rubyBlock);
+            rubyBlock.CaptureMouse();
+            // 阻止事件穿透给 FlowDocumentScrollViewer 的 TextEditor，避免其抢占鼠标捕获导致 Up 事件丢失
+            e.Handled = true;
         };
         rubyBlock.PreviewMouseLeftButtonUp += (_, e) =>
         {
-            var delta = e.GetPosition(this) - _rubyMouseDownPoint;
-            // 仅在未发生明显拖拽时判定为单击复制假名，避免干扰正常的框选操作
-            if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
-                Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance)
+            if (!_isRubyPressed)
+            {
+                return;
+            }
+
+            _isRubyPressed = false;
+            rubyBlock.ReleaseMouseCapture();
+            e.Handled = true;
+
+            var currentPoint = e.GetPosition(rubyBlock);
+            var hitBox = new Rect(new WpfPoint(0, 0), rubyBlock.RenderSize);
+            hitBox.Inflate(16, 16); // 允许微弱抖动与手势误差
+            if (hitBox.Contains(currentPoint))
             {
                 CopyReading();
-                e.Handled = true;
             }
         };
+        rubyBlock.LostMouseCapture += (_, _) => _isRubyPressed = false;
 
         SetRow(rubyBlock, 0);
         Children.Add(rubyBlock);
@@ -100,40 +114,45 @@ internal sealed class RubyInlineControl : Grid
 
     public void CopyReading()
     {
-        try
+        if (TrySetClipboard(RubyText))
         {
-            WpfClipboard.SetText(RubyText);
             StatusNotificationRequested?.Invoke($"已复制假名到剪贴板：{RubyText}");
-        }
-        catch
-        {
-            // 防范剪贴板被系统其它进程瞬时占用的异常
         }
     }
 
     public void CopyBaseText()
     {
-        try
+        if (TrySetClipboard(BaseText))
         {
-            WpfClipboard.SetText(BaseText);
             StatusNotificationRequested?.Invoke($"已复制汉字到剪贴板：{BaseText}");
-        }
-        catch
-        {
         }
     }
 
     public void CopyAnnotated()
     {
-        try
+        var text = $"{BaseText}[{RubyText}]";
+        if (TrySetClipboard(text))
         {
-            var text = $"{BaseText}[{RubyText}]";
-            WpfClipboard.SetText(text);
             StatusNotificationRequested?.Invoke($"已复制带注音文本到剪贴板：{text}");
         }
-        catch
+    }
+
+    private static bool TrySetClipboard(string text)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
         {
+            try
+            {
+                WpfClipboard.SetText(text);
+                return true;
+            }
+            catch
+            {
+                System.Threading.Thread.Sleep(50);
+            }
         }
+
+        return false;
     }
 
     private WpfContextMenu CreateContextMenu()

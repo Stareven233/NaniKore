@@ -434,6 +434,35 @@ internal static partial class SelfTest
         Check("copy base text invokes status notification for kanji", notifiedMessage?.Contains("通") == true);
         sampleRuby.CopyAnnotated();
         Check("copy annotated invokes status notification for annotated text", notifiedMessage?.Contains("通[とお]") == true);
+
+        // 11. 验证假名 TextBlock 响应左键单击并触发复制
+        notifiedMessage = null;
+        if (sampleRuby.Children[0] is System.Windows.Controls.TextBlock rubyBlock)
+        {
+            var downArgs = new System.Windows.Input.MouseButtonEventArgs(
+                System.Windows.Input.Mouse.PrimaryDevice,
+                Environment.TickCount,
+                System.Windows.Input.MouseButton.Left)
+            {
+                RoutedEvent = System.Windows.UIElement.PreviewMouseLeftButtonDownEvent,
+                Source = rubyBlock,
+            };
+            rubyBlock.RaiseEvent(downArgs);
+            Check("ruby block marks left button down as handled to prevent host stealing capture", downArgs.Handled);
+
+            var upArgs = new System.Windows.Input.MouseButtonEventArgs(
+                System.Windows.Input.Mouse.PrimaryDevice,
+                Environment.TickCount,
+                System.Windows.Input.MouseButton.Left)
+            {
+                RoutedEvent = System.Windows.UIElement.PreviewMouseLeftButtonUpEvent,
+                Source = rubyBlock,
+            };
+            rubyBlock.RaiseEvent(upArgs);
+            Check("ruby block marks left button up as handled and invokes copy reading",
+                upArgs.Handled && notifiedMessage?.Contains("とお") == true);
+        }
+
         RubyInlineControl.StatusNotificationRequested -= statusHandler;
     }
 }
