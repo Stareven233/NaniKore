@@ -22,6 +22,7 @@ internal static partial class SelfTest
         RunOcrTests();
         RunConfigTests();
         RunTranslationTests();
+        RunExplanationTests();
         RunUiTests();
 
         Console.WriteLine(_failed == 0

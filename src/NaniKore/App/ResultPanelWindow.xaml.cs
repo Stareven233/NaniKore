@@ -45,8 +45,28 @@ internal sealed partial class ResultPanelWindow : Window
         {
             if (ActualHeight > 0)
             {
-                ExplanationTextBox.MaxHeight = Math.Max(160, ActualHeight * 0.45);
+                ExplanationView.MaxHeight = Math.Max(160, ActualHeight * 0.45);
             }
+        };
+
+        ExplanationView.DegradedChanged += (_, isDegraded) =>
+        {
+            if (isDegraded)
+            {
+                SetStatus("未能完全识别为微结构化卡片，已展示原始排版精讲。");
+            }
+        };
+        ExplanationView.FavoriteToggled += (_, args) =>
+        {
+            SetStatus(args.Added ? $"已收藏{args.Category}：{args.Content}" : $"已取消收藏{args.Category}：{args.Content}");
+        };
+        SelectionBubble.FavoriteRequested += (_, item) =>
+        {
+            SetStatus($"已收藏{item.Category}：{item.Content}");
+        };
+        SelectionBubble.FavoriteRemoved += (_, content) =>
+        {
+            SetStatus($"已取消收藏：{content}");
         };
     }
 
@@ -66,7 +86,14 @@ internal sealed partial class ResultPanelWindow : Window
 
     public string TranslationText => TranslationTextBox.Text;
 
-    public string ExplanationText => ExplanationTextBox.Text;
+    public string ExplanationText => ExplanationView.RawText;
+
+    /// <summary>注入生词与知识点收藏服务。</summary>
+    public void SetFavoriteService(Favorites.IFavoriteService? service)
+    {
+        ExplanationView.SetFavoriteService(service);
+        SelectionBubble.SetFavoriteService(service);
+    }
 
     /// <summary>更新并显示本次调用的 Token 消耗与性能指标。</summary>
     public void SetMetrics(TranslationMetrics metrics)
@@ -103,7 +130,7 @@ internal sealed partial class ResultPanelWindow : Window
         NormalizeSourceButton.IsEnabled = true;
         TranslateButton.Content = "翻译"; // 初次进入始终为“翻译”
         TranslationTextBox.Clear();
-        ExplanationTextBox.Clear();
+        ExplanationView.Clear();
         ExplanationExpander.IsExpanded = false;
         ExplanationExpander.IsEnabled = false;
         ExplanationExpander.Header = "📖 精讲与语法解析 (点击展开)";
@@ -154,7 +181,7 @@ internal sealed partial class ResultPanelWindow : Window
         _receivedAnnotatedSource = false;
         ClearMetrics();
         TranslateButton.Content = "翻译";
-        ExplanationTextBox.Clear();
+        ExplanationView.Clear();
         ExplanationExpander.IsExpanded = false;
         ExplanationExpander.IsEnabled = false;
         ExplanationExpander.Header = "📖 精讲与语法解析 (点击展开)";
@@ -258,11 +285,16 @@ internal sealed partial class ResultPanelWindow : Window
             return;
         }
 
+        if (delta.Channel == Translation.DeltaChannel.Explanation)
+        {
+            ExplanationView.AppendChunk(delta.Text);
+            return;
+        }
+
         var target = delta.Channel switch
         {
             Translation.DeltaChannel.SourceText => SourceTextBox,
             Translation.DeltaChannel.Translation => TranslationTextBox,
-            Translation.DeltaChannel.Explanation => ExplanationTextBox,
             _ => TranslationTextBox,
         };
 
@@ -341,6 +373,13 @@ internal sealed partial class ResultPanelWindow : Window
     {
         if (e.Key == Key.Escape)
         {
+            if (SelectionBubble.BubblePopup.IsOpen)
+            {
+                SelectionBubble.Hide();
+                e.Handled = true;
+                return;
+            }
+
             if (_isEditingSource && string.Equals(SourceTextBox.Text, _originalEditingText, StringComparison.Ordinal))
             {
                 ExitEditMode();
@@ -548,7 +587,7 @@ internal sealed partial class ResultPanelWindow : Window
 
         ExplanationExpander.Header = "📖 精讲与语法解析 (正在生成…)";
         ExplanationExpander.IsExpanded = true;
-        ExplanationTextBox.Clear();
+        ExplanationView.Clear();
     }
 
     /// <summary>第二阶段精讲流式结束：恢复常态标题或提示重试。</summary>
@@ -563,6 +602,7 @@ internal sealed partial class ResultPanelWindow : Window
         ExplanationExpander.Header = success
             ? "📖 精讲与语法解析"
             : "📖 精讲与语法解析 (点击重试)";
+        ExplanationView.Complete(success);
     }
 
     private void OnExplanationExpanderExpanded(object sender, RoutedEventArgs e)
@@ -604,5 +644,46 @@ internal sealed partial class ResultPanelWindow : Window
     private void OnAutoExplainToggleClicked(object sender, RoutedEventArgs e)
     {
         AutoExplainChanged?.Invoke(this, AutoExplainToggle.IsChecked == true);
+    }
+
+    private void OnTranslationTextBoxMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (TranslationTextBox.SelectionLength is >= 1 and <= 100)
+        {
+            var text = TranslationTextBox.SelectedText.Trim();
+            if (!string.IsNullOrEmpty(text))
+            {
+                var rect = TranslationTextBox.GetRectFromCharacterIndex(TranslationTextBox.SelectionStart + TranslationTextBox.SelectionLength);
+                var pt = TranslationTextBox.PointToScreen(new System.Windows.Point(rect.Right, rect.Bottom));
+                SelectionBubble.ShowAt(pt, text);
+            }
+        }
+    }
+
+    private void OnSourceTextBoxMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (SourceTextBox.SelectionLength is >= 1 and <= 100)
+        {
+            var text = SourceTextBox.SelectedText.Trim();
+            if (!string.IsNullOrEmpty(text))
+            {
+                var rect = SourceTextBox.GetRectFromCharacterIndex(SourceTextBox.SelectionStart + SourceTextBox.SelectionLength);
+                var pt = SourceTextBox.PointToScreen(new System.Windows.Point(rect.Right, rect.Bottom));
+                SelectionBubble.ShowAt(pt, text);
+            }
+        }
+    }
+
+    private void OnSourceViewerMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (SourceViewer.Selection is { IsEmpty: false } selection)
+        {
+            var text = RubyDocumentBuilder.ExtractFromSelection(selection, RubyCopyKind.Plain)?.Trim();
+            if (!string.IsNullOrEmpty(text) && text.Length <= 100)
+            {
+                var pt = PointToScreen(e.GetPosition(this));
+                SelectionBubble.ShowAt(pt, text);
+            }
+        }
     }
 }

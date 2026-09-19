@@ -1,0 +1,194 @@
+<UserControl x:Class="NaniKore.App.Controls.ExplanationCardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignHeight="300" d:DesignWidth="400">
+    <Grid>
+        <!-- 结构化卡片渲染视图 -->
+        <ScrollViewer x:Name="CardsScrollViewer"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Focusable="False">
+            <StackPanel x:Name="CardsPanel" Margin="0,2,0,4">
+                <!-- 重点词汇与短语分组 -->
+                <StackPanel x:Name="VocabularyGroup" Margin="0,0,0,8" Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal" Margin="2,0,0,6">
+                        <TextBlock Text="&#xEA37;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                   Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="重点词汇与短语" Style="{DynamicResource Text.SectionTitle}" Margin="0" />
+                    </StackPanel>
+                    <ItemsControl x:Name="VocabularyItemsControl">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource Brush.Card.Background}"
+                                        BorderBrush="{DynamicResource Brush.Card.Border}"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Padding="10,7"
+                                        Margin="0,0,0,6">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <!-- 顶部行：词汇原形与收藏按钮 -->
+                                        <Grid Grid.Row="0">
+                                            <TextBlock Text="{Binding Term}"
+                                                       FontSize="14"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource Brush.Text.Primary}"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Margin="0,0,32,0" />
+                                            <Button Style="{DynamicResource Button.Icon}"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Center"
+                                                    Width="28" Height="28" MinWidth="28" MinHeight="28"
+                                                    Tag="{Binding}"
+                                                    Click="OnVocabularyFavoriteClick"
+                                                    ToolTip="{Binding FavoriteTooltip}">
+                                                <TextBlock Text="{Binding FavoriteIcon}"
+                                                           FontFamily="Segoe MDL2 Assets"
+                                                           FontSize="13"
+                                                           Foreground="{Binding FavoriteBrush}" />
+                                            </Button>
+                                        </Grid>
+
+                                        <!-- 属性徽章行（读音 / 词性与原形） -->
+                                        <WrapPanel Grid.Row="1" Margin="0,4,0,0">
+                                            <!-- 读音徽章 -->
+                                            <Border Background="{DynamicResource Brush.Control.Background}"
+                                                    BorderBrush="{DynamicResource Brush.Control.Border}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="4"
+                                                    Padding="6,1"
+                                                    Margin="0,0,6,3"
+                                                    Visibility="{Binding ReadingVisibility}">
+                                                <TextBlock Text="{Binding ReadingBadgeText}"
+                                                           FontSize="11"
+                                                           Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                            </Border>
+                                            <!-- 词性徽章 -->
+                                            <Border Background="{DynamicResource Brush.Accent.Subtle}"
+                                                    BorderBrush="{DynamicResource Brush.Control.Border}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="4"
+                                                    Padding="6,1"
+                                                    Margin="0,0,6,3"
+                                                    Visibility="{Binding RoleVisibility}">
+                                                <TextBlock Text="{Binding RoleBadgeText}"
+                                                           FontSize="11"
+                                                           FontWeight="Medium"
+                                                           Foreground="{DynamicResource Brush.Text.Primary}" />
+                                            </Border>
+                                        </WrapPanel>
+
+                                        <!-- 释义与语境分析 -->
+                                        <TextBlock Grid.Row="2"
+                                                   Text="{Binding Meaning}"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="12"
+                                                   LineHeight="18"
+                                                   Foreground="{DynamicResource Brush.Text.Primary}"
+                                                   Margin="0,5,0,0"
+                                                   Visibility="{Binding MeaningVisibility}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- 语法与句型分组 -->
+                <StackPanel x:Name="GrammarGroup" Margin="0,0,0,8" Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal" Margin="2,0,0,6">
+                        <TextBlock Text="&#xE8D7;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                   Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="语法与句型" Style="{DynamicResource Text.SectionTitle}" Margin="0" />
+                    </StackPanel>
+                    <ItemsControl x:Name="GrammarItemsControl">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource Brush.Card.Background}"
+                                        BorderBrush="{DynamicResource Brush.Card.Border}"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Padding="10,7"
+                                        Margin="0,0,0,6">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <Grid Grid.Row="0">
+                                            <TextBlock Text="{Binding Pattern}"
+                                                       FontSize="14"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource Brush.Text.Primary}"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Margin="0,0,32,0" />
+                                            <Button Style="{DynamicResource Button.Icon}"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Center"
+                                                    Width="28" Height="28" MinWidth="28" MinHeight="28"
+                                                    Tag="{Binding}"
+                                                    Click="OnGrammarFavoriteClick"
+                                                    ToolTip="{Binding FavoriteTooltip}">
+                                                <TextBlock Text="{Binding FavoriteIcon}"
+                                                           FontFamily="Segoe MDL2 Assets"
+                                                           FontSize="13"
+                                                           Foreground="{Binding FavoriteBrush}" />
+                                            </Button>
+                                        </Grid>
+
+                                        <TextBlock Grid.Row="1"
+                                                   Text="{Binding Meaning}"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="12"
+                                                   LineHeight="18"
+                                                   Foreground="{DynamicResource Brush.Text.Primary}"
+                                                   Margin="0,5,0,0" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- 语境与地道表达分组 -->
+                <StackPanel x:Name="ContextGroup" Margin="0,0,0,4" Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal" Margin="2,0,0,6">
+                        <TextBlock Text="&#xE90A;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                   Foreground="{DynamicResource Brush.Accent}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="语境与地道表达" Style="{DynamicResource Text.SectionTitle}" Margin="0" />
+                    </StackPanel>
+                    <Border Background="{DynamicResource Brush.Control.Background}"
+                            BorderBrush="{DynamicResource Brush.Control.Border}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="10,8">
+                        <TextBlock x:Name="ContextExplanationTextBlock"
+                                   TextWrapping="Wrap"
+                                   FontSize="12"
+                                   LineHeight="19"
+                                   Foreground="{DynamicResource Brush.Text.Primary}" />
+                    </Border>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- 降级纯文本渲染框：大模型未遵循结构化协议时无缝展示原始 Markdown -->
+        <TextBox x:Name="FallbackTextBox"
+                 Style="{DynamicResource TextBox.Multiline}"
+                 IsReadOnly="True"
+                 VerticalScrollBarVisibility="Auto"
+                 Visibility="Collapsed" />
+    </Grid>
+</UserControl>
+

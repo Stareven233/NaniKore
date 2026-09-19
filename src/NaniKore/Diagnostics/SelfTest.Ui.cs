@@ -3,6 +3,7 @@ using NaniKore.App;
 using NaniKore.App.Controls;
 using NaniKore.App.Settings;
 using NaniKore.Config;
+using NaniKore.Favorites;
 using NaniKore.Input;
 using NaniKore.Translation;
 
@@ -501,10 +502,13 @@ internal static partial class SelfTest
 
         // 12. 验证 ExplanationExpander 交互生命周期与流式输出
         var expPanel = new ResultPanelWindow();
+        var favService = new InMemoryFavoriteService();
+        expPanel.SetFavoriteService(favService);
         expPanel.Reset("こ こ は  通[とお]れないよ", "OCR 完成", autoTranslate: true);
 
         var expander = (System.Windows.Controls.Expander?)expPanel.FindName("ExplanationExpander");
-        var explanationBox = (System.Windows.Controls.TextBox?)expPanel.FindName("ExplanationTextBox");
+        var explanationView = (ExplanationCardView?)expPanel.FindName("ExplanationView");
+        var selectionBubble = (SelectionBubblePopup?)expPanel.FindName("SelectionBubble");
 
         Check(
             "explanation expander is initially collapsed, disabled, and shows click-to-expand header",
@@ -534,13 +538,16 @@ internal static partial class SelfTest
             expander?.IsExpanded == true &&
             string.IsNullOrEmpty(expPanel.ExplanationText));
 
-        // 验证 Append 接收 DeltaChannel.Explanation 流式增量并输出至 ExplanationTextBox
+        // 验证 Append 接收 DeltaChannel.Explanation 流式增量并输出至 ExplanationView
         expPanel.Append(new UnderstandDelta(DeltaChannel.Explanation, "### [词汇/短语]\n- **通る** | とおる"));
-        expPanel.Append(new UnderstandDelta(DeltaChannel.Explanation, " | 动词原形"));
+        expPanel.Append(new UnderstandDelta(DeltaChannel.Explanation, " | 动词原形 | 通过\n\n### [语法/句型]\n- **～ない** | 否定表达"));
         Check(
-            "streaming explanation delta appends to explanation text box",
-            expPanel.ExplanationText == "### [词汇/短语]\n- **通る** | とおる | 动词原形" &&
-            explanationBox?.Text == expPanel.ExplanationText);
+            "streaming explanation delta appends to explanation card view",
+            expPanel.ExplanationText.Contains("通る") &&
+            explanationView?.VocabularyItems.Count == 1 &&
+            explanationView.VocabularyItems[0].Term == "通る" &&
+            explanationView.GrammarItems.Count == 1 &&
+            explanationView.GrammarItems[0].Pattern == "～ない");
 
         // 验证 CompleteExplanation 恢复常态标题
         expPanel.CompleteExplanation(true);
@@ -553,7 +560,8 @@ internal static partial class SelfTest
             expander?.IsEnabled == false &&
             expander?.IsExpanded == false &&
             expander?.Header as string == "📖 精讲与语法解析 (点击展开)" &&
-            string.IsNullOrEmpty(expPanel.ExplanationText));
+            string.IsNullOrEmpty(expPanel.ExplanationText) &&
+            explanationView?.VocabularyItems.Count == 0);
 
         // 13. 验证 ResultPanelWindow 自动精讲开关状态与事件
         var autoExplainToggle = (System.Windows.Controls.Primitives.ToggleButton?)expPanel.FindName("AutoExplainToggle");
@@ -587,6 +595,46 @@ internal static partial class SelfTest
         Check(
             "ExpandExplanation triggers IsExpanded and invokes ExplanationRequested",
             expander?.IsExpanded == true && autoExpandRequested);
+
+        // 14. 验证 ExplanationCardView 收藏与降级行为
+        var testCardView = new ExplanationCardView();
+        var mockService = new InMemoryFavoriteService();
+        testCardView.SetFavoriteService(mockService);
+
+        // 先预置一个已收藏的词
+        mockService.AddFavoriteAsync(new FavoriteItem { Category = "单词", Content = "走る" }).GetAwaiter().GetResult();
+
+        testCardView.SetText("""
+            ### [词汇/短语]
+            - **走る** | はしる | 动词 | 奔跑
+            - **食べる** | たべる | 动词 | 吃
+            """);
+
+        Check(
+            "ExplanationCardView matches existing favorites by string content",
+            testCardView.VocabularyItems.Count == 2 &&
+            testCardView.VocabularyItems[0].IsFavorited &&
+            !testCardView.VocabularyItems[1].IsFavorited &&
+            testCardView.VocabularyItems[0].FavoriteIcon == "\uE735" &&
+            testCardView.VocabularyItems[1].FavoriteIcon == "\uE734");
+
+        // 降级文本测试
+        testCardView.SetText("这是一段非结构化的纯文本精讲，没有按格式分块。");
+        Check(
+            "ExplanationCardView degrades to fallback textbox when format unrecognized",
+            testCardView.IsDegraded);
+
+        // 15. 验证 SelectionBubblePopup 划词气泡
+        Check(
+            "SelectionBubblePopup is mounted on ResultPanelWindow",
+            selectionBubble is not null);
+        selectionBubble?.SetFavoriteService(mockService);
+        selectionBubble?.ShowAt(new System.Windows.Point(100, 100), "走る");
+        Check(
+            "SelectionBubble detects already-favorited word on open",
+            selectionBubble?.BubblePopup.IsOpen == true);
+        selectionBubble?.Hide();
+        Check("SelectionBubble hides on Hide()", selectionBubble?.BubblePopup.IsOpen == false);
     }
 }
 

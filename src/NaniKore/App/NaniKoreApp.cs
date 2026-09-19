@@ -7,6 +7,7 @@ using NaniKore.App.Settings;
 using NaniKore.App.Theme;
 using NaniKore.Capture;
 using NaniKore.Config;
+using NaniKore.Favorites;
 using NaniKore.Input;
 using NaniKore.Ocr;
 using NaniKore.Ocr.Models;
@@ -20,6 +21,7 @@ namespace NaniKore.App;
 internal sealed class NaniKoreApp : Application
 {
     private readonly ConfigStore _configStore = new(AppContext.BaseDirectory);
+    private readonly IFavoriteService _favoriteService = new InMemoryFavoriteService();
     private GlobalHotkeyWindow? _hotkeyWindow;
     private OcrEngine? _ocrEngine;
     private ProviderFactory? _providerFactory;
@@ -449,6 +451,7 @@ internal sealed class NaniKoreApp : Application
 
         panel.TranslateRequested += (_, _) => _ = StartTranslationAsync(panel.SourceText, _lastImagePng);
         panel.ExplanationRequested += (_, _) => _ = StartExplanationAsync();
+        panel.SetFavoriteService(_favoriteService);
         panel.AutoExplainChanged += (_, autoExplain) =>
         {
             var config = _configStore.Current;
