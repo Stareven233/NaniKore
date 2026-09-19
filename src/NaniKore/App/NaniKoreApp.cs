@@ -30,6 +30,8 @@ internal sealed class NaniKoreApp : Application
     private byte[]? _lastImagePng;
     private bool _selecting;
     private bool _isReplacingResultPanel;
+    private double? _lastPanelWidth;
+    private double? _lastPanelHeight;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -276,6 +278,21 @@ internal sealed class NaniKoreApp : Application
         }
 
         var panel = new ResultPanelWindow();
+        if (_lastPanelWidth is > 0 && _lastPanelHeight is > 0)
+        {
+            panel.Width = _lastPanelWidth.Value;
+            panel.Height = _lastPanelHeight.Value;
+        }
+
+        panel.SizeChanged += (_, _) =>
+        {
+            if (panel.WindowState == WindowState.Normal)
+            {
+                _lastPanelWidth = panel.ActualWidth;
+                _lastPanelHeight = panel.ActualHeight;
+            }
+        };
+
         panel.TranslateRequested += (_, _) => _ = StartTranslationAsync(panel.SourceText, _lastImagePng);
         panel.SettingsRequested += (_, _) => ShowSettings(topmostFromResult: true);
         panel.Closed += (_, _) =>

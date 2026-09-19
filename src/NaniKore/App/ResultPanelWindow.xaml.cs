@@ -36,7 +36,7 @@ internal sealed partial class ResultPanelWindow : Window
         InitializeComponent();
         Icon = ApplicationIcon.LoadWpf();
         ThemeManager.ApplyWindowChrome(this);
-        MaxHeight = SystemParameters.WorkArea.Height * 0.6;
+        // 不限制 MaxHeight，允许用户自由拖拽调整结果卡高度以浏览长文本与精讲内容。
         // Esc 仅在结果卡实际持有键盘焦点（即已激活）时响应；未激活时按键交还用户当前窗口。
         PreviewKeyDown += OnPanelPreviewKeyDown;
         SourceViewer.CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, OnSourceViewerCopy));
