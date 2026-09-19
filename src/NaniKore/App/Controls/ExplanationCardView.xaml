@@ -5,6 +5,38 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              d:DesignHeight="300" d:DesignWidth="400">
+    <UserControl.Resources>
+        <!-- 只读且支持划选复制的流式卡片文本样式 -->
+        <Style x:Key="TextBox.SelectableCardText" TargetType="TextBox">
+            <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="IsReadOnlyCaretVisible" Value="False" />
+            <Setter Property="CaretBrush" Value="Transparent" />
+            <Setter Property="SelectionBrush" Value="{DynamicResource Brush.Accent}" />
+            <Setter Property="Cursor" Value="IBeam" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderThickness="0"
+                                Padding="{TemplateBinding Padding}">
+                            <ScrollViewer x:Name="PART_ContentHost" Focusable="False" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
     <Grid>
         <!-- 结构化卡片渲染视图 -->
         <ScrollViewer x:Name="CardsScrollViewer"
@@ -35,15 +67,15 @@
                                             <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
 
-                                        <!-- 顶部行：词汇原形与收藏按钮 -->
+                                        <!-- 顶部行：词汇原形/读音展示与收藏按钮，支持选中与复制 -->
                                         <Grid Grid.Row="0">
-                                            <TextBlock Text="{Binding Term}"
-                                                       FontSize="14"
-                                                       FontWeight="SemiBold"
-                                                       Foreground="{DynamicResource Brush.Text.Primary}"
-                                                       VerticalAlignment="Center"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       Margin="0,0,32,0" />
+                                            <TextBox Style="{StaticResource TextBox.SelectableCardText}"
+                                                     Text="{Binding DisplayTitle, Mode=OneWay}"
+                                                     FontSize="14"
+                                                     FontWeight="SemiBold"
+                                                     Foreground="{DynamicResource Brush.Text.Primary}"
+                                                     VerticalAlignment="Center"
+                                                     Margin="0,0,32,0" />
                                             <Button Style="{DynamicResource Button.Icon}"
                                                     HorizontalAlignment="Right"
                                                     VerticalAlignment="Center"
@@ -58,21 +90,8 @@
                                             </Button>
                                         </Grid>
 
-                                        <!-- 属性徽章行（读音 / 词性与原形） -->
+                                        <!-- 词性徽章行：严格展示纯净教育语法词性（如：一类动词、名词） -->
                                         <WrapPanel Grid.Row="1" Margin="0,4,0,0">
-                                            <!-- 读音徽章 -->
-                                            <Border Background="{DynamicResource Brush.Control.Background}"
-                                                    BorderBrush="{DynamicResource Brush.Control.Border}"
-                                                    BorderThickness="1"
-                                                    CornerRadius="4"
-                                                    Padding="6,1"
-                                                    Margin="0,0,6,3"
-                                                    Visibility="{Binding ReadingVisibility}">
-                                                <TextBlock Text="{Binding ReadingBadgeText}"
-                                                           FontSize="11"
-                                                           Foreground="{DynamicResource Brush.Text.Secondary}" />
-                                            </Border>
-                                            <!-- 词性徽章 -->
                                             <Border Background="{DynamicResource Brush.Accent.Subtle}"
                                                     BorderBrush="{DynamicResource Brush.Control.Border}"
                                                     BorderThickness="1"
@@ -80,22 +99,22 @@
                                                     Padding="6,1"
                                                     Margin="0,0,6,3"
                                                     Visibility="{Binding RoleVisibility}">
-                                                <TextBlock Text="{Binding RoleBadgeText}"
-                                                           FontSize="11"
-                                                           FontWeight="Medium"
-                                                           Foreground="{DynamicResource Brush.Text.Primary}" />
+                                                <TextBox Style="{StaticResource TextBox.SelectableCardText}"
+                                                         Text="{Binding RoleBadgeText, Mode=OneWay}"
+                                                         FontSize="11"
+                                                         FontWeight="Medium"
+                                                         Foreground="{DynamicResource Brush.Text.Primary}" />
                                             </Border>
                                         </WrapPanel>
 
-                                        <!-- 释义与语境分析 -->
-                                        <TextBlock Grid.Row="2"
-                                                   Text="{Binding Meaning}"
-                                                   TextWrapping="Wrap"
-                                                   FontSize="12"
-                                                   LineHeight="18"
-                                                   Foreground="{DynamicResource Brush.Text.Primary}"
-                                                   Margin="0,5,0,0"
-                                                   Visibility="{Binding MeaningVisibility}" />
+                                        <!-- 释义与语境分析，支持选中与复制 -->
+                                        <TextBox Grid.Row="2"
+                                                 Style="{StaticResource TextBox.SelectableCardText}"
+                                                 Text="{Binding Meaning, Mode=OneWay}"
+                                                 FontSize="12"
+                                                 Foreground="{DynamicResource Brush.Text.Primary}"
+                                                 Margin="0,5,0,0"
+                                                 Visibility="{Binding MeaningVisibility}" />
                                     </Grid>
                                 </Border>
                             </DataTemplate>
@@ -126,13 +145,13 @@
                                         </Grid.RowDefinitions>
 
                                         <Grid Grid.Row="0">
-                                            <TextBlock Text="{Binding Pattern}"
-                                                       FontSize="14"
-                                                       FontWeight="SemiBold"
-                                                       Foreground="{DynamicResource Brush.Text.Primary}"
-                                                       VerticalAlignment="Center"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       Margin="0,0,32,0" />
+                                            <TextBox Style="{StaticResource TextBox.SelectableCardText}"
+                                                     Text="{Binding Pattern, Mode=OneWay}"
+                                                     FontSize="14"
+                                                     FontWeight="SemiBold"
+                                                     Foreground="{DynamicResource Brush.Text.Primary}"
+                                                     VerticalAlignment="Center"
+                                                     Margin="0,0,32,0" />
                                             <Button Style="{DynamicResource Button.Icon}"
                                                     HorizontalAlignment="Right"
                                                     VerticalAlignment="Center"
@@ -147,13 +166,12 @@
                                             </Button>
                                         </Grid>
 
-                                        <TextBlock Grid.Row="1"
-                                                   Text="{Binding Meaning}"
-                                                   TextWrapping="Wrap"
-                                                   FontSize="12"
-                                                   LineHeight="18"
-                                                   Foreground="{DynamicResource Brush.Text.Primary}"
-                                                   Margin="0,5,0,0" />
+                                        <TextBox Grid.Row="1"
+                                                 Style="{StaticResource TextBox.SelectableCardText}"
+                                                 Text="{Binding Meaning, Mode=OneWay}"
+                                                 FontSize="12"
+                                                 Foreground="{DynamicResource Brush.Text.Primary}"
+                                                 Margin="0,5,0,0" />
                                     </Grid>
                                 </Border>
                             </DataTemplate>
@@ -173,11 +191,10 @@
                             BorderThickness="1"
                             CornerRadius="6"
                             Padding="10,8">
-                        <TextBlock x:Name="ContextExplanationTextBlock"
-                                   TextWrapping="Wrap"
-                                   FontSize="12"
-                                   LineHeight="19"
-                                   Foreground="{DynamicResource Brush.Text.Primary}" />
+                        <TextBox x:Name="ContextExplanationTextBox"
+                                 Style="{StaticResource TextBox.SelectableCardText}"
+                                 FontSize="12"
+                                 Foreground="{DynamicResource Brush.Text.Primary}" />
                     </Border>
                 </StackPanel>
             </StackPanel>
@@ -191,4 +208,3 @@
                  Visibility="Collapsed" />
     </Grid>
 </UserControl>
-

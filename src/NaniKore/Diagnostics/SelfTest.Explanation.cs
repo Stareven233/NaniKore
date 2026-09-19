@@ -19,14 +19,15 @@ internal static partial class SelfTest
         TestFavoritesEventsAndNoteFormat();
         TestRubyParserNoiseTolerance();
         TestExplanationPromptN3Filter();
+        TestExplanationEducationalGrammarNormalization();
     }
 
     private static void TestExplanationParserStandard()
     {
         var markdown = """
             ### [词汇/短语]
-            - **通る** | とおる | 动词原形 | 通过、走过。此处为可能态否定「通れない」
-            - **よ** | - | 终助词 | 柔化告知语气，非命令
+            - **通る** | とおる | 一类动词 | 通过、走过。此处为可能态否定「通れない」
+            - **よ** | - | 助词 | 柔化告知语气，非命令
 
             ### [语法/句型]
             - **～ない** | 否定表达。表示“不…”、“无法…”
@@ -42,7 +43,7 @@ internal static partial class SelfTest
         Check("ExplanationParser.Standard.GrammarCount", doc.GrammarCards.Count == 1);
         Check("ExplanationParser.Standard.Vocab1Term", doc.VocabularyCards[0].Term == "通る");
         Check("ExplanationParser.Standard.Vocab1Reading", doc.VocabularyCards[0].Reading == "とおる");
-        Check("ExplanationParser.Standard.Vocab1Role", doc.VocabularyCards[0].Role == "动词原形");
+        Check("ExplanationParser.Standard.Vocab1Role", doc.VocabularyCards[0].Role == "一类动词");
         Check("ExplanationParser.Standard.Vocab1Meaning", doc.VocabularyCards[0].Meaning.Contains("通过"));
         Check("ExplanationParser.Standard.Vocab2ReadingHyphenToEmpty", doc.VocabularyCards[1].Reading == string.Empty);
         Check("ExplanationParser.Standard.Grammar1Pattern", doc.GrammarCards[0].Pattern == "～ない");
@@ -219,6 +220,48 @@ internal static partial class SelfTest
     {
         Check("Prompt.Explain.N3FilterInUserPrompt", PromptTemplates.DefaultExplainUserPrompt.Contains("N3及以上"));
         Check("Prompt.Explain.N3FilterInSystemPrompt", PromptTemplates.ExplainStructureRule.Contains("JLPT N3"));
+    }
+
+    private static void TestExplanationEducationalGrammarNormalization()
+    {
+        // 词性归一化验证
+        Check("EduGrammar.Normalize.Ichidan", ExplanationParser.NormalizeEducationalRole("一段动词") == "二类动词");
+        Check("EduGrammar.Normalize.CompoundIchidan", ExplanationParser.NormalizeEducationalRole("动词，他动词，一段动词") == "二类动词");
+        Check("EduGrammar.Normalize.Godan", ExplanationParser.NormalizeEducationalRole("五段活用动词") == "一类动词");
+        Check("EduGrammar.Normalize.Sahen", ExplanationParser.NormalizeEducationalRole("サ变动词") == "三类动词");
+        Check("EduGrammar.Normalize.IKoushi", ExplanationParser.NormalizeEducationalRole("い形容词") == "一类形容词");
+        Check("EduGrammar.Normalize.NaKoushi", ExplanationParser.NormalizeEducationalRole("な形容词") == "二类形容词");
+        Check("EduGrammar.Normalize.KeiyouDoushi", ExplanationParser.NormalizeEducationalRole("形容动词") == "二类形容词");
+        Check("EduGrammar.Normalize.Noun", ExplanationParser.NormalizeEducationalRole("名词") == "名词");
+
+        // 3段格式（缺失读音，直接给出词性）容错：亡くなる | 动词，他动词，一段动词 | 去世，死亡
+        var threePartsMarkdown = """
+            ### [词汇/短语]
+            - **亡くなる** | 动词，他动词，一段动词 | 去世，死亡
+            """;
+        var doc = ExplanationParser.Parse(threePartsMarkdown);
+        Check("EduGrammar.ThreeParts.VocabCount", doc.VocabularyCards.Count == 1);
+        var card = doc.VocabularyCards[0];
+        Check("EduGrammar.ThreeParts.Term", card.Term == "亡くなる");
+        Check("EduGrammar.ThreeParts.ReadingEmpty", string.IsNullOrEmpty(card.Reading));
+        Check("EduGrammar.ThreeParts.RoleNormalized", card.Role == "二类动词");
+        Check("EduGrammar.ThreeParts.Meaning", card.Meaning == "去世，死亡");
+
+        // ViewModel 标题与纯词性徽章验证
+        var vm = new NaniKore.App.Controls.VocabularyCardViewModel(card, false);
+        Check("EduGrammar.ViewModel.DisplayTitleNoReading", vm.DisplayTitle == "亡くなる");
+        Check("EduGrammar.ViewModel.RoleBadgeText", vm.RoleBadgeText == "二类动词");
+
+        var cardWithReading = new ExplanationVocabularyCard
+        {
+            Term = "通る",
+            Reading = "とおる",
+            Role = "一类动词",
+            Meaning = "通过"
+        };
+        var vmWithReading = new NaniKore.App.Controls.VocabularyCardViewModel(cardWithReading, true);
+        Check("EduGrammar.ViewModel.DisplayTitleWithReading", vmWithReading.DisplayTitle == "通る (とおる)");
+        Check("EduGrammar.ViewModel.RoleBadgeTextWithReading", vmWithReading.RoleBadgeText == "一类动词");
     }
 }
 

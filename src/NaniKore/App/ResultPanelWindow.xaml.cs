@@ -685,14 +685,7 @@ internal sealed partial class ResultPanelWindow : Window
             var text = TranslationTextBox.SelectedText.Trim();
             if (!string.IsNullOrEmpty(text))
             {
-                var charIndex = Math.Min(TranslationTextBox.SelectionStart + TranslationTextBox.SelectionLength, Math.Max(0, TranslationTextBox.Text.Length - 1));
-                var rect = TranslationTextBox.GetRectFromCharacterIndex(charIndex);
-                var relPt = (rect.IsEmpty || double.IsNaN(rect.X))
-                    ? e.GetPosition(this)
-                    : new System.Windows.Point(rect.Right, rect.Bottom);
-
-                TryGetScreenPoint(rect.IsEmpty ? this : TranslationTextBox, relPt, out var pt);
-                SelectionBubble.ShowAt(pt, text);
+                SelectionBubble.ShowAtMouse(text);
             }
         }
     }
@@ -704,14 +697,7 @@ internal sealed partial class ResultPanelWindow : Window
             var text = SourceTextBox.SelectedText.Trim();
             if (!string.IsNullOrEmpty(text))
             {
-                var charIndex = Math.Min(SourceTextBox.SelectionStart + SourceTextBox.SelectionLength, Math.Max(0, SourceTextBox.Text.Length - 1));
-                var rect = SourceTextBox.GetRectFromCharacterIndex(charIndex);
-                var relPt = (rect.IsEmpty || double.IsNaN(rect.X))
-                    ? e.GetPosition(this)
-                    : new System.Windows.Point(rect.Right, rect.Bottom);
-
-                TryGetScreenPoint(rect.IsEmpty ? this : SourceTextBox, relPt, out var pt);
-                SelectionBubble.ShowAt(pt, text);
+                SelectionBubble.ShowAtMouse(text);
             }
         }
     }
@@ -723,8 +709,7 @@ internal sealed partial class ResultPanelWindow : Window
             var text = RubyDocumentBuilder.ExtractFromSelection(selection, RubyCopyKind.Plain)?.Trim();
             if (!string.IsNullOrEmpty(text) && text.Length <= 100)
             {
-                TryGetScreenPoint(this, e.GetPosition(this), out var pt);
-                SelectionBubble.ShowAt(pt, text);
+                SelectionBubble.ShowAtMouse(text);
             }
         }
     }

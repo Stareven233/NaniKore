@@ -34,7 +34,52 @@ public partial class SelectionBubblePopup : UserControl
         UpdateFavoriteState();
     }
 
-    /// <summary>在屏幕指定坐标弹出微型气泡。</summary>
+    /// <summary>紧贴鼠标划选松开位置（即当前光标处）弹出微型气泡，消除 DPI 缩放与多行文本偏移。</summary>
+    public void ShowAtMouse(string selectedText)
+    {
+        if (string.IsNullOrWhiteSpace(selectedText))
+        {
+            Hide();
+            return;
+        }
+
+        ContentTextBox.Text = selectedText.Trim();
+        ContentTextBox.CaretIndex = ContentTextBox.Text.Length;
+
+        CategoryComboBox.SelectedIndex = 0;
+
+        BubblePopup.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+        BubblePopup.HorizontalOffset = 4;
+        BubblePopup.VerticalOffset = 16;
+
+        UpdateFavoriteState();
+        BubblePopup.IsOpen = true;
+    }
+
+    /// <summary>以指定控件及相对坐标弹出微型气泡（优先使用 Relative，防止 DPI 缩放漂移）。</summary>
+    public void ShowAt(UIElement target, Point relativePoint, string selectedText)
+    {
+        if (string.IsNullOrWhiteSpace(selectedText))
+        {
+            Hide();
+            return;
+        }
+
+        ContentTextBox.Text = selectedText.Trim();
+        ContentTextBox.CaretIndex = ContentTextBox.Text.Length;
+
+        CategoryComboBox.SelectedIndex = 0;
+
+        BubblePopup.PlacementTarget = target;
+        BubblePopup.Placement = System.Windows.Controls.Primitives.PlacementMode.Relative;
+        BubblePopup.HorizontalOffset = relativePoint.X;
+        BubblePopup.VerticalOffset = relativePoint.Y + 4;
+
+        UpdateFavoriteState();
+        BubblePopup.IsOpen = true;
+    }
+
+    /// <summary>在屏幕指定坐标弹出微型气泡（带 DPI 自动修正）。</summary>
     public void ShowAt(Point screenPoint, string selectedText)
     {
         if (string.IsNullOrWhiteSpace(selectedText))
@@ -49,8 +94,14 @@ public partial class SelectionBubblePopup : UserControl
         // 默认类别为“单词”
         CategoryComboBox.SelectedIndex = 0;
 
-        BubblePopup.HorizontalOffset = screenPoint.X;
-        BubblePopup.VerticalOffset = screenPoint.Y + 8;
+        BubblePopup.Placement = System.Windows.Controls.Primitives.PlacementMode.Absolute;
+
+        var source = PresentationSource.FromVisual(this);
+        var dpiX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+        var dpiY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+
+        BubblePopup.HorizontalOffset = screenPoint.X / dpiX;
+        BubblePopup.VerticalOffset = (screenPoint.Y / dpiY) + 4;
 
         UpdateFavoriteState();
         BubblePopup.IsOpen = true;

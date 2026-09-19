@@ -70,14 +70,22 @@ internal static class PromptTemplates
         [Deep Explanation Specification]
         When requested to explain or break down the text, provide a clean structured markdown response adhering to this format:
         ### [词汇/短语]
-        - **词汇** | 读音或IPA | 词性与原形 | 释义与语境分析
+        - **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
         ### [语法/句型]
         - **句型** | 语法功能与释义
         ### [语境与地道表达]
         语境分析与自然表达说明
 
-        [Difficulty & Focus Filter]
-        Focus strictly on non-trivial vocabulary, idioms, and grammatical patterns at JLPT N3 level and above (or CEFR B1+ / intermediate and advanced level).
+        [Part of Speech & Educational Grammar - STRICT]
+        - For Japanese vocabulary, the part of speech (3rd column) MUST strictly adhere to Japanese Educational Grammar (日本語教育文法).
+        - Verbs MUST be classified strictly as: `一类动词`, `二类动词`, or `三类动词`. Strictly NEVER output traditional terms or compound terms like `一段动词`, `五段动词`, `他动词`, `自动词`.
+        - Adjectives MUST be classified strictly as: `一类形容词` or `二类形容词`.
+        - Other parts of speech MUST be concise: `名词`, `副词`, `连词`, `短语`. Keep the tag strictly concise (part of speech only).
+
+        [Difficulty & Focus Filter - CRITICAL]
+        - Focus strictly on non-trivial vocabulary, idioms, and grammatical patterns at JLPT N3 level and above (or CEFR B1+ / intermediate and advanced level).
+        - Strictly DO NOT list elementary, high-frequency basic words or elementary grammar points (e.g. absolutely DO NOT include N5/N4 basics such as 「私」「これ」「行く」「食べる」「する」「ある」「～です」「～ます」「～ている」「～ない」 unless they possess advanced, uncommon, or highly contextual idiomatic usage in this specific sentence).
+        - If the sentence contains only basic elementary words and grammar, explain the contextual nuances in the [语境与地道表达] section rather than polluting the vocabulary/grammar cards with trivial entries.
         """;
 
     /// <summary>视觉一条龙的默认模板；直接展示分栏协议，用户可按实际模型自由修改。</summary>

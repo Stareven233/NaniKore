@@ -29,10 +29,13 @@ public sealed class VocabularyCardViewModel : INotifyPropertyChanged
     public string Role => Model.Role;
     public string Meaning => Model.Meaning;
 
-    public string ReadingBadgeText => $"读音: {Reading}";
-    public Visibility ReadingVisibility => string.IsNullOrWhiteSpace(Reading) ? Visibility.Collapsed : Visibility.Visible;
+    /// <summary>标题展示文本：如果有读音且与词汇不重复，显示为“词汇 (读音)”。</summary>
+    public string DisplayTitle => string.IsNullOrWhiteSpace(Reading) || string.Equals(Reading, Term, StringComparison.OrdinalIgnoreCase)
+        ? Term
+        : $"{Term} ({Reading})";
 
-    public string RoleBadgeText => $"原形: {Role}";
+    /// <summary>Tag 只展示日本语教育语法纯净词性（一类动词、二类动词、名词等）。</summary>
+    public string RoleBadgeText => Role;
     public Visibility RoleVisibility => string.IsNullOrWhiteSpace(Role) ? Visibility.Collapsed : Visibility.Visible;
 
     public Visibility MeaningVisibility => string.IsNullOrWhiteSpace(Meaning) ? Visibility.Collapsed : Visibility.Visible;
@@ -192,7 +195,7 @@ public partial class ExplanationCardView : UserControl
         _accumulatedMarkdown.Clear();
         VocabularyItems.Clear();
         GrammarItems.Clear();
-        ContextExplanationTextBlock.Text = string.Empty;
+        ContextExplanationTextBox.Text = string.Empty;
         VocabularyGroup.Visibility = Visibility.Collapsed;
         GrammarGroup.Visibility = Visibility.Collapsed;
         ContextGroup.Visibility = Visibility.Collapsed;
@@ -266,7 +269,7 @@ public partial class ExplanationCardView : UserControl
         GrammarGroup.Visibility = GrammarItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         // 同步语境说明
-        ContextExplanationTextBlock.Text = doc.ContextExplanation;
+        ContextExplanationTextBox.Text = doc.ContextExplanation;
         ContextGroup.Visibility = !string.IsNullOrWhiteSpace(doc.ContextExplanation) ? Visibility.Visible : Visibility.Collapsed;
 
         CardsScrollViewer.ScrollToEnd();
