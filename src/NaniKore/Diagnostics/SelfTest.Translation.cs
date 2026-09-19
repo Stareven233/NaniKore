@@ -329,6 +329,24 @@ internal static partial class SelfTest
             immediateChunk.Count == 1 &&
             immediateChunk[0].Channel == DeltaChannel.Translation &&
             immediateChunk[0].Text == "短译文");
+
+        var sourceStreamRouter = new SectionChannelRouter();
+        var earlySourceDeltas = sourceStreamRouter.Push("私[わたし]は学生[がくせい]です。").ToList();
+        Check(
+            "section router flushes annotated source tokens in real-time before sentinel arrives",
+            earlySourceDeltas.Count > 0 &&
+            earlySourceDeltas.All(delta => delta.Channel == DeltaChannel.SourceText) &&
+            string.Concat(earlySourceDeltas.Select(delta => delta.Text)) == "私[わたし]は学生[がくせい]です。");
+
+        var splitSentinelDeltas = sourceStreamRouter.Push("\n---TRANS").ToList();
+        Check(
+            "section router holds trailing sentinel prefix in sliding window without leaking to source channel",
+            splitSentinelDeltas.Count == 0);
+
+        var continuationDeltas = sourceStreamRouter.Push("LATION---\n我是学生。").Concat(sourceStreamRouter.Complete()).ToList();
+        Check(
+            "section router completes sentinel match and streams translation seamlessly",
+            string.Concat(continuationDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "我是学生。");
     }
 
     private static void TestProviderTextExtraction()

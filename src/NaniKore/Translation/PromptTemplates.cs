@@ -229,24 +229,37 @@ internal sealed class SectionChannelRouter
             {
                 if (_awaitingFirstSection)
                 {
-                    // 首个 SOURCE/TRANSLATION 哨兵之前的内容是带注音原文或前导，等待哨兵到达
-                    yield break;
+                    // 原文阶段：通过滑动窗口安全实时输出带注音原文，打破整段阻塞卡顿
+                    _pending = StripSourceLeadingTags(_pending);
+                    var flushLength = GetSafeSourceFlushLength(_pending);
+                    if (flushLength == 0)
+                    {
+                        yield break;
+                    }
+
+                    foreach (var delta in Emit(DeltaChannel.SourceText, _pending[..flushLength]))
+                    {
+                        yield return delta;
+                    }
+
+                    _pending = _pending[flushLength..];
+                    continue;
                 }
 
                 // 译文阶段已无后续段落分隔标记，实时输出正文，消除 32 字符缓冲阻滞导致的短译文流式卡顿。
                 _pending = StripTranslationLeadingTags(_pending);
-                var flushLength = GetSafeTranslationFlushLength(_pending);
-                if (flushLength == 0)
+                var transFlushLength = GetSafeTranslationFlushLength(_pending);
+                if (transFlushLength == 0)
                 {
                     yield break;
                 }
 
-                foreach (var delta in Emit(_channel, _pending[..flushLength]))
+                foreach (var delta in Emit(_channel, _pending[..transFlushLength]))
                 {
                     yield return delta;
                 }
 
-                _pending = _pending[flushLength..];
+                _pending = _pending[transFlushLength..];
                 continue;
             }
 
@@ -288,7 +301,12 @@ internal sealed class SectionChannelRouter
                 text = text[..^"```".Length].TrimEnd();
             }
 
-            var channel = _awaitingFirstSection ? DeltaChannel.Translation : _channel;
+            // 若从未发射过 SourceText 且无分隔符，保留完整输出作为译文（兼容视觉纯译文输出 fallback）；
+            // 若已发射过 SourceText，剩余文本归属 SourceText。
+            var channel = _awaitingFirstSection
+                ? (_channelsWithContent.Contains(DeltaChannel.SourceText) ? DeltaChannel.SourceText : DeltaChannel.Translation)
+                : _channel;
+
             if (_awaitingFirstSection)
             {
                 text = StripSourceTags(text);
@@ -369,6 +387,149 @@ internal sealed class SectionChannelRouter
         }
 
         return text.Trim();
+    }
+
+    private string StripSourceLeadingTags(string text)
+    {
+        if (_channelsWithContent.Contains(DeltaChannel.SourceText))
+        {
+            return text;
+        }
+
+        text = text.TrimStart('\r', '\n', ' ');
+        if (text.StartsWith("<annotated_source>", StringComparison.OrdinalIgnoreCase))
+        {
+            text = text["<annotated_source>".Length..].TrimStart('\r', '\n', ' ');
+        }
+        else if (text.StartsWith("<transcription>", StringComparison.OrdinalIgnoreCase))
+        {
+            text = text["<transcription>".Length..].TrimStart('\r', '\n', ' ');
+        }
+        else if (text.StartsWith("```markdown", StringComparison.OrdinalIgnoreCase))
+        {
+            text = text["```markdown".Length..].TrimStart('\r', '\n', ' ');
+        }
+        else if (text.StartsWith("```text", StringComparison.OrdinalIgnoreCase))
+        {
+            text = text["```text".Length..].TrimStart('\r', '\n', ' ');
+        }
+        else if (text.StartsWith("```", StringComparison.OrdinalIgnoreCase))
+        {
+            text = text["```".Length..].TrimStart('\r', '\n', ' ');
+        }
+
+        return text;
+    }
+
+    /// <summary>
+    /// 计算当前待输出原文文本中可以安全即时刷新到 UI 的长度。
+    /// 保留可能处于哨兵标记或闭合标签中间的滑动窗口（不超过 32 字符），其余正文即时全速输出。
+    /// </summary>
+    private int GetSafeSourceFlushLength(string text)
+    {
+        if (text.Length == 0)
+        {
+            return 0;
+        }
+
+        // 1. 若原文尚未开始输出过有效正文，且开头属于前导标签的可能前缀，等待完整标签到达并剥离
+        if (!_channelsWithContent.Contains(DeltaChannel.SourceText))
+        {
+            var trimmed = text.TrimStart('\r', '\n', ' ');
+            if (trimmed.Length == 0)
+            {
+                return 0;
+            }
+
+            if (IsOpenTagPrefix(trimmed, "<annotated_source>") ||
+                IsOpenTagPrefix(trimmed, "<transcription>") ||
+                IsOpenTagPrefix(trimmed, "```markdown") ||
+                IsOpenTagPrefix(trimmed, "```text") ||
+                IsOpenTagPrefix(trimmed, "```"))
+            {
+                return 0;
+            }
+
+            // 若无原文特征（假名/注音），且长度尚在滑动窗口预算内，暂缓输出以兼容纯译文 fallback
+            if (!HasSourceSignal(text) && text.Length < MaxSeparatorLength)
+            {
+                return 0;
+            }
+        }
+
+        // 2. 检查尾部是否可能截断在哨兵标记或闭合标签中间
+        var potentialSuffixIndex = FindPotentialSeparatorOrTagPrefixIndex(text);
+        if (potentialSuffixIndex >= 0)
+        {
+            var safeLength = potentialSuffixIndex;
+            while (safeLength > 0 && (text[safeLength - 1] == '\r' || text[safeLength - 1] == '\n'))
+            {
+                safeLength--;
+            }
+
+            return safeLength;
+        }
+
+        // 3. 无潜在标记前缀截断，全部即时刷新
+        return text.Length;
+    }
+
+    private static bool IsOpenTagPrefix(string text, string fullTag) =>
+        fullTag.StartsWith(text, StringComparison.OrdinalIgnoreCase) && text.Length < fullTag.Length;
+
+    private static bool HasSourceSignal(string text)
+    {
+        foreach (var c in text)
+        {
+            if (c is (>= '\u3040' and <= '\u309F') or (>= '\u30A0' and <= '\u30FF') or '[' or ']')
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static readonly string[] SourceCloseTags =
+    [
+        "</annotated_source>",
+        "</transcription>",
+        "```markdown",
+        "```text",
+        "```",
+    ];
+
+    private static int FindPotentialSeparatorOrTagPrefixIndex(string text)
+    {
+        var scanStart = Math.Max(0, text.Length - MaxSeparatorLength);
+        for (var i = scanStart; i < text.Length; i++)
+        {
+            var ch = text[i];
+            if (ch is not ('\r' or '\n' or '-' or '<' or '`'))
+            {
+                continue;
+            }
+
+            var suffix = text[i..];
+
+            foreach (var marker in CandidateMarkers)
+            {
+                if (marker.Marker.StartsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+
+            foreach (var tag in SourceCloseTags)
+            {
+                if (tag.StartsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return i;
+                }
+            }
+        }
+
+        return -1;
     }
 
     private static string StripTranslationLeadingTags(string text)
