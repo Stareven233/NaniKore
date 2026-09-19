@@ -347,6 +347,22 @@ internal static partial class SelfTest
         Check(
             "section router completes sentinel match and streams translation seamlessly",
             string.Concat(continuationDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "我是学生。");
+
+        var tagLeakProtectionRouter = new SectionChannelRouter();
+        var leakTestDeltas = tagLeakProtectionRouter
+            .Push("<annotated_source>\r\n私[わたし]は学生です。")
+            .Concat(tagLeakProtectionRouter.Push("\r\n</annotated_source>\r\n"))
+            .Concat(tagLeakProtectionRouter.Push("---TRANSLATION---\r\n<translation>\r\n我是学生。\r\n</translation>"))
+            .Concat(tagLeakProtectionRouter.Complete())
+            .ToList();
+        var leakedSource = string.Concat(leakTestDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text));
+        var leakedTrans = string.Concat(leakTestDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text));
+        Check(
+            "section router strictly prevents any pseudo XML closing tags from leaking into source channel",
+            !leakedSource.Contains("</annotated_source>") &&
+            !leakedSource.Contains("<annotated_source>") &&
+            leakedSource == "私[わたし]は学生です。" &&
+            leakedTrans == "我是学生。");
     }
 
     private static void TestProviderTextExtraction()

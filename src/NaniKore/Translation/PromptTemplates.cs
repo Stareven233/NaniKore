@@ -330,6 +330,10 @@ internal sealed class SectionChannelRouter
             {
                 text = text["<translation>".Length..].TrimStart();
             }
+            else if (channel == DeltaChannel.SourceText)
+            {
+                text = StripSourceLeadingTags(text);
+            }
 
             if (text.Length == 0)
             {
@@ -339,9 +343,20 @@ internal sealed class SectionChannelRouter
             _channelsWithContent.Add(channel);
         }
 
-        if (text.EndsWith("</translation>", StringComparison.OrdinalIgnoreCase))
+        if (channel == DeltaChannel.SourceText)
         {
-            text = text[..^"</translation>".Length].TrimEnd();
+            // 原文区三重防线：出口处过滤所有可能残留的标签或闭合标记
+            if (text.Contains('<', StringComparison.Ordinal) || text.Contains('`', StringComparison.Ordinal))
+            {
+                text = StripSourceTags(text);
+            }
+        }
+        else if (channel == DeltaChannel.Translation)
+        {
+            if (text.EndsWith("</translation>", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text[..^"</translation>".Length].TrimEnd();
+            }
         }
 
         if (text.EndsWith("```", StringComparison.Ordinal))
@@ -357,36 +372,70 @@ internal sealed class SectionChannelRouter
 
     private static string StripSourceTags(string text)
     {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
         text = text.Trim();
-        if (text.StartsWith("```markdown", StringComparison.OrdinalIgnoreCase))
-        {
-            text = text["```markdown".Length..].TrimStart();
-        }
-        else if (text.StartsWith("```text", StringComparison.OrdinalIgnoreCase))
-        {
-            text = text["```text".Length..].TrimStart();
-        }
-        else if (text.StartsWith("```", StringComparison.OrdinalIgnoreCase))
-        {
-            text = text["```".Length..].TrimStart();
-        }
 
-        if (text.StartsWith("<annotated_source>", StringComparison.OrdinalIgnoreCase))
+        bool changed;
+        do
         {
-            text = text["<annotated_source>".Length..].TrimStart();
-        }
+            changed = false;
+            if (text.StartsWith("```markdown", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text["```markdown".Length..].TrimStart();
+                changed = true;
+            }
+            else if (text.StartsWith("```text", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text["```text".Length..].TrimStart();
+                changed = true;
+            }
+            else if (text.StartsWith("```", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text["```".Length..].TrimStart();
+                changed = true;
+            }
 
-        if (text.EndsWith("</annotated_source>", StringComparison.OrdinalIgnoreCase))
-        {
-            text = text[..^"</annotated_source>".Length].TrimEnd();
-        }
+            if (text.StartsWith("<annotated_source>", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text["<annotated_source>".Length..].TrimStart();
+                changed = true;
+            }
+            else if (text.StartsWith("<transcription>", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text["<transcription>".Length..].TrimStart();
+                changed = true;
+            }
 
-        if (text.EndsWith("```", StringComparison.Ordinal))
-        {
-            text = text[..^"```".Length].TrimEnd();
-        }
+            if (text.EndsWith("</annotated_source>", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text[..^"</annotated_source>".Length].TrimEnd();
+                changed = true;
+            }
+            else if (text.EndsWith("</transcription>", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text[..^"</transcription>".Length].TrimEnd();
+                changed = true;
+            }
 
-        return text.Trim();
+            if (text.EndsWith("```", StringComparison.Ordinal))
+            {
+                text = text[..^"```".Length].TrimEnd();
+                changed = true;
+            }
+        } while (changed);
+
+        // 彻底清除可能嵌入或残留的标签文本
+        text = text.Replace("</annotated_source>", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("<annotated_source>", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("</transcription>", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("<transcription>", "", StringComparison.OrdinalIgnoreCase)
+                   .Trim();
+
+        return text;
     }
 
     private string StripSourceLeadingTags(string text)
@@ -457,7 +506,23 @@ internal sealed class SectionChannelRouter
             }
         }
 
-        // 2. 检查尾部是否可能截断在哨兵标记或闭合标签中间
+        // 2. 检查 text 中是否已完整出现任何闭合标签，确保正文安全输出绝不越过闭合标签
+        foreach (var tag in SourceCloseTags)
+        {
+            var tagIndex = text.IndexOf(tag, StringComparison.OrdinalIgnoreCase);
+            if (tagIndex >= 0)
+            {
+                var safeLength = tagIndex;
+                while (safeLength > 0 && (text[safeLength - 1] == '\r' || text[safeLength - 1] == '\n'))
+                {
+                    safeLength--;
+                }
+
+                return safeLength;
+            }
+        }
+
+        // 3. 检查尾部是否可能截断在哨兵标记或闭合标签前缀中（未完结前缀滑动保护）
         var potentialSuffixIndex = FindPotentialSeparatorOrTagPrefixIndex(text);
         if (potentialSuffixIndex >= 0)
         {
@@ -470,7 +535,7 @@ internal sealed class SectionChannelRouter
             return safeLength;
         }
 
-        // 3. 无潜在标记前缀截断，全部即时刷新
+        // 4. 无潜在标记前缀截断，全部即时刷新
         return text.Length;
     }
 
