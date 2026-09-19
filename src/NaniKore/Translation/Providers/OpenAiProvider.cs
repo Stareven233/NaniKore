@@ -17,7 +17,7 @@ internal sealed class OpenAiProvider : TranslationProviderBase
         using var message = isResponses ? CreateResponsesRequest(request) : CreateCompletionsRequest(request);
         using var response = await SendAsync(message, cancellationToken).ConfigureAwait(false);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        var router = (request.Kind == UnderstandKind.Translate || request.ImagePng is { Length: > 0 })
+        var router = request.Kind == UnderstandKind.Translate
             ? new SectionChannelRouter()
             : null;
         TokenUsage? usage = null;
@@ -40,6 +40,12 @@ internal sealed class OpenAiProvider : TranslationProviderBase
             var text = isResponses
                 ? ExtractResponsesDelta(frame)
                 : ExtractCompletionsDelta(frame.Data);
+
+            if (!string.IsNullOrEmpty(text) && request.Session is not null && request.Kind == UnderstandKind.Translate)
+            {
+                request.Session.AppendRawAssistantOutput(text);
+            }
+
             foreach (var delta in Route(router, text, request.Kind))
             {
                 yield return delta;
@@ -56,54 +62,118 @@ internal sealed class OpenAiProvider : TranslationProviderBase
 
         if (usage.HasValue)
         {
-            yield return new UnderstandDelta(DeltaChannel.Translation, string.Empty, usage.Value);
+            var endChannel = request.Kind == UnderstandKind.Explain ? DeltaChannel.Explanation : DeltaChannel.Translation;
+            yield return new UnderstandDelta(endChannel, string.Empty, usage.Value);
         }
     }
 
-    private HttpRequestMessage CreateCompletionsRequest(UnderstandRequest request)
+    internal HttpRequestMessage CreateCompletionsRequest(UnderstandRequest request)
     {
         var system = PromptTemplates.GetSystemPrompt(request, Prompts);
-        object userContent = request.ImagePng is { Length: > 0 } image
-            ? new object[]
+        object[] messages;
+        if (request.Session is { Messages.Count: > 1 } session)
+        {
+            var list = new List<object>
             {
-                new { type = "text", text = request.SourceText ?? "" },
-                new { type = "image_url", image_url = new { url = $"data:image/png;base64,{Base64(image)}" } },
+                new { role = "system", content = system }
+            };
+            foreach (var m in session.Messages)
+            {
+                var role = m.Role switch
+                {
+                    ChatRole.User => "user",
+                    ChatRole.Assistant => "assistant",
+                    _ => "user"
+                };
+                list.Add(new { role, content = FormatOpenAiContent(m) });
             }
-            : request.SourceText ?? string.Empty;
+            messages = list.ToArray();
+        }
+        else
+        {
+            object userContent = request.ImagePng is { Length: > 0 } image
+                ? new object[]
+                {
+                    new { type = "text", text = request.SourceText ?? "" },
+                    new { type = "image_url", image_url = new { url = $"data:image/png;base64,{Base64(image)}" } },
+                }
+                : request.SourceText ?? string.Empty;
+
+            messages = new object[]
+            {
+                new { role = "system", content = system },
+                new { role = "user", content = userContent },
+            };
+        }
+
         var body = new
         {
             model = Profile.Model,
             stream = true,
             stream_options = new { include_usage = true },
-            messages = new object[]
-            {
-                new { role = "system", content = system },
-                new { role = "user", content = userContent },
-            },
+            messages,
         };
         var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, "chat/completions"), body);
         SetBearerToken(message, ApiKey);
         return message;
     }
 
-    private HttpRequestMessage CreateResponsesRequest(UnderstandRequest request)
+    private static object FormatOpenAiContent(ChatMessage message)
+    {
+        if (message.ImagePng is { Length: > 0 } image)
+        {
+            return new object[]
+            {
+                new { type = "text", text = message.Text ?? string.Empty },
+                new { type = "image_url", image_url = new { url = $"data:image/png;base64,{Base64(image)}" } },
+            };
+        }
+
+        return message.Text ?? string.Empty;
+    }
+
+    internal HttpRequestMessage CreateResponsesRequest(UnderstandRequest request)
     {
         var system = PromptTemplates.GetSystemPrompt(request, Prompts);
-        var content = new List<object> { new { type = "input_text", text = request.SourceText ?? string.Empty } };
-        if (request.ImagePng is { Length: > 0 } image)
+        var inputList = new List<object>
         {
-            content.Add(new { type = "input_image", image_url = $"data:image/png;base64,{Base64(image)}" });
+            new { role = "system", content = new object[] { new { type = "input_text", text = system } } }
+        };
+
+        if (request.Session is { Messages.Count: > 1 } session)
+        {
+            foreach (var m in session.Messages)
+            {
+                if (m.Role == ChatRole.Assistant)
+                {
+                    inputList.Add(new { role = "assistant", content = new object[] { new { type = "output_text", text = m.Text } } });
+                }
+                else
+                {
+                    var content = new List<object> { new { type = "input_text", text = m.Text ?? string.Empty } };
+                    if (m.ImagePng is { Length: > 0 } image)
+                    {
+                        content.Add(new { type = "input_image", image_url = $"data:image/png;base64,{Base64(image)}" });
+                    }
+                    inputList.Add(new { role = "user", content });
+                }
+            }
+        }
+        else
+        {
+            var content = new List<object> { new { type = "input_text", text = request.SourceText ?? string.Empty } };
+            if (request.ImagePng is { Length: > 0 } image)
+            {
+                content.Add(new { type = "input_image", image_url = $"data:image/png;base64,{Base64(image)}" });
+            }
+            inputList.Add(new { role = "user", content });
         }
 
         var body = new
         {
             model = Profile.Model,
             stream = true,
-            input = new object[]
-            {
-                new { role = "system", content = new object[] { new { type = "input_text", text = system } } },
-                new { role = "user", content },
-            },
+            input = inputList.ToArray(),
         };
         var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, "responses"), body);
         SetBearerToken(message, ApiKey);

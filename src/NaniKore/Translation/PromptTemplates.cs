@@ -95,6 +95,11 @@ internal static class PromptTemplates
 
     public static string GetSystemPrompt(UnderstandRequest request, PromptConfig prompts)
     {
+        if (request.Session?.SystemPrompt is { Length: > 0 } sessionPrompt)
+        {
+            return sessionPrompt;
+        }
+
         if (request.Kind == UnderstandKind.Explain)
         {
             if (!string.IsNullOrWhiteSpace(prompts.Explain))

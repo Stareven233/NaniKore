@@ -20,6 +20,7 @@ internal static partial class SelfTest
         TestProviderTextExtraction();
         TestProviderCapabilitiesAndErrors();
         TestTokenUsageAndMetrics();
+        TestTranslationSessionAndMultiTurnReplay();
     }
 
     private static void TestTranslationPromptTemplates()
@@ -513,6 +514,101 @@ internal static partial class SelfTest
         public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    private static void TestTranslationSessionAndMultiTurnReplay()
+    {
+        // 1. 测试 TranslationSession 初始化与阶段 1 原始增量无损累积
+        var imageBytes = new byte[] { 137, 80, 78, 71 };
+        var session = new TranslationSession("system_test_prompt", "中文（简体）", "こ こ は 通れないよ", imageBytes);
+        Check(
+            "translation session initializes user message with text and image payload",
+            session.Messages.Count == 1 &&
+            session.Messages[0].Role == ChatRole.User &&
+            session.Messages[0].Text == "こ こ は 通れないよ" &&
+            session.Messages[0].ImagePng is { Length: 4 });
+
+        session.AppendRawAssistantOutput("こ こ は  通[とお]れないよ\n");
+        session.AppendRawAssistantOutput("---TRANSLATION---\n这里过不去哦");
+        session.FinalizeStage1Output();
+
+        Check(
+            "session finalizes assistant message matching raw streamed chunks exactly",
+            session.Messages.Count == 2 &&
+            session.Messages[1].Role == ChatRole.Assistant &&
+            session.Messages[1].Text == "こ こ は  通[とお]れないよ\n---TRANSLATION---\n这里过不去哦" &&
+            session.GetStage1Output() == "こ こ は  通[とお]れないよ\n---TRANSLATION---\n这里过不去哦");
+
+        // 2. 准备阶段 2 精讲，验证 User 追问追加与 SystemPrompt 前缀缓存复用
+        session.PrepareStage2Request(PromptTemplates.DefaultExplainUserPrompt);
+        Check(
+            "session prepares stage 2 request by appending explanation user prompt",
+            session.Messages.Count == 3 &&
+            session.Messages[2].Role == ChatRole.User &&
+            session.Messages[2].Text == "请对上述内容进行深度精讲拆解。");
+
+        var stage2Request = new UnderstandRequest(UnderstandKind.Explain, session.InitialSourceText, session.ImagePng, "中文（简体）", session);
+        var prompt = PromptTemplates.GetSystemPrompt(stage2Request, new PromptConfig());
+        Check(
+            "PromptTemplates.GetSystemPrompt reuses identical system prompt from session to preserve cache",
+            prompt == "system_test_prompt");
+
+        // 3. 验证 OpenAI Provider 生成多轮 messages 数组，且首轮输入输出与首轮完全对齐
+        var openAiProfile = new ProviderProfile { Id = "openai", ApiType = "chat_completions", BaseUrl = "https://api.openai.com/v1", Model = "gpt-4o" };
+        var openAiProvider = new OpenAiProvider(openAiProfile, "test_key", new PromptConfig());
+        using var openAiCompletionsMsg = openAiProvider.CreateCompletionsRequest(stage2Request);
+        using var openAiDoc = JsonDocument.Parse(openAiCompletionsMsg.Content!.ReadAsStringAsync().Result);
+        var openAiMessages = openAiDoc.RootElement.GetProperty("messages");
+        Check(
+            "OpenAI completions request creates 4 messages preserving system, user, assistant, and user turn 2",
+            openAiMessages.GetArrayLength() == 4 &&
+            openAiMessages[0].GetProperty("role").GetString() == "system" &&
+            openAiMessages[0].GetProperty("content").GetString() == "system_test_prompt" &&
+            openAiMessages[1].GetProperty("role").GetString() == "user" &&
+            openAiMessages[1].GetProperty("content").ValueKind == JsonValueKind.Array &&
+            openAiMessages[2].GetProperty("role").GetString() == "assistant" &&
+            openAiMessages[2].GetProperty("content").GetString() == "こ こ は  通[とお]れないよ\n---TRANSLATION---\n这里过不去哦" &&
+            openAiMessages[3].GetProperty("role").GetString() == "user" &&
+            openAiMessages[3].GetProperty("content").GetString() == "请对上述内容进行深度精讲拆解。");
+
+        using var openAiResponsesMsg = openAiProvider.CreateResponsesRequest(stage2Request);
+        using var openAiRespDoc = JsonDocument.Parse(openAiResponsesMsg.Content!.ReadAsStringAsync().Result);
+        var openAiInputs = openAiRespDoc.RootElement.GetProperty("input");
+        Check(
+            "OpenAI responses request creates 4 input elements with output_text for assistant turn",
+            openAiInputs.GetArrayLength() == 4 &&
+            openAiInputs[0].GetProperty("role").GetString() == "system" &&
+            openAiInputs[1].GetProperty("role").GetString() == "user" &&
+            openAiInputs[2].GetProperty("role").GetString() == "assistant" &&
+            openAiInputs[3].GetProperty("role").GetString() == "user");
+
+        // 4. 验证 Claude Provider 生成多轮 messages（user / assistant / user）
+        var claudeProfile = new ProviderProfile { Id = "claude", ApiType = "messages", BaseUrl = "https://api.anthropic.com", Model = "claude-3-5-sonnet-20241022" };
+        var claudeProvider = new ClaudeProvider(claudeProfile, "test_key", new PromptConfig());
+        using var claudeMsg = claudeProvider.CreateRequest(stage2Request);
+        using var claudeDoc = JsonDocument.Parse(claudeMsg.Content!.ReadAsStringAsync().Result);
+        Check(
+            "Claude request preserves top-level system and alternates user/assistant messages",
+            claudeDoc.RootElement.GetProperty("system").GetString() == "system_test_prompt" &&
+            claudeDoc.RootElement.GetProperty("messages").GetArrayLength() == 3 &&
+            claudeDoc.RootElement.GetProperty("messages")[0].GetProperty("role").GetString() == "user" &&
+            claudeDoc.RootElement.GetProperty("messages")[1].GetProperty("role").GetString() == "assistant" &&
+            claudeDoc.RootElement.GetProperty("messages")[1].GetProperty("content").GetString() == "こ こ は  通[とお]れないよ\n---TRANSLATION---\n这里过不去哦" &&
+            claudeDoc.RootElement.GetProperty("messages")[2].GetProperty("role").GetString() == "user");
+
+        // 5. 验证 Gemini Provider 生成 contents（user / model / user）
+        var geminiProfile = new ProviderProfile { Id = "gemini", ApiType = "gemini", BaseUrl = "https://generativelanguage.googleapis.com", Model = "gemini-1.5-pro" };
+        var geminiProvider = new GeminiProvider(geminiProfile, "test_key", new PromptConfig());
+        using var geminiMsg = geminiProvider.CreateRequest(stage2Request);
+        using var geminiDoc = JsonDocument.Parse(geminiMsg.Content!.ReadAsStringAsync().Result);
+        Check(
+            "Gemini request preserves system_instruction and formats contents with user and model roles",
+            geminiDoc.RootElement.GetProperty("system_instruction").GetProperty("parts")[0].GetProperty("text").GetString() == "system_test_prompt" &&
+            geminiDoc.RootElement.GetProperty("contents").GetArrayLength() == 3 &&
+            geminiDoc.RootElement.GetProperty("contents")[0].GetProperty("role").GetString() == "user" &&
+            geminiDoc.RootElement.GetProperty("contents")[1].GetProperty("role").GetString() == "model" &&
+            geminiDoc.RootElement.GetProperty("contents")[1].GetProperty("parts")[0].GetProperty("text").GetString() == "こ こ は  通[とお]れないよ\n---TRANSLATION---\n这里过不去哦" &&
+            geminiDoc.RootElement.GetProperty("contents")[2].GetProperty("role").GetString() == "user");
     }
 }
 

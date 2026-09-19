@@ -483,6 +483,62 @@ internal static partial class SelfTest
         }
 
         RubyInlineControl.StatusNotificationRequested -= statusHandler;
+
+        // 12. 验证 ExplanationExpander 交互生命周期与流式输出
+        var expPanel = new ResultPanelWindow();
+        expPanel.Reset("こ こ は  通[とお]れないよ", "OCR 完成", autoTranslate: true);
+
+        var expander = (System.Windows.Controls.Expander?)expPanel.FindName("ExplanationExpander");
+        var explanationBox = (System.Windows.Controls.TextBox?)expPanel.FindName("ExplanationTextBox");
+
+        Check(
+            "explanation expander is initially collapsed, disabled, and shows click-to-expand header",
+            expander is not null &&
+            !expander.IsEnabled &&
+            !expander.IsExpanded &&
+            expander.Header as string == "📖 精讲与语法解析 (点击展开)");
+
+        // 模拟阶段 1 翻译完成，激活 Expander
+        expPanel.SetExplanationEnabled(true);
+        Check("SetExplanationEnabled enables expander", expander?.IsEnabled == true);
+
+        // 验证用户展开触发 ExplanationRequested 事件
+        var explanationRequested = false;
+        expPanel.ExplanationRequested += (_, _) => explanationRequested = true;
+        if (expander is not null)
+        {
+            expander.IsExpanded = true;
+        }
+        Check("expanding explanation expander raises ExplanationRequested event", explanationRequested);
+
+        // 验证 BeginExplanation 进入生成态
+        expPanel.BeginExplanation();
+        Check(
+            "BeginExplanation updates header and ensures expander expanded",
+            expander?.Header as string == "📖 精讲与语法解析 (正在生成…)" &&
+            expander?.IsExpanded == true &&
+            string.IsNullOrEmpty(expPanel.ExplanationText));
+
+        // 验证 Append 接收 DeltaChannel.Explanation 流式增量并输出至 ExplanationTextBox
+        expPanel.Append(new UnderstandDelta(DeltaChannel.Explanation, "### [词汇/短语]\n- **通る** | とおる"));
+        expPanel.Append(new UnderstandDelta(DeltaChannel.Explanation, " | 动词原形"));
+        Check(
+            "streaming explanation delta appends to explanation text box",
+            expPanel.ExplanationText == "### [词汇/短语]\n- **通る** | とおる | 动词原形" &&
+            explanationBox?.Text == expPanel.ExplanationText);
+
+        // 验证 CompleteExplanation 恢复常态标题
+        expPanel.CompleteExplanation(true);
+        Check("CompleteExplanation restores title to normal header", expander?.Header as string == "📖 精讲与语法解析");
+
+        // 验证发起新一轮翻译时 Expander 自动复位折叠、禁用并清空
+        expPanel.BeginTranslation();
+        Check(
+            "begin translation resets and disables explanation expander",
+            expander?.IsEnabled == false &&
+            expander?.IsExpanded == false &&
+            expander?.Header as string == "📖 精讲与语法解析 (点击展开)" &&
+            string.IsNullOrEmpty(expPanel.ExplanationText));
     }
 }
 

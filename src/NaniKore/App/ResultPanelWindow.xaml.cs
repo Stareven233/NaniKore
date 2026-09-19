@@ -47,6 +47,8 @@ internal sealed partial class ResultPanelWindow : Window
 
     public event EventHandler? TranslateRequested;
 
+    public event EventHandler? ExplanationRequested;
+
     public event EventHandler? SettingsRequested;
 
     public string SourceText => _isEditingSource
@@ -54,6 +56,8 @@ internal sealed partial class ResultPanelWindow : Window
         : (RubyTextParser.ToPlainText(_annotatedSource) is { Length: > 0 } plain ? plain : SourceTextBox.Text);
 
     public string TranslationText => TranslationTextBox.Text;
+
+    public string ExplanationText => ExplanationTextBox.Text;
 
     /// <summary>更新并显示本次调用的 Token 消耗与性能指标。</summary>
     public void SetMetrics(TranslationMetrics metrics)
@@ -91,6 +95,9 @@ internal sealed partial class ResultPanelWindow : Window
         TranslateButton.Content = "翻译"; // 初次进入始终为“翻译”
         TranslationTextBox.Clear();
         ExplanationTextBox.Clear();
+        ExplanationExpander.IsExpanded = false;
+        ExplanationExpander.IsEnabled = false;
+        ExplanationExpander.Header = "📖 精讲与语法解析 (点击展开)";
         ClearMetrics();
         _translationInsertIndex = 0;
         _translationHasContent = false;
@@ -137,6 +144,10 @@ internal sealed partial class ResultPanelWindow : Window
         _receivedAnnotatedSource = false;
         ClearMetrics();
         TranslateButton.Content = "翻译";
+        ExplanationTextBox.Clear();
+        ExplanationExpander.IsExpanded = false;
+        ExplanationExpander.IsEnabled = false;
+        ExplanationExpander.Header = "📖 精讲与语法解析 (点击展开)";
 
         // 发起翻译时切回假名阅读态
         if (_isEditingSource)
@@ -503,4 +514,49 @@ internal sealed partial class ResultPanelWindow : Window
     private void OnClearTranslationClick(object sender, RoutedEventArgs e) => ClearTranslation();
 
     private void OnSettingsClick(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>控制底部精讲 Expander 的启用状态（仅在产出有效译文后激活）。</summary>
+    public void SetExplanationEnabled(bool enabled)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(() => SetExplanationEnabled(enabled));
+            return;
+        }
+
+        ExplanationExpander.IsEnabled = enabled;
+    }
+
+    /// <summary>第二阶段精讲开始生成：重置内容并更新标题为生成中状态。</summary>
+    public void BeginExplanation()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(BeginExplanation);
+            return;
+        }
+
+        ExplanationExpander.Header = "📖 精讲与语法解析 (正在生成…)";
+        ExplanationExpander.IsExpanded = true;
+        ExplanationTextBox.Clear();
+    }
+
+    /// <summary>第二阶段精讲流式结束：恢复常态标题或提示重试。</summary>
+    public void CompleteExplanation(bool success)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(() => CompleteExplanation(success));
+            return;
+        }
+
+        ExplanationExpander.Header = success
+            ? "📖 精讲与语法解析"
+            : "📖 精讲与语法解析 (点击重试)";
+    }
+
+    private void OnExplanationExpanderExpanded(object sender, RoutedEventArgs e)
+    {
+        ExplanationRequested?.Invoke(this, EventArgs.Empty);
+    }
 }

@@ -16,7 +16,7 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         using var message = CreateRequest(request);
         using var response = await SendAsync(message, cancellationToken).ConfigureAwait(false);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        var router = (request.Kind == UnderstandKind.Translate || request.ImagePng is { Length: > 0 })
+        var router = request.Kind == UnderstandKind.Translate
             ? new SectionChannelRouter()
             : null;
         var inputTokens = 0;
@@ -26,6 +26,12 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         {
             ExtractClaudeTokens(frame, ref inputTokens, ref outputTokens);
             var text = ExtractDelta(frame);
+
+            if (!string.IsNullOrEmpty(text) && request.Session is not null && request.Kind == UnderstandKind.Translate)
+            {
+                request.Session.AppendRawAssistantOutput(text);
+            }
+
             foreach (var delta in Route(router, text, request.Kind))
             {
                 yield return delta;
@@ -42,21 +48,39 @@ internal sealed class ClaudeProvider : TranslationProviderBase
 
         if (inputTokens > 0 || outputTokens > 0)
         {
-            yield return new UnderstandDelta(DeltaChannel.Translation, string.Empty, new TokenUsage(inputTokens, outputTokens));
+            var endChannel = request.Kind == UnderstandKind.Explain ? DeltaChannel.Explanation : DeltaChannel.Translation;
+            yield return new UnderstandDelta(endChannel, string.Empty, new TokenUsage(inputTokens, outputTokens));
         }
     }
 
-    private HttpRequestMessage CreateRequest(UnderstandRequest request)
+    internal HttpRequestMessage CreateRequest(UnderstandRequest request)
     {
-        var content = CreateContent(request.ImagePng, request.SourceText);
+        var system = PromptTemplates.GetSystemPrompt(request, Prompts);
+        object messages;
+        if (request.Session is { Messages.Count: > 1 } session)
+        {
+            var list = new List<object>();
+            foreach (var m in session.Messages)
+            {
+                var role = m.Role == ChatRole.Assistant ? "assistant" : "user";
+                var content = CreateContent(m.ImagePng, m.Text);
+                list.Add(new { role, content });
+            }
+            messages = list.ToArray();
+        }
+        else
+        {
+            var content = CreateContent(request.ImagePng, request.SourceText);
+            messages = new[] { new { role = "user", content } };
+        }
 
         var body = new
         {
             model = Profile.Model,
             stream = true,
             max_tokens = 4096,
-            system = PromptTemplates.GetSystemPrompt(request, Prompts),
-            messages = new[] { new { role = "user", content } },
+            system,
+            messages,
         };
         var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, "v1/messages"), body);
         message.Headers.Add("x-api-key", ApiKey);

@@ -16,7 +16,7 @@ internal sealed class GeminiProvider : TranslationProviderBase
         using var message = CreateRequest(request);
         using var response = await SendAsync(message, cancellationToken).ConfigureAwait(false);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        var router = (request.Kind == UnderstandKind.Translate || request.ImagePng is { Length: > 0 })
+        var router = request.Kind == UnderstandKind.Translate
             ? new SectionChannelRouter()
             : null;
         var inputTokens = 0;
@@ -26,6 +26,12 @@ internal sealed class GeminiProvider : TranslationProviderBase
         {
             ExtractGeminiTokens(frame.Data, ref inputTokens, ref outputTokens);
             var text = ExtractDelta(frame.Data);
+
+            if (!string.IsNullOrEmpty(text) && request.Session is not null && request.Kind == UnderstandKind.Translate)
+            {
+                request.Session.AppendRawAssistantOutput(text);
+            }
+
             foreach (var delta in Route(router, text, request.Kind))
             {
                 yield return delta;
@@ -42,22 +48,44 @@ internal sealed class GeminiProvider : TranslationProviderBase
 
         if (inputTokens > 0 || outputTokens > 0)
         {
-            yield return new UnderstandDelta(DeltaChannel.Translation, string.Empty, new TokenUsage(inputTokens, outputTokens));
+            var endChannel = request.Kind == UnderstandKind.Explain ? DeltaChannel.Explanation : DeltaChannel.Translation;
+            yield return new UnderstandDelta(endChannel, string.Empty, new TokenUsage(inputTokens, outputTokens));
         }
     }
 
-    private HttpRequestMessage CreateRequest(UnderstandRequest request)
+    internal HttpRequestMessage CreateRequest(UnderstandRequest request)
     {
-        var parts = new List<object> { new { text = request.SourceText ?? string.Empty } };
-        if (request.ImagePng is { Length: > 0 } image)
+        var system = PromptTemplates.GetSystemPrompt(request, Prompts);
+        object contents;
+        if (request.Session is { Messages.Count: > 1 } session)
         {
-            parts.Add(new { inline_data = new { mime_type = "image/png", data = Base64(image) } });
+            var list = new List<object>();
+            foreach (var m in session.Messages)
+            {
+                var role = m.Role == ChatRole.Assistant ? "model" : "user";
+                var parts = new List<object> { new { text = m.Text ?? string.Empty } };
+                if (m.ImagePng is { Length: > 0 } image)
+                {
+                    parts.Add(new { inline_data = new { mime_type = "image/png", data = Base64(image) } });
+                }
+                list.Add(new { role, parts });
+            }
+            contents = list.ToArray();
+        }
+        else
+        {
+            var parts = new List<object> { new { text = request.SourceText ?? string.Empty } };
+            if (request.ImagePng is { Length: > 0 } image)
+            {
+                parts.Add(new { inline_data = new { mime_type = "image/png", data = Base64(image) } });
+            }
+            contents = new[] { new { role = "user", parts } };
         }
 
         var body = new
         {
-            system_instruction = new { parts = new[] { new { text = PromptTemplates.GetSystemPrompt(request, Prompts) } } },
-            contents = new[] { new { role = "user", parts } },
+            system_instruction = new { parts = new[] { new { text = system } } },
+            contents,
         };
         var endpoint = $"models/{Uri.EscapeDataString(Profile.Model)}:streamGenerateContent?alt=sse";
         var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, endpoint), body);

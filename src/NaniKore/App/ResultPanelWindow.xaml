@@ -100,9 +100,13 @@
                  Style="{DynamicResource TextBox.Multiline}"
                  IsReadOnly="True" />
 
-        <Expander Grid.Row="5" Header="精讲（后续阶段启用）" IsEnabled="False" Margin="0,10,0,0">
+        <Expander x:Name="ExplanationExpander" Grid.Row="5"
+                  Header="📖 精讲与语法解析 (点击展开)"
+                  IsEnabled="False"
+                  Margin="0,10,0,0"
+                  Expanded="OnExplanationExpanderExpanded">
             <TextBox x:Name="ExplanationTextBox" Style="{DynamicResource TextBox.Multiline}"
-                     IsReadOnly="True" MinHeight="80" />
+                     IsReadOnly="True" MinHeight="80" VerticalScrollBarVisibility="Auto" />
         </Expander>
 
         <StackPanel Grid.Row="6" Margin="0,10,0,0">

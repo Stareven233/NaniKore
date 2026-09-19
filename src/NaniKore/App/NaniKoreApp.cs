@@ -27,6 +27,8 @@ internal sealed class NaniKoreApp : Application
     private ResultPanelWindow? _resultPanel;
     private SettingsWindow? _settingsWindow;
     private CancellationTokenSource? _translationCancellation;
+    private CancellationTokenSource? _explanationCancellation;
+    private TranslationSession? _currentSession;
     private byte[]? _lastImagePng;
     private bool _selecting;
     private bool _isReplacingResultPanel;
@@ -167,6 +169,11 @@ internal sealed class NaniKoreApp : Application
         {
             var config = _configStore.Current;
             var request = new UnderstandRequest(UnderstandKind.Translate, source, imagePng, config.General.TargetLanguage);
+            var sysPrompt = PromptTemplates.GetSystemPrompt(request, config.Prompts);
+            var session = new TranslationSession(sysPrompt, config.General.TargetLanguage, source, imagePng);
+            request = request with { Session = session };
+            _currentSession = session;
+
             var provider = (_providerFactory ?? throw new InvalidOperationException("翻译服务尚未初始化。")).GetProvider(config.Pipeline.ActiveProfile, request);
             await foreach (var delta in provider.StreamAsync(request, cancellation.Token))
             {
@@ -203,6 +210,9 @@ internal sealed class NaniKoreApp : Application
 
                     if (receivedOutput)
                     {
+                        session.FinalizeStage1Output();
+                        panel.SetExplanationEnabled(true);
+
                         var actualTtft = ttftMs ?? totalDurationMs;
                         TokenUsage finalUsage;
                         if (reportedUsage.HasValue)
@@ -212,7 +222,6 @@ internal sealed class NaniKoreApp : Application
                         else
                         {
                             // 降级兜底估算：输入包含提示词与原句/图片，输出包含注音与译文
-                            var sysPrompt = PromptTemplates.GetSystemPrompt(request, config.Prompts);
                             var estimatedInput = TokenEstimator.Estimate(sysPrompt + "\n" + source, imagePng is { Length: > 0 });
                             var estimatedOutput = TokenEstimator.Estimate(panel.SourceText + "\n" + panel.TranslationText);
                             finalUsage = new TokenUsage(estimatedInput, Math.Max(1, estimatedOutput), IsEstimated: true);
@@ -258,6 +267,147 @@ internal sealed class NaniKoreApp : Application
         }
     }
 
+    private async Task StartExplanationAsync()
+    {
+        var session = _currentSession;
+        if (session is null || session.IsExplainInProgress || session.HasExplained)
+        {
+            return;
+        }
+
+        if (_explanationCancellation is { } prevCancel)
+        {
+            _explanationCancellation = null;
+            prevCancel.Cancel();
+        }
+
+        var cancellation = new CancellationTokenSource();
+        _explanationCancellation = cancellation;
+        var panel = EnsureResultPanel();
+        panel.BeginExplanation();
+        panel.SetStatus("正在生成精讲与语法解析…");
+        session.IsExplainInProgress = true;
+        var receivedOutput = false;
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        long? ttftMs = null;
+        TokenUsage? reportedUsage = null;
+
+        try
+        {
+            var config = _configStore.Current;
+            var explainPrompt = !string.IsNullOrWhiteSpace(config.Prompts.Explain)
+                ? config.Prompts.Explain.Trim()
+                : PromptTemplates.DefaultExplainUserPrompt;
+
+            session.PrepareStage2Request(explainPrompt);
+
+            var request = new UnderstandRequest(
+                UnderstandKind.Explain,
+                session.InitialSourceText,
+                session.ImagePng,
+                config.General.TargetLanguage,
+                session);
+
+            var provider = (_providerFactory ?? throw new InvalidOperationException("翻译服务尚未初始化。"))
+                .GetProvider(config.Pipeline.ActiveProfile, request);
+
+            var fullExplanation = new System.Text.StringBuilder();
+
+            await foreach (var delta in provider.StreamAsync(request, cancellation.Token))
+            {
+                if (delta.Usage.HasValue)
+                {
+                    reportedUsage = delta.Usage.Value;
+                }
+
+                if (!string.IsNullOrEmpty(delta.Text))
+                {
+                    if (!ttftMs.HasValue)
+                    {
+                        ttftMs = stopwatch.ElapsedMilliseconds;
+                        await Dispatcher.InvokeAsync(() => panel.SetStatus($"精讲首字响应 TTFT: {ttftMs.Value}ms · 正在流式接收…"));
+                    }
+
+                    receivedOutput = true;
+                    fullExplanation.Append(delta.Text);
+                }
+
+                await Dispatcher.InvokeAsync(() => panel.Append(delta));
+            }
+
+            stopwatch.Stop();
+            var totalDurationMs = stopwatch.ElapsedMilliseconds;
+
+            if (!cancellation.IsCancellationRequested)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    panel.CompleteExplanation(receivedOutput);
+                    panel.SetStatus(
+                        receivedOutput ? "精讲解析完成。" : "精讲服务返回空内容。",
+                        isError: !receivedOutput);
+
+                    if (receivedOutput)
+                    {
+                        session.HasExplained = true;
+                        session.Messages.Add(new ChatMessage(ChatRole.Assistant, fullExplanation.ToString()));
+
+                        var actualTtft = ttftMs ?? totalDurationMs;
+                        TokenUsage finalUsage;
+                        if (reportedUsage.HasValue)
+                        {
+                            finalUsage = reportedUsage.Value;
+                        }
+                        else
+                        {
+                            var estimatedInput = TokenEstimator.Estimate(
+                                session.SystemPrompt + "\n" + session.GetStage1Output() + "\n" + explainPrompt,
+                                session.ImagePng is { Length: > 0 });
+                            var estimatedOutput = TokenEstimator.Estimate(fullExplanation.ToString());
+                            finalUsage = new TokenUsage(estimatedInput, Math.Max(1, estimatedOutput), IsEstimated: true);
+                        }
+
+                        var generationTimeMs = Math.Max(1, totalDurationMs - actualTtft);
+                        var speed = (finalUsage.OutputTokens * 1000.0) / generationTimeMs;
+                        var metrics = new TranslationMetrics(
+                            InputTokens: finalUsage.InputTokens,
+                            OutputTokens: finalUsage.OutputTokens,
+                            TimeToFirstTokenMs: actualTtft,
+                            TotalDurationMs: totalDurationMs,
+                            TokensPerSecond: speed,
+                            IsEstimated: finalUsage.IsEstimated);
+
+                        panel.SetMetrics(metrics);
+                    }
+                });
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // 正常取消
+        }
+        catch (Exception exception)
+        {
+            await Dispatcher.InvokeAsync(() => panel.CompleteExplanation(false));
+            var profile = _configStore.GetActiveProfile();
+            var summary = ProviderErrorMapper.ToUserMessage(exception, profile.Id, profile.Model, profile.BaseUrl);
+            var details = exception is ProviderHttpException { ServerMessage: { } serverMessage }
+                ? serverMessage
+                : exception.Message;
+            await Dispatcher.InvokeAsync(() => panel.SetError(summary, details));
+        }
+        finally
+        {
+            session.IsExplainInProgress = false;
+            if (ReferenceEquals(_explanationCancellation, cancellation))
+            {
+                _explanationCancellation = null;
+            }
+
+            cancellation.Dispose();
+        }
+    }
+
     private ResultPanelWindow EnsureResultPanel(System.Drawing.Rectangle? selectionOnDesktop = null)
     {
         if (_resultPanel is not null)
@@ -294,6 +444,7 @@ internal sealed class NaniKoreApp : Application
         };
 
         panel.TranslateRequested += (_, _) => _ = StartTranslationAsync(panel.SourceText, _lastImagePng);
+        panel.ExplanationRequested += (_, _) => _ = StartExplanationAsync();
         panel.SettingsRequested += (_, _) => ShowSettings(topmostFromResult: true);
         panel.Closed += (_, _) =>
         {
@@ -424,6 +575,12 @@ internal sealed class NaniKoreApp : Application
         {
             _translationCancellation = null;
             cancellation.Cancel();
+        }
+
+        if (_explanationCancellation is { } explainCancel)
+        {
+            _explanationCancellation = null;
+            explainCancel.Cancel();
         }
     }
 

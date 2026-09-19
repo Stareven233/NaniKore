@@ -7,12 +7,13 @@ internal enum UnderstandKind
     Explain,
 }
 
-/// <summary>请求可独立携带 OCR 文本、选区 PNG，或同时携带两者。</summary>
+/// <summary>请求可独立携带 OCR 文本、选区 PNG，或同时携带两者；可携带 TranslationSession 实现两阶段上下文复用。</summary>
 internal sealed record UnderstandRequest(
     UnderstandKind Kind,
     string? SourceText,
     ReadOnlyMemory<byte>? ImagePng,
-    string TargetLanguage);
+    string TargetLanguage,
+    TranslationSession? Session = null);
 
 internal enum DeltaChannel
 {
