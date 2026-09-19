@@ -101,6 +101,7 @@ internal static class RubyDocumentBuilder
 
         var sb = new StringBuilder();
         var pointer = range.Start;
+        var visitedRubies = new HashSet<RubyInlineControl>();
 
         while (pointer is not null && pointer.CompareTo(range.End) < 0)
         {
@@ -115,27 +116,32 @@ internal static class RubyDocumentBuilder
                     {
                         var runLength = pointer.GetOffsetToPosition(range.End);
                         sb.Append(text[..Math.Min(text.Length, Math.Max(0, runLength))]);
-                        return sb.ToString();
+                        return sb.ToString().TrimEnd('\r', '\n');
                     }
                     sb.Append(text);
                     break;
 
-                case TextPointerContext.EmbeddedElement:
-                    var element = pointer.GetAdjacentElement(LogicalDirection.Forward);
-                    if (element is InlineUIContainer { Child: RubyInlineControl ruby })
+                case TextPointerContext.ElementStart:
+                    // WPF 中遍历至 InlineUIContainer 起始处时 context 为 ElementStart
+                    var elementStart = pointer.GetAdjacentElement(LogicalDirection.Forward);
+                    if (elementStart is InlineUIContainer { Child: RubyInlineControl rubyFromContainer } &&
+                        visitedRubies.Add(rubyFromContainer))
                     {
-                        switch (kind)
-                        {
-                            case RubyCopyKind.Plain:
-                                sb.Append(ruby.BaseText);
-                                break;
-                            case RubyCopyKind.Annotated:
-                                sb.Append(ruby.BaseText).Append('[').Append(ruby.RubyText).Append(']');
-                                break;
-                            case RubyCopyKind.ReadingOnly:
-                                sb.Append(ruby.RubyText);
-                                break;
-                        }
+                        AppendRubyText(sb, rubyFromContainer, kind);
+                    }
+                    break;
+
+                case TextPointerContext.EmbeddedElement:
+                    // 容器内部相邻的子元素直接为 RubyInlineControl 实例
+                    var element = pointer.GetAdjacentElement(LogicalDirection.Forward);
+                    if (element is RubyInlineControl rubyDirect && visitedRubies.Add(rubyDirect))
+                    {
+                        AppendRubyText(sb, rubyDirect, kind);
+                    }
+                    else if (element is InlineUIContainer { Child: RubyInlineControl rubyInner } &&
+                             visitedRubies.Add(rubyInner))
+                    {
+                        AppendRubyText(sb, rubyInner, kind);
                     }
                     break;
 
@@ -151,5 +157,21 @@ internal static class RubyDocumentBuilder
         }
 
         return sb.ToString().TrimEnd('\r', '\n');
+    }
+
+    private static void AppendRubyText(StringBuilder sb, RubyInlineControl ruby, RubyCopyKind kind)
+    {
+        switch (kind)
+        {
+            case RubyCopyKind.Plain:
+                sb.Append(ruby.BaseText);
+                break;
+            case RubyCopyKind.Annotated:
+                sb.Append(ruby.BaseText).Append('[').Append(ruby.RubyText).Append(']');
+                break;
+            case RubyCopyKind.ReadingOnly:
+                sb.Append(ruby.RubyText);
+                break;
+        }
     }
 }

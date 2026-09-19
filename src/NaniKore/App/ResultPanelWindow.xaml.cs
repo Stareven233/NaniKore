@@ -40,7 +40,10 @@ internal sealed partial class ResultPanelWindow : Window
         // Esc 仅在结果卡实际持有键盘焦点（即已激活）时响应；未激活时按键交还用户当前窗口。
         PreviewKeyDown += OnPanelPreviewKeyDown;
         SourceViewer.CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, OnSourceViewerCopy));
+        RubyInlineControl.StatusNotificationRequested += OnRubyStatusNotification;
     }
+
+    private void OnRubyStatusNotification(string message) => SetStatus(message);
 
     public event EventHandler? TranslateRequested;
 
@@ -328,62 +331,58 @@ internal sealed partial class ResultPanelWindow : Window
 
     private void OnSourceViewerCopy(object sender, ExecutedRoutedEventArgs e)
     {
-        var text = RubyDocumentBuilder.ExtractFromSelection(SourceViewer.Selection, RubyCopyKind.Plain);
-        if (string.IsNullOrEmpty(text))
-        {
-            text = RubyTextParser.ToPlainText(_annotatedSource);
-        }
+        var hasSelection = SourceViewer.Selection is { IsEmpty: false };
+        var text = hasSelection
+            ? RubyDocumentBuilder.ExtractFromSelection(SourceViewer.Selection, RubyCopyKind.Plain)
+            : RubyTextParser.ToPlainText(_annotatedSource);
 
         if (!string.IsNullOrEmpty(text))
         {
             System.Windows.Clipboard.SetText(text);
-            SetStatus("已复制纯日文到剪贴板。");
+            SetStatus(hasSelection ? "已复制选中日文到剪贴板。" : "已复制纯日文到剪贴板。");
             e.Handled = true;
         }
     }
 
     private void OnCopyPlainSourceClick(object sender, RoutedEventArgs e)
     {
-        var text = RubyDocumentBuilder.ExtractFromSelection(SourceViewer.Selection, RubyCopyKind.Plain);
-        if (string.IsNullOrEmpty(text))
-        {
-            text = RubyTextParser.ToPlainText(_annotatedSource);
-        }
+        var hasSelection = SourceViewer.Selection is { IsEmpty: false };
+        var text = hasSelection
+            ? RubyDocumentBuilder.ExtractFromSelection(SourceViewer.Selection, RubyCopyKind.Plain)
+            : RubyTextParser.ToPlainText(_annotatedSource);
 
         if (!string.IsNullOrEmpty(text))
         {
             System.Windows.Clipboard.SetText(text);
-            SetStatus("已复制纯日文到剪贴板。");
+            SetStatus(hasSelection ? "已复制选中日文到剪贴板。" : "已复制纯日文到剪贴板。");
         }
     }
 
     private void OnCopyAnnotatedSourceClick(object sender, RoutedEventArgs e)
     {
-        var text = RubyDocumentBuilder.ExtractFromSelection(SourceViewer.Selection, RubyCopyKind.Annotated);
-        if (string.IsNullOrEmpty(text))
-        {
-            text = _annotatedSource;
-        }
+        var hasSelection = SourceViewer.Selection is { IsEmpty: false };
+        var text = hasSelection
+            ? RubyDocumentBuilder.ExtractFromSelection(SourceViewer.Selection, RubyCopyKind.Annotated)
+            : _annotatedSource;
 
         if (!string.IsNullOrEmpty(text))
         {
             System.Windows.Clipboard.SetText(text);
-            SetStatus("已复制带注音文本到剪贴板。");
+            SetStatus(hasSelection ? "已复制选中带注音文本到剪贴板。" : "已复制带注音文本到剪贴板。");
         }
     }
 
     private void OnCopyReadingSourceClick(object sender, RoutedEventArgs e)
     {
-        var text = RubyDocumentBuilder.ExtractFromSelection(SourceViewer.Selection, RubyCopyKind.ReadingOnly);
-        if (string.IsNullOrEmpty(text))
-        {
-            text = RubyTextParser.ToReadingText(_annotatedSource);
-        }
+        var hasSelection = SourceViewer.Selection is { IsEmpty: false };
+        var text = hasSelection
+            ? RubyDocumentBuilder.ExtractFromSelection(SourceViewer.Selection, RubyCopyKind.ReadingOnly)
+            : RubyTextParser.ToReadingText(_annotatedSource);
 
         if (!string.IsNullOrEmpty(text))
         {
             System.Windows.Clipboard.SetText(text);
-            SetStatus("已复制纯假名读音到剪贴板。");
+            SetStatus(hasSelection ? "已复制选中纯假名读音到剪贴板。" : "已复制纯假名读音到剪贴板。");
         }
     }
 

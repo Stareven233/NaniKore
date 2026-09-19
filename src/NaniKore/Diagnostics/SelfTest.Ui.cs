@@ -395,6 +395,46 @@ internal static partial class SelfTest
         Check(
             "substantively modified text editor triggers 重译 when previous translation exists",
             translateBtn?.Content as string == "重译");
+
+        // 9. 验证 ExtractFromSelection 能够从全选与单选 InlineUIContainer 中精准提取
+        var fullRange = new System.Windows.Documents.TextRange(doc.ContentStart, doc.ContentEnd);
+        var plainAll = RubyDocumentBuilder.ExtractFromSelection(fullRange, RubyCopyKind.Plain);
+        var annotatedAll = RubyDocumentBuilder.ExtractFromSelection(fullRange, RubyCopyKind.Annotated);
+        var readingAll = RubyDocumentBuilder.ExtractFromSelection(fullRange, RubyCopyKind.ReadingOnly);
+        Check(
+            "extract from selection retrieves plain text across ruby containers",
+            plainAll == "こ こ は  通れないよ");
+        Check(
+            "extract from selection retrieves annotated brackets across ruby containers",
+            annotatedAll == "こ こ は  通[とお]れないよ");
+        Check(
+            "extract from selection retrieves reading kana across ruby containers",
+            readingAll == "こ こ は  とおれないよ");
+
+        if (doc.Blocks.FirstBlock is System.Windows.Documents.Paragraph firstParagraph &&
+            firstParagraph.Inlines.ElementAt(1) is System.Windows.Documents.InlineUIContainer rubyContainer)
+        {
+            var containerRange = new System.Windows.Documents.TextRange(rubyContainer.ContentStart, rubyContainer.ContentEnd);
+            var singlePlain = RubyDocumentBuilder.ExtractFromSelection(containerRange, RubyCopyKind.Plain);
+            var singleAnnotated = RubyDocumentBuilder.ExtractFromSelection(containerRange, RubyCopyKind.Annotated);
+            var singleReading = RubyDocumentBuilder.ExtractFromSelection(containerRange, RubyCopyKind.ReadingOnly);
+            Check(
+                "extracting from ruby container alone returns base, annotated, and reading without falling back to full text",
+                singlePlain == "通" && singleAnnotated == "通[とお]" && singleReading == "とお");
+        }
+
+        // 10. 验证 RubyInlineControl 独立复制假名与汉字，并触发状态栏通知
+        string? notifiedMessage = null;
+        Action<string> statusHandler = msg => notifiedMessage = msg;
+        RubyInlineControl.StatusNotificationRequested += statusHandler;
+        var sampleRuby = new RubyInlineControl("通", "とお");
+        sampleRuby.CopyReading();
+        Check("copy reading invokes status notification for kana", notifiedMessage?.Contains("とお") == true);
+        sampleRuby.CopyBaseText();
+        Check("copy base text invokes status notification for kanji", notifiedMessage?.Contains("通") == true);
+        sampleRuby.CopyAnnotated();
+        Check("copy annotated invokes status notification for annotated text", notifiedMessage?.Contains("通[とお]") == true);
+        RubyInlineControl.StatusNotificationRequested -= statusHandler;
     }
 }
 

@@ -228,8 +228,9 @@ internal sealed class SectionChannelRouter
                     yield break;
                 }
 
-                // 保留最长分隔符长度减一的尾部，兼容分隔符恰好跨 SSE 包切断。
-                var flushLength = Math.Max(0, _pending.Length - MaxSeparatorLength + 1);
+                // 译文阶段已无后续段落分隔标记，实时输出正文，消除 32 字符缓冲阻滞导致的短译文流式卡顿。
+                _pending = StripTranslationLeadingTags(_pending);
+                var flushLength = GetSafeTranslationFlushLength(_pending);
                 if (flushLength == 0)
                 {
                     yield break;
@@ -374,6 +375,73 @@ internal sealed class SectionChannelRouter
         }
 
         return text;
+    }
+
+    /// <summary>
+    /// 计算当前待输出译文文本中可以安全即时刷新到 UI 的长度。
+    /// 仅在尾部可能处于未完结标签（如 &lt;/translation&gt; 或代码块栅栏）中间时保留前缀，其余正文即时全速输出。
+    /// </summary>
+    private int GetSafeTranslationFlushLength(string text)
+    {
+        if (text.Length == 0)
+        {
+            return 0;
+        }
+
+        // 1. 若译文尚未开始输出过有效正文，且开头属于 <translation> 的可能前缀，等待完整标签到达并剥离
+        if (!_channelsWithContent.Contains(DeltaChannel.Translation))
+        {
+            var trimmed = text.TrimStart('\r', '\n', ' ');
+            if (trimmed.Length == 0)
+            {
+                return 0;
+            }
+
+            const string openTag = "<translation>";
+            if (openTag.StartsWith(trimmed, StringComparison.OrdinalIgnoreCase))
+            {
+                return 0;
+            }
+        }
+
+        // 2. 检查尾部是否可能截断在 </translation> 标签中间
+        const string closeTag = "</translation>";
+        var lastLt = text.LastIndexOf('<');
+        if (lastLt >= 0)
+        {
+            var potentialTag = text[lastLt..];
+            if (closeTag.StartsWith(potentialTag, StringComparison.OrdinalIgnoreCase))
+            {
+                // 将标签及其紧邻的前置换行保留在 pending 中，避免将闭合标签的换行误判为正文提前发出
+                var safeLength = lastLt;
+                while (safeLength > 0 && (text[safeLength - 1] == '\r' || text[safeLength - 1] == '\n'))
+                {
+                    safeLength--;
+                }
+                return safeLength;
+            }
+        }
+
+        // 3. 检查尾部是否可能截断在 ```markdown 或 ``` 栅栏中间
+        var lastBacktick = text.LastIndexOf('`');
+        if (lastBacktick >= 0)
+        {
+            var potentialFence = text[lastBacktick..];
+            if ("```markdown".StartsWith(potentialFence, StringComparison.OrdinalIgnoreCase) ||
+                "```text".StartsWith(potentialFence, StringComparison.OrdinalIgnoreCase) ||
+                "```".StartsWith(potentialFence, StringComparison.OrdinalIgnoreCase))
+            {
+                var safeLength = lastBacktick;
+                while (safeLength > 0 && (text[safeLength - 1] == '\r' || text[safeLength - 1] == '\n'))
+                {
+                    safeLength--;
+                }
+                return safeLength;
+            }
+        }
+
+        // 4. 无潜在标签前缀截断，全部即时刷新
+        return text.Length;
     }
 
     private static readonly (string Marker, DeltaChannel Channel, DeltaChannel? PrefixChannel)[] CandidateMarkers =

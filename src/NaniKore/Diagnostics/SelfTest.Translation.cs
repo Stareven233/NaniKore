@@ -318,6 +318,15 @@ internal static partial class SelfTest
             "section router handles CRLF, case-insensitive sentinel, and strips pseudo XML tags",
             string.Concat(crlfCaseDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "ここは通[とお]れないよ" &&
             string.Concat(crlfCaseDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "这里过不去哦");
+
+        var immediateStreamRouter = new SectionChannelRouter();
+        _ = immediateStreamRouter.Push("私[わたし]は\n---TRANSLATION---\n").ToList();
+        var immediateChunk = immediateStreamRouter.Push("短译文").ToList();
+        Check(
+            "section router flushes translation tokens immediately in real-time without buffering",
+            immediateChunk.Count == 1 &&
+            immediateChunk[0].Channel == DeltaChannel.Translation &&
+            immediateChunk[0].Text == "短译文");
     }
 
     private static void TestProviderTextExtraction()
