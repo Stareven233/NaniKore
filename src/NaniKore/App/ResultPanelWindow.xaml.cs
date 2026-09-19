@@ -41,6 +41,13 @@ internal sealed partial class ResultPanelWindow : Window
         PreviewKeyDown += OnPanelPreviewKeyDown;
         SourceViewer.CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, OnSourceViewerCopy));
         RubyInlineControl.StatusNotificationRequested += OnRubyStatusNotification;
+        SizeChanged += (_, _) =>
+        {
+            if (ActualHeight > 0)
+            {
+                ExplanationTextBox.MaxHeight = Math.Max(160, ActualHeight * 0.45);
+            }
+        };
     }
 
     private void OnRubyStatusNotification(string message) => SetStatus(message);

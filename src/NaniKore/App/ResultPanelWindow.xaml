@@ -106,7 +106,7 @@
                       IsEnabled="False"
                       Expanded="OnExplanationExpanderExpanded">
                 <TextBox x:Name="ExplanationTextBox" Style="{DynamicResource TextBox.Multiline}"
-                         IsReadOnly="True" MinHeight="80" VerticalScrollBarVisibility="Auto" Margin="0,6,0,0" />
+                         IsReadOnly="True" MinHeight="80" MaxHeight="200" VerticalScrollBarVisibility="Auto" Margin="0,6,0,0" />
             </Expander>
 
             <!-- 仅在精讲折叠条的标题行右侧放置自动精讲开关，展开后下方的文本框依然占满全宽 -->
