@@ -17,6 +17,8 @@ internal static partial class SelfTest
         TestExplanationParserStreamingAccumulation();
         TestFavoritesStringMatching();
         TestFavoritesEventsAndNoteFormat();
+        TestRubyParserNoiseTolerance();
+        TestExplanationPromptN3Filter();
     }
 
     private static void TestExplanationParserStandard()
@@ -187,6 +189,36 @@ internal static partial class SelfTest
 
         service.RemoveFavoriteAsync("走る").GetAwaiter().GetResult();
         Check("Favorites.Event.RemovedTriggered", removedContent == "走る");
+    }
+
+    private static void TestRubyParserNoiseTolerance()
+    {
+        // 测试主人提及的破损/多余字符用例：亡?[な]く?]な?]った
+        var brokenText = "亡?[な]く?]な?]った";
+        var segments = RubyTextParser.Parse(brokenText);
+
+        Check("RubyParser.Noise.SegmentsCount", segments.Count == 2);
+        Check("RubyParser.Noise.RubyExtracted", segments[0].Text == "亡" && segments[0].Ruby == "な");
+        Check("RubyParser.Noise.PlainTrailingExtracted", segments[1].Text == "くなった" && segments[1].Ruby == null);
+
+        var plain = RubyTextParser.ToPlainText(brokenText);
+        var reading = RubyTextParser.ToReadingText(brokenText);
+        var annotated = RubyTextParser.ToAnnotatedText(segments);
+
+        Check("RubyParser.Noise.ToPlainTextClean", plain == "亡くなった");
+        Check("RubyParser.Noise.ToReadingTextClean", reading == "なくなった");
+        Check("RubyParser.Noise.ToAnnotatedTextClean", annotated == "亡[な]くなった");
+
+        // 测试内部问号 [な?] 与汉字多问号 亡??[な]
+        var innerNoise = "亡??[な?]";
+        var innerSegments = RubyTextParser.Parse(innerNoise);
+        Check("RubyParser.Noise.InnerAndMultiNoiseExtracted", innerSegments.Count == 1 && innerSegments[0].Text == "亡" && innerSegments[0].Ruby == "な");
+    }
+
+    private static void TestExplanationPromptN3Filter()
+    {
+        Check("Prompt.Explain.N3FilterInUserPrompt", PromptTemplates.DefaultExplainUserPrompt.Contains("N3及以上"));
+        Check("Prompt.Explain.N3FilterInSystemPrompt", PromptTemplates.ExplainStructureRule.Contains("JLPT N3"));
     }
 }
 

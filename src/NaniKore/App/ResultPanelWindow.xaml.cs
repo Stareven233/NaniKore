@@ -68,6 +68,17 @@ internal sealed partial class ResultPanelWindow : Window
         {
             SetStatus($"已取消收藏：{content}");
         };
+
+        // 文本框内部会在拖选时将 MouseUp 标记为 Handled，必须以 handledEventsToo: true 监听，确保划词松开鼠标时立即可见气泡
+        TranslationTextBox.AddHandler(
+            UIElement.MouseUpEvent,
+            new MouseButtonEventHandler(OnTranslationTextBoxMouseUp),
+            handledEventsToo: true);
+
+        SourceTextBox.AddHandler(
+            UIElement.MouseUpEvent,
+            new MouseButtonEventHandler(OnSourceTextBoxMouseUp),
+            handledEventsToo: true);
     }
 
     private void OnRubyStatusNotification(string message) => SetStatus(message);
@@ -646,6 +657,27 @@ internal sealed partial class ResultPanelWindow : Window
         AutoExplainChanged?.Invoke(this, AutoExplainToggle.IsChecked == true);
     }
 
+    private bool TryGetScreenPoint(UIElement element, System.Windows.Point relativePoint, out System.Windows.Point screenPoint)
+    {
+        screenPoint = default;
+        if (PresentationSource.FromVisual(element) == null)
+        {
+            screenPoint = relativePoint;
+            return true;
+        }
+
+        try
+        {
+            screenPoint = element.PointToScreen(relativePoint);
+            return true;
+        }
+        catch
+        {
+            screenPoint = relativePoint;
+            return false;
+        }
+    }
+
     private void OnTranslationTextBoxMouseUp(object sender, MouseButtonEventArgs e)
     {
         if (TranslationTextBox.SelectionLength is >= 1 and <= 100)
@@ -653,8 +685,13 @@ internal sealed partial class ResultPanelWindow : Window
             var text = TranslationTextBox.SelectedText.Trim();
             if (!string.IsNullOrEmpty(text))
             {
-                var rect = TranslationTextBox.GetRectFromCharacterIndex(TranslationTextBox.SelectionStart + TranslationTextBox.SelectionLength);
-                var pt = TranslationTextBox.PointToScreen(new System.Windows.Point(rect.Right, rect.Bottom));
+                var charIndex = Math.Min(TranslationTextBox.SelectionStart + TranslationTextBox.SelectionLength, Math.Max(0, TranslationTextBox.Text.Length - 1));
+                var rect = TranslationTextBox.GetRectFromCharacterIndex(charIndex);
+                var relPt = (rect.IsEmpty || double.IsNaN(rect.X))
+                    ? e.GetPosition(this)
+                    : new System.Windows.Point(rect.Right, rect.Bottom);
+
+                TryGetScreenPoint(rect.IsEmpty ? this : TranslationTextBox, relPt, out var pt);
                 SelectionBubble.ShowAt(pt, text);
             }
         }
@@ -667,8 +704,13 @@ internal sealed partial class ResultPanelWindow : Window
             var text = SourceTextBox.SelectedText.Trim();
             if (!string.IsNullOrEmpty(text))
             {
-                var rect = SourceTextBox.GetRectFromCharacterIndex(SourceTextBox.SelectionStart + SourceTextBox.SelectionLength);
-                var pt = SourceTextBox.PointToScreen(new System.Windows.Point(rect.Right, rect.Bottom));
+                var charIndex = Math.Min(SourceTextBox.SelectionStart + SourceTextBox.SelectionLength, Math.Max(0, SourceTextBox.Text.Length - 1));
+                var rect = SourceTextBox.GetRectFromCharacterIndex(charIndex);
+                var relPt = (rect.IsEmpty || double.IsNaN(rect.X))
+                    ? e.GetPosition(this)
+                    : new System.Windows.Point(rect.Right, rect.Bottom);
+
+                TryGetScreenPoint(rect.IsEmpty ? this : SourceTextBox, relPt, out var pt);
                 SelectionBubble.ShowAt(pt, text);
             }
         }
@@ -681,7 +723,7 @@ internal sealed partial class ResultPanelWindow : Window
             var text = RubyDocumentBuilder.ExtractFromSelection(selection, RubyCopyKind.Plain)?.Trim();
             if (!string.IsNullOrEmpty(text) && text.Length <= 100)
             {
-                var pt = PointToScreen(e.GetPosition(this));
+                TryGetScreenPoint(this, e.GetPosition(this), out var pt);
                 SelectionBubble.ShowAt(pt, text);
             }
         }

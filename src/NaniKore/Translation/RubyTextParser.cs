@@ -16,6 +16,70 @@ internal readonly record struct RubySegment(string Text, string? Ruby = null)
 internal static class RubyTextParser
 {
     /// <summary>
+    /// 对模型流式或 OCR 产生的非标注音文本进行容错清洗与规范化：
+    /// 1. 清理汉字/字母与 [ 之间的悬挂问号或噪点（如“亡?[な]” -> “亡[な]”）；
+    /// 2. 清理方括号内部的尾随问号或首尾多余标点（如“[な?]” -> “[な]”）；
+    /// 3. 清理非括号区域紧随汉字/假名后的孤立闭括号与问号（如“く?]な?]った” -> “くなった”）。
+    /// </summary>
+    public static string NormalizeRawAnnotatedText(string? input)
+    {
+        if (string.IsNullOrEmpty(input))
+        {
+            return string.Empty;
+        }
+
+        var text = input;
+
+        // 1. 汉字/字母/假名与开括号 [ 之间的噪点问号（如 亡?[な] -> 亡[な]）
+        text = System.Text.RegularExpressions.Regex.Replace(
+            text,
+            @"([\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3040-\u30ff\w\d])\s*[?？]+\s*\[",
+            "$1[");
+
+        // 2. 假名括号内部的尾随问号（如 [な?] -> [な]）
+        text = System.Text.RegularExpressions.Regex.Replace(
+            text,
+            @"\[\s*([^\]\r\n]+?)\s*[?？]+\s*\]",
+            "[$1]");
+
+        // 3. 孤立闭括号与问号清洗（如 く?]、な?]、した] 等不在 [...] 内部的孤立闭括号）
+        var sb = new StringBuilder(text.Length);
+        var inBracket = false;
+        for (var idx = 0; idx < text.Length; idx++)
+        {
+            var ch = text[idx];
+            if (ch == '[')
+            {
+                inBracket = true;
+                sb.Append(ch);
+            }
+            else if (ch == ']')
+            {
+                if (inBracket)
+                {
+                    inBracket = false;
+                    sb.Append(ch);
+                }
+                else
+                {
+                    // 孤立闭括号！检查前面如果是刚刚添加的问号，顺带剔除
+                    if (sb.Length > 0 && (sb[^1] == '?' || sb[^1] == '？'))
+                    {
+                        sb.Length--;
+                    }
+                    // 丢弃孤立的 ']'
+                }
+            }
+            else
+            {
+                sb.Append(ch);
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
     /// 将包含注音方括号（如“私[わたし]は 学生[がくせい]です。”）的文本解析为结构化注音段落序列。
     /// </summary>
     public static IReadOnlyList<RubySegment> Parse(string? text)
@@ -24,6 +88,9 @@ internal static class RubyTextParser
         {
             return [];
         }
+
+        // 预先清洗非标或破损的括号噪点（如“亡?[な]く?]な?]った”）
+        text = NormalizeRawAnnotatedText(text);
 
         var segments = new List<RubySegment>();
         var lastPlainIndex = 0;
@@ -69,7 +136,7 @@ internal static class RubyTextParser
             // 智能回溯识别底字范围
             var baseStart = FindBaseWordStart(text, openBracket - 1);
             var baseWord = text[baseStart..openBracket];
-            var rubyText = rubyContent.ToString();
+            var rubyText = rubyContent.ToString().Trim('?', '？', ' ');
 
             // 启发式排除：代码中的数组下标（如 arr[0]、buf[index]）不是语言注音
             if (IsCodeBracket(baseWord, rubyText))

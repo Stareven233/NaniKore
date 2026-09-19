@@ -635,6 +635,25 @@ internal static partial class SelfTest
             selectionBubble?.BubblePopup.IsOpen == true);
         selectionBubble?.Hide();
         Check("SelectionBubble hides on Hide()", selectionBubble?.BubblePopup.IsOpen == false);
+
+        // 16. 验证 TranslationTextBox 划词后触发 MouseUp 能唤起气泡（哪怕 Handled = true）
+        var translationBox = (System.Windows.Controls.TextBox?)expPanel.FindName("TranslationTextBox");
+        if (translationBox is not null)
+        {
+            translationBox.Text = "这里过不去哦";
+            translationBox.Select(2, 3); // 选“过不去”
+            var mouseUpArgs = new System.Windows.Input.MouseButtonEventArgs(
+                System.Windows.Input.Mouse.PrimaryDevice,
+                0,
+                System.Windows.Input.MouseButton.Left)
+            {
+                RoutedEvent = System.Windows.UIElement.MouseUpEvent,
+                Source = translationBox
+            };
+            translationBox.RaiseEvent(mouseUpArgs);
+            Check("TranslationTextBox selection raises SelectionBubble on MouseUp", selectionBubble?.BubblePopup.IsOpen == true);
+            selectionBubble?.Hide();
+        }
     }
 }
 

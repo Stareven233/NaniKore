@@ -579,7 +579,7 @@ internal static partial class SelfTest
             "session prepares stage 2 request by appending explanation user prompt",
             session.Messages.Count == 3 &&
             session.Messages[2].Role == ChatRole.User &&
-            session.Messages[2].Text == "请对上述内容进行深度精讲拆解。");
+            session.Messages[2].Text == PromptTemplates.DefaultExplainUserPrompt);
 
         var stage2Request = new UnderstandRequest(UnderstandKind.Explain, session.InitialSourceText, session.ImagePng, "中文（简体）", session);
         var prompt = PromptTemplates.GetSystemPrompt(stage2Request, new PromptConfig());
@@ -603,7 +603,7 @@ internal static partial class SelfTest
             openAiMessages[2].GetProperty("role").GetString() == "assistant" &&
             openAiMessages[2].GetProperty("content").GetString() == "こ こ は  通[とお]れないよ\n---TRANSLATION---\n这里过不去哦" &&
             openAiMessages[3].GetProperty("role").GetString() == "user" &&
-            openAiMessages[3].GetProperty("content").GetString() == "请对上述内容进行深度精讲拆解。");
+            openAiMessages[3].GetProperty("content").GetString() == PromptTemplates.DefaultExplainUserPrompt);
 
         using var openAiResponsesMsg = openAiProvider.CreateResponsesRequest(stage2Request);
         using var openAiRespDoc = JsonDocument.Parse(openAiResponsesMsg.Content!.ReadAsStringAsync().Result);

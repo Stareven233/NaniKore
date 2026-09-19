@@ -14,7 +14,7 @@ internal static class PromptTemplates
     internal const string TargetLanguagePlaceholder = "{{target_language}}";
 
     /// <summary>两阶段精讲默认追问提示词（复用前缀历史以命中 Prompt Cache）。</summary>
-    internal const string DefaultExplainUserPrompt = "请对上述内容进行深度精讲拆解。";
+    internal const string DefaultExplainUserPrompt = "请对上述内容进行深度精讲拆解。注意：只分析N3及以上难度的重点词汇、短语与语法句型，过滤掉N4/N5等初级简单基础词与基础句型，太简单的不要分析。";
 
     /// <summary>设置页始终展示的默认基础翻译提示词模版；主人可直接在此基础上修改。</summary>
     internal const string DefaultTranslationPrompt = DefaultTranslationBasePrompt;
@@ -75,6 +75,9 @@ internal static class PromptTemplates
         - **句型** | 语法功能与释义
         ### [语境与地道表达]
         语境分析与自然表达说明
+
+        [Difficulty & Focus Filter]
+        Focus strictly on non-trivial vocabulary, idioms, and grammatical patterns at JLPT N3 level and above (or CEFR B1+ / intermediate and advanced level).
         """;
 
     /// <summary>视觉一条龙的默认模板；直接展示分栏协议，用户可按实际模型自由修改。</summary>
