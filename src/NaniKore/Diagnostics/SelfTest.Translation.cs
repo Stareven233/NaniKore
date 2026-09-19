@@ -68,14 +68,14 @@ internal static partial class SelfTest
 
     private static void TestModularPromptTemplates()
     {
-        // 1. 日文输入触发 JapanesePlugin
+        // 1. 日文输入触发 JapanesePlugin（只注入振假名规约，不注入精讲文法与辞书形）
         var japaneseReq = new UnderstandRequest(UnderstandKind.Translate, "ここは通れないよ", null, "中文（简体）");
         var japanesePrompt = PromptTemplates.GetSystemPrompt(japaneseReq, new PromptConfig());
         Check(
-            "system prompt for Japanese input injects ruby format brackets and plain form rule without outdated terms",
+            "system prompt for Japanese input injects ruby format brackets and excludes explanation grammar terms",
             japanesePrompt.Contains("漢字[かな]", StringComparison.Ordinal) &&
-            japanesePrompt.Contains("辞書形", StringComparison.Ordinal) &&
-            japanesePrompt.Contains("未然形", StringComparison.Ordinal) &&
+            !japanesePrompt.Contains("辞書形", StringComparison.Ordinal) &&
+            !japanesePrompt.Contains("未然形", StringComparison.Ordinal) &&
             japanesePrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
             japanesePrompt.Contains("中文（简体）", StringComparison.Ordinal));
 
@@ -100,12 +100,12 @@ internal static partial class SelfTest
         var englishReq = new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "中文（简体）");
         var englishPrompt = PromptTemplates.GetSystemPrompt(englishReq, new PromptConfig());
         Check(
-            "system prompt for English input injects English plugin with IPA and infinitive rules",
+            "system prompt for English input injects English plugin with IPA and excludes infinitive grammar rule",
             englishPrompt.Contains("International Phonetic Alphabet (IPA)", StringComparison.Ordinal) &&
-            englishPrompt.Contains("base infinitive form", StringComparison.Ordinal) &&
+            !englishPrompt.Contains("base infinitive form", StringComparison.Ordinal) &&
             !englishPrompt.Contains("漢字[かな]", StringComparison.Ordinal));
 
-        // 5. 独立精讲请求遵循微结构化规约
+        // 5. 独立精讲请求遵循微结构化规约与文法术语要求
         var explainReq = new UnderstandRequest(UnderstandKind.Explain, "通れない", null, "中文（简体）");
         var explainPrompt = PromptTemplates.GetSystemPrompt(explainReq, new PromptConfig());
         Check(
@@ -113,6 +113,7 @@ internal static partial class SelfTest
             explainPrompt.Contains("### [词汇/短语]", StringComparison.Ordinal) &&
             explainPrompt.Contains("### [语法/句型]", StringComparison.Ordinal) &&
             explainPrompt.Contains("### [语境与地道表达]", StringComparison.Ordinal) &&
+            explainPrompt.Contains("辞書形", StringComparison.Ordinal) &&
             explainPrompt.Contains("中文（简体）", StringComparison.Ordinal));
 
         // 6. 用户自定义 Base 提示词与语言特化插件优先级
@@ -363,6 +364,44 @@ internal static partial class SelfTest
             !leakedSource.Contains("<annotated_source>") &&
             leakedSource == "私[わたし]は学生です。" &&
             leakedTrans == "我是学生。");
+
+        var bracketTagAndExplanationLeakRouter = new SectionChannelRouter();
+        var bracketTestDeltas = bracketTagAndExplanationLeakRouter
+            .Push("[annotated_source]\n亡[な]くなった\n[/annotated_source]\n---TRANSLATION---\n<translation>\n逝去了\n</translation>\n\n### [词汇/短语]\n- 亡くなる：逝世")
+            .Concat(bracketTagAndExplanationLeakRouter.Complete())
+            .ToList();
+        var bracketSource = string.Concat(bracketTestDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text));
+        var bracketTrans = string.Concat(bracketTestDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text));
+        Check(
+            "section router strips square bracket tags, trailing </translation> and truncates rogue explanation markdown",
+            !bracketSource.Contains("[annotated_source]") &&
+            !bracketSource.Contains("[/annotated_source]") &&
+            bracketSource == "亡[な]くなった" &&
+            !bracketTrans.Contains("</translation>") &&
+            !bracketTrans.Contains("###") &&
+            bracketTrans == "逝去了");
+
+        var rogueHeaderRouter = new SectionChannelRouter();
+        var rogueHeaderDeltas = rogueHeaderRouter
+            .Push("<annotated_source>\n新歓[しんかん]で気[き]が大き[おお]くなってしまう話[はなし]\n</annotated_source>\n---TRANSLATION---\n在迎新活动中变得胆大妄为的故事\n\n## 深度精讲拆解\n- 新歓：迎新活动")
+            .Concat(rogueHeaderRouter.Complete())
+            .ToList();
+        var rogueTrans = string.Concat(rogueHeaderDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text));
+        Check(
+            "section router truncates ## 深度精讲拆解 and rogue explanation sections from translation channel",
+            !rogueTrans.Contains("## 深度精讲拆解") &&
+            !rogueTrans.Contains("新歓") &&
+            rogueTrans == "在迎新活动中变得胆大妄为的故事");
+
+        var cleanedWithInitial = NaniKore.App.ResultPanelWindow.CleanAnnotatedSourceWithInitial("[annotated_source]亡[な]くなった[/annotated_source]", "亡くなった");
+        Check(
+            "CleanAnnotatedSourceWithInitial strips square brackets based on initial text comparison",
+            cleanedWithInitial == "亡[な]くなった");
+
+        var cleanedWithCustomTag = NaniKore.App.ResultPanelWindow.CleanAnnotatedSourceWithInitial("[unknown_tag]亡[な]くなった", "亡くなった");
+        Check(
+            "CleanAnnotatedSourceWithInitial detects and removes unknown prefix tags by aligning with initial source first character",
+            cleanedWithCustomTag == "亡[な]くなった");
     }
 
     private static void TestProviderTextExtraction()

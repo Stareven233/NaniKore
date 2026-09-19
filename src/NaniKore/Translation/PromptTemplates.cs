@@ -14,15 +14,24 @@ internal static class PromptTemplates
     internal const string TargetLanguagePlaceholder = "{{target_language}}";
 
     /// <summary>两阶段精讲默认追问提示词（复用前缀历史以命中 Prompt Cache）。</summary>
-    internal const string DefaultExplainUserPrompt = "请对上述内容进行深度精讲拆解。注意：只分析N3及以上难度的重点词汇、短语与语法句型，过滤掉N4/N5等初级简单基础词与基础句型，太简单的不要分析。";
+    internal const string DefaultExplainUserPrompt = """
+        请对上述内容进行深度精讲拆解。注意：只分析N3及以上难度的重点词汇、短语与语法句型，过滤掉N4/N5等初级简单基础词与基础句型，太简单的不要分析。
+        请严格按以下微结构卡片格式输出，所有释义与解析使用目标语言：
+        ### [词汇/短语]
+        - **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
+        ### [语法/句型]
+        - **句型** | 语法功能与释义
+        ### [语境与地道表达]
+        语境分析与自然表达说明
+        【词性约束】动词词性必须严格标注为一类动词、二类动词或三类动词（辞书形原形），避免未然形等旧称；形容词标注为一类/二类形容词。
+        """;
 
     /// <summary>设置页始终展示的默认基础翻译提示词模版；主人可直接在此基础上修改。</summary>
     internal const string DefaultTranslationPrompt = DefaultTranslationBasePrompt;
 
     /// <summary>模块化 Base 提示词：规定两阶段输出格式与严格翻译纪律（严禁与用户对话、反问或补全）。</summary>
     internal const string DefaultTranslationBasePrompt = """
-        You are an accurate, natural language translator and linguistic assistant.
-        [Translation Phase]
+        You are an accurate, natural language translator.
         Translate the supplied text into {{target_language}}.
         Return the result in exactly this two-part structure:
         <annotated_source>
@@ -31,61 +40,52 @@ internal static class PromptTemplates
 
         [Strict Translation Discipline]
         - Strictly translate the input text as-is.
-        - Even if the input text is an incomplete sentence, fragmented clause, question, command, greeting, code, or conversational dialogue, NEVER engage in conversation, NEVER answer questions in the text, NEVER ask questions back, NEVER offer to complete, continue, or clarify the sentence, and NEVER explain missing context.
-        - Faithfully translate ONLY what is present. If the sentence is cut off or ends with ellipses, faithfully reflect that same truncated structure in the translation.
-        - For <annotated_source> and <translation>, output the text directly (with ruby annotations where applicable); do NOT output literal XML tags like `<annotated_source>`, `</annotated_source>`, `<translation>`, or `</translation>`.
-        - Strictly output only the two parts separated by `---TRANSLATION---`. Do not include conversational filler, pleasantries, apologies, markdown title headers, notes, or follow-up remarks in this phase.
+        - <annotated_source> and <translation> 只是占位符，你必须用对应的内容替换它们.
+        - Strictly output only the two parts separated by `---TRANSLATION---`.
         """;
 
-    /// <summary>日语特化插件：约束汉字注音方括号语法、辞书形原形，摒弃陈旧文法术语。</summary>
+    /// <summary>日语特化插件：约束汉字注音方括号语法规范。</summary>
     internal const string JapanesePlugin = """
         [Japanese Language Plugin]
         - For <annotated_source>: Annotate all kanji readings strictly using ruby bracket format `漢字[かな]` (e.g. `私[わたし]は 学生[がくせい]です。`).
         - Never put brackets around kana, punctuation, digits, or non-kanji words.
         - Even if the input text is a fragment, clause, or dialogue ending with particles (e.g. `て...`, `けど`), annotate kanji ruby readings faithfully for all kanji present.
-        - For verbs and vocabulary: Always identify the dictionary form (辞書形, plain base form). Strictly avoid outdated traditional school grammar terms like 未然形 or 連用形.
         """;
 
     /// <summary>默认日语插件模板，供设置面板展示与一键恢复。</summary>
     internal const string DefaultJapanesePlugin = JapanesePlugin;
 
-    /// <summary>英语特化插件：约束音标 (IPA) 与动词原形规范。</summary>
+    /// <summary>英语特化插件：约束音标 (IPA) 标注规范。</summary>
     internal const string EnglishPlugin = """
         [English Language Plugin]
-        - For vocabulary and pronunciation: Annotate with International Phonetic Alphabet (IPA).
-        - For verbs: Always use the base infinitive form.
+        - For <annotated_source>: When phonetic annotation is helpful, annotate with International Phonetic Alphabet (IPA) in brackets.
         """;
 
     /// <summary>默认英语插件模板，供设置面板展示与一键恢复。</summary>
     internal const string DefaultEnglishPlugin = EnglishPlugin;
 
-    /// <summary>目标语言对齐约束：强制所有译文与语法解析均使用当前目标语言。</summary>
+    /// <summary>目标语言对齐约束：强制译文使用当前目标语言。</summary>
     internal const string LanguageAlignmentRule = """
         [Target Language Constraint]
-        All translations, vocabulary definitions, grammar explanations, and context notes must strictly be written in {{target_language}}.
+        All translations must strictly be written in {{target_language}}.
         """;
 
-    /// <summary>精讲微结构化格式规约：在系统提示词预置，确保第二阶段 100% 命中前缀缓存。</summary>
+    /// <summary>精讲微结构化格式规约：在精讲任务中提供微结构卡片格式、日语教育文法与 N3+ 过滤规约。</summary>
     internal const string ExplainStructureRule = """
         [Deep Explanation Specification]
         When requested to explain or break down the text, provide a clean structured markdown response adhering to this format:
         ### [词汇/短语]
-        - **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
+        **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
         ### [语法/句型]
-        - **句型** | 语法功能与释义
-        ### [语境与地道表达]
-        语境分析与自然表达说明
+        **句型** | 语法功能与释义
+        ### [详解]
+        为什么这么翻译
 
-        [Part of Speech & Educational Grammar - STRICT]
-        - For Japanese vocabulary, the part of speech (3rd column) MUST strictly adhere to Japanese Educational Grammar (日本語教育文法).
-        - Verbs MUST be classified strictly as: `一类动词`, `二类动词`, or `三类动词`. Strictly NEVER output traditional terms or compound terms like `一段动词`, `五段动词`, `他动词`, `自动词`.
-        - Adjectives MUST be classified strictly as: `一类形容词` or `二类形容词`.
-        - Other parts of speech MUST be concise: `名词`, `副词`, `连词`, `短语`. Keep the tag strictly concise (part of speech only).
+        [Part of Speech & Educational Grammar]
+        For verbs and vocabulary: Always identify the dictionary form (辞書形, plain base form). MUST strictly adhere to Japanese Educational Grammar (日本語教育文法).
 
-        [Difficulty & Focus Filter - CRITICAL]
-        - Focus strictly on non-trivial vocabulary, idioms, and grammatical patterns at JLPT N3 level and above (or CEFR B1+ / intermediate and advanced level).
-        - Strictly DO NOT list elementary, high-frequency basic words or elementary grammar points (e.g. absolutely DO NOT include N5/N4 basics such as 「私」「これ」「行く」「食べる」「する」「ある」「～です」「～ます」「～ている」「～ない」 unless they possess advanced, uncommon, or highly contextual idiomatic usage in this specific sentence).
-        - If the sentence contains only basic elementary words and grammar, explain the contextual nuances in the [语境与地道表达] section rather than polluting the vocabulary/grammar cards with trivial entries.
+        [Difficulty & Focus Filter]
+        Focus strictly on non-trivial vocabulary, idioms, and grammatical patterns at JLPT N2 level and above.
         """;
 
     /// <summary>视觉一条龙的默认模板；直接展示分栏协议，用户可按实际模型自由修改。</summary>
@@ -146,8 +146,6 @@ internal static class PromptTemplates
             ? prompts.Base.Trim()
             : DefaultTranslationBasePrompt;
         sb.AppendLine(basePrompt);
-        sb.AppendLine();
-        sb.AppendLine(ExplainStructureRule);
 
         if (detection.NeedsJapaneseRuby || detection.HasJapanese)
         {
@@ -203,7 +201,7 @@ internal static class PromptTemplates
         }
 
         sb.AppendLine();
-        sb.AppendLine(LanguageAlignmentRule);
+        sb.AppendLine(ExpandTargetLanguage("All vocabulary definitions, grammar explanations, and context notes must strictly be written in {{target_language}}.", request.TargetLanguage));
 
         return ExpandTargetLanguage(sb.ToString().TrimEnd(), request.TargetLanguage);
     }
@@ -223,11 +221,12 @@ internal sealed class SectionChannelRouter
     private DeltaChannel _channel = DeltaChannel.Translation;
     private string _pending = string.Empty;
     private bool _awaitingFirstSection = true;
+    private bool _explanationTruncated = false;
     private readonly HashSet<DeltaChannel> _channelsWithContent = [];
 
     public IEnumerable<UnderstandDelta> Push(string text)
     {
-        if (string.IsNullOrEmpty(text))
+        if (string.IsNullOrEmpty(text) || _explanationTruncated)
         {
             yield break;
         }
@@ -257,8 +256,23 @@ internal sealed class SectionChannelRouter
                     continue;
                 }
 
-                // 译文阶段已无后续段落分隔标记，实时输出正文，消除 32 字符缓冲阻滞导致的短译文流式卡顿。
+                // 译文阶段已无后续段落分隔标记，实时输出正文
                 _pending = StripTranslationLeadingTags(_pending);
+
+                // 检查是否提前开始输出精讲 markdown，若是则立即截断，绝不允许混杂在译文中
+                var expMarkerIdx = FindExplanationPrefixIndex(_pending);
+                if (expMarkerIdx >= 0)
+                {
+                    var validTranslation = _pending[..expMarkerIdx];
+                    foreach (var delta in Emit(_channel, validTranslation))
+                    {
+                        yield return delta;
+                    }
+                    _pending = string.Empty;
+                    _explanationTruncated = true;
+                    yield break;
+                }
+
                 var transFlushLength = GetSafeTranslationFlushLength(_pending);
                 if (transFlushLength == 0)
                 {
@@ -299,28 +313,27 @@ internal sealed class SectionChannelRouter
 
     public IEnumerable<UnderstandDelta> Complete()
     {
-        if (_pending.Length > 0)
+        if (_pending.Length > 0 && !_explanationTruncated)
         {
             var text = _pending;
-            if (text.EndsWith("</translation>", StringComparison.OrdinalIgnoreCase))
-            {
-                text = text[..^"</translation>".Length].TrimEnd();
-            }
 
-            if (text.EndsWith("```", StringComparison.Ordinal))
-            {
-                text = text[..^"```".Length].TrimEnd();
-            }
-
-            // 若从未发射过 SourceText 且无分隔符，保留完整输出作为译文（兼容视觉纯译文输出 fallback）；
-            // 若已发射过 SourceText，剩余文本归属 SourceText。
+            // 若从未发射过 SourceText 且无分隔符，保留完整输出作为译文；若已发射过 SourceText，剩余文本归属当前通道
             var channel = _awaitingFirstSection
                 ? (_channelsWithContent.Contains(DeltaChannel.SourceText) ? DeltaChannel.SourceText : DeltaChannel.Translation)
                 : _channel;
 
-            if (_awaitingFirstSection)
+            if (channel == DeltaChannel.SourceText)
             {
                 text = StripSourceTags(text);
+            }
+            else
+            {
+                var expMarkerIdx = FindExplanationPrefixIndex(text);
+                if (expMarkerIdx >= 0)
+                {
+                    text = text[..expMarkerIdx];
+                }
+                text = StripTranslationTags(text);
             }
 
             foreach (var delta in Emit(channel, text))
@@ -337,9 +350,9 @@ internal sealed class SectionChannelRouter
         if (!_channelsWithContent.Contains(channel))
         {
             text = text.TrimStart();
-            if (channel == DeltaChannel.Translation && text.StartsWith("<translation>", StringComparison.OrdinalIgnoreCase))
+            if (channel == DeltaChannel.Translation)
             {
-                text = text["<translation>".Length..].TrimStart();
+                text = StripTranslationLeadingTags(text);
             }
             else if (channel == DeltaChannel.SourceText)
             {
@@ -356,23 +369,16 @@ internal sealed class SectionChannelRouter
 
         if (channel == DeltaChannel.SourceText)
         {
-            // 原文区三重防线：出口处过滤所有可能残留的标签或闭合标记
-            if (text.Contains('<', StringComparison.Ordinal) || text.Contains('`', StringComparison.Ordinal))
-            {
-                text = StripSourceTags(text);
-            }
+            text = StripSourceTags(text);
         }
         else if (channel == DeltaChannel.Translation)
         {
-            if (text.EndsWith("</translation>", StringComparison.OrdinalIgnoreCase))
+            var expIdx = FindExplanationPrefixIndex(text);
+            if (expIdx >= 0)
             {
-                text = text[..^"</translation>".Length].TrimEnd();
+                text = text[..expIdx];
             }
-        }
-
-        if (text.EndsWith("```", StringComparison.Ordinal))
-        {
-            text = text[..^"```".Length].TrimEnd();
+            text = StripTranslationTags(text);
         }
 
         if (text.Length > 0)
@@ -380,6 +386,108 @@ internal sealed class SectionChannelRouter
             yield return new UnderstandDelta(channel, text);
         }
     }
+
+    private static readonly string[] SourceLeadingTags =
+    [
+        "<annotated_source>",
+        "[annotated_source]",
+        "<transcription>",
+        "[transcription]",
+        "```markdown",
+        "```text",
+        "```",
+        "【原文】",
+        "【注音】",
+        "原文:",
+        "原文：",
+        "annotated_source:",
+        "transcription:"
+    ];
+
+    private static readonly string[] TranslationLeadingTags =
+    [
+        "<translation>",
+        "[translation]",
+        "```markdown",
+        "```text",
+        "```",
+        "【译文】",
+        "译文:",
+        "译文：",
+        "translation:"
+    ];
+
+    private static readonly string[] SourceCloseTags =
+    [
+        "</annotated_source>",
+        "[/annotated_source]",
+        "</transcription>",
+        "[/transcription]",
+        "```markdown",
+        "```text",
+        "```"
+    ];
+
+    private static readonly string[] TranslationCloseTags =
+    [
+        "</translation>",
+        "[/translation]",
+        "```markdown",
+        "```text",
+        "```"
+    ];
+
+    private static readonly string[] ExplanationSectionPrefixes =
+    [
+        "\r\n### [词汇",
+        "\n### [词汇",
+        "\r\n### 重点词汇",
+        "\n### 重点词汇",
+        "\r\n### 词汇",
+        "\n### 词汇",
+        "\r\n### [语法",
+        "\n### [语法",
+        "\r\n### 语法",
+        "\n### 语法",
+        "\r\n### [语境",
+        "\n### [语境",
+        "\r\n### 语境",
+        "\n### 语境",
+        "\r\n## [词汇",
+        "\n## [词汇",
+        "\r\n## 重点词汇",
+        "\n## 重点词汇",
+        "\r\n## 词汇",
+        "\n## 词汇",
+        "\r\n## [语法",
+        "\n## [语法",
+        "\r\n## 语法",
+        "\n## 语法",
+        "\r\n## 深度精讲",
+        "\n## 深度精讲",
+        "\r\n## [深度精讲",
+        "\n## [深度精讲",
+        "\r\n## 精讲",
+        "\n## 精讲",
+        "\r\n## [精讲",
+        "\n## [精讲",
+        "\r\n### 深度精讲",
+        "\n### 深度精讲",
+        "\r\n### [深度精讲",
+        "\n### [深度精讲",
+        "\r\n### 精讲",
+        "\n### 精讲",
+        "\r\n# 深度精讲",
+        "\n# 深度精讲",
+        "\r\n# 精讲",
+        "\n# 精讲",
+        "\r\n【精讲",
+        "\n【精讲",
+        "\r\n【词汇",
+        "\n【词汇",
+        "\r\n【语法",
+        "\n【语法",
+    ];
 
     private static string StripSourceTags(string text)
     {
@@ -389,61 +497,91 @@ internal sealed class SectionChannelRouter
         }
 
         text = text.Trim();
-
         bool changed;
         do
         {
             changed = false;
-            if (text.StartsWith("```markdown", StringComparison.OrdinalIgnoreCase))
+            foreach (var tag in SourceLeadingTags)
             {
-                text = text["```markdown".Length..].TrimStart();
-                changed = true;
-            }
-            else if (text.StartsWith("```text", StringComparison.OrdinalIgnoreCase))
-            {
-                text = text["```text".Length..].TrimStart();
-                changed = true;
-            }
-            else if (text.StartsWith("```", StringComparison.OrdinalIgnoreCase))
-            {
-                text = text["```".Length..].TrimStart();
-                changed = true;
+                if (text.StartsWith(tag, StringComparison.OrdinalIgnoreCase))
+                {
+                    text = text[tag.Length..].TrimStart();
+                    changed = true;
+                    break;
+                }
             }
 
-            if (text.StartsWith("<annotated_source>", StringComparison.OrdinalIgnoreCase))
+            foreach (var tag in SourceCloseTags)
             {
-                text = text["<annotated_source>".Length..].TrimStart();
-                changed = true;
-            }
-            else if (text.StartsWith("<transcription>", StringComparison.OrdinalIgnoreCase))
-            {
-                text = text["<transcription>".Length..].TrimStart();
-                changed = true;
-            }
-
-            if (text.EndsWith("</annotated_source>", StringComparison.OrdinalIgnoreCase))
-            {
-                text = text[..^"</annotated_source>".Length].TrimEnd();
-                changed = true;
-            }
-            else if (text.EndsWith("</transcription>", StringComparison.OrdinalIgnoreCase))
-            {
-                text = text[..^"</transcription>".Length].TrimEnd();
-                changed = true;
-            }
-
-            if (text.EndsWith("```", StringComparison.Ordinal))
-            {
-                text = text[..^"```".Length].TrimEnd();
-                changed = true;
+                if (text.EndsWith(tag, StringComparison.OrdinalIgnoreCase))
+                {
+                    text = text[..^tag.Length].TrimEnd();
+                    changed = true;
+                    break;
+                }
             }
         } while (changed);
 
-        // 彻底清除可能嵌入或残留的标签文本
+        // 彻底清除可能残留或嵌入的标签文本（支持尖括号、方括号与反引号）
         text = text.Replace("</annotated_source>", "", StringComparison.OrdinalIgnoreCase)
                    .Replace("<annotated_source>", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("[/annotated_source]", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("[annotated_source]", "", StringComparison.OrdinalIgnoreCase)
                    .Replace("</transcription>", "", StringComparison.OrdinalIgnoreCase)
                    .Replace("<transcription>", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("[/transcription]", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("[transcription]", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("【原文】", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("【注音】", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("```markdown", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("```text", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("```", "", StringComparison.OrdinalIgnoreCase)
+                   .Trim();
+
+        return text;
+    }
+
+    private static string StripTranslationTags(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        text = text.Trim();
+        bool changed;
+        do
+        {
+            changed = false;
+            foreach (var tag in TranslationLeadingTags)
+            {
+                if (text.StartsWith(tag, StringComparison.OrdinalIgnoreCase))
+                {
+                    text = text[tag.Length..].TrimStart();
+                    changed = true;
+                    break;
+                }
+            }
+
+            foreach (var tag in TranslationCloseTags)
+            {
+                if (text.EndsWith(tag, StringComparison.OrdinalIgnoreCase))
+                {
+                    text = text[..^tag.Length].TrimEnd();
+                    changed = true;
+                    break;
+                }
+            }
+        } while (changed);
+
+        text = text.Replace("</translation>", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("<translation>", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("[/translation]", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("[translation]", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("【译文】", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("```markdown", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("```text", "", StringComparison.OrdinalIgnoreCase)
+                   .Replace("```", "", StringComparison.OrdinalIgnoreCase)
                    .Trim();
 
         return text;
@@ -456,35 +594,46 @@ internal sealed class SectionChannelRouter
             return text;
         }
 
-        text = text.TrimStart('\r', '\n', ' ');
-        if (text.StartsWith("<annotated_source>", StringComparison.OrdinalIgnoreCase))
+        bool changed;
+        do
         {
-            text = text["<annotated_source>".Length..].TrimStart('\r', '\n', ' ');
-        }
-        else if (text.StartsWith("<transcription>", StringComparison.OrdinalIgnoreCase))
-        {
-            text = text["<transcription>".Length..].TrimStart('\r', '\n', ' ');
-        }
-        else if (text.StartsWith("```markdown", StringComparison.OrdinalIgnoreCase))
-        {
-            text = text["```markdown".Length..].TrimStart('\r', '\n', ' ');
-        }
-        else if (text.StartsWith("```text", StringComparison.OrdinalIgnoreCase))
-        {
-            text = text["```text".Length..].TrimStart('\r', '\n', ' ');
-        }
-        else if (text.StartsWith("```", StringComparison.OrdinalIgnoreCase))
-        {
-            text = text["```".Length..].TrimStart('\r', '\n', ' ');
-        }
+            changed = false;
+            text = text.TrimStart('\r', '\n', ' ');
+            foreach (var tag in SourceLeadingTags)
+            {
+                if (text.StartsWith(tag, StringComparison.OrdinalIgnoreCase))
+                {
+                    text = text[tag.Length..].TrimStart('\r', '\n', ' ');
+                    changed = true;
+                    break;
+                }
+            }
+        } while (changed);
 
         return text;
     }
 
-    /// <summary>
-    /// 计算当前待输出原文文本中可以安全即时刷新到 UI 的长度。
-    /// 保留可能处于哨兵标记或闭合标签中间的滑动窗口（不超过 32 字符），其余正文即时全速输出。
-    /// </summary>
+    private static string StripTranslationLeadingTags(string text)
+    {
+        bool changed;
+        do
+        {
+            changed = false;
+            text = text.TrimStart('\r', '\n', ' ');
+            foreach (var tag in TranslationLeadingTags)
+            {
+                if (text.StartsWith(tag, StringComparison.OrdinalIgnoreCase))
+                {
+                    text = text[tag.Length..].TrimStart('\r', '\n', ' ');
+                    changed = true;
+                    break;
+                }
+            }
+        } while (changed);
+
+        return text;
+    }
+
     private int GetSafeSourceFlushLength(string text)
     {
         if (text.Length == 0)
@@ -501,11 +650,7 @@ internal sealed class SectionChannelRouter
                 return 0;
             }
 
-            if (IsOpenTagPrefix(trimmed, "<annotated_source>") ||
-                IsOpenTagPrefix(trimmed, "<transcription>") ||
-                IsOpenTagPrefix(trimmed, "```markdown") ||
-                IsOpenTagPrefix(trimmed, "```text") ||
-                IsOpenTagPrefix(trimmed, "```"))
+            if (IsOpenTagPrefix(trimmed, SourceLeadingTags))
             {
                 return 0;
             }
@@ -550,8 +695,148 @@ internal sealed class SectionChannelRouter
         return text.Length;
     }
 
-    private static bool IsOpenTagPrefix(string text, string fullTag) =>
-        fullTag.StartsWith(text, StringComparison.OrdinalIgnoreCase) && text.Length < fullTag.Length;
+    private int GetSafeTranslationFlushLength(string text)
+    {
+        if (text.Length == 0)
+        {
+            return 0;
+        }
+
+        // 1. 若译文尚未开始输出过有效正文，等待前导标签完整到达并剥离
+        if (!_channelsWithContent.Contains(DeltaChannel.Translation))
+        {
+            var trimmed = text.TrimStart('\r', '\n', ' ');
+            if (trimmed.Length == 0)
+            {
+                return 0;
+            }
+
+            if (IsOpenTagPrefix(trimmed, TranslationLeadingTags))
+            {
+                return 0;
+            }
+        }
+
+        // 2. 检查是否出现精讲标记
+        var expIdx = FindExplanationPrefixIndex(text);
+        if (expIdx >= 0)
+        {
+            return expIdx;
+        }
+
+        // 3. 检查是否完整出现闭合标签
+        foreach (var tag in TranslationCloseTags)
+        {
+            var idx = text.IndexOf(tag, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0)
+            {
+                var safeLength = idx;
+                while (safeLength > 0 && (text[safeLength - 1] == '\r' || text[safeLength - 1] == '\n'))
+                {
+                    safeLength--;
+                }
+                return safeLength;
+            }
+        }
+
+        // 4. 检查尾部是否截断在闭合标签前缀中间
+        var potentialCloseIndex = FindPotentialSuffixIndex(text, TranslationCloseTags);
+        if (potentialCloseIndex >= 0)
+        {
+            var safeLength = potentialCloseIndex;
+            while (safeLength > 0 && (text[safeLength - 1] == '\r' || text[safeLength - 1] == '\n'))
+            {
+                safeLength--;
+            }
+            return safeLength;
+        }
+
+        // 5. 检查尾部是否截断在精讲标记前缀中间
+        var potentialExpIndex = FindPotentialExplanationPrefixIndex(text);
+        if (potentialExpIndex >= 0)
+        {
+            var safeLength = potentialExpIndex;
+            while (safeLength > 0 && (text[safeLength - 1] == '\r' || text[safeLength - 1] == '\n'))
+            {
+                safeLength--;
+            }
+            return safeLength;
+        }
+
+        return text.Length;
+    }
+
+    private static bool IsOpenTagPrefix(string text, string[] fullTags)
+    {
+        foreach (var fullTag in fullTags)
+        {
+            if (fullTag.StartsWith(text, StringComparison.OrdinalIgnoreCase) && text.Length < fullTag.Length)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int FindExplanationPrefixIndex(string text)
+    {
+        var earliest = -1;
+        foreach (var prefix in ExplanationSectionPrefixes)
+        {
+            var idx = text.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0 && (earliest < 0 || idx < earliest))
+            {
+                earliest = idx;
+            }
+        }
+        return earliest;
+    }
+
+    private static int FindPotentialExplanationPrefixIndex(string text)
+    {
+        var scanStart = Math.Max(0, text.Length - MaxSeparatorLength);
+        for (var i = scanStart; i < text.Length; i++)
+        {
+            var ch = text[i];
+            if (ch is not ('\r' or '\n' or '#'))
+            {
+                continue;
+            }
+
+            var suffix = text[i..];
+            foreach (var prefix in ExplanationSectionPrefixes)
+            {
+                if (prefix.StartsWith(suffix, StringComparison.OrdinalIgnoreCase) && suffix.Length < prefix.Length)
+                {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static int FindPotentialSuffixIndex(string text, string[] candidateTags)
+    {
+        var scanStart = Math.Max(0, text.Length - MaxSeparatorLength);
+        for (var i = scanStart; i < text.Length; i++)
+        {
+            var ch = text[i];
+            if (ch is not ('\r' or '\n' or '<' or '[' or '`'))
+            {
+                continue;
+            }
+
+            var suffix = text[i..];
+            foreach (var tag in candidateTags)
+            {
+                if (tag.StartsWith(suffix, StringComparison.OrdinalIgnoreCase) && suffix.Length < tag.Length)
+                {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
 
     private static bool HasSourceSignal(string text)
     {
@@ -566,22 +851,13 @@ internal sealed class SectionChannelRouter
         return false;
     }
 
-    private static readonly string[] SourceCloseTags =
-    [
-        "</annotated_source>",
-        "</transcription>",
-        "```markdown",
-        "```text",
-        "```",
-    ];
-
     private static int FindPotentialSeparatorOrTagPrefixIndex(string text)
     {
         var scanStart = Math.Max(0, text.Length - MaxSeparatorLength);
         for (var i = scanStart; i < text.Length; i++)
         {
             var ch = text[i];
-            if (ch is not ('\r' or '\n' or '-' or '<' or '`'))
+            if (ch is not ('\r' or '\n' or '-' or '<' or '[' or '`'))
             {
                 continue;
             }
@@ -606,84 +882,6 @@ internal sealed class SectionChannelRouter
         }
 
         return -1;
-    }
-
-    private static string StripTranslationLeadingTags(string text)
-    {
-        text = text.TrimStart('\r', '\n', ' ');
-        if (text.StartsWith("<translation>", StringComparison.OrdinalIgnoreCase))
-        {
-            text = text["<translation>".Length..].TrimStart('\r', '\n', ' ');
-        }
-
-        return text;
-    }
-
-    /// <summary>
-    /// 计算当前待输出译文文本中可以安全即时刷新到 UI 的长度。
-    /// 仅在尾部可能处于未完结标签（如 &lt;/translation&gt; 或代码块栅栏）中间时保留前缀，其余正文即时全速输出。
-    /// </summary>
-    private int GetSafeTranslationFlushLength(string text)
-    {
-        if (text.Length == 0)
-        {
-            return 0;
-        }
-
-        // 1. 若译文尚未开始输出过有效正文，且开头属于 <translation> 的可能前缀，等待完整标签到达并剥离
-        if (!_channelsWithContent.Contains(DeltaChannel.Translation))
-        {
-            var trimmed = text.TrimStart('\r', '\n', ' ');
-            if (trimmed.Length == 0)
-            {
-                return 0;
-            }
-
-            const string openTag = "<translation>";
-            if (openTag.StartsWith(trimmed, StringComparison.OrdinalIgnoreCase))
-            {
-                return 0;
-            }
-        }
-
-        // 2. 检查尾部是否可能截断在 </translation> 标签中间
-        const string closeTag = "</translation>";
-        var lastLt = text.LastIndexOf('<');
-        if (lastLt >= 0)
-        {
-            var potentialTag = text[lastLt..];
-            if (closeTag.StartsWith(potentialTag, StringComparison.OrdinalIgnoreCase))
-            {
-                // 将标签及其紧邻的前置换行保留在 pending 中，避免将闭合标签的换行误判为正文提前发出
-                var safeLength = lastLt;
-                while (safeLength > 0 && (text[safeLength - 1] == '\r' || text[safeLength - 1] == '\n'))
-                {
-                    safeLength--;
-                }
-                return safeLength;
-            }
-        }
-
-        // 3. 检查尾部是否可能截断在 ```markdown 或 ``` 栅栏中间
-        var lastBacktick = text.LastIndexOf('`');
-        if (lastBacktick >= 0)
-        {
-            var potentialFence = text[lastBacktick..];
-            if ("```markdown".StartsWith(potentialFence, StringComparison.OrdinalIgnoreCase) ||
-                "```text".StartsWith(potentialFence, StringComparison.OrdinalIgnoreCase) ||
-                "```".StartsWith(potentialFence, StringComparison.OrdinalIgnoreCase))
-            {
-                var safeLength = lastBacktick;
-                while (safeLength > 0 && (text[safeLength - 1] == '\r' || text[safeLength - 1] == '\n'))
-                {
-                    safeLength--;
-                }
-                return safeLength;
-            }
-        }
-
-        // 4. 无潜在标签前缀截断，全部即时刷新
-        return text.Length;
     }
 
     private static readonly (string Marker, DeltaChannel Channel, DeltaChannel? PrefixChannel)[] CandidateMarkers =

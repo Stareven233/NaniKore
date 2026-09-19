@@ -7,7 +7,7 @@
     <Popup x:Name="BubblePopup"
            AllowsTransparency="True"
            StaysOpen="False"
-           Placement="Absolute"
+           Placement="Bottom"
            PopupAnimation="Fade"
            Closed="OnPopupClosed">
         <Border Background="{DynamicResource Brush.Card.Background}"

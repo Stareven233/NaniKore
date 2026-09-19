@@ -56,6 +56,31 @@ public partial class SelectionBubblePopup : UserControl
         BubblePopup.IsOpen = true;
     }
 
+    /// <summary>
+    /// 紧贴指定目标元素与局部矩形区域弹出气泡（基于 DIP 逻辑坐标，自适应翻转防出界）。
+    /// </summary>
+    public void ShowAt(UIElement target, Rect targetRect, string selectedText)
+    {
+        if (string.IsNullOrWhiteSpace(selectedText))
+        {
+            Hide();
+            return;
+        }
+
+        ContentTextBox.Text = selectedText.Trim();
+        ContentTextBox.CaretIndex = ContentTextBox.Text.Length;
+        CategoryComboBox.SelectedIndex = 0;
+
+        BubblePopup.PlacementTarget = target;
+        BubblePopup.PlacementRectangle = targetRect;
+        BubblePopup.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        BubblePopup.HorizontalOffset = 0;
+        BubblePopup.VerticalOffset = 4;
+
+        UpdateFavoriteState();
+        BubblePopup.IsOpen = true;
+    }
+
     /// <summary>以指定控件及相对坐标弹出微型气泡（优先使用 Relative，防止 DPI 缩放漂移）。</summary>
     public void ShowAt(UIElement target, Point relativePoint, string selectedText)
     {

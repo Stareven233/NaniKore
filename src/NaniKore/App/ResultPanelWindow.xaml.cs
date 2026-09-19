@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Drawing;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -10,6 +11,7 @@ using NaniKore.App.Theme;
 using NaniKore.Interop;
 using NaniKore.Translation;
 using FormsScreen = System.Windows.Forms.Screen;
+using WpfTextBox = System.Windows.Controls.TextBox;
 
 namespace NaniKore.App;
 
@@ -28,6 +30,7 @@ internal sealed partial class ResultPanelWindow : Window
     private bool _translationHasContent;
     private string _annotatedSource = string.Empty;
     private string _originalEditingText = string.Empty;
+    private string _initialTranslationSource = string.Empty;
     private bool _isEditingSource;
     private bool _receivedAnnotatedSource;
 
@@ -79,6 +82,23 @@ internal sealed partial class ResultPanelWindow : Window
             UIElement.MouseUpEvent,
             new MouseButtonEventHandler(OnSourceTextBoxMouseUp),
             handledEventsToo: true);
+
+        // 点击窗口内其他文字、移动窗口或失焦时立即隐藏收藏气泡
+        PreviewMouseDown += OnPanelPreviewMouseDown;
+        LocationChanged += (_, _) =>
+        {
+            if (SelectionBubble.BubblePopup.IsOpen)
+            {
+                SelectionBubble.Hide();
+            }
+        };
+        Deactivated += (_, _) =>
+        {
+            if (SelectionBubble.BubblePopup.IsOpen)
+            {
+                SelectionBubble.Hide();
+            }
+        };
     }
 
     private void OnRubyStatusNotification(string message) => SetStatus(message);
@@ -135,6 +155,7 @@ internal sealed partial class ResultPanelWindow : Window
     public void Reset(string source, string status, bool autoTranslate = false, bool autoExplain = false)
     {
         _annotatedSource = source;
+        _initialTranslationSource = RubyTextParser.ToPlainText(source) is { Length: > 0 } plain ? plain : source;
         SourceTextBox.Text = RubyTextParser.ToPlainText(source);
         _originalEditingText = SourceTextBox.Text;
         _receivedAnnotatedSource = false;
@@ -190,6 +211,7 @@ internal sealed partial class ResultPanelWindow : Window
         _translationInsertIndex = 0;
         _translationHasContent = false;
         _receivedAnnotatedSource = false;
+        _initialTranslationSource = RubyTextParser.ToPlainText(_annotatedSource) is { Length: > 0 } plain ? plain : SourceTextBox.Text;
         ClearMetrics();
         TranslateButton.Content = "翻译";
         ExplanationView.Clear();
@@ -273,6 +295,47 @@ internal sealed partial class ResultPanelWindow : Window
             SwpNoMove | SwpNoSize | SwpNoActivate | SwpShowWindow);
     }
 
+    /// <summary>结合初始原文对注音文本进行标签清洗与首部对齐校准，消除模型擅自添加的外壳标签（如 [annotated_source]）。</summary>
+    internal static string CleanAnnotatedSourceWithInitial(string annotated, string initialSource)
+    {
+        if (string.IsNullOrWhiteSpace(annotated)) return annotated;
+
+        // 1. 通用正则清理已知标签前缀
+        var cleaned = Regex.Replace(annotated, @"^(\[|<)\s*annotated_source\s*(\]|>)\s*", "", RegexOptions.IgnoreCase);
+        cleaned = Regex.Replace(cleaned, @"^(\[|<)\s*transcription\s*(\]|>)\s*", "", RegexOptions.IgnoreCase);
+        cleaned = Regex.Replace(cleaned, @"^【\s*(原文|注音)\s*】\s*", "");
+        cleaned = Regex.Replace(cleaned, @"^(原文|注音)\s*[:：]\s*", "");
+
+        // 2. 根据初始原文首字符进行差异对比校准
+        if (!string.IsNullOrWhiteSpace(initialSource))
+        {
+            var initialTrimmed = initialSource.Trim();
+            if (initialTrimmed.Length > 0)
+            {
+                var firstChar = initialTrimmed[0];
+                var currentTrimmed = cleaned.TrimStart();
+                // 如果当前首字符不是初始原文的首字符，并且当前是以标签符号开头的（如 [ 或 < 或 【）
+                if (currentTrimmed.Length > 0 && currentTrimmed[0] != firstChar && (currentTrimmed[0] is '[' or '<' or '【'))
+                {
+                    var closeIdx = currentTrimmed.IndexOfAny([']', '>', '】']);
+                    if (closeIdx > 0 && closeIdx + 1 < currentTrimmed.Length)
+                    {
+                        var afterTag = currentTrimmed[(closeIdx + 1)..].TrimStart();
+                        if (afterTag.StartsWith(firstChar))
+                        {
+                            cleaned = afterTag;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. 清理尾部可能残留的闭合标签
+        cleaned = Regex.Replace(cleaned, @"(\[|<)\s*/\s*annotated_source\s*(\]|>)\s*$", "", RegexOptions.IgnoreCase);
+        cleaned = Regex.Replace(cleaned, @"(\[|<)\s*/\s*transcription\s*(\]|>)\s*$", "", RegexOptions.IgnoreCase);
+        return cleaned;
+    }
+
     public void Append(Translation.UnderstandDelta delta)
     {
         if (string.IsNullOrEmpty(delta.Text))
@@ -290,6 +353,7 @@ internal sealed partial class ResultPanelWindow : Window
             }
 
             _annotatedSource += delta.Text;
+            _annotatedSource = CleanAnnotatedSourceWithInitial(_annotatedSource, _initialTranslationSource);
             SourceViewer.Document = RubyDocumentBuilder.Build(_annotatedSource);
             SourceTextBox.Text = RubyTextParser.ToPlainText(_annotatedSource);
             _originalEditingText = SourceTextBox.Text;
@@ -678,6 +742,34 @@ internal sealed partial class ResultPanelWindow : Window
         }
     }
 
+    private static Rect GetSelectionOrMouseRect(WpfTextBox textBox, MouseButtonEventArgs e)
+    {
+        if (textBox.SelectionLength > 0)
+        {
+            var startChar = textBox.SelectionStart;
+            var endChar = Math.Max(startChar, textBox.SelectionStart + textBox.SelectionLength - 1);
+            var startRect = textBox.GetRectFromCharacterIndex(startChar);
+            var endRect = textBox.GetRectFromCharacterIndex(endChar);
+
+            // 同一行选区：取整段文字的包围盒，使气泡直接在选中文本的正下方弹出
+            if (!startRect.IsEmpty && !endRect.IsEmpty && Math.Abs(startRect.Top - endRect.Top) < 4)
+            {
+                var width = Math.Max(4, endRect.Right - startRect.Left);
+                var height = Math.Max(16, endRect.Height);
+                return new Rect(startRect.Left, startRect.Top, width, height);
+            }
+
+            // 跨行选区：贴合最后一行选中文本的末尾字
+            if (!endRect.IsEmpty && !double.IsNaN(endRect.X))
+            {
+                return new Rect(endRect.Left, endRect.Top, Math.Max(4, endRect.Width), Math.Max(16, endRect.Height));
+            }
+        }
+
+        var pt = e.GetPosition(textBox);
+        return new Rect(pt.X, pt.Y, 1, 1);
+    }
+
     private void OnTranslationTextBoxMouseUp(object sender, MouseButtonEventArgs e)
     {
         if (TranslationTextBox.SelectionLength is >= 1 and <= 100)
@@ -685,7 +777,8 @@ internal sealed partial class ResultPanelWindow : Window
             var text = TranslationTextBox.SelectedText.Trim();
             if (!string.IsNullOrEmpty(text))
             {
-                SelectionBubble.ShowAtMouse(text);
+                var rect = GetSelectionOrMouseRect(TranslationTextBox, e);
+                SelectionBubble.ShowAt(TranslationTextBox, rect, text);
             }
         }
     }
@@ -697,7 +790,8 @@ internal sealed partial class ResultPanelWindow : Window
             var text = SourceTextBox.SelectedText.Trim();
             if (!string.IsNullOrEmpty(text))
             {
-                SelectionBubble.ShowAtMouse(text);
+                var rect = GetSelectionOrMouseRect(SourceTextBox, e);
+                SelectionBubble.ShowAt(SourceTextBox, rect, text);
             }
         }
     }
@@ -709,8 +803,21 @@ internal sealed partial class ResultPanelWindow : Window
             var text = RubyDocumentBuilder.ExtractFromSelection(selection, RubyCopyKind.Plain)?.Trim();
             if (!string.IsNullOrEmpty(text) && text.Length <= 100)
             {
-                SelectionBubble.ShowAtMouse(text);
+                var mousePos = e.GetPosition(SourceViewer);
+                SelectionBubble.ShowAt(SourceViewer, new Rect(mousePos.X, mousePos.Y, 1, 1), text);
             }
+        }
+    }
+
+    /// <summary>
+    /// 当气泡可见且用户在主窗口内点击任何区域（包括其他文字、空白处、按钮）时立即隐藏气泡。
+    /// 由于气泡处于独立 PopupRoot HWND，气泡内部的点击不会触发此事件。
+    /// </summary>
+    private void OnPanelPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (SelectionBubble.BubblePopup.IsOpen)
+        {
+            SelectionBubble.Hide();
         }
     }
 }

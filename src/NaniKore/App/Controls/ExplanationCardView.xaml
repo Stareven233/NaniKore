@@ -64,18 +64,34 @@
                                         <Grid.RowDefinitions>
                                             <RowDefinition Height="Auto" />
                                             <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
                                         </Grid.RowDefinitions>
 
-                                        <!-- 顶部行：词汇原形/读音展示与收藏按钮，支持选中与复制 -->
+                                        <!-- 顶部行：词汇标题“单词（读音）” + 紧随右侧的教育语法词性 Tag + 收藏按钮 -->
                                         <Grid Grid.Row="0">
-                                            <TextBox Style="{StaticResource TextBox.SelectableCardText}"
-                                                     Text="{Binding DisplayTitle, Mode=OneWay}"
-                                                     FontSize="14"
-                                                     FontWeight="SemiBold"
-                                                     Foreground="{DynamicResource Brush.Text.Primary}"
-                                                     VerticalAlignment="Center"
-                                                     Margin="0,0,32,0" />
+                                            <WrapPanel VerticalAlignment="Center" Margin="0,0,32,0">
+                                                <TextBox Style="{StaticResource TextBox.SelectableCardText}"
+                                                         Text="{Binding DisplayTitle, Mode=OneWay}"
+                                                         FontSize="14"
+                                                         FontWeight="SemiBold"
+                                                         Foreground="{DynamicResource Brush.Text.Primary}"
+                                                         VerticalAlignment="Center"
+                                                         Margin="0,0,8,0" />
+                                                <!-- 词性徽章 Tag：紧随词汇标题右侧，不单独占行 -->
+                                                <Border Background="{DynamicResource Brush.Accent.Subtle}"
+                                                        BorderBrush="{DynamicResource Brush.Control.Border}"
+                                                        BorderThickness="1"
+                                                        CornerRadius="4"
+                                                        Padding="6,1"
+                                                        VerticalAlignment="Center"
+                                                        Margin="0,0,0,0"
+                                                        Visibility="{Binding RoleVisibility}">
+                                                    <TextBox Style="{StaticResource TextBox.SelectableCardText}"
+                                                             Text="{Binding RoleBadgeText, Mode=OneWay}"
+                                                             FontSize="11"
+                                                             FontWeight="Medium"
+                                                             Foreground="{DynamicResource Brush.Text.Primary}" />
+                                                </Border>
+                                            </WrapPanel>
                                             <Button Style="{DynamicResource Button.Icon}"
                                                     HorizontalAlignment="Right"
                                                     VerticalAlignment="Center"
@@ -90,25 +106,8 @@
                                             </Button>
                                         </Grid>
 
-                                        <!-- 词性徽章行：严格展示纯净教育语法词性（如：一类动词、名词） -->
-                                        <WrapPanel Grid.Row="1" Margin="0,4,0,0">
-                                            <Border Background="{DynamicResource Brush.Accent.Subtle}"
-                                                    BorderBrush="{DynamicResource Brush.Control.Border}"
-                                                    BorderThickness="1"
-                                                    CornerRadius="4"
-                                                    Padding="6,1"
-                                                    Margin="0,0,6,3"
-                                                    Visibility="{Binding RoleVisibility}">
-                                                <TextBox Style="{StaticResource TextBox.SelectableCardText}"
-                                                         Text="{Binding RoleBadgeText, Mode=OneWay}"
-                                                         FontSize="11"
-                                                         FontWeight="Medium"
-                                                         Foreground="{DynamicResource Brush.Text.Primary}" />
-                                            </Border>
-                                        </WrapPanel>
-
                                         <!-- 释义与语境分析，支持选中与复制 -->
-                                        <TextBox Grid.Row="2"
+                                        <TextBox Grid.Row="1"
                                                  Style="{StaticResource TextBox.SelectableCardText}"
                                                  Text="{Binding Meaning, Mode=OneWay}"
                                                  FontSize="12"

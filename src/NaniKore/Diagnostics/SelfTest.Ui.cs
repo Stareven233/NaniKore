@@ -652,6 +652,19 @@ internal static partial class SelfTest
             };
             translationBox.RaiseEvent(mouseUpArgs);
             Check("TranslationTextBox selection raises SelectionBubble on MouseUp", selectionBubble?.BubblePopup.IsOpen == true);
+
+            // 17. 验证当气泡处于打开状态时，点击窗口内其他文字或区域（PreviewMouseDown）能立即隐藏气泡
+            var clickOtherArgs = new System.Windows.Input.MouseButtonEventArgs(
+                System.Windows.Input.Mouse.PrimaryDevice,
+                0,
+                System.Windows.Input.MouseButton.Left)
+            {
+                RoutedEvent = System.Windows.UIElement.PreviewMouseDownEvent,
+                Source = translationBox
+            };
+            expPanel.RaiseEvent(clickOtherArgs);
+            Check("clicking other text or area inside window hides SelectionBubble immediately", selectionBubble?.BubblePopup.IsOpen == false);
+
             selectionBubble?.Hide();
         }
     }

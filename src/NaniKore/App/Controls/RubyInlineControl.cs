@@ -114,27 +114,21 @@ internal sealed class RubyInlineControl : Grid
 
     public void CopyReading()
     {
-        if (TrySetClipboard(RubyText))
-        {
-            StatusNotificationRequested?.Invoke($"已复制假名到剪贴板：{RubyText}");
-        }
+        _ = TrySetClipboard(RubyText);
+        StatusNotificationRequested?.Invoke($"已复制假名到剪贴板：{RubyText}");
     }
 
     public void CopyBaseText()
     {
-        if (TrySetClipboard(BaseText))
-        {
-            StatusNotificationRequested?.Invoke($"已复制汉字到剪贴板：{BaseText}");
-        }
+        _ = TrySetClipboard(BaseText);
+        StatusNotificationRequested?.Invoke($"已复制汉字到剪贴板：{BaseText}");
     }
 
     public void CopyAnnotated()
     {
         var text = $"{BaseText}[{RubyText}]";
-        if (TrySetClipboard(text))
-        {
-            StatusNotificationRequested?.Invoke($"已复制带注音文本到剪贴板：{text}");
-        }
+        _ = TrySetClipboard(text);
+        StatusNotificationRequested?.Invoke($"已复制带注音文本到剪贴板：{text}");
     }
 
     private static bool TrySetClipboard(string text)
