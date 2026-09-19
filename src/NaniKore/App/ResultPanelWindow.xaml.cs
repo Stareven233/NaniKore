@@ -53,6 +53,34 @@ internal sealed partial class ResultPanelWindow : Window
         ? SourceTextBox.Text
         : (RubyTextParser.ToPlainText(_annotatedSource) is { Length: > 0 } plain ? plain : SourceTextBox.Text);
 
+    public string TranslationText => TranslationTextBox.Text;
+
+    /// <summary>更新并显示本次调用的 Token 消耗与性能指标。</summary>
+    public void SetMetrics(TranslationMetrics metrics)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(() => SetMetrics(metrics));
+            return;
+        }
+
+        MetricsTextBlock.Text = metrics.FormatSummary();
+        MetricsBar.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>清空并折叠本次指标栏。</summary>
+    public void ClearMetrics()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(ClearMetrics);
+            return;
+        }
+
+        MetricsTextBlock.Text = string.Empty;
+        MetricsBar.Visibility = Visibility.Collapsed;
+    }
+
     public void Reset(string source, string status, bool autoTranslate = false)
     {
         _annotatedSource = source;
@@ -63,6 +91,7 @@ internal sealed partial class ResultPanelWindow : Window
         TranslateButton.Content = "翻译"; // 初次进入始终为“翻译”
         TranslationTextBox.Clear();
         ExplanationTextBox.Clear();
+        ClearMetrics();
         _translationInsertIndex = 0;
         _translationHasContent = false;
         ErrorDetailsTextBox.Clear();
@@ -106,6 +135,7 @@ internal sealed partial class ResultPanelWindow : Window
         _translationInsertIndex = 0;
         _translationHasContent = false;
         _receivedAnnotatedSource = false;
+        ClearMetrics();
         TranslateButton.Content = "翻译";
 
         // 发起翻译时切回假名阅读态
@@ -186,6 +216,11 @@ internal sealed partial class ResultPanelWindow : Window
 
     public void Append(Translation.UnderstandDelta delta)
     {
+        if (string.IsNullOrEmpty(delta.Text))
+        {
+            return;
+        }
+
         if (delta.Channel == Translation.DeltaChannel.SourceText)
         {
             if (!_receivedAnnotatedSource)

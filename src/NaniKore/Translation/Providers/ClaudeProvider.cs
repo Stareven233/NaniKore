@@ -19,9 +19,12 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         var router = (request.Kind == UnderstandKind.Translate || request.ImagePng is { Length: > 0 })
             ? new SectionChannelRouter()
             : null;
+        var inputTokens = 0;
+        var outputTokens = 0;
 
         await foreach (var frame in SseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
         {
+            ExtractClaudeTokens(frame, ref inputTokens, ref outputTokens);
             var text = ExtractDelta(frame);
             foreach (var delta in Route(router, text, request.Kind))
             {
@@ -35,6 +38,11 @@ internal sealed class ClaudeProvider : TranslationProviderBase
             {
                 yield return delta;
             }
+        }
+
+        if (inputTokens > 0 || outputTokens > 0)
+        {
+            yield return new UnderstandDelta(DeltaChannel.Translation, string.Empty, new TokenUsage(inputTokens, outputTokens));
         }
     }
 
@@ -119,5 +127,40 @@ internal sealed class ClaudeProvider : TranslationProviderBase
             ? DeltaChannel.Explanation
             : DeltaChannel.Translation;
         return [new UnderstandDelta(channel, text)];
+    }
+
+    internal static void ExtractClaudeTokens(SseEvent frame, ref int inputTokens, ref int outputTokens)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(frame.Data);
+            var root = document.RootElement;
+            var type = GetText(root, "type");
+            if (string.Equals(frame.Event, "message_start", StringComparison.Ordinal) ||
+                string.Equals(type, "message_start", StringComparison.Ordinal))
+            {
+                if (root.TryGetProperty("message", out var msg) && msg.TryGetProperty("usage", out var usage))
+                {
+                    if (usage.TryGetProperty("input_tokens", out var it) && it.TryGetInt32(out var itv))
+                    {
+                        inputTokens = itv;
+                    }
+                }
+            }
+            else if (string.Equals(frame.Event, "message_delta", StringComparison.Ordinal) ||
+                     string.Equals(type, "message_delta", StringComparison.Ordinal))
+            {
+                if (root.TryGetProperty("usage", out var usage))
+                {
+                    if (usage.TryGetProperty("output_tokens", out var ot) && ot.TryGetInt32(out var otv))
+                    {
+                        outputTokens = otv;
+                    }
+                }
+            }
+        }
+        catch (JsonException)
+        {
+        }
     }
 }

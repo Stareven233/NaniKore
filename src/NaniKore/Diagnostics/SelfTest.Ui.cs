@@ -396,6 +396,25 @@ internal static partial class SelfTest
             "substantively modified text editor triggers 重译 when previous translation exists",
             translateBtn?.Content as string == "重译");
 
+        // 8.5 验证 SetMetrics 与 ClearMetrics 控制底部指标面板状态
+        var metricsBar = (System.Windows.Controls.Border?)panel.FindName("MetricsBar");
+        var metricsBlock = (System.Windows.Controls.TextBlock?)panel.FindName("MetricsTextBlock");
+        Check(
+            "metrics bar is initially collapsed",
+            metricsBar?.Visibility == System.Windows.Visibility.Collapsed);
+
+        panel.SetMetrics(new TranslationMetrics(320, 45, 680, 1750, 42.1));
+        Check(
+            "set metrics displays formatted summary and makes metrics bar visible",
+            metricsBar?.Visibility == System.Windows.Visibility.Visible &&
+            metricsBlock?.Text == "Input: 320 tokens · Output: 45 tokens · TTFT: 680ms · 生成速度: 42 t/s");
+
+        panel.BeginTranslation();
+        Check(
+            "begin translation clears and collapses metrics bar",
+            metricsBar?.Visibility == System.Windows.Visibility.Collapsed &&
+            string.IsNullOrEmpty(metricsBlock?.Text));
+
         // 9. 验证 ExtractFromSelection 能够从全选与单选 InlineUIContainer 中精准提取
         var fullRange = new System.Windows.Documents.TextRange(doc.ContentStart, doc.ContentEnd);
         var plainAll = RubyDocumentBuilder.ExtractFromSelection(fullRange, RubyCopyKind.Plain);

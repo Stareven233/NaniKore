@@ -19,6 +19,7 @@ internal static partial class SelfTest
         TestSentinelRouter();
         TestProviderTextExtraction();
         TestProviderCapabilitiesAndErrors();
+        TestTokenUsageAndMetrics();
     }
 
     private static void TestTranslationPromptTemplates()
@@ -405,6 +406,74 @@ internal static partial class SelfTest
             ProviderErrorMapper.ToUserMessage(
                 new ProviderHttpException(HttpStatusCode.InternalServerError, "multimodal processing is not enabled"))
                 .Contains("未启用图像输入", StringComparison.Ordinal));
+    }
+
+    private static void TestTokenUsageAndMetrics()
+    {
+        // 1. OpenAI completions usage 提取
+        var completionsJson = "{\"choices\":[{\"delta\":{\"content\":\"foo\"}}],\"usage\":{\"prompt_tokens\":320,\"completion_tokens\":45,\"total_tokens\":365}}";
+        var usage = OpenAiProvider.ExtractCompletionsUsage(completionsJson);
+        Check(
+            "OpenAI completions usage extracts input and output tokens",
+            usage.HasValue && usage.Value.InputTokens == 320 && usage.Value.OutputTokens == 45 && usage.Value.TotalTokens == 365);
+
+        // 2. OpenAI responses usage 提取
+        var responsesJson = "{\"type\":\"response.done\",\"response\":{\"usage\":{\"input_tokens\":150,\"output_tokens\":25,\"total_tokens\":175}}}";
+        var rUsage = OpenAiProvider.ExtractResponsesUsage(responsesJson);
+        Check(
+            "OpenAI responses usage extracts input and output tokens",
+            rUsage.HasValue && rUsage.Value.InputTokens == 150 && rUsage.Value.OutputTokens == 25 && rUsage.Value.TotalTokens == 175);
+
+        // 3. Claude tokens 提取 (message_start + message_delta)
+        var claudeInput = 0;
+        var claudeOutput = 0;
+        var startFrame = new SseEvent { Event = "message_start", Data = "{\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":200}}}" };
+        ClaudeProvider.ExtractClaudeTokens(startFrame, ref claudeInput, ref claudeOutput);
+        var deltaFrame = new SseEvent { Event = "message_delta", Data = "{\"type\":\"message_delta\",\"usage\":{\"output_tokens\":35}}" };
+        ClaudeProvider.ExtractClaudeTokens(deltaFrame, ref claudeInput, ref claudeOutput);
+        Check(
+            "Claude tokens extract input from message_start and output from message_delta",
+            claudeInput == 200 && claudeOutput == 35);
+
+        // 4. Gemini usageMetadata 提取
+        var geminiInput = 0;
+        var geminiOutput = 0;
+        var geminiJson = "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"bar\"}]}}],\"usageMetadata\":{\"promptTokenCount\":250,\"candidatesTokenCount\":60}}";
+        GeminiProvider.ExtractGeminiTokens(geminiJson, ref geminiInput, ref geminiOutput);
+        Check(
+            "Gemini tokens extract input and output from usageMetadata",
+            geminiInput == 250 && geminiOutput == 60);
+
+        // 5. TokenEstimator 兜底测试
+        var cjkEstimate = TokenEstimator.Estimate("ここは通れないよ");
+        var engEstimate = TokenEstimator.Estimate("Hello world this is a test");
+        var imgEstimate = TokenEstimator.Estimate(null, hasImage: true);
+        var emptyEstimate = TokenEstimator.Estimate(string.Empty);
+        Check(
+            "TokenEstimator estimates CJK and English text smoothly with image support",
+            cjkEstimate >= 5 && engEstimate >= 5 && imgEstimate >= 100 && emptyEstimate == 0);
+
+        // 6. TranslationMetrics.FormatSummary 格式测试
+        var metrics = new TranslationMetrics(
+            InputTokens: 320,
+            OutputTokens: 45,
+            TimeToFirstTokenMs: 680,
+            TotalDurationMs: 1750,
+            TokensPerSecond: 42.1);
+        Check(
+            "TranslationMetrics formats summary matching Input / Output / TTFT / t/s structure",
+            metrics.FormatSummary() == "Input: 320 tokens · Output: 45 tokens · TTFT: 680ms · 生成速度: 42 t/s");
+
+        var estimatedMetrics = new TranslationMetrics(
+            InputTokens: 320,
+            OutputTokens: 45,
+            TimeToFirstTokenMs: 680,
+            TotalDurationMs: 1750,
+            TokensPerSecond: 42.1,
+            IsEstimated: true);
+        Check(
+            "TranslationMetrics formats estimated summary with tilde prefix",
+            estimatedMetrics.FormatSummary() == "Input: ~320 tokens · Output: ~45 tokens · TTFT: 680ms · 生成速度: 42 t/s");
     }
 
     private static async Task<List<SseEvent>> ReadSseAsync(Stream stream)

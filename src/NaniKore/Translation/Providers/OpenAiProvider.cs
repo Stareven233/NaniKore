@@ -20,12 +20,21 @@ internal sealed class OpenAiProvider : TranslationProviderBase
         var router = (request.Kind == UnderstandKind.Translate || request.ImagePng is { Length: > 0 })
             ? new SectionChannelRouter()
             : null;
+        TokenUsage? usage = null;
 
         await foreach (var frame in SseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
         {
             if (frame.Data == "[DONE]")
             {
                 break;
+            }
+
+            var frameUsage = isResponses
+                ? ExtractResponsesUsage(frame.Data)
+                : ExtractCompletionsUsage(frame.Data);
+            if (frameUsage.HasValue)
+            {
+                usage = frameUsage;
             }
 
             var text = isResponses
@@ -44,6 +53,11 @@ internal sealed class OpenAiProvider : TranslationProviderBase
                 yield return delta;
             }
         }
+
+        if (usage.HasValue)
+        {
+            yield return new UnderstandDelta(DeltaChannel.Translation, string.Empty, usage.Value);
+        }
     }
 
     private HttpRequestMessage CreateCompletionsRequest(UnderstandRequest request)
@@ -60,6 +74,7 @@ internal sealed class OpenAiProvider : TranslationProviderBase
         {
             model = Profile.Model,
             stream = true,
+            stream_options = new { include_usage = true },
             messages = new object[]
             {
                 new { role = "system", content = system },
@@ -161,5 +176,63 @@ internal sealed class OpenAiProvider : TranslationProviderBase
             ? DeltaChannel.Explanation
             : DeltaChannel.Translation;
         return [new UnderstandDelta(channel, text)];
+    }
+
+    internal static TokenUsage? ExtractCompletionsUsage(string data)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(data);
+            var root = document.RootElement;
+            if (root.TryGetProperty("usage", out var usageElem) && usageElem.ValueKind == JsonValueKind.Object)
+            {
+                var input = usageElem.TryGetProperty("prompt_tokens", out var pt) && pt.TryGetInt32(out var ptv) ? ptv : 0;
+                var output = usageElem.TryGetProperty("completion_tokens", out var ct) && ct.TryGetInt32(out var ctv) ? ctv : 0;
+                if (input > 0 || output > 0)
+                {
+                    return new TokenUsage(input, output);
+                }
+            }
+
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    internal static TokenUsage? ExtractResponsesUsage(string data)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(data);
+            var root = document.RootElement;
+            JsonElement usageElem;
+            if (root.TryGetProperty("response", out var resp) && resp.TryGetProperty("usage", out usageElem))
+            {
+                var input = usageElem.TryGetProperty("input_tokens", out var it) && it.TryGetInt32(out var itv) ? itv : 0;
+                var output = usageElem.TryGetProperty("output_tokens", out var ot) && ot.TryGetInt32(out var otv) ? otv : 0;
+                if (input > 0 || output > 0)
+                {
+                    return new TokenUsage(input, output);
+                }
+            }
+            else if (root.TryGetProperty("usage", out usageElem))
+            {
+                var input = usageElem.TryGetProperty("input_tokens", out var it) && it.TryGetInt32(out var itv) ? itv : 0;
+                var output = usageElem.TryGetProperty("output_tokens", out var ot) && ot.TryGetInt32(out var otv) ? otv : 0;
+                if (input > 0 || output > 0)
+                {
+                    return new TokenUsage(input, output);
+                }
+            }
+
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }

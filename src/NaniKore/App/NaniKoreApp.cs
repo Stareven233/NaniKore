@@ -157,6 +157,10 @@ internal sealed class NaniKoreApp : Application
         panel.SetStatus("正在连接翻译服务…");
         panel.SetTranslationInProgress(true);
         var receivedOutput = false;
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        long? ttftMs = null;
+        TokenUsage? reportedUsage = null;
+
         try
         {
             var config = _configStore.Current;
@@ -164,20 +168,67 @@ internal sealed class NaniKoreApp : Application
             var provider = (_providerFactory ?? throw new InvalidOperationException("翻译服务尚未初始化。")).GetProvider(config.Pipeline.ActiveProfile, request);
             await foreach (var delta in provider.StreamAsync(request, cancellation.Token))
             {
+                if (delta.Usage.HasValue)
+                {
+                    reportedUsage = delta.Usage.Value;
+                }
+
                 if (!string.IsNullOrEmpty(delta.Text))
                 {
+                    if (!ttftMs.HasValue)
+                    {
+                        ttftMs = stopwatch.ElapsedMilliseconds;
+                        await Dispatcher.InvokeAsync(() => panel.SetStatus($"首字响应 TTFT: {ttftMs.Value}ms · 正在流式接收…"));
+                    }
+
                     receivedOutput = true;
                 }
 
                 await Dispatcher.InvokeAsync(() => panel.Append(delta));
             }
 
+            stopwatch.Stop();
+            var totalDurationMs = stopwatch.ElapsedMilliseconds;
+
             if (!cancellation.IsCancellationRequested)
             {
                 // 服务正常结束但没有任何可识别文本时不能伪装成成功，便于定位 provider 响应格式问题。
-                panel.SetStatus(
-                    receivedOutput ? "翻译完成。" : "翻译服务返回空内容。",
-                    isError: !receivedOutput);
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    panel.SetStatus(
+                        receivedOutput ? "翻译完成。" : "翻译服务返回空内容。",
+                        isError: !receivedOutput);
+
+                    if (receivedOutput)
+                    {
+                        var actualTtft = ttftMs ?? totalDurationMs;
+                        TokenUsage finalUsage;
+                        if (reportedUsage.HasValue)
+                        {
+                            finalUsage = reportedUsage.Value;
+                        }
+                        else
+                        {
+                            // 降级兜底估算：输入包含提示词与原句/图片，输出包含注音与译文
+                            var sysPrompt = PromptTemplates.GetSystemPrompt(request, config.Prompts);
+                            var estimatedInput = TokenEstimator.Estimate(sysPrompt + "\n" + source, imagePng is { Length: > 0 });
+                            var estimatedOutput = TokenEstimator.Estimate(panel.SourceText + "\n" + panel.TranslationText);
+                            finalUsage = new TokenUsage(estimatedInput, Math.Max(1, estimatedOutput), IsEstimated: true);
+                        }
+
+                        var generationTimeMs = Math.Max(1, totalDurationMs - actualTtft);
+                        var speed = (finalUsage.OutputTokens * 1000.0) / generationTimeMs;
+                        var metrics = new TranslationMetrics(
+                            InputTokens: finalUsage.InputTokens,
+                            OutputTokens: finalUsage.OutputTokens,
+                            TimeToFirstTokenMs: actualTtft,
+                            TotalDurationMs: totalDurationMs,
+                            TokensPerSecond: speed,
+                            IsEstimated: finalUsage.IsEstimated);
+
+                        panel.SetMetrics(metrics);
+                    }
+                });
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -191,13 +242,13 @@ internal sealed class NaniKoreApp : Application
             var details = exception is ProviderHttpException { ServerMessage: { } serverMessage }
                 ? serverMessage
                 : exception.Message;
-            panel.SetError(summary, details);
+            await Dispatcher.InvokeAsync(() => panel.SetError(summary, details));
         }
         finally
         {
             if (ReferenceEquals(_translationCancellation, cancellation))
             {
-                panel.SetTranslationInProgress(false);
+                await Dispatcher.InvokeAsync(() => panel.SetTranslationInProgress(false));
                 _translationCancellation = null;
             }
 

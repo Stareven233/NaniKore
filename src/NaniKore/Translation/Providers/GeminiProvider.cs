@@ -19,9 +19,12 @@ internal sealed class GeminiProvider : TranslationProviderBase
         var router = (request.Kind == UnderstandKind.Translate || request.ImagePng is { Length: > 0 })
             ? new SectionChannelRouter()
             : null;
+        var inputTokens = 0;
+        var outputTokens = 0;
 
         await foreach (var frame in SseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
         {
+            ExtractGeminiTokens(frame.Data, ref inputTokens, ref outputTokens);
             var text = ExtractDelta(frame.Data);
             foreach (var delta in Route(router, text, request.Kind))
             {
@@ -35,6 +38,11 @@ internal sealed class GeminiProvider : TranslationProviderBase
             {
                 yield return delta;
             }
+        }
+
+        if (inputTokens > 0 || outputTokens > 0)
+        {
+            yield return new UnderstandDelta(DeltaChannel.Translation, string.Empty, new TokenUsage(inputTokens, outputTokens));
         }
     }
 
@@ -86,5 +94,28 @@ internal sealed class GeminiProvider : TranslationProviderBase
             ? DeltaChannel.Explanation
             : DeltaChannel.Translation;
         return [new UnderstandDelta(channel, text)];
+    }
+
+    internal static void ExtractGeminiTokens(string data, ref int inputTokens, ref int outputTokens)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(data);
+            var root = document.RootElement;
+            if (root.TryGetProperty("usageMetadata", out var usageMeta))
+            {
+                if (usageMeta.TryGetProperty("promptTokenCount", out var pt) && pt.TryGetInt32(out var ptv))
+                {
+                    inputTokens = ptv;
+                }
+                if (usageMeta.TryGetProperty("candidatesTokenCount", out var ct) && ct.TryGetInt32(out var ctv))
+                {
+                    outputTokens = ctv;
+                }
+            }
+        }
+        catch (JsonException)
+        {
+        }
     }
 }
