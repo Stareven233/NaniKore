@@ -100,7 +100,7 @@
             <StackPanel>
                 <controls:SettingsRow x:Name="LocalPromptRow"
                                       Header="Base 基础提示词（两阶段协议）"
-                                      Description="{}{{target_language}} 会替换为目标语言；---TRANSLATION--- 区分假名原句与译文。"
+                                      Description="{}{{target_language}} 会替换为目标语言；---TRANSLATION--- 区分假名原句与译文。留空则使用内置默认模板。"
                                       IsStacked="True">
                     <controls:SettingsRow.HeaderAction>
                         <Button x:Name="RestorePromptButton"
@@ -118,7 +118,7 @@
                 <Border Style="{DynamicResource Divider.Row}" />
                 <controls:SettingsRow x:Name="PluginLanguageRow"
                                       Header="语言特化插件"
-                                      Description="根据字符集探测到的源语言特征动态注入 Base 提示词之后。"
+                                      Description="根据字符集探测到的源语言特征动态注入 Base 提示词之后。留空则使用内置默认插件。"
                                       IsStacked="True">
                     <controls:SettingsRow.HeaderAction>
                         <StackPanel Orientation="Horizontal">
@@ -139,7 +139,7 @@
                 <Border Style="{DynamicResource Divider.Row}" />
                 <controls:SettingsRow x:Name="VisionPromptRow"
                                       Header="视觉一条龙（vision_oneshot）提示词"
-                                      Description="{}{{target_language}} 会替换为「通用」页选择的目标语言；提示词中的 ---TRANSLATION--- 分隔原文与译文。"
+                                      Description="{}{{target_language}} 会替换为「通用」页选择的目标语言；提示词中的 ---TRANSLATION--- 分隔原文与译文。留空则使用内置默认模板。"
                                       IsStacked="True">
                     <controls:SettingsRow.HeaderAction>
                         <Button x:Name="RestoreVisionPromptButton"

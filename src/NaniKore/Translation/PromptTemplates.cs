@@ -392,24 +392,29 @@ internal sealed class SectionChannelRouter
         }
     }
 
-    private static readonly string[] SourceLeadingTags =
+    /// <summary>
+    /// 噪声标签清单（按现行两段式协议校准）：仅收录在现行协议下仍有真实产生源的兜底条目——
+    /// 1. 提示词显式声明的结构占位符（&lt;annotated_source&gt; / &lt;translation&gt;，含方括号与冒号变体）；
+    /// 2. 模型自发的中文分区标签（提示词将第一部分描述为「完成注音标注的原文」，故 原文/注音/译文 均有产生源）；
+    /// 3. Markdown 代码围栏习惯。
+    /// 旧版英文视觉提示词的 &lt;transcription&gt; 占位符系列随协议废弃已整体移除，不再兜底。
+    /// 新增条目前先确认产生源，并由 TestNoiseTagCalibration 守住该契约。
+    /// </summary>
+    internal static readonly string[] SourceLeadingTags =
     [
         "<annotated_source>",
         "[annotated_source]",
-        "<transcription>",
-        "[transcription]",
+        "annotated_source:",
         "```markdown",
         "```text",
         "```",
         "【原文】",
         "【注音】",
         "原文:",
-        "原文：",
-        "annotated_source:",
-        "transcription:"
+        "原文："
     ];
 
-    private static readonly string[] TranslationLeadingTags =
+    internal static readonly string[] TranslationLeadingTags =
     [
         "<translation>",
         "[translation]",
@@ -422,18 +427,16 @@ internal sealed class SectionChannelRouter
         "translation:"
     ];
 
-    private static readonly string[] SourceCloseTags =
+    internal static readonly string[] SourceCloseTags =
     [
         "</annotated_source>",
         "[/annotated_source]",
-        "</transcription>",
-        "[/transcription]",
         "```markdown",
         "```text",
         "```"
     ];
 
-    private static readonly string[] TranslationCloseTags =
+    internal static readonly string[] TranslationCloseTags =
     [
         "</translation>",
         "[/translation]",
@@ -532,10 +535,6 @@ internal sealed class SectionChannelRouter
                    .Replace("<annotated_source>", "", StringComparison.OrdinalIgnoreCase)
                    .Replace("[/annotated_source]", "", StringComparison.OrdinalIgnoreCase)
                    .Replace("[annotated_source]", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("</transcription>", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("<transcription>", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("[/transcription]", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("[transcription]", "", StringComparison.OrdinalIgnoreCase)
                    .Replace("【原文】", "", StringComparison.OrdinalIgnoreCase)
                    .Replace("【注音】", "", StringComparison.OrdinalIgnoreCase)
                    .Replace("```markdown", "", StringComparison.OrdinalIgnoreCase)

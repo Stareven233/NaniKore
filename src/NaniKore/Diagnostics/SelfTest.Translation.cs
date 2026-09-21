@@ -18,6 +18,7 @@ internal static partial class SelfTest
         TestRubyTextParser();
         TestSseReader();
         TestSentinelRouter();
+        TestNoiseTagCalibration();
         TestProviderTextExtraction();
         TestProviderCapabilitiesAndErrors();
         TestTokenUsageAndMetrics();
@@ -505,6 +506,55 @@ internal static partial class SelfTest
         Check(
             "CleanAnnotatedSourceWithInitial detects and removes unknown prefix tags by aligning with initial source first character",
             cleanedWithCustomTag == "亡[な]くなった");
+    }
+
+    /// <summary>
+    /// 噪声标签清单校准契约（阶段二遗留项 A）：兜底标签必须与现行两段式协议的产生源一一对应，
+    /// 旧版英文视觉提示词的 &lt;transcription&gt; 占位符系列已随协议废弃，不得回归。
+    /// </summary>
+    private static void TestNoiseTagCalibration()
+    {
+        // 现行提示词声明的结构占位符必须保留兜底（含方括号与冒号变体）
+        Check(
+            "noise tag lists keep covering the placeholders declared by the current two-part protocol",
+            SectionChannelRouter.SourceLeadingTags.Contains("<annotated_source>") &&
+            SectionChannelRouter.SourceLeadingTags.Contains("[annotated_source]") &&
+            SectionChannelRouter.SourceLeadingTags.Contains("annotated_source:") &&
+            SectionChannelRouter.SourceCloseTags.Contains("</annotated_source>") &&
+            SectionChannelRouter.SourceCloseTags.Contains("[/annotated_source]") &&
+            SectionChannelRouter.TranslationLeadingTags.Contains("<translation>") &&
+            SectionChannelRouter.TranslationLeadingTags.Contains("[translation]") &&
+            SectionChannelRouter.TranslationLeadingTags.Contains("translation:") &&
+            SectionChannelRouter.TranslationCloseTags.Contains("</translation>") &&
+            SectionChannelRouter.TranslationCloseTags.Contains("[/translation]"));
+
+        // 模型自发中文标签与代码围栏兜底保留
+        Check(
+            "noise tag lists keep the spontaneous Chinese section labels and markdown fences",
+            SectionChannelRouter.SourceLeadingTags.Contains("【原文】") &&
+            SectionChannelRouter.SourceLeadingTags.Contains("【注音】") &&
+            SectionChannelRouter.SourceLeadingTags.Contains("原文：") &&
+            SectionChannelRouter.TranslationLeadingTags.Contains("【译文】") &&
+            SectionChannelRouter.TranslationLeadingTags.Contains("译文：") &&
+            SectionChannelRouter.SourceLeadingTags.Contains("```") &&
+            SectionChannelRouter.TranslationLeadingTags.Contains("```"));
+
+        // 旧协议遗留且无产生源的 transcription 占位符系列不得回归
+        string[] legacyTranscriptionTags =
+        [
+            "<transcription>",
+            "[transcription]",
+            "transcription:",
+            "</transcription>",
+            "[/transcription]"
+        ];
+        Check(
+            "legacy transcription placeholder family stays removed from every noise tag list",
+            !legacyTranscriptionTags.Any(legacy =>
+                SectionChannelRouter.SourceLeadingTags.Contains(legacy) ||
+                SectionChannelRouter.SourceCloseTags.Contains(legacy) ||
+                SectionChannelRouter.TranslationLeadingTags.Contains(legacy) ||
+                SectionChannelRouter.TranslationCloseTags.Contains(legacy)));
     }
 
     private static void TestProviderTextExtraction()

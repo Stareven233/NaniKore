@@ -1,6 +1,6 @@
 # 此文件是可提交的运行配置模板：API Key 仅由 Windows DPAPI 保存到当前用户配置目录，不写入此文件。
 # 修改根目录模板后重新构建；运行时在 Debug 或发布目录各自使用其副本。
-version: 0.2.10+18
+version: 0.2.11
 general:
   auto_translate: false
   target_language: 中文（简体）
@@ -76,16 +76,9 @@ windows:
   settings_width: 1024
   settings_height: 700
 prompts:
-  # base / japanese_plugin / english_plugin 留空即使用内置默认模板；此处仅显式声明视觉一条龙协议，
-  # 内容与 PromptTemplates.DefaultVisionOneshotPrompt 保持一致，改协议时两边需同步。
-  vision_oneshot: |
-    你是准确、自然的视觉翻译引擎。
-    先完整转录图片中可读的全部文字，再将其翻译为{{target_language}}，并按顺序输出恰好两部分：
-    <annotated_source>
-    ---TRANSLATION---
-    <translation>
-    第一部分是转录并完成注音标注的原文，第二部分是对应译文，两部分之间仅由 ---TRANSLATION--- 分隔。
-    <annotated_source> 与 <translation> 是结构占位符，输出时替换为对应内容，尖括号本身不保留。
-    原文中的日文汉字按 漢字[かな] 格式标注振假名，假名、标点、数字与非汉字单词不加方括号。
-    忠实呈现图片中实际出现的内容，维持原有顺序与分行。
+  # 提示词键一律留空即回落内置默认模板，填入非空内容时以本文件为准。可用占位符 {{target_language}} 会展开为目标语言。
+  base: ''
+  japanese_plugin: ''
+  english_plugin: ''
+  vision_oneshot: ''
   explain: ''
