@@ -12,6 +12,7 @@ internal static partial class SelfTest
     private static void RunTranslationTests()
     {
         TestTranslationPromptTemplates();
+        TestPromptLiteralFormatting();
         TestModularPromptTemplates();
         TestLanguageDetector();
         TestRubyTextParser();
@@ -42,28 +43,103 @@ internal static partial class SelfTest
 
         var imageRequest = request with { ImagePng = new byte[] { 1 } };
         var defaultVisionPrompt = PromptTemplates.GetSystemPrompt(imageRequest, new PromptConfig());
-        const string expectedVisionShape = "<transcription>\n\n---\n\n<translation>";
+        const string expectedVisionShape = "<annotated_source>\n---TRANSLATION---\n<translation>";
         var normalizedVisionPrompt = defaultVisionPrompt.Replace("\r\n", "\n");
         Check(
-            "default vision prompt expands its target language and keeps the visible section separator",
+            "default vision prompt expands its target language and keeps the two-part protocol",
             normalizedVisionPrompt.Contains("zh-CN", StringComparison.Ordinal) &&
             normalizedVisionPrompt.Contains(expectedVisionShape, StringComparison.Ordinal) &&
             !normalizedVisionPrompt.Contains(PromptTemplates.TargetLanguagePlaceholder, StringComparison.Ordinal));
 
         var visionPrompt = PromptTemplates.GetSystemPrompt(
             imageRequest,
-            new PromptConfig { VisionOneshot = "OCR\n\n---\n\nTranslate {{target_language}}; retain {{unknown_placeholder}}" });
+            new PromptConfig { VisionOneshot = "OCR\n---TRANSLATION---\nTranslate to {{target_language}}; retain {{unknown_placeholder}}" });
         Check(
             "custom vision prompt expands only the target language placeholder",
-            visionPrompt == "OCR\n\n---\n\nTranslate zh-CN; retain {{unknown_placeholder}}");
+            visionPrompt == "OCR\n---TRANSLATION---\nTranslate to zh-CN; retain {{unknown_placeholder}}");
 
         var pureModularPrompt = PromptTemplates.GetSystemPrompt(
             request,
             new PromptConfig());
         Check(
-            "empty prompt config strictly builds modular prompt with sentinel and translation discipline",
+            "empty prompt config strictly builds modular prompt with sentinel and zero explanation directives",
             pureModularPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
-            pureModularPrompt.Contains("Strict Translation Discipline", StringComparison.Ordinal));
+            pureModularPrompt.Contains("你是准确、自然的翻译引擎", StringComparison.Ordinal) &&
+            !pureModularPrompt.Contains("### [词汇/短语]", StringComparison.Ordinal) &&
+            !pureModularPrompt.Contains("### [语法/句型]", StringComparison.Ordinal) &&
+            !pureModularPrompt.Contains("辞書形", StringComparison.Ordinal) &&
+            !pureModularPrompt.Contains("JLPT", StringComparison.Ordinal));
+    }
+
+    /// <summary>校验内置提示词字面量的排版契约：内容即下发内容，零前导空白、零首尾换行、零 CR。</summary>
+    private static void TestPromptLiteralFormatting()
+    {
+        var literals = new (string Name, string Value)[]
+        {
+            (nameof(PromptTemplates.DefaultTranslationBasePrompt), PromptTemplates.DefaultTranslationBasePrompt),
+            (nameof(PromptTemplates.JapanesePlugin), PromptTemplates.JapanesePlugin),
+            (nameof(PromptTemplates.EnglishPlugin), PromptTemplates.EnglishPlugin),
+            (nameof(PromptTemplates.LanguageAlignmentRule), PromptTemplates.LanguageAlignmentRule),
+            (nameof(PromptTemplates.DefaultVisionOneshotPrompt), PromptTemplates.DefaultVisionOneshotPrompt),
+            (nameof(PromptTemplates.ExplainStructureRule), PromptTemplates.ExplainStructureRule),
+            (nameof(PromptTemplates.ExplainLanguageAlignmentRule), PromptTemplates.ExplainLanguageAlignmentRule),
+            (nameof(PromptTemplates.DefaultExplainUserPrompt), PromptTemplates.DefaultExplainUserPrompt),
+        };
+
+        foreach (var (name, value) in literals)
+        {
+            var indentedLines = value.Split('\n').Where(line => line.StartsWith(' ') || line.StartsWith('\t')).ToArray();
+            Check(
+                $"prompt literal {name} is compact without leading indentation, CR or edge whitespace",
+                value == value.Trim() &&
+                !value.Contains('\r', StringComparison.Ordinal) &&
+                indentedLines.Length == 0);
+        }
+
+        // 全中文化：规则声明与插件标题不得残留英文指令字眼（IPA / Markdown / JLPT 等技术术语除外）
+        string[] englishRuleMarkers =
+        [
+            "You are", "Strictly", "NEVER", "MUST", "[Strict", "Plugin]", "Specification]", "Constraint]", "Discipline]",
+        ];
+        foreach (var (name, value) in literals)
+        {
+            var englishHits = englishRuleMarkers
+                .Where(marker => value.Contains(marker, StringComparison.Ordinal))
+                .ToArray();
+            Check(
+                $"prompt literal {name} is fully sinicized without English rule declarations",
+                englishHits.Length == 0);
+        }
+
+        // 协议一致性：声明两段式输出的提示词必须且只能使用唯一哨兵，杜绝“提示词说一套、路由层认一套”的漂移
+        (string Name, string Value)[] twoPartProtocols =
+        [
+            (nameof(PromptTemplates.DefaultTranslationBasePrompt), PromptTemplates.DefaultTranslationBasePrompt),
+            (nameof(PromptTemplates.DefaultVisionOneshotPrompt), PromptTemplates.DefaultVisionOneshotPrompt),
+        ];
+        foreach (var (name, value) in twoPartProtocols)
+        {
+            Check(
+                $"two-part protocol prompt {name} declares only the single translation sentinel",
+                value.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
+                !value.Contains("\n---\n", StringComparison.Ordinal));
+        }
+
+        // 组装后的 system prompt 同样必须干净：无 CR、首尾无空白
+        var assembled = new[]
+        {
+            PromptTemplates.GetSystemPrompt(new UnderstandRequest(UnderstandKind.Translate, "ここは通れないよ", null, "中文（简体）"), new PromptConfig()),
+            PromptTemplates.GetSystemPrompt(new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "中文（简体）"), new PromptConfig()),
+            PromptTemplates.GetSystemPrompt(new UnderstandRequest(UnderstandKind.Translate, "text", new byte[] { 1 }, "中文（简体）"), new PromptConfig()),
+            PromptTemplates.GetSystemPrompt(new UnderstandRequest(UnderstandKind.Explain, "通れない", null, "中文（简体）"), new PromptConfig()),
+        };
+
+        foreach (var prompt in assembled)
+        {
+            Check(
+                "assembled system prompt is trimmed and free of carriage returns",
+                prompt == prompt.Trim() && !prompt.Contains('\r', StringComparison.Ordinal));
+        }
     }
 
     private static void TestModularPromptTemplates()
@@ -100,9 +176,8 @@ internal static partial class SelfTest
         var englishReq = new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "中文（简体）");
         var englishPrompt = PromptTemplates.GetSystemPrompt(englishReq, new PromptConfig());
         Check(
-            "system prompt for English input injects English plugin with IPA and excludes infinitive grammar rule",
-            englishPrompt.Contains("International Phonetic Alphabet (IPA)", StringComparison.Ordinal) &&
-            !englishPrompt.Contains("base infinitive form", StringComparison.Ordinal) &&
+            "system prompt for English input injects English plugin with IPA and excludes Japanese ruby",
+            englishPrompt.Contains("国际音标（IPA）", StringComparison.Ordinal) &&
             !englishPrompt.Contains("漢字[かな]", StringComparison.Ordinal));
 
         // 5. 独立精讲请求遵循微结构化规约与文法术语要求
@@ -114,6 +189,7 @@ internal static partial class SelfTest
             explainPrompt.Contains("### [语法/句型]", StringComparison.Ordinal) &&
             explainPrompt.Contains("### [语境与地道表达]", StringComparison.Ordinal) &&
             explainPrompt.Contains("辞書形", StringComparison.Ordinal) &&
+            explainPrompt.Contains("JLPT N3", StringComparison.Ordinal) &&
             explainPrompt.Contains("中文（简体）", StringComparison.Ordinal));
 
         // 6. 用户自定义 Base 提示词与语言特化插件优先级
@@ -272,25 +348,35 @@ internal static partial class SelfTest
 
     private static void TestSentinelRouter()
     {
-        var simpleSeparatorRouter = new SectionChannelRouter();
-        var simpleSeparatorDeltas = simpleSeparatorRouter
-            .Push("原文\n--")
-            .Concat(simpleSeparatorRouter.Push("-\n译文"))
-            .Concat(simpleSeparatorRouter.Complete())
+        var legacyRuleRouter = new SectionChannelRouter();
+        var legacyRuleDeltas = legacyRuleRouter
+            .Push("私[わたし]は\n---\n学生[がくせい]です。")
+            .Concat(legacyRuleRouter.Complete())
             .ToList();
         Check(
-            "section router accepts the five-character separator split across frames",
-            string.Concat(simpleSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "原文" &&
-            string.Concat(simpleSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "译文");
+            "section router no longer recognizes the legacy bare markdown rule as a separator",
+            string.Concat(legacyRuleDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "私[わたし]は\n---\n学生[がくせい]です。" &&
+            legacyRuleDeltas.All(delta => delta.Channel == DeltaChannel.SourceText));
+
+        var crlfSplitRouter = new SectionChannelRouter();
+        var crlfSplitDeltas = crlfSplitRouter
+            .Push("原文\r\n---TRANS")
+            .Concat(crlfSplitRouter.Push("LATION---\r\n译文"))
+            .Concat(crlfSplitRouter.Complete())
+            .ToList();
+        Check(
+            "section router splits the translation sentinel across frames and absorbs CRLF padding",
+            string.Concat(crlfSplitDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "原文" &&
+            string.Concat(crlfSplitDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "译文");
 
         var paddedSeparatorRouter = new SectionChannelRouter();
         var paddedSeparatorDeltas = paddedSeparatorRouter
-            .Push("原文\n\n--")
-            .Concat(paddedSeparatorRouter.Push("-\n\n译文"))
+            .Push("原文\n\n---TRANS")
+            .Concat(paddedSeparatorRouter.Push("LATION---\n\n译文"))
             .Concat(paddedSeparatorRouter.Complete())
             .ToList();
         Check(
-            "section router consumes the blank lines around the configured separator",
+            "section router consumes the blank lines around the translation sentinel",
             string.Concat(paddedSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "原文" &&
             string.Concat(paddedSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "译文");
 
@@ -321,6 +407,23 @@ internal static partial class SelfTest
             "section router handles CRLF, case-insensitive sentinel, and strips pseudo XML tags",
             string.Concat(crlfCaseDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "ここは通[とお]れないよ" &&
             string.Concat(crlfCaseDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "这里过不去哦");
+
+        // 视觉一条龙默认提示词声明的协议形态必须能被路由层无损拆分（防止提示词与路由层协议漂移）
+        var visionProtocolRouter = new SectionChannelRouter();
+        var visionProtocolDeltas = visionProtocolRouter
+            .Push("""
+<annotated_source>
+私[わたし]は 学生[がくせい]です。
+---TRANSLATION---
+我是学生。
+</translation>
+""")
+            .Concat(visionProtocolRouter.Complete())
+            .ToList();
+        Check(
+            "section router splits the exact two-part shape declared by the default vision prompt",
+            string.Concat(visionProtocolDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "私[わたし]は 学生[がくせい]です。" &&
+            string.Concat(visionProtocolDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "我是学生。");
 
         var immediateStreamRouter = new SectionChannelRouter();
         _ = immediateStreamRouter.Push("私[わたし]は\n---TRANSLATION---\n").ToList();

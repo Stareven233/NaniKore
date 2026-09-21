@@ -16,7 +16,7 @@ public sealed class ExplanationVocabularyCard
     /// <summary>读音假名或国际音标 (IPA)。</summary>
     public string Reading { get; set; } = string.Empty;
 
-    /// <summary>词性与原形（例如：动词原形、名词、辞书形）。</summary>
+    /// <summary>词性与原形（例如：动词原形、名词、辞書形）。</summary>
     public string Role { get; set; } = string.Empty;
 
     /// <summary>详细释义与在当前句中的语境分析。</summary>

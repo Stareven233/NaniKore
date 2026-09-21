@@ -2,107 +2,125 @@ using NaniKore.Config;
 
 namespace NaniKore.Translation;
 
-/// <summary>内置提示词与视觉一条龙的轻量分段协议。</summary>
+/// <summary>
+/// 内置提示词与两阶段流式分段协议。
+/// 排版约定：提示词字面量一律顶格书写，字面量内容即为最终下发给模型的 Payload——
+/// 零前导空白、零冗余缩进、零首尾换行，主人可直接对照审计。
+/// 组织顺序自上而下对应三个阶段：原文处理 → 译文处理 → 精讲处理。
+/// </summary>
 internal static class PromptTemplates
 {
-    // 两阶段流式输出极简分隔标记：用于区分假名标注原句与目标语言译文
+    /// <summary>两阶段流式输出唯一的分段标记：区分标注原文与目标语言译文。</summary>
     internal const string TranslationSentinel = "---TRANSLATION---";
-    internal const string TranslationSeparator = "\n---TRANSLATION---\n";
 
-    // 兼容历史视觉一条龙分栏标记（保持向下兼容）
-    internal const string SectionSeparator = "\n---\n";
+    /// <summary>目标语言占位符；仅展开已声明的这一个，未知占位符原样保留，避免悄悄改变用户提示词语义。</summary>
     internal const string TargetLanguagePlaceholder = "{{target_language}}";
 
-    /// <summary>两阶段精讲默认追问提示词（复用前缀历史以命中 Prompt Cache）。</summary>
-    internal const string DefaultExplainUserPrompt = """
-        请对上述内容进行深度精讲拆解。注意：只分析N3及以上难度的重点词汇、短语与语法句型，过滤掉N4/N5等初级简单基础词与基础句型，太简单的不要分析。
-        请严格按以下微结构卡片格式输出，所有释义与解析使用目标语言：
-        ### [词汇/短语]
-        - **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
-        ### [语法/句型]
-        - **句型** | 语法功能与释义
-        ### [语境与地道表达]
-        语境分析与自然表达说明
-        【词性约束】动词词性必须严格标注为一类动词、二类动词或三类动词（辞书形原形），避免未然形等旧称；形容词标注为一类/二类形容词。
-        """;
+    #region 第一部分：原文处理（注音 / 音标规范，日语在前、英语在后）
 
-    /// <summary>设置页始终展示的默认基础翻译提示词模版；主人可直接在此基础上修改。</summary>
-    internal const string DefaultTranslationPrompt = DefaultTranslationBasePrompt;
-
-    /// <summary>模块化 Base 提示词：规定两阶段输出格式与严格翻译纪律（严禁与用户对话、反问或补全）。</summary>
-    internal const string DefaultTranslationBasePrompt = """
-        You are an accurate, natural language translator.
-        Translate the supplied text into {{target_language}}.
-        Return the result in exactly this two-part structure:
-        <annotated_source>
-        ---TRANSLATION---
-        <translation>
-
-        [Strict Translation Discipline]
-        - Strictly translate the input text as-is.
-        - <annotated_source> and <translation> 只是占位符，你必须用对应的内容替换它们.
-        - Strictly output only the two parts separated by `---TRANSLATION---`.
-        """;
-
-    /// <summary>日语特化插件：约束汉字注音方括号语法规范。</summary>
+    /// <summary>日语特化插件：约束汉字振假名注音格式；只服务原文标注，不携带精讲文法。</summary>
     internal const string JapanesePlugin = """
-        [Japanese Language Plugin]
-        - For <annotated_source>: Annotate all kanji readings strictly using ruby bracket format `漢字[かな]` (e.g. `私[わたし]は 学生[がくせい]です。`).
-        - Never put brackets around kana, punctuation, digits, or non-kanji words.
-        - Even if the input text is a fragment, clause, or dialogue ending with particles (e.g. `て...`, `けど`), annotate kanji ruby readings faithfully for all kanji present.
-        """;
+[日语注音规范]
+- 仅对汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）。
+- 假名、标点、数字以及非汉字单词一律不加方括号。
+- 即使输入是片段、从句，或以终助词结尾的对话（如 て…、けど），也为其中所有汉字忠实标注读音。
+""";
 
     /// <summary>默认日语插件模板，供设置面板展示与一键恢复。</summary>
     internal const string DefaultJapanesePlugin = JapanesePlugin;
 
-    /// <summary>英语特化插件：约束音标 (IPA) 标注规范。</summary>
+    /// <summary>英语特化插件：约束国际音标（IPA）标注规范。</summary>
     internal const string EnglishPlugin = """
-        [English Language Plugin]
-        - For <annotated_source>: When phonetic annotation is helpful, annotate with International Phonetic Alphabet (IPA) in brackets.
-        """;
+[英语音标规范]
+- 在原文标注中确有帮助时，用方括号标注国际音标（IPA），如 apple[ˈæpl]。
+""";
 
     /// <summary>默认英语插件模板，供设置面板展示与一键恢复。</summary>
     internal const string DefaultEnglishPlugin = EnglishPlugin;
 
+    #endregion
+
+    #region 第二部分：译文处理（翻译规则，零精讲提示词）
+
+    /// <summary>模块化 Base 提示词：规定两段式输出协议与翻译纪律；主人可在设置页直接修改。</summary>
+    internal const string DefaultTranslationBasePrompt = """
+你是准确、自然的翻译引擎。
+将用户提供的文本翻译为{{target_language}}，并按顺序输出恰好两部分：
+<annotated_source>
+---TRANSLATION---
+<translation>
+第一部分是完成注音标注的原文，第二部分是对应译文，两部分之间仅由 ---TRANSLATION--- 分隔。
+<annotated_source> 与 <translation> 是结构占位符，输出时替换为对应内容，尖括号本身不保留。
+忠实翻译输入内容本身，维持原有语义与语气。
+""";
+
+    /// <summary>设置页始终展示的默认基础翻译提示词模版；主人可直接在此基础上修改。</summary>
+    internal const string DefaultTranslationPrompt = DefaultTranslationBasePrompt;
+
     /// <summary>目标语言对齐约束：强制译文使用当前目标语言。</summary>
     internal const string LanguageAlignmentRule = """
-        [Target Language Constraint]
-        All translations must strictly be written in {{target_language}}.
-        """;
+[目标语言约束]
+全部译文必须使用{{target_language}}撰写。
+""";
 
-    /// <summary>精讲微结构化格式规约：在精讲任务中提供微结构卡片格式、日语教育文法与 N3+ 过滤规约。</summary>
-    internal const string ExplainStructureRule = """
-        [Deep Explanation Specification]
-        When requested to explain or break down the text, provide a clean structured markdown response adhering to this format:
-        ### [词汇/短语]
-        **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
-        ### [语法/句型]
-        **句型** | 语法功能与释义
-        ### [详解]
-        为什么这么翻译
-
-        [Part of Speech & Educational Grammar]
-        For verbs and vocabulary: Always identify the dictionary form (辞書形, plain base form). MUST strictly adhere to Japanese Educational Grammar (日本語教育文法).
-
-        [Difficulty & Focus Filter]
-        Focus strictly on non-trivial vocabulary, idioms, and grammatical patterns at JLPT N2 level and above.
-        """;
-
-    /// <summary>视觉一条龙的默认模板；直接展示分栏协议，用户可按实际模型自由修改。</summary>
+    /// <summary>视觉一条龙默认模板：转录图中文字并直接给出标注原文与译文，自包含全部协议。</summary>
     internal const string DefaultVisionOneshotPrompt = """
-        Transcribe all readable text in the supplied image, then translate it into {{target_language}}.
-        Return exactly this shape:
-        <transcription>
+你是准确、自然的视觉翻译引擎。
+先完整转录图片中可读的全部文字，再将其翻译为{{target_language}}，并按顺序输出恰好两部分：
+<annotated_source>
+---TRANSLATION---
+<translation>
+第一部分是转录并完成注音标注的原文，第二部分是对应译文，两部分之间仅由 ---TRANSLATION--- 分隔。
+<annotated_source> 与 <translation> 是结构占位符，输出时替换为对应内容，尖括号本身不保留。
+原文中的日文汉字按 漢字[かな] 格式标注振假名，假名、标点、数字与非汉字单词不加方括号。
+忠实呈现图片中实际出现的内容，维持原有顺序与分行。
+""";
 
-        ---
+    #endregion
 
-        <translation>
+    #region 第三部分：精讲处理（语法拆解与词汇卡片规范）
 
-        [Strict Translation Discipline]
-        - For Japanese kanji in <transcription>, annotate readings strictly using ruby bracket format `漢字[かな]` (e.g. `私[わたし]は 学生[がくせい]です。`). Never bracket kana, punctuation, digits, or non-kanji words.
-        - Strictly translate the input text as-is. Even if the text is incomplete, fragmented, or dialogue, NEVER engage in conversation, NEVER ask questions back, and NEVER offer to complete the sentence.
-        - Do not include labels, markdown headers, commentary, notes, or extra sections.
-        """;
+    /// <summary>精讲阶段的职责声明。</summary>
+    internal const string ExplainRolePrompt = "你是严谨的外语精讲导师，擅长拆解句法、提炼重点并给出地道的解释。";
+
+    /// <summary>精讲微结构化规约：卡片协议 + 日语教育文法 + N3+ 难度过滤。</summary>
+    internal const string ExplainStructureRule = """
+[精讲结构规范]
+按以下三个小节输出结构化 Markdown：
+### [词汇/短语]
+**词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
+### [语法/句型]
+**句型** | 语法功能与释义
+### [语境与地道表达]
+结合整句说明语义、语气与翻译取舍
+
+[日语教育文法]
+动词与词汇一律给出辞書形（原形），词性严格采用日本語教育文法体系：动词标注一类动词、二类动词或三类动词，形容词标注一类形容词或二类形容词，不使用未然形、连用形等旧称。
+
+[难度过滤]
+仅收录 JLPT N3 及以上难度的重点词汇、短语与语法句型；N4/N5 阶段的简单词与基础句型并入「语境与地道表达」小节说明，不进入词汇与语法卡片。
+""";
+
+    /// <summary>精讲目标语言对齐：强制释义、语法与语境说明使用当前目标语言。</summary>
+    internal const string ExplainLanguageAlignmentRule = """
+[精讲语言约束]
+全部释义、语法剖析与语境说明必须使用{{target_language}}撰写。
+""";
+
+    /// <summary>两阶段精讲默认追问提示词（复用前缀历史以命中 Prompt Cache）。</summary>
+    internal const string DefaultExplainUserPrompt = """
+请对上述内容进行深度精讲拆解。注意：只分析N3及以上难度的重点词汇、短语与语法句型，过滤掉N4/N5等初级简单基础词与基础句型，太简单的不要分析。
+请严格按以下微结构卡片格式输出，所有释义与解析使用目标语言：
+### [词汇/短语]
+- **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
+### [语法/句型]
+- **句型** | 语法功能与释义
+### [语境与地道表达]
+语境分析与自然表达说明
+【词性约束】动词词性必须严格标注为一类动词、二类动词或三类动词（辞書形原形），避免未然形等旧称；形容词标注为一类/二类形容词。
+""";
+
+    #endregion
 
     public static string GetSystemPrompt(UnderstandRequest request, PromptConfig prompts)
     {
@@ -136,74 +154,64 @@ internal static class PromptTemplates
     /// <summary>
     /// 根据文本字符探测结果动态组装 Base + 特化 Plugins + 目标语言对齐。
     /// 优先使用用户在 PromptConfig 中自定义的模板，未定制项优雅回退至内置模板。
+    /// 翻译阶段严格零精讲提示词，确保首字延迟与前缀缓存稳定命中。
+    /// 段落之间统一以 \n\n 连接，避免 AppendLine 引入随平台漂移的 CRLF 污染 Payload。
     /// </summary>
     internal static string BuildModularSystemPrompt(UnderstandRequest request, PromptConfig? prompts = null)
     {
         var detection = LanguageDetector.Detect(request.SourceText, request.TargetLanguage);
-        var sb = new System.Text.StringBuilder();
 
         var basePrompt = !string.IsNullOrWhiteSpace(prompts?.Base)
             ? prompts.Base.Trim()
             : DefaultTranslationBasePrompt;
-        sb.AppendLine(basePrompt);
+
+        var sections = new List<string> { basePrompt };
 
         if (detection.NeedsJapaneseRuby || detection.HasJapanese)
         {
-            var jaPlugin = !string.IsNullOrWhiteSpace(prompts?.JapanesePlugin)
+            sections.Add(!string.IsNullOrWhiteSpace(prompts?.JapanesePlugin)
                 ? prompts.JapanesePlugin.Trim()
-                : JapanesePlugin;
-            sb.AppendLine();
-            sb.AppendLine(jaPlugin);
+                : JapanesePlugin);
         }
 
         if (detection.NeedsEnglishIpa || (detection.HasEnglish && !detection.HasJapanese))
         {
-            var enPlugin = !string.IsNullOrWhiteSpace(prompts?.EnglishPlugin)
+            sections.Add(!string.IsNullOrWhiteSpace(prompts?.EnglishPlugin)
                 ? prompts.EnglishPlugin.Trim()
-                : EnglishPlugin;
-            sb.AppendLine();
-            sb.AppendLine(enPlugin);
+                : EnglishPlugin);
         }
 
-        sb.AppendLine();
-        sb.AppendLine(LanguageAlignmentRule);
+        sections.Add(LanguageAlignmentRule);
 
-        return ExpandTargetLanguage(sb.ToString().TrimEnd(), request.TargetLanguage);
+        return ExpandTargetLanguage(string.Join("\n\n", sections), request.TargetLanguage);
     }
 
     /// <summary>
-    /// 为独立的精讲任务组装结构化系统提示词。
+    /// 为独立的精讲任务组装结构化系统提示词：职责声明 + 精讲规约 + 语言插件 + 目标语言对齐。
     /// </summary>
     internal static string BuildExplainSystemPrompt(UnderstandRequest request, PromptConfig? prompts = null)
     {
         var detection = LanguageDetector.Detect(request.SourceText, request.TargetLanguage);
-        var sb = new System.Text.StringBuilder();
 
-        sb.AppendLine("You are an expert linguistic tutor and translator.");
-        sb.AppendLine(ExplainStructureRule);
+        var sections = new List<string> { ExplainRolePrompt, ExplainStructureRule };
 
         if (detection.NeedsJapaneseRuby || detection.HasJapanese)
         {
-            var jaPlugin = !string.IsNullOrWhiteSpace(prompts?.JapanesePlugin)
+            sections.Add(!string.IsNullOrWhiteSpace(prompts?.JapanesePlugin)
                 ? prompts.JapanesePlugin.Trim()
-                : JapanesePlugin;
-            sb.AppendLine();
-            sb.AppendLine(jaPlugin);
+                : JapanesePlugin);
         }
 
         if (detection.NeedsEnglishIpa || (detection.HasEnglish && !detection.HasJapanese))
         {
-            var enPlugin = !string.IsNullOrWhiteSpace(prompts?.EnglishPlugin)
+            sections.Add(!string.IsNullOrWhiteSpace(prompts?.EnglishPlugin)
                 ? prompts.EnglishPlugin.Trim()
-                : EnglishPlugin;
-            sb.AppendLine();
-            sb.AppendLine(enPlugin);
+                : EnglishPlugin);
         }
 
-        sb.AppendLine();
-        sb.AppendLine(ExpandTargetLanguage("All vocabulary definitions, grammar explanations, and context notes must strictly be written in {{target_language}}.", request.TargetLanguage));
+        sections.Add(ExplainLanguageAlignmentRule);
 
-        return ExpandTargetLanguage(sb.ToString().TrimEnd(), request.TargetLanguage);
+        return ExpandTargetLanguage(string.Join("\n\n", sections), request.TargetLanguage);
     }
 
     private static string ExpandTargetLanguage(string prompt, string targetLanguage) =>
@@ -212,7 +220,8 @@ internal static class PromptTemplates
 }
 
 /// <summary>
-/// 视觉流优先按两侧带空行的分隔符拆成原文和译文，并兼容紧凑分隔符；无分隔符时保留完整输出作为译文。
+/// 流式输出按唯一的分段标记 <c>---TRANSLATION---</c> 拆成原文与译文两个通道；
+/// 标记前后的空白与噪声标签由路由器剥离，无标记时保留完整输出作为译文。
 /// </summary>
 internal sealed class SectionChannelRouter
 {
@@ -234,8 +243,8 @@ internal sealed class SectionChannelRouter
         _pending += text;
         while (_pending.Length > 0)
         {
-            var marker = FindNextMarker(_pending);
-            if (marker is null)
+            var markerIndex = _pending.IndexOf(PromptTemplates.TranslationSentinel, StringComparison.OrdinalIgnoreCase);
+            if (markerIndex < 0)
             {
                 if (_awaitingFirstSection)
                 {
@@ -288,25 +297,21 @@ internal sealed class SectionChannelRouter
                 continue;
             }
 
-            if (marker.Value.Index > 0)
+            if (markerIndex > 0)
             {
-                var precedingChannel = _awaitingFirstSection
-                    ? marker.Value.PrefixChannel
-                    : _channel;
-                if (precedingChannel is { } channel)
+                // 首个标记之前的内容归属原文通道；重复出现的标记直接吞掉，不产生空段
+                var precedingChannel = _awaitingFirstSection ? DeltaChannel.SourceText : _channel;
+                var sourceSlice = _pending[..markerIndex].TrimEnd('\r', '\n');
+                sourceSlice = StripSourceTags(sourceSlice);
+                foreach (var delta in Emit(precedingChannel, sourceSlice))
                 {
-                    var sourceSlice = _pending[..marker.Value.Index].TrimEnd('\r', '\n');
-                    sourceSlice = StripSourceTags(sourceSlice);
-                    foreach (var delta in Emit(channel, sourceSlice))
-                    {
-                        yield return delta;
-                    }
+                    yield return delta;
                 }
             }
 
-            _channel = marker.Value.Channel;
+            _channel = DeltaChannel.Translation;
             _awaitingFirstSection = false;
-            _pending = _pending[(marker.Value.Index + marker.Value.Length)..];
+            _pending = _pending[(markerIndex + PromptTemplates.TranslationSentinel.Length)..];
             _pending = StripTranslationLeadingTags(_pending);
         }
     }
@@ -864,12 +869,9 @@ internal sealed class SectionChannelRouter
 
             var suffix = text[i..];
 
-            foreach (var marker in CandidateMarkers)
+            if (PromptTemplates.TranslationSentinel.StartsWith(suffix, StringComparison.OrdinalIgnoreCase))
             {
-                if (marker.Marker.StartsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                {
-                    return i;
-                }
+                return i;
             }
 
             foreach (var tag in SourceCloseTags)
@@ -883,44 +885,4 @@ internal sealed class SectionChannelRouter
 
         return -1;
     }
-
-    private static readonly (string Marker, DeltaChannel Channel, DeltaChannel? PrefixChannel)[] CandidateMarkers =
-    [
-        ("\r\n\r\n--- TRANSLATION ---\r\n\r\n", DeltaChannel.Translation, DeltaChannel.SourceText),
-        ("\n\n--- TRANSLATION ---\n\n", DeltaChannel.Translation, DeltaChannel.SourceText),
-        ("\r\n--- TRANSLATION ---\r\n", DeltaChannel.Translation, DeltaChannel.SourceText),
-        ("\n--- TRANSLATION ---\n", DeltaChannel.Translation, DeltaChannel.SourceText),
-        ("--- TRANSLATION ---", DeltaChannel.Translation, DeltaChannel.SourceText),
-        ("\r\n\r\n---TRANSLATION---\r\n\r\n", DeltaChannel.Translation, DeltaChannel.SourceText),
-        ("\n\n---TRANSLATION---\n\n", DeltaChannel.Translation, DeltaChannel.SourceText),
-        ("\r\n---TRANSLATION---\r\n", DeltaChannel.Translation, DeltaChannel.SourceText),
-        ("\n---TRANSLATION---\n", DeltaChannel.Translation, DeltaChannel.SourceText),
-        (PromptTemplates.TranslationSentinel, DeltaChannel.Translation, DeltaChannel.SourceText),
-        ("\r\n\r\n---\r\n\r\n", DeltaChannel.Translation, DeltaChannel.SourceText),
-        ("\n\n---\n\n", DeltaChannel.Translation, DeltaChannel.SourceText),
-        ("\r\n---\r\n", DeltaChannel.Translation, DeltaChannel.SourceText),
-        (PromptTemplates.SectionSeparator, DeltaChannel.Translation, DeltaChannel.SourceText),
-    ];
-
-    private static SentinelMatch? FindNextMarker(string text)
-    {
-        SentinelMatch? result = null;
-        foreach (var candidate in CandidateMarkers)
-        {
-            var index = text.IndexOf(candidate.Marker, StringComparison.OrdinalIgnoreCase);
-            if (index < 0 ||
-                (result is not null &&
-                 (index > result.Value.Index ||
-                  index == result.Value.Index && candidate.Marker.Length <= result.Value.Length)))
-            {
-                continue;
-            }
-
-            result = new SentinelMatch(index, candidate.Channel, candidate.Marker.Length, candidate.PrefixChannel);
-        }
-
-        return result;
-    }
-
-    private readonly record struct SentinelMatch(int Index, DeltaChannel Channel, int Length, DeltaChannel? PrefixChannel);
 }
