@@ -80,5 +80,6 @@ prompts:
   base: ~
   japanese_plugin: ~
   english_plugin: ~
-  vision_oneshot: ~
+  # 视觉 Base：与日语、英语两个插件共同组装成视觉一条龙的 system prompt。
+  vision_base: ~
   explain: ~

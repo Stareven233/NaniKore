@@ -70,9 +70,10 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
             : config.Prompts.EnglishPlugin;
         LoadCurrentPluginPrompt();
 
-        VisionPromptBox.Text = string.IsNullOrWhiteSpace(config.Prompts.VisionOneshot)
-            ? PromptTemplates.DefaultVisionOneshotPrompt
-            : config.Prompts.VisionOneshot;
+        // 视觉 Base：与两个语言插件共同组装，不单独承担注音格式规约。
+        VisionPromptBox.Text = string.IsNullOrWhiteSpace(config.Prompts.VisionBase)
+            ? PromptTemplates.DefaultVisionBasePrompt
+            : config.Prompts.VisionBase;
         _editingProfile = null;
         _loading = true;
         ProfileBox.Items.Clear();
@@ -129,7 +130,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         config.Prompts.Base = PromptBox.Text.Trim();
         config.Prompts.JapanesePlugin = _pluginDrafts.TryGetValue("ja-JP", out var ja) ? ja.Trim() : string.Empty;
         config.Prompts.EnglishPlugin = _pluginDrafts.TryGetValue("en-US", out var en) ? en.Trim() : string.Empty;
-        config.Prompts.VisionOneshot = VisionPromptBox.Text.Trim();
+        config.Prompts.VisionBase = VisionPromptBox.Text.Trim();
     }
 
     public void SaveSecrets()
@@ -319,7 +320,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
 
     private void RestoreDefaultVisionPrompt()
     {
-        VisionPromptBox.Text = PromptTemplates.DefaultVisionOneshotPrompt;
+        VisionPromptBox.Text = PromptTemplates.DefaultVisionBasePrompt;
         _ = VisionPromptBox.Focus();
     }
     private void AddProfile()

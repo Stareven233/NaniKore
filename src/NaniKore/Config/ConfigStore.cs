@@ -107,7 +107,7 @@ internal sealed class ConfigStore
         config.Prompts.Base ??= string.Empty;
         config.Prompts.JapanesePlugin ??= string.Empty;
         config.Prompts.EnglishPlugin ??= string.Empty;
-        config.Prompts.VisionOneshot ??= string.Empty;
+        config.Prompts.VisionBase ??= string.Empty;
         config.Prompts.Explain ??= string.Empty;
         config.Hotkeys.TranslateClipboard ??= string.Empty;
 

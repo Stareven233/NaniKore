@@ -147,9 +147,9 @@ internal static partial class SelfTest
         var restoreVisionButton = (System.Windows.Controls.Button?)page.FindName("RestoreVisionPromptButton");
 
         Check(
-            "translation settings show built-in Base and vision prompts for empty config values",
+            "translation settings show built-in Base and vision base prompts for empty config values",
             localPromptBox?.Text == PromptTemplates.DefaultTranslationBasePrompt &&
-            visionPromptBox?.Text == PromptTemplates.DefaultVisionOneshotPrompt);
+            visionPromptBox?.Text == PromptTemplates.DefaultVisionBasePrompt);
 
         Check(
             "translation settings load Japanese plugin prompt by default with correct language options",
@@ -196,18 +196,18 @@ internal static partial class SelfTest
         visionPromptBox!.Text = "temporary";
         restoreVisionButton!.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
         Check(
-            "translation settings can restore the built-in vision prompt",
-            visionPromptBox.Text == PromptTemplates.DefaultVisionOneshotPrompt);
+            "translation settings can restore the built-in vision base prompt",
+            visionPromptBox.Text == PromptTemplates.DefaultVisionBasePrompt);
 
         localPromptBox!.Text = "Custom base prompt {{target_language}}";
         visionPromptBox.Text = "Custom vision {{target_language}}\n\n---\n\n<translation>";
         page.Apply(config);
         Check(
-            "translation settings save editable base, plugin and vision prompts into app config",
+            "translation settings save editable base, plugin and vision base prompts into app config",
             config.Prompts.Base == "Custom base prompt {{target_language}}" &&
             config.Prompts.JapanesePlugin == "Custom Japanese plugin" &&
             config.Prompts.EnglishPlugin == PromptTemplates.EnglishPlugin &&
-            config.Prompts.VisionOneshot == "Custom vision {{target_language}}\n\n---\n\n<translation>");
+            config.Prompts.VisionBase == "Custom vision {{target_language}}\n\n---\n\n<translation>");
     }
 
     private static void TestHotkeyGestureNormalization()

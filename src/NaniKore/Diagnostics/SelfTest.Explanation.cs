@@ -242,7 +242,7 @@ internal static partial class SelfTest
     private static void TestExplanationPromptN3Filter()
     {
         Check("Prompt.Explain.N3FilterInUserPrompt", PromptTemplates.DefaultExplainUserPrompt.Contains("N3 及以上"));
-        Check("Prompt.Explain.N3FilterInSystemPrompt", PromptTemplates.ExplainStructureRule.Contains("JLPT N3"));
+        Check("Prompt.Explain.N3FilterInSystemPrompt", PromptTemplates.DefaultExplainBasePrompt.Contains("JLPT N3"));
     }
 
     private static void TestExplanationEducationalGrammarNormalization()

@@ -10,6 +10,7 @@ internal static partial class SelfTest
     {
         TestConfigRoundTrip();
         TestEmptyPromptKeysSurviveRewrite();
+        TestLegacyVisionOneshotKeyIsIgnored();
         TestAboutPageDisplaysProductVersion();
         TestApplicationIconResource();
         TestProfileRenameKeepsSecret();
@@ -34,7 +35,7 @@ internal static partial class SelfTest
                   base: ~
                   japanese_plugin: ~
                   english_plugin: ~
-                  vision_oneshot: ~
+                  vision_base: ~
                   explain: ~
                 """);
             var store = new ConfigStore(directory);
@@ -43,7 +44,7 @@ internal static partial class SelfTest
                 store.Current.Prompts.Base is { Length: 0 } &&
                 store.Current.Prompts.JapanesePlugin is { Length: 0 } &&
                 store.Current.Prompts.EnglishPlugin is { Length: 0 } &&
-                store.Current.Prompts.VisionOneshot is { Length: 0 } &&
+                store.Current.Prompts.VisionBase is { Length: 0 } &&
                 store.Current.Prompts.Explain is { Length: 0 } &&
                 store.Current.Hotkeys.TranslateClipboard is { Length: 0 });
 
@@ -55,10 +56,47 @@ internal static partial class SelfTest
                 rewritten.Contains("  base: ", StringComparison.Ordinal) &&
                 rewritten.Contains("  japanese_plugin: ", StringComparison.Ordinal) &&
                 rewritten.Contains("  english_plugin: ", StringComparison.Ordinal) &&
-                rewritten.Contains("  vision_oneshot: ", StringComparison.Ordinal) &&
+                rewritten.Contains("  vision_base: ", StringComparison.Ordinal) &&
                 rewritten.Contains("  explain: ", StringComparison.Ordinal) &&
                 rewritten.Contains("  translate_clipboard: ", StringComparison.Ordinal) &&
                 !rewritten.Contains("prompts: {}", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// 配置键迁移回归：prompts.vision_oneshot 已更名为 prompts.vision_base（009）。
+    /// 用户旧配置里的旧键反序列化后无对应属性，必须被静默忽略并回落空串（= 用内置视觉 Base），
+    /// 不得抛异常、不得改动配置版本号；重写时只落新键，不把旧键以新名复活。
+    /// </summary>
+    private static void TestLegacyVisionOneshotKeyIsIgnored()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"NaniKore-self-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
+                version: 0.2.11
+                prompts:
+                  vision_oneshot: '旧键：整段覆盖视觉提示词'
+                  explain: ~
+                """);
+            var store = new ConfigStore(directory);
+            Check(
+                "legacy vision_oneshot prompt key is ignored and falls back to the built-in vision base",
+                store.Current.Prompts.VisionBase is { Length: 0 } &&
+                store.Current.Version == "0.2.11" &&
+                store.LoadWarning?.Contains("读取 config.yaml 失败", StringComparison.Ordinal) != true);
+
+            store.AtomicWrite(store.Current);
+            var rewritten = File.ReadAllText(Path.Combine(directory, "config.yaml"));
+            Check(
+                "legacy vision_oneshot key is dropped on rewrite instead of being resurrected as vision_base",
+                !rewritten.Contains("vision_oneshot", StringComparison.Ordinal) &&
+                rewritten.Contains("vision_base", StringComparison.Ordinal));
         }
         finally
         {
@@ -96,7 +134,7 @@ internal static partial class SelfTest
                   japanese_plugin: 'Custom ja-JP'
                   english_plugin: 'Custom en-US'
                   translate: 'Translate into {{target_language}} only.'
-                  vision_oneshot: "Transcribe\n\n---\n\nTranslate into {{target_language}}."
+                  vision_base: "Transcribe\n\n---\n\nTranslate into {{target_language}}."
                 unknown_field: ignored
                 """);
             var store = new ConfigStore(directory);
@@ -117,7 +155,7 @@ internal static partial class SelfTest
                 store.Current.Prompts.Base == "Custom Base {{target_language}}" &&
                 store.Current.Prompts.JapanesePlugin == "Custom ja-JP" &&
                 store.Current.Prompts.EnglishPlugin == "Custom en-US" &&
-                store.Current.Prompts.VisionOneshot == "Transcribe\n\n---\n\nTranslate into {{target_language}}.");
+                store.Current.Prompts.VisionBase == "Transcribe\n\n---\n\nTranslate into {{target_language}}.");
             store.AtomicWrite(store.Current);
             var reloaded = new ConfigStore(directory);
             Check(
@@ -127,13 +165,13 @@ internal static partial class SelfTest
                 reloaded.Current.Prompts.Base == "Custom Base {{target_language}}" &&
                 reloaded.Current.Prompts.JapanesePlugin == "Custom ja-JP" &&
                 reloaded.Current.Prompts.EnglishPlugin == "Custom en-US" &&
-                reloaded.Current.Prompts.VisionOneshot == "Transcribe\n\n---\n\nTranslate into {{target_language}}." &&
+                reloaded.Current.Prompts.VisionBase == "Transcribe\n\n---\n\nTranslate into {{target_language}}." &&
                 reloaded.Current.Windows.SettingsWidth == 800 &&
                 reloaded.Current.Windows.SettingsHeight == 640 &&
                 AppConfigCloner.Clone(reloaded.Current).General.AutoExplain &&
                 AppConfigCloner.Clone(reloaded.Current).Profiles.Single().Name == "test" &&
                 AppConfigCloner.Clone(reloaded.Current).Prompts.JapanesePlugin == "Custom ja-JP" &&
-                AppConfigCloner.Clone(reloaded.Current).Prompts.VisionOneshot == "Transcribe\n\n---\n\nTranslate into {{target_language}}.");
+                AppConfigCloner.Clone(reloaded.Current).Prompts.VisionBase == "Transcribe\n\n---\n\nTranslate into {{target_language}}.");
 
             File.WriteAllText(Path.Combine(directory, "config.yaml"), """
                 version: 1

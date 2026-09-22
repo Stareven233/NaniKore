@@ -14,6 +14,8 @@ internal static partial class SelfTest
         TestTranslationPromptTemplates();
         TestPromptLiteralFormatting();
         TestModularPromptTemplates();
+        TestVisionPromptComposition();
+        TestMixedLanguagePluginGating();
         TestLanguageDetector();
         TestRubyTextParser();
         TestSseReader();
@@ -54,10 +56,13 @@ internal static partial class SelfTest
 
         var visionPrompt = PromptTemplates.GetSystemPrompt(
             imageRequest,
-            new PromptConfig { VisionOneshot = "OCR\n---TRANSLATION---\nTranslate to {{target_language}}; retain {{unknown_placeholder}}" });
+            new PromptConfig { VisionBase = "OCR\n---TRANSLATION---\nTranslate to {{target_language}}; retain {{unknown_placeholder}}" });
         Check(
-            "custom vision prompt expands only the target language placeholder",
-            visionPrompt == "OCR\n---TRANSLATION---\nTranslate to zh-CN; retain {{unknown_placeholder}}");
+            "custom vision base composes with both language plugins and expands only the target language placeholder",
+            visionPrompt.StartsWith("OCR\n---TRANSLATION---\nTranslate to zh-CN; retain {{unknown_placeholder}}", StringComparison.Ordinal) &&
+            visionPrompt.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
+            visionPrompt.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal) &&
+            !visionPrompt.Contains(PromptTemplates.TargetLanguagePlaceholder, StringComparison.Ordinal));
 
         var pureModularPrompt = PromptTemplates.GetSystemPrompt(
             request,
@@ -78,13 +83,11 @@ internal static partial class SelfTest
         var literals = new (string Name, string Value)[]
         {
             (nameof(PromptTemplates.DefaultTranslationBasePrompt), PromptTemplates.DefaultTranslationBasePrompt),
+            (nameof(PromptTemplates.DefaultVisionBasePrompt), PromptTemplates.DefaultVisionBasePrompt),
+            (nameof(PromptTemplates.DefaultExplainBasePrompt), PromptTemplates.DefaultExplainBasePrompt),
+            (nameof(PromptTemplates.DefaultExplainUserPrompt), PromptTemplates.DefaultExplainUserPrompt),
             (nameof(PromptTemplates.JapanesePlugin), PromptTemplates.JapanesePlugin),
             (nameof(PromptTemplates.EnglishPlugin), PromptTemplates.EnglishPlugin),
-            (nameof(PromptTemplates.LanguageAlignmentRule), PromptTemplates.LanguageAlignmentRule),
-            (nameof(PromptTemplates.DefaultVisionOneshotPrompt), PromptTemplates.DefaultVisionOneshotPrompt),
-            (nameof(PromptTemplates.ExplainStructureRule), PromptTemplates.ExplainStructureRule),
-            (nameof(PromptTemplates.ExplainLanguageAlignmentRule), PromptTemplates.ExplainLanguageAlignmentRule),
-            (nameof(PromptTemplates.DefaultExplainUserPrompt), PromptTemplates.DefaultExplainUserPrompt),
         };
 
         foreach (var (name, value) in literals)
@@ -123,7 +126,7 @@ internal static partial class SelfTest
         (string Name, string Value)[] twoPartProtocols =
         [
             (nameof(PromptTemplates.DefaultTranslationBasePrompt), PromptTemplates.DefaultTranslationBasePrompt),
-            (nameof(PromptTemplates.DefaultVisionOneshotPrompt), PromptTemplates.DefaultVisionOneshotPrompt),
+            (nameof(PromptTemplates.DefaultVisionBasePrompt), PromptTemplates.DefaultVisionBasePrompt),
         ];
         foreach (var (name, value) in twoPartProtocols)
         {
@@ -138,6 +141,7 @@ internal static partial class SelfTest
         {
             PromptTemplates.GetSystemPrompt(new UnderstandRequest(UnderstandKind.Translate, "ここは通れないよ", null, "中文（简体）"), new PromptConfig()),
             PromptTemplates.GetSystemPrompt(new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "中文（简体）"), new PromptConfig()),
+            PromptTemplates.GetSystemPrompt(new UnderstandRequest(UnderstandKind.Translate, "Appleの新しいiPhone発表会", null, "中文（简体）"), new PromptConfig()),
             PromptTemplates.GetSystemPrompt(new UnderstandRequest(UnderstandKind.Translate, "text", new byte[] { 1 }, "中文（简体）"), new PromptConfig()),
             PromptTemplates.GetSystemPrompt(new UnderstandRequest(UnderstandKind.Explain, "通れない", null, "中文（简体）"), new PromptConfig()),
         };
@@ -188,7 +192,7 @@ internal static partial class SelfTest
             englishPrompt.Contains("国际音标（IPA）", StringComparison.Ordinal) &&
             !englishPrompt.Contains("漢字[かな]", StringComparison.Ordinal));
 
-        // 5. 独立精讲请求遵循微结构化规约与文法术语要求
+        // 5. 独立精讲请求遵循微结构化规约与文法术语要求（职责、结构、目标语言约束已合并进单一精讲 Base）
         var explainReq = new UnderstandRequest(UnderstandKind.Explain, "通れない", null, "中文（简体）");
         var explainPrompt = PromptTemplates.GetSystemPrompt(explainReq, new PromptConfig());
         Check(
@@ -198,6 +202,7 @@ internal static partial class SelfTest
             explainPrompt.Contains("### [翻译精讲]", StringComparison.Ordinal) &&
             explainPrompt.Contains("辞書形", StringComparison.Ordinal) &&
             explainPrompt.Contains("JLPT N3", StringComparison.Ordinal) &&
+            explainPrompt.Contains("全部释义、语法剖析与语境说明必须使用中文（简体）撰写", StringComparison.Ordinal) &&
             explainPrompt.Contains("中文（简体）", StringComparison.Ordinal));
 
         // 6. 用户自定义 Base 提示词与语言特化插件优先级
@@ -222,6 +227,142 @@ internal static partial class SelfTest
             customEnPrompt.Contains("Custom base for zh-CN", StringComparison.Ordinal) &&
             customEnPrompt.Contains("[Custom en-US Plugin]", StringComparison.Ordinal) &&
             !customEnPrompt.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 视觉路径组装契约：视觉 Base + 两个语言插件恒定同拼。
+    /// 图为唯一输入、语言探测无从做起，而两条插件规则本身是条件式的（「对汉字标注振假名」/
+    /// 「为原文中拉丁字母拼写的单词标注 IPA」），宁全勿缺；附带收益是视觉 system prompt
+    /// 与输入无关、恒定单变体，前缀缓存 100% 命中。
+    /// </summary>
+    private static void TestVisionPromptComposition()
+    {
+        var imageRequest = new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, "中文（简体）");
+        var visionPrompt = PromptTemplates.GetSystemPrompt(imageRequest, new PromptConfig());
+
+        // 1. 默认视觉提示词 = 视觉 Base + 两个内置插件，两条注音规约齐备
+        Check(
+            "default vision prompt composes the vision base with both built-in language plugins",
+            visionPrompt.Contains("所有输入图片都是需翻译文本的截图", StringComparison.Ordinal) &&
+            visionPrompt.Contains("漢字[かな]", StringComparison.Ordinal) &&
+            visionPrompt.Contains("国际音标（IPA）", StringComparison.Ordinal) &&
+            visionPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
+            visionPrompt.Contains("中文（简体）", StringComparison.Ordinal) &&
+            !visionPrompt.Contains(PromptTemplates.TargetLanguagePlaceholder, StringComparison.Ordinal));
+
+        // 2. 视觉 system prompt 与原文无关：空文本 / 英文 / 日文请求给出同一句（恒定单变体）
+        var visionVariants = new[]
+        {
+            PromptTemplates.GetSystemPrompt(imageRequest, new PromptConfig()),
+            PromptTemplates.GetSystemPrompt(
+                new UnderstandRequest(UnderstandKind.Translate, "Hello world", new byte[] { 1 }, "中文（简体）"),
+                new PromptConfig()),
+            PromptTemplates.GetSystemPrompt(
+                new UnderstandRequest(UnderstandKind.Translate, "ここは通れないよ", new byte[] { 1 }, "中文（简体）"),
+                new PromptConfig()),
+        };
+        Check(
+            "vision system prompt stays one cache-friendly variant regardless of the source text",
+            visionVariants.Distinct(StringComparer.Ordinal).Count() == 1);
+
+        // 3. 自定义视觉 Base 与两个自定义插件在视觉路径优先生效
+        var customVision = PromptTemplates.GetSystemPrompt(
+            imageRequest,
+            new PromptConfig
+            {
+                VisionBase = "[Custom vision base]",
+                JapanesePlugin = "[Custom ja-JP Plugin]",
+                EnglishPlugin = "[Custom en-US Plugin]",
+            });
+        Check(
+            "custom vision base and custom plugins take priority in the vision path",
+            customVision.Contains("[Custom vision base]", StringComparison.Ordinal) &&
+            customVision.Contains("[Custom ja-JP Plugin]", StringComparison.Ordinal) &&
+            customVision.Contains("[Custom en-US Plugin]", StringComparison.Ordinal) &&
+            !customVision.Contains(PromptTemplates.DefaultVisionBasePrompt, StringComparison.Ordinal) &&
+            !customVision.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
+            !customVision.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal));
+
+        // 4. 两个对齐常量已删除，视觉 Base 自行内联目标语言从句，不拼独立对齐段
+        Check(
+            "vision path appends no standalone alignment section after the alignment constants were removed",
+            !visionPrompt.Contains("[目标语言约束]", StringComparison.Ordinal) &&
+            !visionPrompt.Contains("[精讲语言约束]", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 组装级插件门控契约：探测器只决定「纳入哪些语言的规约」，适用范围交由插件文案限定，
+    /// 故日英混排句同享振仮名与 IPA 两套规约；纯中文/纯日语场景仍守住探测的「排除」价值。
+    /// 该盲区在探测层不可见（特征位本就同时置位），只在组装层显形，必须由本测试钉住。
+    /// </summary>
+    private static void TestMixedLanguagePluginGating()
+    {
+        const string RubyRule = "漢字[かな]";
+        const string IpaRule = "国际音标（IPA）";
+
+        // 1. 日英混排：两个门控各自独立命中，两条规约同享（旧 !HasJapanese 守卫只给日语插件）
+        var mixedTranslate = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Translate, "Appleの新しいiPhone発表会", null, "中文（简体）"),
+            new PromptConfig());
+        Check(
+            "mixed Japanese and English translation prompt shares ruby and IPA conventions",
+            mixedTranslate.Contains(RubyRule, StringComparison.Ordinal) &&
+            mixedTranslate.Contains(IpaRule, StringComparison.Ordinal));
+
+        var mixedExplain = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Explain, "Appleの新しいiPhone発表会", null, "中文（简体）"),
+            new PromptConfig());
+        Check(
+            "mixed Japanese and English explain prompt shares ruby and IPA conventions",
+            mixedExplain.Contains("### [词汇/短语]", StringComparison.Ordinal) &&
+            mixedExplain.Contains(RubyRule, StringComparison.Ordinal) &&
+            mixedExplain.Contains(IpaRule, StringComparison.Ordinal));
+
+        // 2. 少量拉丁混入同样纳入英语规约：规则是条件式的，模型可逐 token 取舍，不误伤
+        var sparseLatin = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Translate, "ゲームSTART", null, "中文（简体）"),
+            new PromptConfig());
+        Check(
+            "sparse latin borrowing inside japanese text still receives the IPA convention",
+            sparseLatin.Contains(RubyRule, StringComparison.Ordinal) &&
+            sparseLatin.Contains(IpaRule, StringComparison.Ordinal));
+
+        // 3. 噪声防护改由文案承担：英语规约只作用于拉丁字母拼写的单词，片假名外来语与日文汉字不在其列
+        Check(
+            "english plugin confines IPA to latin-spelled words so the exclusion gate is unnecessary",
+            PromptTemplates.EnglishPlugin.Contains("拉丁字母拼写的少见、困难单词", StringComparison.Ordinal));
+
+        // 4. 无拉丁字母即不注入英语插件：去掉守卫没有放宽注入面
+        var pureJapanese = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Translate, "ラーメンは美味しい", null, "中文（简体）"),
+            new PromptConfig());
+        Check(
+            "pure japanese text without latin letters keeps ruby and gains no IPA convention",
+            pureJapanese.Contains(RubyRule, StringComparison.Ordinal) &&
+            !pureJapanese.Contains(IpaRule, StringComparison.Ordinal));
+
+        var pureChinese = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Translate, "今天天气很好，我们去散步", null, "中文（简体）"),
+            new PromptConfig());
+        Check(
+            "pure simplified chinese still receives neither ruby nor IPA convention",
+            !pureChinese.Contains(RubyRule, StringComparison.Ordinal) &&
+            !pureChinese.Contains(IpaRule, StringComparison.Ordinal));
+
+        // 5. 自定义插件覆盖行为不受门控改动影响：混排句照样优先采用用户文案
+        var customMixed = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Translate, "Appleの新しいiPhone発表会", null, "中文（简体）"),
+            new PromptConfig
+            {
+                JapanesePlugin = "[Custom ja-JP Plugin]",
+                EnglishPlugin = "[Custom en-US Plugin]",
+            });
+        Check(
+            "custom plugins keep overriding both conventions for mixed japanese and english text",
+            customMixed.Contains("[Custom ja-JP Plugin]", StringComparison.Ordinal) &&
+            customMixed.Contains("[Custom en-US Plugin]", StringComparison.Ordinal) &&
+            !customMixed.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
+            !customMixed.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal));
     }
 
     private static void TestLanguageDetector()
@@ -274,11 +415,12 @@ internal static partial class SelfTest
             "detector identifies English sentence with IPA requirement and without Japanese ruby",
             englishSentence.HasEnglish && englishSentence.NeedsEnglishIpa && !englishSentence.HasJapanese && !englishSentence.NeedsJapaneseRuby);
 
-        // 6. 日英混排
+        // 6. 日英混排（NeedsEnglishIpa 维持「纯拉丁」口径，混排句的英语规约由 HasEnglish 门控携带）
         var japaneseEnglish = LanguageDetector.Detect("Appleの新しいiPhone発表会");
         Check(
             "detector identifies mixed Japanese and English text",
-            japaneseEnglish.HasJapanese && japaneseEnglish.HasEnglish && japaneseEnglish.NeedsJapaneseRuby);
+            japaneseEnglish.HasJapanese && japaneseEnglish.HasEnglish && japaneseEnglish.NeedsJapaneseRuby &&
+            !japaneseEnglish.NeedsEnglishIpa);
     }
 
     private static void TestRubyTextParser()

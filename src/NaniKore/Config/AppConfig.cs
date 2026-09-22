@@ -131,8 +131,8 @@ internal sealed class PromptConfig
     /// <summary>英语特化插件提示词（en-US，音标与原形）；空字符串时使用内置英文插件模板。</summary>
     public string EnglishPlugin { get; set; } = string.Empty;
 
-    /// <summary>空字符串时使用内置 vision_oneshot 模板。</summary>
-    public string VisionOneshot { get; set; } = string.Empty;
+    /// <summary>视觉一条龙 Base 提示词（与两个语言插件共同组装）；空字符串时使用内置视觉 Base 模板。</summary>
+    public string VisionBase { get; set; } = string.Empty;
 
     /// <summary>空字符串时使用内置精讲模板。</summary>
     public string Explain { get; set; } = string.Empty;
@@ -171,7 +171,7 @@ internal static class AppConfigCloner
             Base = source.Prompts.Base,
             JapanesePlugin = source.Prompts.JapanesePlugin,
             EnglishPlugin = source.Prompts.EnglishPlugin,
-            VisionOneshot = source.Prompts.VisionOneshot,
+            VisionBase = source.Prompts.VisionBase,
             Explain = source.Prompts.Explain,
         },
     };
