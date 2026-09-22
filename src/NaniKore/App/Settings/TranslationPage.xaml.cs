@@ -59,14 +59,14 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         ArgumentNullException.ThrowIfNull(config);
         _config = config;
         PromptBox.Text = string.IsNullOrWhiteSpace(config.Prompts.Base)
-            ? PromptTemplates.DefaultTranslationPrompt
+            ? PromptTemplates.DefaultTranslationBasePrompt
             : config.Prompts.Base;
 
         _pluginDrafts["ja-JP"] = string.IsNullOrWhiteSpace(config.Prompts.JapanesePlugin)
-            ? PromptTemplates.DefaultJapanesePlugin
+            ? PromptTemplates.JapanesePlugin
             : config.Prompts.JapanesePlugin;
         _pluginDrafts["en-US"] = string.IsNullOrWhiteSpace(config.Prompts.EnglishPlugin)
-            ? PromptTemplates.DefaultEnglishPlugin
+            ? PromptTemplates.EnglishPlugin
             : config.Prompts.EnglishPlugin;
         LoadCurrentPluginPrompt();
 
@@ -274,7 +274,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
     private void RestoreDefaultPrompt()
     {
         // 默认内容不再隐藏；恢复后立即展示可继续编辑的完整提示词。
-        PromptBox.Text = PromptTemplates.DefaultTranslationPrompt;
+        PromptBox.Text = PromptTemplates.DefaultTranslationBasePrompt;
         _ = PromptBox.Focus();
     }
 
@@ -302,16 +302,16 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         else
         {
             PluginPromptBox.Text = _currentPluginLanguage == "en-US"
-                ? PromptTemplates.DefaultEnglishPlugin
-                : PromptTemplates.DefaultJapanesePlugin;
+                ? PromptTemplates.EnglishPlugin
+                : PromptTemplates.JapanesePlugin;
         }
     }
 
     private void RestoreDefaultPluginPrompt()
     {
         var defaultPlugin = _currentPluginLanguage == "en-US"
-            ? PromptTemplates.DefaultEnglishPlugin
-            : PromptTemplates.DefaultJapanesePlugin;
+            ? PromptTemplates.EnglishPlugin
+            : PromptTemplates.JapanesePlugin;
         PluginPromptBox.Text = defaultPlugin;
         _pluginDrafts[_currentPluginLanguage] = defaultPlugin;
         _ = PluginPromptBox.Focus();

@@ -3,10 +3,27 @@ using NaniKore.Config;
 namespace NaniKore.Translation;
 
 /// <summary>
-/// 内置提示词与两阶段流式分段协议。
-/// 排版约定：提示词字面量一律顶格书写，字面量内容即为最终下发给模型的 Payload——
-/// 零前导空白、零冗余缩进、零首尾换行，主人可直接对照审计。
-/// 组织顺序自上而下对应三个阶段：原文处理 → 译文处理 → 精讲处理。
+/// 内置提示词工场：下列变量即最终下发给模型的全部内容，按实际拼接顺序排列，
+/// 段与段之间以空行相接，{{target_language}} 展开为请求的目标语言。
+///
+/// 路径一 · 文本翻译：
+///   必填  {DefaultTranslationBasePrompt}
+///   条件注入（探测到日语时）          {JapanesePlugin}
+///   条件注入（探测到英语且无日语时）  {EnglishPlugin}
+///   必填  {LanguageAlignmentRule}
+///
+/// 路径二 · 视觉一条龙（请求携带图片时整体替代路径一，协议自包含，不注入插件）：
+///   必填  {DefaultVisionOneshotPrompt}
+///
+/// 路径三 · 精讲（阶段二追问消息为 {DefaultExplainUserPrompt}）：
+///   必填  {ExplainRolePrompt}
+///   必填  {ExplainStructureRule}
+///   条件注入（探测到日语时）          {JapanesePlugin}
+///   条件注入（探测到英语且无日语时）  {EnglishPlugin}
+///   必填  {ExplainLanguageAlignmentRule}
+///
+/// 设置页填写的对应提示词优先，留空则回落到上述内置变量；
+/// 翻译阶段严禁混入精讲指令，保证首字延迟与前缀缓存稳定命中。
 /// </summary>
 internal static class PromptTemplates
 {
@@ -16,104 +33,103 @@ internal static class PromptTemplates
     /// <summary>目标语言占位符；仅展开已声明的这一个，未知占位符原样保留，避免悄悄改变用户提示词语义。</summary>
     internal const string TargetLanguagePlaceholder = "{{target_language}}";
 
-    #region 第一部分：原文处理（注音 / 音标规范，日语在前、英语在后）
+    // ── 路径一 · 文本翻译：Base 协议 ─────────────────────────────────
 
-    /// <summary>日语特化插件：约束汉字振假名注音格式；只服务原文标注，不携带精讲文法。</summary>
-    internal const string JapanesePlugin = """
-[日语注音规范]
-- 对汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）
-- 即使输入是片段、从句，或以终助词结尾的对话（如 て…、けど），也为其中所有汉字忠实标注读音
-""";
+    /// <summary>模块化 Base：两段式输出协议与翻译纪律；设置页「翻译提示词」展示与恢复默认即此变量。</summary>
+    internal static readonly string DefaultTranslationBasePrompt = PromptLiteral("""
+        你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将注音标注的原文、对应译文按顺序输出，两部分中间用"---TRANSLATION---"分隔，例如：
 
-    /// <summary>默认日语插件模板，供设置面板展示与一键恢复。</summary>
-    internal const string DefaultJapanesePlugin = JapanesePlugin;
+        <annotated_source>
+        ---TRANSLATION---
+        <translation>
 
-    /// <summary>英语特化插件：约束国际音标（IPA）标注规范。</summary>
-    internal const string EnglishPlugin = """
-[英语音标规范]
-- 为原文里少见、困难的单词用方括号标注国际音标（IPA），如 apple[ˈæpl]
-""";
+        注意 <annotated_source> 与 <translation> 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅
+        """);
 
-    /// <summary>默认英语插件模板，供设置面板展示与一键恢复。</summary>
-    internal const string DefaultEnglishPlugin = EnglishPlugin;
+    // ── 语言特化插件：日语在前、英语在后 ─────────────────────────────
 
-    #endregion
+    /// <summary>日语插件：约束汉字振假名注音格式；只服务原文标注，不携带精讲文法。</summary>
+    internal static readonly string JapanesePlugin = PromptLiteral("""
+        [日语注音规范]
+          - 对汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）
+          - 即使输入是片段、从句，或以终助词结尾的对话（如 て…、けど），也为其中所有汉字忠实标注读音
+        """);
 
-    #region 第二部分：译文处理（翻译规则，零精讲提示词）
+    /// <summary>英语插件：约束国际音标（IPA）标注规范。</summary>
+    internal static readonly string EnglishPlugin = PromptLiteral("""
+        [英语音标规范]
+          - 为原文里少见、困难的单词用方括号标注国际音标（IPA），如 apple[ˈæpl]
+        """);
 
-    /// <summary>模块化 Base 提示词：规定两段式输出协议与翻译纪律；主人可在设置页直接修改。</summary>
-    internal const string DefaultTranslationBasePrompt = """
-你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将注音标注的原文、对应译文按顺序输出，两部分中间用"---TRANSLATION---"分隔，例如：
-<annotated_source>
----TRANSLATION---
-<translation>
-注意 <annotated_source> 与 <translation> 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅
-""";
+    // ── 译文对齐 ─────────────────────────────────────────────────────
 
-    /// <summary>设置页始终展示的默认基础翻译提示词模版；主人可直接在此基础上修改。</summary>
-    internal const string DefaultTranslationPrompt = DefaultTranslationBasePrompt;
+    /// <summary>目标语言对齐：强制译文使用当前目标语言。</summary>
+    internal static readonly string LanguageAlignmentRule = PromptLiteral("""
+        [目标语言约束]
+        全部译文必须使用{{target_language}}撰写。
+        """);
 
-    /// <summary>目标语言对齐约束：强制译文使用当前目标语言。</summary>
-    internal const string LanguageAlignmentRule = """
-[目标语言约束]
-全部译文必须使用{{target_language}}撰写。
-""";
+    // ── 路径二 · 视觉一条龙 ───────────────────────────────────────────
 
-    /// <summary>视觉一条龙默认模板：转录图中文字并直接给出标注原文与译文，自包含全部协议。</summary>
-    internal const string DefaultVisionOneshotPrompt = """
-你当前工作在一个翻译应用中，所有输入图片都是需翻译文本的截图，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将转录并完成注音标注的原文、对应译文按顺序输出，两部分中间用"---TRANSLATION---"分隔，例如：
-<annotated_source>
----TRANSLATION---
-<translation>
-注意 <annotated_source> 与 <translation> 是结构占位符，输出时替换为对应内容，本身不保留。忠实呈现图片中实际出现的内容，维持原有顺序与分行
-""";
+    /// <summary>视觉一条龙：转录图中文字并直接给出标注原文与译文，自包含全部协议。</summary>
+    internal static readonly string DefaultVisionOneshotPrompt = PromptLiteral("""
+        你当前工作在一个翻译应用中，所有输入图片都是需翻译文本的截图，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将转录并完成注音标注的原文、对应译文按顺序输出，两部分中间用"---TRANSLATION---"分隔，例如：
 
-    #endregion
+        <annotated_source>
+        ---TRANSLATION---
+        <translation>
 
-    #region 第三部分：精讲处理（语法拆解与词汇卡片规范）
+        注意 <annotated_source> 与 <translation> 是结构占位符，输出时替换为对应内容，本身不保留。忠实呈现图片中实际出现的内容，维持原有顺序与分行
+        """);
 
-    /// <summary>精讲阶段的职责声明。</summary>
+    // ── 路径三 · 精讲：职责 → 结构规约 → 语言对齐 ────────────────────
+
+    /// <summary>精讲职责声明。</summary>
     internal const string ExplainRolePrompt = "你是严谨的外语精讲导师，擅长拆解句法、提炼重点并给出地道的解释。";
 
-    /// <summary>精讲微结构化规约：卡片协议 + 日语教育文法 + N3+ 难度过滤。</summary>
-    internal const string ExplainStructureRule = """
-[精讲结构规范]
-按以下三个小节输出结构化 Markdown：
-### [词汇/短语]
-**词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
-### [语法/句型]
-**句型** | 语法功能与释义
-### [语境与地道表达]
-结合整句说明语义、语气与翻译取舍
+    /// <summary>精讲微结构化规约：三小节卡片协议 + 日语教育文法 + N3 及以上难度过滤。</summary>
+    internal static readonly string ExplainStructureRule = PromptLiteral("""
+        按以下三个小节输出结构化 Markdown：
 
-[日语教育文法]
-动词与词汇一律给出辞書形（原形），词性严格采用日本語教育文法体系：动词标注一类动词、二类动词或三类动词，形容词标注一类形容词或二类形容词，不使用未然形、连用形等旧称。
+        ### [词汇/短语]
+          **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
 
-[难度过滤]
-仅收录 JLPT N3 及以上难度的重点词汇、短语与语法句型；N4/N5 阶段的简单词与基础句型并入「语境与地道表达」小节说明，不进入词汇与语法卡片。
-""";
+        ### [语法/句型]
+          **句型** | 语法功能与释义
 
-    /// <summary>精讲目标语言对齐：强制释义、语法与语境说明使用当前目标语言。</summary>
-    internal const string ExplainLanguageAlignmentRule = """
-[精讲语言约束]
-全部释义、语法剖析与语境说明必须使用{{target_language}}撰写。
-""";
+        ### [翻译精讲]
+          结合语境与背景/语法知识分析解释为何如此翻译
 
-    /// <summary>两阶段精讲默认追问提示词（复用前缀历史以命中 Prompt Cache）。</summary>
-    internal const string DefaultExplainUserPrompt = """
-请对上述内容进行深度精讲拆解。注意：只分析N3及以上难度的重点词汇、短语与语法句型，初级简单基础的不管
-请严格按以下微结构卡片格式输出，所有释义与解析使用目标语言：
-### [词汇/短语]
-- **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
-### [语法/句型]
-- **句型** | 语法功能与释义
-### [翻译精讲]
-结合语境与背景/语法知识分析解释为何如此翻译
+        [约束]
+          - 动词只给辞書形（原形），严格采用日本語教育文法术语
+          - 仅列出 JLPT N3 及以上难度的重点词汇、短语与语法句型
+        """);
 
-【词性约束】动词词性必须严格标注为一类动词、二类动词或三类动词（辞書形原形），形容词标注为一类/二类形容词，全部使用教育语法的术语
-""";
+    /// <summary>精讲语言对齐：强制释义、语法与语境说明使用当前目标语言。</summary>
+    internal static readonly string ExplainLanguageAlignmentRule = PromptLiteral("""
+        [精讲语言约束]
+        全部释义、语法剖析与语境说明必须使用{{target_language}}撰写。
+        """);
 
-    #endregion
+    /// <summary>两阶段精讲的默认追问消息（复用前缀历史以命中 Prompt Cache）。</summary>
+    internal static readonly string DefaultExplainUserPrompt = PromptLiteral("""
+        按以下三个小节输出结构化 Markdown：
+
+        ### [词汇/短语]
+          - **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
+
+        ### [语法/句型]
+          - **句型** | 语法功能与释义
+
+        ### [翻译精讲]
+          结合语境与背景/语法知识分析解释为何如此翻译
+
+        注：全部使用教育语法术语，仅列出 JLPT N3 及以上难度的重点词汇、短语与语法句型
+        """);
+
+    /// <summary>行尾归一化闸门：仓库按 core.autocrlf=true 检出，原始字符串字面量会继承 \r\n，统一收敛为 \n 后再下发。</summary>
+    private static string PromptLiteral(string raw) =>
+        raw.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
 
     public static string GetSystemPrompt(UnderstandRequest request, PromptConfig prompts)
     {
@@ -478,6 +494,10 @@ internal sealed class SectionChannelRouter
         "\n### [深度精讲",
         "\r\n### 精讲",
         "\n### 精讲",
+        "\r\n### 翻译精讲",
+        "\n### 翻译精讲",
+        "\r\n### [翻译精讲",
+        "\n### [翻译精讲",
         "\r\n# 深度精讲",
         "\n# 深度精讲",
         "\r\n# 精讲",

@@ -15,6 +15,7 @@ internal static partial class SelfTest
         TestExplanationParserFaultTolerant();
         TestExplanationParserDegradation();
         TestExplanationParserStreamingAccumulation();
+        TestExplanationParserBuiltinSectionNames();
         TestFavoritesStringMatching();
         TestFavoritesEventsAndNoteFormat();
         TestRubyParserNoiseTolerance();
@@ -122,6 +123,28 @@ internal static partial class SelfTest
         Check("ExplanationParser.Streaming.ContextComplete", lastDoc.ContextExplanation.Contains("对季节的期待"));
     }
 
+    private static void TestExplanationParserBuiltinSectionNames()
+    {
+        // 内置精讲提示词实际下发的小节名必须被完整识别：「翻译精讲」归属语境分析段，内容不得丢失
+        var markdown = """
+            ### [词汇/短语]
+            - **通れない** | とおれない | 一类动词 | 「通る」可能态的否定形
+
+            ### [语法/句型]
+            - **～ない** | 否定表达
+
+            ### [翻译精讲]
+            结合语境与背景/语法知识分析解释为何如此翻译
+            """;
+
+        var doc = ExplanationParser.Parse(markdown);
+
+        Check("ExplanationParser.BuiltinSections.IsStructured", doc.IsStructured);
+        Check("ExplanationParser.BuiltinSections.VocabCount", doc.VocabularyCards.Count == 1);
+        Check("ExplanationParser.BuiltinSections.GrammarCount", doc.GrammarCards.Count == 1);
+        Check("ExplanationParser.BuiltinSections.TranslationAnalysisCaptured", doc.ContextExplanation.Contains("为何如此翻译"));
+    }
+
     private static void TestFavoritesStringMatching()
     {
         var service = new InMemoryFavoriteService();
@@ -218,7 +241,7 @@ internal static partial class SelfTest
 
     private static void TestExplanationPromptN3Filter()
     {
-        Check("Prompt.Explain.N3FilterInUserPrompt", PromptTemplates.DefaultExplainUserPrompt.Contains("N3及以上"));
+        Check("Prompt.Explain.N3FilterInUserPrompt", PromptTemplates.DefaultExplainUserPrompt.Contains("N3 及以上"));
         Check("Prompt.Explain.N3FilterInSystemPrompt", PromptTemplates.ExplainStructureRule.Contains("JLPT N3"));
     }
 

@@ -65,14 +65,14 @@ internal static partial class SelfTest
         Check(
             "empty prompt config strictly builds modular prompt with sentinel and zero explanation directives",
             pureModularPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
-            pureModularPrompt.Contains("你是准确、自然的翻译引擎", StringComparison.Ordinal) &&
+            pureModularPrompt.Contains("你当前工作在一个翻译应用中", StringComparison.Ordinal) &&
             !pureModularPrompt.Contains("### [词汇/短语]", StringComparison.Ordinal) &&
             !pureModularPrompt.Contains("### [语法/句型]", StringComparison.Ordinal) &&
             !pureModularPrompt.Contains("辞書形", StringComparison.Ordinal) &&
             !pureModularPrompt.Contains("JLPT", StringComparison.Ordinal));
     }
 
-    /// <summary>校验内置提示词字面量的排版契约：内容即下发内容，零前导空白、零首尾换行、零 CR。</summary>
+    /// <summary>校验内置提示词字面量的排版契约：标题与协议行顶格、规则条目统一缩进两个空格，零 CR、零首尾与行尾空白。</summary>
     private static void TestPromptLiteralFormatting()
     {
         var literals = new (string Name, string Value)[]
@@ -89,12 +89,19 @@ internal static partial class SelfTest
 
         foreach (var (name, value) in literals)
         {
-            var indentedLines = value.Split('\n').Where(line => line.StartsWith(' ') || line.StartsWith('\t')).ToArray();
+            // 缩进策略：全文仅容许「两个空格」这一档（规则条目），标题、协议行与占位符行一律顶格
+            var badLines = value.Split('\n').Where(line =>
+                line != line.TrimEnd() ||
+                line.StartsWith('\t') ||
+                (line.StartsWith(' ') &&
+                 (!line.StartsWith("  ", StringComparison.Ordinal) ||
+                  line.StartsWith("   ", StringComparison.Ordinal))))
+                .ToArray();
             Check(
-                $"prompt literal {name} is compact without leading indentation, CR or edge whitespace",
+                $"prompt literal {name} keeps two-space rule indentation without stray whitespace or CR",
                 value == value.Trim() &&
                 !value.Contains('\r', StringComparison.Ordinal) &&
-                indentedLines.Length == 0);
+                badLines.Length == 0);
         }
 
         // 全中文化：规则声明与插件标题不得残留英文指令字眼（IPA / Markdown / JLPT 等技术术语除外）
@@ -188,7 +195,7 @@ internal static partial class SelfTest
             "explain system prompt includes structured markdown sections for vocab, grammar and context",
             explainPrompt.Contains("### [词汇/短语]", StringComparison.Ordinal) &&
             explainPrompt.Contains("### [语法/句型]", StringComparison.Ordinal) &&
-            explainPrompt.Contains("### [语境与地道表达]", StringComparison.Ordinal) &&
+            explainPrompt.Contains("### [翻译精讲]", StringComparison.Ordinal) &&
             explainPrompt.Contains("辞書形", StringComparison.Ordinal) &&
             explainPrompt.Contains("JLPT N3", StringComparison.Ordinal) &&
             explainPrompt.Contains("中文（简体）", StringComparison.Ordinal));
@@ -206,7 +213,7 @@ internal static partial class SelfTest
             "modular prompt assembly respects user custom base prompt and custom Japanese plugin",
             customJaPrompt.Contains("Custom base for zh-CN", StringComparison.Ordinal) &&
             customJaPrompt.Contains("[Custom ja-JP Plugin]", StringComparison.Ordinal) &&
-            !customJaPrompt.Contains(PromptTemplates.DefaultJapanesePlugin, StringComparison.Ordinal));
+            !customJaPrompt.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal));
 
         var customEnReq = new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "zh-CN");
         var customEnPrompt = PromptTemplates.GetSystemPrompt(customEnReq, customPrompts);
@@ -214,7 +221,7 @@ internal static partial class SelfTest
             "modular prompt assembly respects user custom English plugin",
             customEnPrompt.Contains("Custom base for zh-CN", StringComparison.Ordinal) &&
             customEnPrompt.Contains("[Custom en-US Plugin]", StringComparison.Ordinal) &&
-            !customEnPrompt.Contains(PromptTemplates.DefaultEnglishPlugin, StringComparison.Ordinal));
+            !customEnPrompt.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal));
     }
 
     private static void TestLanguageDetector()

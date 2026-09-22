@@ -148,14 +148,14 @@ internal static partial class SelfTest
 
         Check(
             "translation settings show built-in Base and vision prompts for empty config values",
-            localPromptBox?.Text == PromptTemplates.DefaultTranslationPrompt &&
+            localPromptBox?.Text == PromptTemplates.DefaultTranslationBasePrompt &&
             visionPromptBox?.Text == PromptTemplates.DefaultVisionOneshotPrompt);
 
         Check(
             "translation settings load Japanese plugin prompt by default with correct language options",
             pluginLanguageBox?.Items.Count == 2 &&
             pluginLanguageBox.SelectedIndex == 0 &&
-            pluginPromptBox?.Text == PromptTemplates.DefaultJapanesePlugin);
+            pluginPromptBox?.Text == PromptTemplates.JapanesePlugin);
 
         Check(
             "prompt restore buttons share the title row with concise black labels",
@@ -177,7 +177,7 @@ internal static partial class SelfTest
         pluginLanguageBox!.SelectedIndex = 1;
         Check(
             "switching plugin language displays default English plugin prompt and preserves Japanese draft",
-            pluginPromptBox.Text == PromptTemplates.DefaultEnglishPlugin);
+            pluginPromptBox.Text == PromptTemplates.EnglishPlugin);
 
         // 修改英文插件
         pluginPromptBox.Text = "Custom English plugin";
@@ -185,7 +185,7 @@ internal static partial class SelfTest
         restorePluginButton!.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
         Check(
             "plugin prompt restore button resets English plugin to default template",
-            pluginPromptBox.Text == PromptTemplates.DefaultEnglishPlugin);
+            pluginPromptBox.Text == PromptTemplates.EnglishPlugin);
 
         // 切换回日文插件，确认刚才的草稿被完整保存
         pluginLanguageBox.SelectedIndex = 0;
@@ -206,7 +206,7 @@ internal static partial class SelfTest
             "translation settings save editable base, plugin and vision prompts into app config",
             config.Prompts.Base == "Custom base prompt {{target_language}}" &&
             config.Prompts.JapanesePlugin == "Custom Japanese plugin" &&
-            config.Prompts.EnglishPlugin == PromptTemplates.DefaultEnglishPlugin &&
+            config.Prompts.EnglishPlugin == PromptTemplates.EnglishPlugin &&
             config.Prompts.VisionOneshot == "Custom vision {{target_language}}\n\n---\n\n<translation>");
     }
 
