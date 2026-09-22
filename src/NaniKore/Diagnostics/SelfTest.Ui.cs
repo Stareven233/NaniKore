@@ -20,6 +20,7 @@ internal static partial class SelfTest
         TestGeneralPagePipelineDependencyVisibility();
         TestTranslationPagePromptEditing();
         TestSettingsCloseSizeMemory();
+        TestSettingsCloseSizeWriteBackKeepsExternalUpdates();
         TestRubyDocumentBuilderAndDualMode();
     }
 
@@ -52,6 +53,81 @@ internal static partial class SelfTest
             SettingsWindow.ResolvePersistedSize(baseline, 0, 0, 620, 460) is null &&
             SettingsWindow.ResolvePersistedSize(baseline, double.NaN, 640, 620, 460) is null &&
             SettingsWindow.ResolvePersistedSize(baseline, double.PositiveInfinity, 640, 620, 460) is null);
+    }
+
+    /// <summary>
+    /// 回归测试：设置窗口未保存、仅拖过尺寸就关闭时，尺寸记忆必须叠加在“实时当前配置”上。
+    /// 曾经的缺陷：复制打开时的快照整份写盘，会把期间其他入口
+    /// （结果卡 AutoExplainChanged → NaniKoreApp.ApplySettings → AtomicWrite）的修改静默回滚。
+    /// </summary>
+    private static void TestSettingsCloseSizeWriteBackKeepsExternalUpdates()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"NaniKore-self-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
+                version: 0.2.11
+                general:
+                  auto_explain: false
+                  target_language: ja
+                windows:
+                  settings_width: 800
+                  settings_height: 640
+                """);
+            var store = new ConfigStore(directory);
+
+            // 设置窗口打开时宿主提供实时配置访问器；快照语义由编辑副本承担。
+            AppConfig LatestConfig() => store.Current;
+            var openTimeSnapshot = AppConfigCloner.Clone(LatestConfig());
+            var working = AppConfigCloner.Clone(LatestConfig());
+
+            // 页面编辑只进 _working：模拟用户改过目标语言但始终没点保存。
+            working.General.TargetLanguage = "未保存的页面编辑";
+
+            // 外部入口写盘：结果卡拨动 AutoExplainToggle → 直接改 Current 并 AtomicWrite。
+            var external = LatestConfig();
+            external.General.AutoExplain = true;
+            store.AtomicWrite(external);
+
+            // 关闭时未保存 + 真的拖过尺寸：基线必须取实时配置而不是打开时的快照。
+            var baseline = SettingsWindow.ResolveCloseWriteBackBaseline(settingsSaved: false, working, LatestConfig());
+            Check(
+                "unsaved settings close picks the live config instead of the stale open-time snapshot",
+                !ReferenceEquals(baseline, openTimeSnapshot) &&
+                ReferenceEquals(baseline, store.Current) &&
+                baseline.General.AutoExplain);
+
+            // 走完整的尺寸决策与写盘路径，验证落盘内容的新鲜度。
+            if (SettingsWindow.ResolvePersistedSize(baseline.Windows, 1024, 700, 620, 460) is { } size)
+            {
+                var next = AppConfigCloner.Clone(baseline);
+                next.Windows.SettingsWidth = size.Width;
+                next.Windows.SettingsHeight = size.Height;
+                store.AtomicWrite(next);
+            }
+
+            var reloaded = new ConfigStore(directory);
+            Check(
+                "external auto_explain update survives an unsaved settings close with a resize",
+                reloaded.Current.General.AutoExplain);
+            Check(
+                "unsaved settings close still records the resized window dimensions",
+                reloaded.Current.Windows.SettingsWidth == 1024 &&
+                reloaded.Current.Windows.SettingsHeight == 700);
+            Check(
+                "unsaved settings close still discards page edits made in the working copy",
+                reloaded.Current.General.TargetLanguage == "ja");
+
+            // 已保存过的关闭路径仍旧以编辑副本为基线，行为不回退。
+            Check(
+                "saved settings close keeps using the working copy as write-back baseline",
+                ReferenceEquals(SettingsWindow.ResolveCloseWriteBackBaseline(settingsSaved: true, working, store.Current), working));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     private static void TestTranslationPagePromptEditing()

@@ -2,7 +2,7 @@
 kind: issue
 title: "设置窗口未保存关闭时的尺寸记忆仍可能用旧快照覆盖外部配置更新"
 type: ff
-status: open
+status: closed
 priority: normal
 created: 2026-09-22
 ---
@@ -60,12 +60,38 @@ created: 2026-09-22
 
 ## 验收标准
 
-- [ ] 上述复现步骤 5 中，`general.auto_explain` 保持步骤 3 修改后的值，同时 `windows.settings_*` 记录为新尺寸
-- [ ] 未保存 + 改尺寸关闭时，页面编辑（配置档、提示词、热键、通用开关）依旧全部丢弃
-- [ ] `./scripts/dev.ps1 test` 全绿。注意基线：`a82a82a` 上 `empty prompt config strictly builds modular prompt with sentinel and zero explanation directives` 一项为既有失败（提示词全中文重构的收尾事项，与本 issue 无关），动手前先与主人确认该笔是否已修
-- [ ] 为“外部入口修改 + 尺寸回写不覆盖”补一条回归自测（可参照现有 `TestSettingsCloseSizeMemory` / `TestEmptyPromptKeysSurviveRewrite` 的写法）
+- [x] 上述复现步骤 5 中，`general.auto_explain` 保持步骤 3 修改后的值，同时 `windows.settings_*` 记录为新尺寸（已用真实 `SettingsWindow` 端到端验证，见下）
+- [x] 未保存 + 改尺寸关闭时，页面编辑（配置档、提示词、热键、通用开关）依旧全部丢弃
+- [x] `./scripts/dev.ps1 test` 全绿。**基线确认（已实测）：`a82a82a` 与 `8c15405` 两个提交上均有 13 项提示词相关失败，失败集完全一致**（`prompt literal * is compact...` × 8、`assembled system prompt...` × 4、`empty prompt config strictly builds...` × 1）——issue 作者当时仅记录了其中 1 项。主人指示顺手收治，**13 项已全部修复，当前 257 项 PASS / 0 FAIL**（详见文末附记）。
+- [x] 为“外部入口修改 + 尺寸回写不覆盖”补一条回归自测（参照现有 `TestSettingsCloseSizeMemory` / `TestEmptyPromptKeysSurviveRewrite` 的写法）
+
+---
+
+## 做了什么（2026-09-22，改动暂存于工作区，待主人审阅后另行提交）
+
+按推荐方案落地：
+
+1. **`SettingsWindow` 构造函数改收 `Func<AppConfig> current` 实时提供者**，宿主两处传入 `() => _configStore.Current`（`NaniKoreApp.ShowSettings`）与 `() => store.Current`（`Program.PreviewSettings`）。`_initialConfig` 字段随之移除——修复后已无引用，且 `TreatWarningsAsErrors=true` 下未用私有字段会触发 CS0414 编译失败。
+2. **新增纯决策 `ResolveCloseWriteBackBaseline(settingsSaved, working, latest)`**：已保存过业务配置时以 `_working` 为基线（内容已随保存落盘，只叠加尺寸）；未保存时必须取 `latest` 实时配置。`SaveWindowSize()` 未保存分支改用它，页面编辑依旧只存在于 `_working`，选用 `latest` 即天然丢弃，纯尺寸回写不夹带任何业务字段。
+3. **回归自测 `SelfTest.Ui.TestSettingsCloseSizeWriteBackKeepsExternalUpdates`**（5 项断言）：模拟“打开 → 页面编辑未保存 → 外部入口 `AtomicWrite` 改写 `auto_explain` → 未保存 + 改尺寸关闭”，验证基线取实时配置、外部更新存活、新尺寸落盘、页面编辑丢弃、已保存路径不回退。
+
+## 怎样验证
+
+- **真实窗口端到端**（issue 复现步骤 3–5）：以真实 `SettingsWindow` + 临时 `ConfigStore` 走完整流程——窗口打开后经外部入口把 `auto_explain` 改成 `true` 并写盘，再拖尺寸至 1024×700、不点保存直接关闭。结果：`Closed` 触发恰好 1 次写盘，落盘 `auto_explain=true` + `1024×700`（旧行为会写 `auto_explain=false`）。
+- `./scripts/dev.ps1 test`：244 项 PASS；13 项 FAIL 均为上述提示词既有基线，与本 issue 无关。
 
 ## 备注
 
 - 前两轮修复引入的自测（`SelfTest.Config.TestEmptyPromptKeysSurviveRewrite`、`SelfTest.Ui.TestSettingsCloseSizeMemory`）已验证：直接关闭零写盘、`~` 不再塌缩、真改尺寸仍能记忆。本 issue 只收治“未保存 + 改尺寸”这一条写盘路径的数据新鲜度。
 - WPF 实测结论（2026-09-22）：`Window.ActualWidth == Window.Width`，多轮开关注销零漂移，尺寸判定容差 1px 足够——本 issue 无需改动该部分。
+
+---
+
+## 附记：13 项提示词失败收治（主人 2026-09-22 指示，随本 issue 工作区一并落地）
+
+实测确认 `a82a82a` / `8c15405` 上失败集完全一致（13 项），分两个根因：
+
+1. **12 项（8 literal + 4 assembled）——CRLF 行尾结构性问题**：仓库 `core.autocrlf=true`，工作区源码检出为 CRLF，多行原始字符串字面量原样继承 `\r\n`，违反“零 CR”契约。修法：`PromptTemplates` 新增 `PromptLiteral()` 行尾归一化闸门，8 个多行字面量及其别名统一经此声明（`const` → `static readonly`），源码顶格排版与最终下发值彻底解耦，此后编辑器/检出策略如何漂移都不再复发。
+2. **1 项（`empty prompt config strictly builds...`）——契约漂移**：`a82a82a` 改写 base 提示词时丢掉了角色首句“你是准确、自然的翻译引擎”，而自测仍钉着该短语。已在 `DefaultTranslationBasePrompt` 开头补回该行。
+
+修复后全量 257 项 PASS / 0 FAIL。遗留可选项：`DefaultVisionOneshotPrompt` 同样在 `a82a82a` 丢了角色首句“你是准确、自然的视觉翻译引擎”，无测试钉住，本次未动，是否补回由主人定。

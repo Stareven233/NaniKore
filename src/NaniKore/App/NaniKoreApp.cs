@@ -502,7 +502,9 @@ internal sealed class NaniKoreApp : Application
             return;
         }
 
-        var window = new SettingsWindow(_configStore.Current, ApplySettings, TestConnectionAsync, SuspendCaptureHotkey, DownloadOcrDependenciesAsync);
+        // 传入实时提供者而不是打开时的快照：设置窗未保存就关闭时的尺寸回写必须以
+        // 当前最新配置为基础，否则会覆盖结果卡 AutoExplainChanged 等入口期间的写盘。
+        var window = new SettingsWindow(() => _configStore.Current, ApplySettings, TestConnectionAsync, SuspendCaptureHotkey, DownloadOcrDependenciesAsync);
         // 只有结果卡“设置”按钮打开时才置顶；托盘等入口保持普通窗口，允许被遮挡。
         window.Topmost = topmostFromResult;
         window.Closed += (_, _) => _settingsWindow = null;

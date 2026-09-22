@@ -12,8 +12,13 @@ namespace NaniKore.App.Settings;
 /// <summary>非模态设置宿主；所有页面在配置副本上编辑，保存后一次性热应用。</summary>
 internal sealed partial class SettingsWindow : Window
 {
-    /// <summary>打开窗口时的原始配置快照；未保存就关闭时，尺寸记录以它为准，避免把页面编辑污染进配置。</summary>
-    private readonly AppConfig _initialConfig;
+    /// <summary>
+    /// 实时配置提供者（宿主传入 <c>() =&gt; _configStore.Current</c>）。
+    /// 未保存就关闭时的尺寸回写以它取到的最新配置为基础，而不是打开时的快照：
+    /// 快照可能已被其他入口（结果卡 AutoExplainChanged → ApplySettings → AtomicWrite）
+    /// 改写，拿旧快照整份写盘会把这些更新静默回滚。
+    /// </summary>
+    private readonly Func<AppConfig> _currentConfig;
     private readonly AppConfig _working;
     private readonly Action<AppConfig> _save;
     private readonly List<ISettingsPage> _pages;
@@ -27,7 +32,7 @@ internal sealed partial class SettingsWindow : Window
     private const double SizeEpsilon = 1.0;
 
     public SettingsWindow(
-        AppConfig current,
+        Func<AppConfig> current,
         Action<AppConfig> save,
         Func<ProviderProfile, string?, Task<string>> testConnection,
         Action<bool>? suspendGlobalHotkey = null,
@@ -40,10 +45,12 @@ internal sealed partial class SettingsWindow : Window
         // 结果卡本身是置顶窗口；设置从结果卡打开时也必须保持同等层级，避免被已有窗口遮挡。
         Topmost = true;
 
-        // 页面编辑直接改动 _working，因此必须额外保留一份打开时的原始快照，
-        // 供未保存就关闭时记录窗口尺寸使用。
-        _initialConfig = AppConfigCloner.Clone(current);
-        _working = AppConfigCloner.Clone(current);
+        // 打开时取一份快照作为编辑副本；实时提供者保留下来，关闭时的尺寸回写
+        // 必须以当前最新配置为基础，不能用打开时的快照（见 _currentConfig 注释）。
+        var snapshot = current();
+        ArgumentNullException.ThrowIfNull(snapshot);
+        _currentConfig = current;
+        _working = AppConfigCloner.Clone(snapshot);
         _save = save;
         _successStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         _successStatusTimer.Tick += OnSuccessStatusTimerTick;
@@ -185,10 +192,10 @@ internal sealed partial class SettingsWindow : Window
             return;
         }
 
-        // 页面在输入时会直接改动 _working，不能无条件克隆它：
-        // 保存成功过才以 _working 为基础（业务配置已落盘，只叠加尺寸）；
-        // 否则退回打开时的初始快照，未保存的页面编辑不会跟着写盘。
-        var baseline = _settingsSaved ? _working : _initialConfig;
+        // 尺寸回写的基线必须是“当前最新的配置”：保存过业务配置时以 _working 为准
+        // （其内容已随保存落盘，只叠加尺寸）；没保存过时 _working 里只有未保存的页面编辑，
+        // 必须改用实时配置——打开时的快照可能已被其他入口改写，整份写回会静默回滚。
+        var baseline = ResolveCloseWriteBackBaseline(_settingsSaved, _working, _currentConfig());
         if (ResolvePersistedSize(baseline.Windows, ActualWidth, ActualHeight, MinWidth, MinHeight) is not { } size)
         {
             // 尺寸与基线一致（或取不到可信尺寸）时完全不写盘：保存过说明业务配置和
@@ -208,6 +215,20 @@ internal sealed partial class SettingsWindow : Window
         {
             // 尺寸记忆是尽力而为的：关闭流程不该因写盘失败而中断。
         }
+    }
+
+    /// <summary>
+    /// 关闭时尺寸回写的基线决策：已保存过业务配置时以编辑副本 <paramref name="working"/> 为准
+    /// （其内容已随保存落盘，只叠加尺寸）；未保存时必须取 <paramref name="latest"/> 实时配置，
+    /// 避免打开时的快照覆盖其他入口（结果卡 AutoExplainChanged → NaniKoreApp.ApplySettings
+    /// → AtomicWrite）期间的写盘。未保存的页面编辑只存在于 <paramref name="working"/>，
+    /// 选用 <paramref name="latest"/> 即可天然丢弃，不夹带任何业务字段。
+    /// </summary>
+    internal static AppConfig ResolveCloseWriteBackBaseline(bool settingsSaved, AppConfig working, AppConfig latest)
+    {
+        ArgumentNullException.ThrowIfNull(working);
+        ArgumentNullException.ThrowIfNull(latest);
+        return settingsSaved ? working : latest;
     }
 
     /// <summary>

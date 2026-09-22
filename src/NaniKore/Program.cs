@@ -62,7 +62,7 @@ internal static class Program
         var app = new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnLastWindowClose };
         NaniKore.App.Theme.ThemeManager.Initialize(app);
         var store = new ConfigStore(AppContext.BaseDirectory);
-        var window = new NaniKore.App.Settings.SettingsWindow(store.Current, _ => { }, (_, _) => Task.FromResult("ok"));
+        var window = new NaniKore.App.Settings.SettingsWindow(() => store.Current, _ => { }, (_, _) => Task.FromResult("ok"));
         return app.Run(window);
     }
 
