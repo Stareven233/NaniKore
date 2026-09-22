@@ -65,14 +65,15 @@ NaniKore.exe --dump-prompt [--text "…"] [--image <path>] [--kind translate|exp
 - required 清单随 009 改名/合并同步：`DefaultVisionOneshotPrompt` → `DefaultVisionBasePrompt`，`ExplainRolePrompt` + `ExplainStructureRule` → 单一的 `DefaultExplainBasePrompt`，`LanguageAlignmentRule` / `ExplainLanguageAlignmentRule` 删除；内嵌数据键 `explainRole` / `explainStructure` 合并为 `explainBase`。
 - 新增：对样本矩阵逐个调用**已构建的 `NaniKore.exe --dump-prompt`**，将返回 JSON 内嵌进 `/*__EMBEDDED_DATA__*/` markers 之间；exe 不存在时 WARNING 跳过该步（静态零件照常生成，防呆不中断）。
 - HTML 或 markers 缺失时脚本照旧 `throw`（防呆契约保持）。
+- **2026-09-24 追加决议：** 落地时把 `DefaultExplainBasePrompt` 一并删除。应用内的精讲永远是阶段二——system 通道已被阶段一的翻译提示词锁定，精讲指令只能作为 user 追问消息下发（`DefaultExplainUserPrompt`），那份 Base 只在「不带 session 的一次性精讲请求」下才可能生效，正常使用根本走不到，属于必然漂移的死字面量。现在精讲只保留一条提示词，`BuildExplainSystemPrompt`、探测脚本与 `--dump-prompt` 全部复用它；required 清单相应减为 5 个，内嵌键 `explainBase` 删除。
 
 ## 验收标准
 
-- [ ] `--dump-prompt` 三条路径输出正确：path 判定、detection 位、sections 含来源标注、`system_prompt` 与 `GetSystemPrompt` 逐字一致
-- [ ] 自定义 `prompts.base` / `japanese_plugin` / `vision_base` 后，`--dump-prompt` 的 sections 正确反映覆盖优先级（custom 优先于 builtin）
-- [ ] 重跑 `scripts/update-prompt-preview.ps1` 后，HTML 内嵌的组装数据与 CLI 输出逐字一致（漂移零容忍）
-- [ ] HTML 本地直开可用，样本矩阵与交互区均渲染正常
-- [ ] 文档（`codestable/spec/index.md` 提示词段落）同步"改动提示词后重跑生成器"的工作流
+- [x] `--dump-prompt` 三条路径输出正确：path 判定、detection 位、sections 含来源标注、`system_prompt` 与 `GetSystemPrompt` 逐字一致
+- [x] 自定义 `prompts.base` / `japanese_plugin` / `vision_base` 后，`--dump-prompt` 的 sections 正确反映覆盖优先级（custom 优先于 builtin）
+- [x] 重跑 `scripts/update-prompt-preview.ps1` 后，HTML 内嵌的组装数据与 CLI 输出逐字一致（漂移零容忍）
+- [x] HTML 本地直开可用，样本矩阵与交互区均渲染正常
+- [x] 文档（`codestable/spec/index.md` 提示词段落）同步"改动提示词后重跑生成器"的工作流
 
 ## 备注
 

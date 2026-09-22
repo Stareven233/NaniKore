@@ -241,8 +241,30 @@ internal static partial class SelfTest
 
     private static void TestExplanationPromptN3Filter()
     {
-        Check("Prompt.Explain.N3FilterInUserPrompt", PromptTemplates.DefaultExplainUserPrompt.Contains("N3 及以上"));
-        Check("Prompt.Explain.N3FilterInSystemPrompt", PromptTemplates.DefaultExplainBasePrompt.Contains("JLPT N3"));
+        // 精讲只保留一条提示词：它首先是阶段二追加的 user 追问消息，同时充当不带 session 的
+        // 一次性精讲请求的 system prompt。应用内的精讲永远是阶段二，system 通道已被阶段一的
+        // 翻译提示词锁定，所以不存在第二份「精讲 Base」，也不该再养一份必然漂移的字面量。
+        Check(
+            "Prompt.Explain.SinglePromptCarriesSectionsAndN3Filter",
+            PromptTemplates.DefaultExplainUserPrompt.Contains("### [词汇/短语]") &&
+            PromptTemplates.DefaultExplainUserPrompt.Contains("### [语法/句型]") &&
+            PromptTemplates.DefaultExplainUserPrompt.Contains("### [翻译精讲]") &&
+            PromptTemplates.DefaultExplainUserPrompt.Contains("N3 及以上") &&
+            PromptTemplates.DefaultExplainUserPrompt.Contains("教育语法术语"));
+
+        // 阶段二追问只走 user 通道：会话历史里追加的是这条提示词，system 仍沿用阶段一锁定值。
+        // 按真实运行时流程走一遍：锁定 system → 回放阶段一 Assistant 输出 → 追加追问消息。
+        var session = new TranslationSession("stage1 locked", "中文（简体）", "通れない", null);
+        session.AppendRawAssistantOutput("通[とお]れない\n---TRANSLATION---\n这里过不去");
+        session.FinalizeStage1Output();
+        session.PrepareStage2Request(PromptTemplates.DefaultExplainUserPrompt);
+        Check(
+            "Prompt.Explain.FollowUpRidesUserChannelWhileSystemStaysLocked",
+            session.Messages.Count == 3 &&
+            session.Messages[1].Role == ChatRole.Assistant &&
+            session.Messages[2].Role == ChatRole.User &&
+            session.Messages[2].Text == PromptTemplates.DefaultExplainUserPrompt &&
+            session.SystemPrompt == "stage1 locked");
     }
 
     private static void TestExplanationEducationalGrammarNormalization()

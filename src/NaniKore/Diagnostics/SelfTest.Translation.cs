@@ -16,6 +16,7 @@ internal static partial class SelfTest
         TestModularPromptTemplates();
         TestVisionPromptComposition();
         TestMixedLanguagePluginGating();
+        TestPromptSectionDescription();
         TestLanguageDetector();
         TestRubyTextParser();
         TestSseReader();
@@ -84,7 +85,6 @@ internal static partial class SelfTest
         {
             (nameof(PromptTemplates.DefaultTranslationBasePrompt), PromptTemplates.DefaultTranslationBasePrompt),
             (nameof(PromptTemplates.DefaultVisionBasePrompt), PromptTemplates.DefaultVisionBasePrompt),
-            (nameof(PromptTemplates.DefaultExplainBasePrompt), PromptTemplates.DefaultExplainBasePrompt),
             (nameof(PromptTemplates.DefaultExplainUserPrompt), PromptTemplates.DefaultExplainUserPrompt),
             (nameof(PromptTemplates.JapanesePlugin), PromptTemplates.JapanesePlugin),
             (nameof(PromptTemplates.EnglishPlugin), PromptTemplates.EnglishPlugin),
@@ -192,18 +192,17 @@ internal static partial class SelfTest
             englishPrompt.Contains("国际音标（IPA）", StringComparison.Ordinal) &&
             !englishPrompt.Contains("漢字[かな]", StringComparison.Ordinal));
 
-        // 5. 独立精讲请求遵循微结构化规约与文法术语要求（职责、结构、目标语言约束已合并进单一精讲 Base）
+        // 5. 独立精讲请求（不带 TranslationSession，只有 CLI / 自测会走到）复用唯一那条精讲提示词；
+        //    应用内的精讲是阶段二追问消息，system 通道已被阶段一的翻译提示词锁定，不再另设精讲 Base。
         var explainReq = new UnderstandRequest(UnderstandKind.Explain, "通れない", null, "中文（简体）");
         var explainPrompt = PromptTemplates.GetSystemPrompt(explainReq, new PromptConfig());
         Check(
-            "explain system prompt includes structured markdown sections for vocab, grammar and context",
+            "explain system prompt reuses the single explain prompt with structured sections and the N3 filter",
             explainPrompt.Contains("### [词汇/短语]", StringComparison.Ordinal) &&
             explainPrompt.Contains("### [语法/句型]", StringComparison.Ordinal) &&
             explainPrompt.Contains("### [翻译精讲]", StringComparison.Ordinal) &&
-            explainPrompt.Contains("辞書形", StringComparison.Ordinal) &&
-            explainPrompt.Contains("JLPT N3", StringComparison.Ordinal) &&
-            explainPrompt.Contains("全部释义、语法剖析与语境说明必须使用中文（简体）撰写", StringComparison.Ordinal) &&
-            explainPrompt.Contains("中文（简体）", StringComparison.Ordinal));
+            explainPrompt.Contains("JLPT N3 及以上", StringComparison.Ordinal) &&
+            explainPrompt.Contains("教育语法术语", StringComparison.Ordinal));
 
         // 6. 用户自定义 Base 提示词与语言特化插件优先级
         var customPrompts = new PromptConfig
@@ -363,6 +362,79 @@ internal static partial class SelfTest
             customMixed.Contains("[Custom en-US Plugin]", StringComparison.Ordinal) &&
             !customMixed.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
             !customMixed.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 段描述反漂移闸门：DescribeSections 只是 GetSystemPrompt 的「不拼接版本」，
+    /// 是 --dump-prompt 与 prompt-preview 的唯一真值源。两者一旦漂移，预览页与 CLI
+    /// 展示的就不再是真实下发的内容，因此这里钉住三条路径、自定义覆盖与多轮会话锁定值。
+    /// </summary>
+    private static void TestPromptSectionDescription()
+    {
+        var builtin = new PromptConfig();
+        var cases = new (string Name, UnderstandRequest Request, PromptConfig Prompts)[]
+        {
+            ("text/japanese", new UnderstandRequest(UnderstandKind.Translate, "ここは通れないよ", null, "中文（简体）"), builtin),
+            ("text/english", new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "中文（简体）"), builtin),
+            ("text/simplified-chinese", new UnderstandRequest(UnderstandKind.Translate, "今天天气很好，我们去散步", null, "中文（简体）"), builtin),
+            ("text/mixed", new UnderstandRequest(UnderstandKind.Translate, "Appleの新しいiPhone発表会", null, "中文（简体）"), builtin),
+            ("vision", new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, "中文（简体）"), builtin),
+            ("explain", new UnderstandRequest(UnderstandKind.Explain, "通れない", null, "中文（简体）"), builtin),
+            ("text/custom", new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "中文（简体）"),
+                new PromptConfig { Base = "Custom base for {{target_language}}", EnglishPlugin = "[Custom en-US Plugin]" }),
+            ("vision/custom", new UnderstandRequest(UnderstandKind.Translate, "text", new byte[] { 1 }, "中文（简体）"),
+                new PromptConfig { VisionBase = "[Custom vision base]", JapanesePlugin = "[Custom ja-JP Plugin]" }),
+            ("explain/custom", new UnderstandRequest(UnderstandKind.Explain, "通れない", null, "中文（简体）"),
+                new PromptConfig { Explain = "Custom explain for {{target_language}}" }),
+        };
+
+        foreach (var (name, request, prompts) in cases)
+        {
+            var sections = PromptTemplates.DescribeSections(request, prompts);
+            var joined = string.Join("\n\n", sections.Select(section => section.Text));
+            Check(
+                $"prompt sections for {name} rejoin into exactly the dispatched system prompt",
+                sections.Count > 0 &&
+                sections.All(section => !string.IsNullOrWhiteSpace(section.Text)) &&
+                joined.Replace(PromptTemplates.TargetLanguagePlaceholder, request.TargetLanguage, StringComparison.Ordinal) ==
+                PromptTemplates.GetSystemPrompt(request, prompts));
+        }
+
+        // 来源标注：未定制项回落 Builtin，定制项标 Custom——预览页的徽章全靠这一位。
+        Check(
+            "prompt sections distinguish built-in fallbacks from custom overrides",
+            PromptTemplates.DescribeSections(
+                    new UnderstandRequest(UnderstandKind.Translate, "ここは通れないよ", null, "中文（简体）"), builtin)
+                .Select(section => (section.Name, section.Source))
+                .SequenceEqual(new[] { ("base", PromptSectionSource.Builtin), ("japanese_plugin", PromptSectionSource.Builtin) }) &&
+            PromptTemplates.DescribeSections(
+                    new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "中文（简体）"),
+                    new PromptConfig { Base = "Custom base", EnglishPlugin = "[Custom en-US Plugin]" })
+                .Select(section => (section.Name, section.Source))
+                .SequenceEqual(new[] { ("base", PromptSectionSource.Custom), ("english_plugin", PromptSectionSource.Custom) }));
+
+        // 多轮会话：系统提示词原样沿用阶段一锁定值，既不分拆也不二次展开占位符。
+        var session = new TranslationSession("locked {{target_language}} prompt", "中文（简体）", "通れない", null);
+        var stage2Request = new UnderstandRequest(UnderstandKind.Explain, "通れない", null, "中文（简体）", session);
+        var lockedSections = PromptTemplates.DescribeSections(stage2Request, builtin);
+        Check(
+            "session-locked system prompt is reported as a single session section without re-expansion",
+            lockedSections.Count == 1 &&
+            lockedSections[0].Source == PromptSectionSource.Session &&
+            lockedSections[0].Text == "locked {{target_language}} prompt" &&
+            PromptTemplates.GetSystemPrompt(stage2Request, builtin) == "locked {{target_language}} prompt");
+
+        // 路径分派顺序必须与 GetSystemPrompt 一致：精讲压过视觉，视觉压过文本。
+        var dispatch = new (PromptPath Actual, PromptPath Expected)[]
+        {
+            (PromptTemplates.ResolvePath(new UnderstandRequest(UnderstandKind.Translate, "text", null, "中文（简体）")), PromptPath.Text),
+            (PromptTemplates.ResolvePath(new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, "中文（简体）")), PromptPath.Vision),
+            (PromptTemplates.ResolvePath(new UnderstandRequest(UnderstandKind.Explain, "text", null, "中文（简体）")), PromptPath.Explain),
+            (PromptTemplates.ResolvePath(new UnderstandRequest(UnderstandKind.Explain, "text", new byte[] { 1 }, "中文（简体）")), PromptPath.Explain),
+        };
+        Check(
+            "prompt path resolution mirrors GetSystemPrompt dispatch order (explain over vision over text)",
+            dispatch.All(item => item.Actual == item.Expected));
     }
 
     private static void TestLanguageDetector()

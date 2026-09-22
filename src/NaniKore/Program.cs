@@ -1,4 +1,5 @@
 using System.Drawing.Imaging;
+using System.Text.Json;
 using NaniKore.App;
 using NaniKore.Config;
 using NaniKore.Diagnostics;
@@ -32,6 +33,11 @@ internal static class Program
         if (args.Contains("--dump-config", StringComparer.OrdinalIgnoreCase))
         {
             return DumpConfig();
+        }
+
+        if (args.Contains("--dump-prompt", StringComparer.OrdinalIgnoreCase))
+        {
+            return DumpPrompt(args);
         }
 
         var translateTextIndex = FindOption(args, "--translate-text");
@@ -146,6 +152,247 @@ internal static class Program
             return 1;
         }
     }
+
+    /// <summary>
+    /// 提示词真值转储：按 ConfigStore 的真实配置复现本次请求最终下发的 system prompt，并拆出
+    /// 带来源标注的组装段。prompt-preview.html 的内嵌组装数据由本命令的 --json 输出产生，
+    /// 因此这里复用 PromptTemplates.DescribeSections / GetSystemPrompt，绝不另写一套拼装逻辑——
+    /// 否则前端展示与真实下发会漂移。全程不触碰任何 API Key。
+    /// </summary>
+    private static int DumpPrompt(IReadOnlyList<string> args)
+    {
+        const string usage =
+            "Usage: NaniKore --dump-prompt [--text \"...\"] [--image <png-path>] [--kind translate|explain] [--target <language>] [--json]";
+
+        var kindIndex = FindOption(args, "--kind");
+        var kind = UnderstandKind.Translate;
+        if (kindIndex >= 0)
+        {
+            var rawKind = kindIndex + 1 < args.Count ? args[kindIndex + 1] : null;
+            var parsed = ParseDumpKind(rawKind);
+            if (parsed is null)
+            {
+                Console.Error.WriteLine($"Unrecognized --kind value: {rawKind ?? "(missing)"} (expected translate or explain)");
+                Console.Error.WriteLine(usage);
+                return 2;
+            }
+
+            kind = parsed.Value;
+        }
+
+        byte[]? imagePng = null;
+        var imagePath = GetOptionValue(args, "--image");
+        if (imagePath is { Length: > 0 } && !TryReadPng(imagePath, out imagePng))
+        {
+            Console.Error.WriteLine(usage);
+            return 2;
+        }
+
+        var sourceText = GetOptionValue(args, "--text");
+        var targetOverride = GetOptionValue(args, "--target");
+
+        try
+        {
+            var store = new ConfigStore(AppContext.BaseDirectory);
+            var prompts = store.Current.Prompts;
+            var targetLanguage = string.IsNullOrWhiteSpace(targetOverride)
+                ? store.Current.General.TargetLanguage
+                : targetOverride;
+            if (string.IsNullOrWhiteSpace(targetLanguage))
+            {
+                Console.Error.WriteLine("No target language is configured; pass --target explicitly.");
+                Console.Error.WriteLine(usage);
+                return 2;
+            }
+
+            var request = new UnderstandRequest(
+                kind,
+                sourceText,
+                imagePng is { Length: > 0 } ? new ReadOnlyMemory<byte>(imagePng) : null,
+                targetLanguage);
+            var detection = LanguageDetector.Detect(request.SourceText, request.TargetLanguage);
+            var sections = PromptTemplates.DescribeSections(request, prompts);
+            var systemPrompt = PromptTemplates.GetSystemPrompt(request, prompts);
+            var path = PromptTemplates.ResolvePath(request);
+
+            // 字段名即 prompt-preview 生成器的消费契约，改名需同步 update-prompt-preview.ps1。
+            var report = new
+            {
+                kind = kind == UnderstandKind.Explain ? "explain" : "translate",
+                path = DescribePromptPath(path),
+                target_language = targetLanguage,
+                source_preview = PreviewText(sourceText, string.Empty),
+                detection = new
+                {
+                    features = DescribeFeatures(detection),
+                    needs_japanese_ruby = detection.NeedsJapaneseRuby,
+                    needs_english_ipa = detection.NeedsEnglishIpa,
+                    is_pure_hanzi_japanese_candidate = detection.IsPureHanziJapaneseCandidate,
+                },
+                sections = sections
+                    .Select(section => new
+                    {
+                        name = section.Name,
+                        source = DescribeSectionSource(section.Source),
+                        text = section.Text,
+                    })
+                    .ToArray(),
+                system_prompt = systemPrompt,
+                estimated_tokens = TokenEstimator.Estimate(systemPrompt),
+            };
+
+            var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
+            if (args.Contains("--json", StringComparer.OrdinalIgnoreCase))
+            {
+                // 机器通道：stdout 只留 JSON，供生成器 ConvertFrom-Json 直接消费。
+                Console.WriteLine(json);
+                return 0;
+            }
+
+            RenderPromptDump(path, kind, targetLanguage, sourceText, imagePath, detection, sections, systemPrompt, json);
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine($"Prompt dump failed: {exception.Message}");
+            return 1;
+        }
+    }
+
+    /// <summary>解析 --kind；缺省 translate，非法值返回 null 由调用方按用法错误退出。</summary>
+    private static UnderstandKind? ParseDumpKind(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        null or "translate" => UnderstandKind.Translate,
+        "explain" => UnderstandKind.Explain,
+        _ => null,
+    };
+
+    /// <summary>读取 PNG 字节并校验文件头；转储只搬运字节、不解码位图，故自行做最轻量签名校验，避免误传的文本文件得出漂亮的假结果。</summary>
+    private static bool TryReadPng(string path, out byte[]? png)
+    {
+        png = null;
+        try
+        {
+            var bytes = File.ReadAllBytes(Path.GetFullPath(path));
+            if (bytes.Length < PngSignature.Length || !bytes.AsSpan()[..PngSignature.Length].SequenceEqual(PngSignature))
+            {
+                Console.Error.WriteLine($"Not a valid PNG file: {path}");
+                return false;
+            }
+
+            png = bytes;
+            return true;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine($"Image load failed: {exception.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>人读渲染：与 --json 共用同一批局部变量，避免出现两份互相矛盾的真相。</summary>
+    private static void RenderPromptDump(
+        PromptPath path,
+        UnderstandKind kind,
+        string targetLanguage,
+        string? sourceText,
+        string? imagePath,
+        LanguageDetectionResult detection,
+        IReadOnlyList<PromptSection> sections,
+        string systemPrompt,
+        string json)
+    {
+        Console.WriteLine("提示词真值转储（与 PromptTemplates.GetSystemPrompt 逐字一致）");
+        Console.WriteLine($"  Path:          {DescribePromptPath(path)}");
+        Console.WriteLine($"  Kind:          {(kind == UnderstandKind.Explain ? "explain" : "translate")}");
+        Console.WriteLine($"  Target:        {targetLanguage}");
+        Console.WriteLine($"  Source:        {PreviewText(sourceText, "(empty)")}");
+        if (imagePath is { Length: > 0 })
+        {
+            Console.WriteLine($"  Image:         {imagePath}");
+        }
+
+        var features = DescribeFeatures(detection);
+        Console.WriteLine($"  Detection:     {(features.Length == 0 ? "none" : string.Join(" + ", features))}");
+        Console.WriteLine($"    japanese ruby:      {(detection.NeedsJapaneseRuby ? "yes" : "no")}");
+        Console.WriteLine($"    english IPA:        {(detection.NeedsEnglishIpa ? "yes" : "no")}");
+        Console.WriteLine($"    pure-hanzi ja cand.: {(detection.IsPureHanziJapaneseCandidate ? "yes" : "no")}");
+
+        Console.WriteLine();
+        Console.WriteLine($"  Sections ({sections.Count}, in dispatch order):");
+        for (var index = 0; index < sections.Count; index++)
+        {
+            var section = sections[index];
+            Console.WriteLine($"    [{index + 1}] {section.Name,-16} {DescribeSectionSource(section.Source),-8} {section.Text.Length} chars");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Final system prompt (estimated {TokenEstimator.Estimate(systemPrompt)} tokens):");
+        Console.WriteLine(systemPrompt);
+        Console.WriteLine();
+        Console.WriteLine("Reproduce with:");
+        Console.WriteLine($"  NaniKore.exe --dump-prompt {BuildReproArguments(kind, sourceText, imagePath, targetLanguage)}");
+        Console.WriteLine();
+        Console.WriteLine("JSON (exactly what the preview generator consumes):");
+        Console.WriteLine(json);
+    }
+
+    private static string BuildReproArguments(UnderstandKind kind, string? sourceText, string? imagePath, string targetLanguage) => string.Join(" ", new[]
+    {
+        kind == UnderstandKind.Explain ? "--kind explain" : string.Empty,
+        imagePath is { Length: > 0 } ? $"--image \"{imagePath}\"" : $"--text \"{PreviewText(sourceText, string.Empty)}\"",
+        $"--target \"{targetLanguage}\"",
+        "--json",
+    }.Where(argument => argument.Length > 0));
+
+    private static string DescribePromptPath(PromptPath path) => path switch
+    {
+        PromptPath.Vision => "vision",
+        PromptPath.Explain => "explain",
+        _ => "text",
+    };
+
+    private static string DescribeSectionSource(PromptSectionSource source) => source switch
+    {
+        PromptSectionSource.Custom => "custom",
+        PromptSectionSource.Session => "session",
+        _ => "builtin",
+    };
+
+    /// <summary>按枚举声明顺序列出命中的语言特征位，便于与预览页的探测位图逐项对齐。</summary>
+    private static string[] DescribeFeatures(LanguageDetectionResult detection)
+    {
+        var features = new List<string>(3);
+        if (detection.HasJapanese)
+        {
+            features.Add(nameof(LanguageFeatures.Japanese));
+        }
+
+        if (detection.HasEnglish)
+        {
+            features.Add(nameof(LanguageFeatures.English));
+        }
+
+        if (detection.HasSimplifiedChinese)
+        {
+            features.Add(nameof(LanguageFeatures.SimplifiedChinese));
+        }
+
+        return features.ToArray();
+    }
+
+    /// <summary>转储只展示原文片段，避免超长选区文本把人读输出与内嵌 JSON 撑爆。</summary>
+    private static string PreviewText(string? text, string emptyText, int limit = 120)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return emptyText;
+        }
+
+        return text.Length <= limit ? text : string.Concat(text.AsSpan(0, limit), "...");
+    }
+
+    private static readonly byte[] PngSignature = [0x89, (byte)'P', (byte)'N', (byte)'G', (byte)'\r', (byte)'\n', 0x1A, (byte)'\n'];
 
     private static async Task<int> RunTranslateTextAsync(IReadOnlyList<string> args, int optionIndex)
     {

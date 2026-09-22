@@ -9,7 +9,7 @@ namespace NaniKore.Translation;
 /// 三个必填 Base（设置页对应 base / vision_base / explain 三键，留空回落内置）：
 ///   {DefaultTranslationBasePrompt}  路径一 · 文本翻译
 ///   {DefaultVisionBasePrompt}       路径二 · 视觉一条龙
-///   {DefaultExplainBasePrompt}      路径三 · 精讲
+///   {DefaultExplainUserPrompt}      路径三 · 精讲（同时充当阶段二追问消息）
 /// 两个语言特化插件（对应 japanese_plugin / english_plugin 两键）由探测结果决定是否纳入。
 ///
 /// 语言探测机制（LanguageDetector，对原文做纯内存字符扫描，< 1ms）：
@@ -35,8 +35,8 @@ namespace NaniKore.Translation;
 ///   实际出现的文字逐条取舍。附带收益：视觉 system prompt 与输入无关、恒定单变体，
 ///   前缀缓存 100% 命中（路径一有 ≤3 个变体）。
 ///
-/// 路径三 · 精讲（阶段二追问消息为 {DefaultExplainUserPrompt}）：
-///   必填  {DefaultExplainBasePrompt}
+/// 路径三 · 精讲（追问消息为 {DefaultExplainUserPrompt}）：
+///   必填  {DefaultExplainUserPrompt}
 ///   条件注入（探测到日语时）                {JapanesePlugin}
 ///   条件注入（含拉丁字母时）                {EnglishPlugin}
 ///
@@ -66,7 +66,7 @@ internal static class PromptTemplates
 
         注意 <annotated_source> 与 <translation> 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅
 
-        译文全部使用{{target_language}}撰写。
+        译文/分析全部使用{{target_language}}撰写
         """);
 
     // ── 语言特化插件：日语在前、英语在后 ─────────────────────────────
@@ -98,28 +98,7 @@ internal static class PromptTemplates
 
     // ── 路径三 · 精讲 Base（职责 + 结构规约 + 目标语言约束） ──────────
 
-    /// <summary>精讲 Base：微结构化卡片协议 + 日语教育文法 + N3 及以上难度过滤 + 目标语言约束。</summary>
-    internal static readonly string DefaultExplainBasePrompt = PromptLiteral("""
-        你是严谨的外语精讲导师，擅长拆解句法、提炼重点并给出地道的解释。
-
-        按以下三个小节输出结构化 Markdown：
-
-        ### [词汇/短语]
-          **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
-
-        ### [语法/句型]
-          **句型** | 语法功能与释义
-
-        ### [翻译精讲]
-          结合语境与背景/语法知识分析解释为何如此翻译
-
-        [约束]
-          - 动词只给辞書形（原形），严格采用日本語教育文法术语
-          - 仅列出 JLPT N3 及以上难度的重点词汇、短语与语法句型
-          - 全部释义、语法剖析与语境说明必须使用{{target_language}}撰写
-        """);
-
-    /// <summary>两阶段精讲的默认追问消息（复用前缀历史以命中 Prompt Cache）。</summary>
+    /// <summary>两阶段精讲的默认追问消息；同时也充当不带 session 的一次性精讲请求的 system prompt。</summary>
     internal static readonly string DefaultExplainUserPrompt = PromptLiteral("""
         按以下三个小节输出结构化 Markdown：
 
@@ -139,30 +118,44 @@ internal static class PromptTemplates
     private static string PromptLiteral(string raw) =>
         raw.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
 
-    public static string GetSystemPrompt(UnderstandRequest request, PromptConfig prompts)
+    /// <summary>
+    /// 最终下发给模型的 system prompt。统一经 <see cref="DescribeSections"/> 拆段、
+    /// <see cref="Compose"/> 拼接并展开目标语言占位符，杜绝「预览一套、下发另一套」的漂移。
+    /// </summary>
+    public static string GetSystemPrompt(UnderstandRequest request, PromptConfig prompts) =>
+        Compose(DescribeSections(request, prompts), request.TargetLanguage);
+
+    /// <summary>
+    /// 按请求分派组装路径，顺序与 <see cref="GetSystemPrompt"/> 完全一致：先精讲、再视觉、最后文本。
+    /// 携带 TranslationSession 的多轮请求由 <see cref="GetSystemPrompt"/> 直接沿用阶段一锁定值，不经过本分派。
+    /// </summary>
+    internal static PromptPath ResolvePath(UnderstandRequest request) => request.Kind == UnderstandKind.Explain
+        ? PromptPath.Explain
+        : request.ImagePng is { Length: > 0 }
+            ? PromptPath.Vision
+            : PromptPath.Text;
+
+    /// <summary>
+    /// 把最终下发的 system prompt 还原为「带来源标注的有序段序列」，供 --dump-prompt CLI 与
+    /// prompt-preview 生成器复现组装顺序——组装真值只此一处，前端与脚本不得自行模拟。
+    /// 与 <see cref="GetSystemPrompt"/> 共用同一套分派与取值逻辑，区别只在不拼接；
+    /// 段序列按 \n\n 连接并展开 {{target_language}} 后必须与 <see cref="GetSystemPrompt"/> 逐字一致，
+    /// 该契约由自测的段描述反漂移闸门守住。
+    /// </summary>
+    internal static IReadOnlyList<PromptSection> DescribeSections(UnderstandRequest request, PromptConfig? prompts = null)
     {
+        // 多轮会话：系统提示词原样沿用阶段一锁定值，不为阶段二重拼（前缀缓存命中的前提），自然也不拆分。
         if (request.Session?.SystemPrompt is { Length: > 0 } sessionPrompt)
         {
-            return sessionPrompt;
+            return [new PromptSection("session", PromptSectionSource.Session, sessionPrompt)];
         }
 
-        if (request.Kind == UnderstandKind.Explain)
+        return ResolvePath(request) switch
         {
-            if (!string.IsNullOrWhiteSpace(prompts.Explain))
-            {
-                return ExpandTargetLanguage(prompts.Explain.Trim(), request.TargetLanguage);
-            }
-
-            return BuildExplainSystemPrompt(request, prompts);
-        }
-
-        if (request.ImagePng is { Length: > 0 })
-        {
-            return BuildVisionSystemPrompt(request, prompts);
-        }
-
-        // 彻底拥抱纯粹模块化架构（Base + 语言特化插件），绝无旧单体兼容历史包袱
-        return BuildModularSystemPrompt(request, prompts);
+            PromptPath.Explain => DescribeExplainSections(request, prompts),
+            PromptPath.Vision => DescribeVisionSections(prompts),
+            _ => DescribeTextSections(request, prompts),
+        };
     }
 
     /// <summary>
@@ -171,21 +164,8 @@ internal static class PromptTemplates
     /// 翻译阶段严格零精讲提示词，确保首字延迟与前缀缓存稳定命中。
     /// 段落之间统一以 \n\n 连接，避免 AppendLine 引入随平台漂移的 CRLF 污染 Payload。
     /// </summary>
-    internal static string BuildModularSystemPrompt(UnderstandRequest request, PromptConfig? prompts = null)
-    {
-        var detection = LanguageDetector.Detect(request.SourceText, request.TargetLanguage);
-
-        var sections = new List<string>
-        {
-            !string.IsNullOrWhiteSpace(prompts?.Base)
-                ? prompts.Base.Trim()
-                : DefaultTranslationBasePrompt
-        };
-
-        AppendLanguagePlugins(sections, detection, prompts);
-
-        return ExpandTargetLanguage(string.Join("\n\n", sections), request.TargetLanguage);
-    }
+    internal static string BuildModularSystemPrompt(UnderstandRequest request, PromptConfig? prompts = null) =>
+        Compose(DescribeTextSections(request, prompts), request.TargetLanguage);
 
     /// <summary>
     /// 视觉一条龙组装：视觉 Base + 两个语言插件，与文本路径同源同文。
@@ -195,40 +175,21 @@ internal static class PromptTemplates
     /// （游戏 CG、菜单，高频场景）两条规则各取所需。
     /// 附带收益：system prompt 与输入无关、恒定单变体，前缀缓存 100% 命中。
     /// </summary>
-    internal static string BuildVisionSystemPrompt(UnderstandRequest request, PromptConfig? prompts = null)
-    {
-        var sections = new List<string>
-        {
-            !string.IsNullOrWhiteSpace(prompts?.VisionBase)
-                ? prompts.VisionBase.Trim()
-                : DefaultVisionBasePrompt
-        };
-
-        // 恒定同拼：探测无从做起，而两条规则都是条件式的，宁全勿缺。
-        sections.Add(!string.IsNullOrWhiteSpace(prompts?.JapanesePlugin)
-            ? prompts.JapanesePlugin.Trim()
-            : JapanesePlugin);
-        sections.Add(!string.IsNullOrWhiteSpace(prompts?.EnglishPlugin)
-            ? prompts.EnglishPlugin.Trim()
-            : EnglishPlugin);
-
-        return ExpandTargetLanguage(string.Join("\n\n", sections), request.TargetLanguage);
-    }
+    internal static string BuildVisionSystemPrompt(UnderstandRequest request, PromptConfig? prompts = null) =>
+        Compose(DescribeVisionSections(prompts), request.TargetLanguage);
 
     /// <summary>
     /// 按探测结果把语言插件追加进 sections：日语门控与英语门控彼此独立，
     /// 用户自定义插件优先，留空回落到内置常量。文本与精讲两条路径共用同一实现，保证同构。
     /// </summary>
     private static void AppendLanguagePlugins(
-        List<string> sections,
+        List<PromptSection> sections,
         LanguageDetectionResult detection,
         PromptConfig? prompts)
     {
         if (detection.NeedsJapaneseRuby || detection.HasJapanese)
         {
-            sections.Add(!string.IsNullOrWhiteSpace(prompts?.JapanesePlugin)
-                ? prompts.JapanesePlugin.Trim()
-                : JapanesePlugin);
+            sections.Add(Choose("japanese_plugin", prompts?.JapanesePlugin, JapanesePlugin));
         }
 
         // 英语插件门控独立化：曾以 !HasJapanese 排他，防止片假名外来语被误标 IPA，
@@ -237,9 +198,7 @@ internal static class PromptTemplates
         // 「这篇原文要不要纳入英语规约」——含拉丁字母就要，与是否混排日语无关。
         if (detection.NeedsEnglishIpa || detection.HasEnglish)
         {
-            sections.Add(!string.IsNullOrWhiteSpace(prompts?.EnglishPlugin)
-                ? prompts.EnglishPlugin.Trim()
-                : EnglishPlugin);
+            sections.Add(Choose("english_plugin", prompts?.EnglishPlugin, EnglishPlugin));
         }
     }
 
@@ -247,21 +206,94 @@ internal static class PromptTemplates
     /// 为独立的精讲任务组装结构化系统提示词：精讲 Base + 按需纳入的语言插件。
     /// 目标语言约束已并入精讲 Base（联动变更：独立对齐段已删除）。
     /// </summary>
-    internal static string BuildExplainSystemPrompt(UnderstandRequest request, PromptConfig? prompts = null)
+    internal static string BuildExplainSystemPrompt(UnderstandRequest request, PromptConfig? prompts = null) =>
+        Compose(DescribeExplainSections(request, prompts), request.TargetLanguage);
+
+    /// <summary>路径一 · 文本翻译的组成：翻译 Base + 按探测结果纳入的语言插件。</summary>
+    private static List<PromptSection> DescribeTextSections(UnderstandRequest request, PromptConfig? prompts)
     {
-        var detection = LanguageDetector.Detect(request.SourceText, request.TargetLanguage);
+        var sections = new List<PromptSection> { Choose("base", prompts?.Base, DefaultTranslationBasePrompt) };
+        AppendLanguagePlugins(sections, LanguageDetector.Detect(request.SourceText, request.TargetLanguage), prompts);
+        return sections;
+    }
 
-        var sections = new List<string> { DefaultExplainBasePrompt };
+    /// <summary>路径二 · 视觉一条龙的组成：视觉 Base + 两个语言插件，恒定同拼、宁全勿缺。</summary>
+    private static List<PromptSection> DescribeVisionSections(PromptConfig? prompts) =>
+    [
+        Choose("vision_base", prompts?.VisionBase, DefaultVisionBasePrompt),
+        Choose("japanese_plugin", prompts?.JapanesePlugin, JapanesePlugin),
+        Choose("english_plugin", prompts?.EnglishPlugin, EnglishPlugin),
+    ];
 
-        AppendLanguagePlugins(sections, detection, prompts);
+    /// <summary>
+    /// 路径三 · 精讲的组成：用户在 PromptConfig.Explain 填写的精讲提示词整体替代系统提示词
+    /// （与 <see cref="GetSystemPrompt"/> 的精讲分支同源，故不再追加语言插件）；
+    /// 留空则复用唯一的精讲提示词，并按探测结果纳入语言插件。
+    /// 应用内的精讲是阶段二追问消息，这里只服务不带 session 的一次性精讲请求。
+    /// </summary>
+    private static List<PromptSection> DescribeExplainSections(UnderstandRequest request, PromptConfig? prompts)
+    {
+        var sections = new List<PromptSection> { Choose("explain", prompts?.Explain, DefaultExplainUserPrompt) };
 
-        return ExpandTargetLanguage(string.Join("\n\n", sections), request.TargetLanguage);
+        if (string.IsNullOrWhiteSpace(prompts?.Explain))
+        {
+            AppendLanguagePlugins(sections, LanguageDetector.Detect(request.SourceText, request.TargetLanguage), prompts);
+        }
+
+        return sections;
+    }
+
+    /// <summary>取用户自定义值：非空即标记 Custom 并裁掉首尾空白；否则回落内置常量并标记 Builtin。</summary>
+    private static PromptSection Choose(string name, string? custom, string builtin) =>
+        !string.IsNullOrWhiteSpace(custom)
+            ? new PromptSection(name, PromptSectionSource.Custom, custom.Trim())
+            : new PromptSection(name, PromptSectionSource.Builtin, builtin);
+
+    /// <summary>
+    /// 把有序段序列拼接为最终 system prompt：段间统一以 \n\n 连接，随后只展开已声明的目标语言占位符。
+    /// 单段会话锁定值原样返回：其占位符在阶段一已展开，二次展开只会改变语义。
+    /// </summary>
+    private static string Compose(IReadOnlyList<PromptSection> sections, string targetLanguage)
+    {
+        if (sections is [{ Source: PromptSectionSource.Session } session])
+        {
+            return session.Text;
+        }
+
+        return ExpandTargetLanguage(string.Join("\n\n", sections.Select(section => section.Text)), targetLanguage);
     }
 
     private static string ExpandTargetLanguage(string prompt, string targetLanguage) =>
         // 只展开已声明的占位符；未知占位符原样保留，避免悄悄改变用户提示词语义。
         prompt.Replace(TargetLanguagePlaceholder, targetLanguage, StringComparison.Ordinal);
 }
+
+/// <summary>system prompt 的三条组装路径；分派顺序与 <see cref="PromptTemplates.GetSystemPrompt"/> 一一对应。</summary>
+internal enum PromptPath
+{
+    /// <summary>路径一 · 文本翻译：Base + 按探测结果纳入的语言插件。</summary>
+    Text,
+
+    /// <summary>路径二 · 视觉一条龙：视觉 Base + 两个语言插件恒定同拼。</summary>
+    Vision,
+
+    /// <summary>路径三 · 精讲：精讲 Base + 按探测结果纳入的语言插件。</summary>
+    Explain,
+}
+
+/// <summary>一段 system prompt 的取值来源：内置常量回落、用户配置覆盖，或阶段一锁定的会话值。</summary>
+internal enum PromptSectionSource
+{
+    Builtin,
+    Custom,
+    Session,
+}
+
+/// <summary>
+/// system prompt 的一段有序组成：段名、取值来源与文本（占位符尚未展开）。
+/// 供 --dump-prompt CLI 与 prompt-preview 生成器复现组装顺序，是「所见即所发」的真值载体。
+/// </summary>
+internal sealed record PromptSection(string Name, PromptSectionSource Source, string Text);
 
 /// <summary>
 /// 流式输出按唯一的分段标记 <c>---TRANSLATION---</c> 拆成原文与译文两个通道；
