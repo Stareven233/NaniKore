@@ -77,8 +77,8 @@ windows:
   settings_height: 700
 prompts:
   # 提示词键一律留空即回落内置默认模板，填入非空内容时以本文件为准。可用占位符 {{target_language}} 会展开为目标语言。
-  base: ''
-  japanese_plugin: ''
-  english_plugin: ''
-  vision_oneshot: ''
-  explain: ''
+  base: ~
+  japanese_plugin: ~
+  english_plugin: ~
+  vision_oneshot: ~
+  explain: ~

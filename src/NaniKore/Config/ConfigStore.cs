@@ -99,6 +99,18 @@ internal sealed class ConfigStore
         config.Prompts ??= new PromptConfig();
         config.Profiles ??= [];
 
+        // YAML 的 ~ 是显式空值，反序列化得到的是 null 而不是空串。提示词与预留热键
+        // 必须在此收敛为空串：序列化器配置了 OmitNull，null 属性会被整体省略，
+        // 回写时把 prompts 段塌缩成 {}，全部子键丢失。表现为：模板用 ~ 置空后，
+        // 进入设置窗口不做任何修改、仅关闭时的尺寸记忆也会清空 prompts。
+        // 收敛后空串仍表示“回落内置默认模板”，语义不变。
+        config.Prompts.Base ??= string.Empty;
+        config.Prompts.JapanesePlugin ??= string.Empty;
+        config.Prompts.EnglishPlugin ??= string.Empty;
+        config.Prompts.VisionOneshot ??= string.Empty;
+        config.Prompts.Explain ??= string.Empty;
+        config.Hotkeys.TranslateClipboard ??= string.Empty;
+
         if (string.IsNullOrWhiteSpace(config.General.TargetLanguage))
         {
             config.General.TargetLanguage = "中文（简体）";

@@ -9,9 +9,61 @@ internal static partial class SelfTest
     private static void RunConfigTests()
     {
         TestConfigRoundTrip();
+        TestEmptyPromptKeysSurviveRewrite();
         TestAboutPageDisplaysProductVersion();
         TestApplicationIconResource();
         TestProfileRenameKeepsSecret();
+    }
+
+    /// <summary>
+    /// 回归测试：模板用 ~ 置空 prompts 后，关闭设置窗口（仅尺寸记忆回写、未保存任何修改）
+    /// 曾把 prompts 段序列化成 {}，导致全部子键丢失。
+    /// </summary>
+    private static void TestEmptyPromptKeysSurviveRewrite()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"NaniKore-self-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
+                version: 0.2.11
+                hotkeys:
+                  capture: Ctrl+Shift+A
+                  translate_clipboard: ~
+                prompts:
+                  base: ~
+                  japanese_plugin: ~
+                  english_plugin: ~
+                  vision_oneshot: ~
+                  explain: ~
+                """);
+            var store = new ConfigStore(directory);
+            Check(
+                "YAML null (~) prompt keys normalize to empty strings instead of staying null",
+                store.Current.Prompts.Base is { Length: 0 } &&
+                store.Current.Prompts.JapanesePlugin is { Length: 0 } &&
+                store.Current.Prompts.EnglishPlugin is { Length: 0 } &&
+                store.Current.Prompts.VisionOneshot is { Length: 0 } &&
+                store.Current.Prompts.Explain is { Length: 0 } &&
+                store.Current.Hotkeys.TranslateClipboard is { Length: 0 });
+
+            // 模拟设置窗口未保存直接关闭：克隆打开时的快照后原样写盘（尺寸记忆路径）。
+            store.AtomicWrite(AppConfigCloner.Clone(store.Current));
+            var rewritten = File.ReadAllText(Path.Combine(directory, "config.yaml"));
+            Check(
+                "settings-close rewrite keeps every prompts sub-key instead of collapsing to {}",
+                rewritten.Contains("  base: ", StringComparison.Ordinal) &&
+                rewritten.Contains("  japanese_plugin: ", StringComparison.Ordinal) &&
+                rewritten.Contains("  english_plugin: ", StringComparison.Ordinal) &&
+                rewritten.Contains("  vision_oneshot: ", StringComparison.Ordinal) &&
+                rewritten.Contains("  explain: ", StringComparison.Ordinal) &&
+                rewritten.Contains("  translate_clipboard: ", StringComparison.Ordinal) &&
+                !rewritten.Contains("prompts: {}", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     private static void TestConfigRoundTrip()

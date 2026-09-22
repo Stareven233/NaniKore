@@ -21,9 +21,8 @@ internal static class PromptTemplates
     /// <summary>日语特化插件：约束汉字振假名注音格式；只服务原文标注，不携带精讲文法。</summary>
     internal const string JapanesePlugin = """
 [日语注音规范]
-- 仅对汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）。
-- 假名、标点、数字以及非汉字单词一律不加方括号。
-- 即使输入是片段、从句，或以终助词结尾的对话（如 て…、けど），也为其中所有汉字忠实标注读音。
+- 对汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）
+- 即使输入是片段、从句，或以终助词结尾的对话（如 て…、けど），也为其中所有汉字忠实标注读音
 """;
 
     /// <summary>默认日语插件模板，供设置面板展示与一键恢复。</summary>
@@ -32,7 +31,7 @@ internal static class PromptTemplates
     /// <summary>英语特化插件：约束国际音标（IPA）标注规范。</summary>
     internal const string EnglishPlugin = """
 [英语音标规范]
-- 在原文标注中确有帮助时，用方括号标注国际音标（IPA），如 apple[ˈæpl]。
+- 为原文里少见、困难的单词用方括号标注国际音标（IPA），如 apple[ˈæpl]
 """;
 
     /// <summary>默认英语插件模板，供设置面板展示与一键恢复。</summary>
@@ -44,14 +43,11 @@ internal static class PromptTemplates
 
     /// <summary>模块化 Base 提示词：规定两段式输出协议与翻译纪律；主人可在设置页直接修改。</summary>
     internal const string DefaultTranslationBasePrompt = """
-你是准确、自然的翻译引擎。
-将用户提供的文本翻译为{{target_language}}，并按顺序输出恰好两部分：
+你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将注音标注的原文、对应译文按顺序输出，两部分中间用"---TRANSLATION---"分隔，例如：
 <annotated_source>
 ---TRANSLATION---
 <translation>
-第一部分是完成注音标注的原文，第二部分是对应译文，两部分之间仅由 ---TRANSLATION--- 分隔。
-<annotated_source> 与 <translation> 是结构占位符，输出时替换为对应内容，尖括号本身不保留。
-忠实翻译输入内容本身，维持原有语义与语气。
+注意 <annotated_source> 与 <translation> 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅
 """;
 
     /// <summary>设置页始终展示的默认基础翻译提示词模版；主人可直接在此基础上修改。</summary>
@@ -65,15 +61,11 @@ internal static class PromptTemplates
 
     /// <summary>视觉一条龙默认模板：转录图中文字并直接给出标注原文与译文，自包含全部协议。</summary>
     internal const string DefaultVisionOneshotPrompt = """
-你是准确、自然的视觉翻译引擎。
-先完整转录图片中可读的全部文字，再将其翻译为{{target_language}}，并按顺序输出恰好两部分：
+你当前工作在一个翻译应用中，所有输入图片都是需翻译文本的截图，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将转录并完成注音标注的原文、对应译文按顺序输出，两部分中间用"---TRANSLATION---"分隔，例如：
 <annotated_source>
 ---TRANSLATION---
 <translation>
-第一部分是转录并完成注音标注的原文，第二部分是对应译文，两部分之间仅由 ---TRANSLATION--- 分隔。
-<annotated_source> 与 <translation> 是结构占位符，输出时替换为对应内容，尖括号本身不保留。
-原文中的日文汉字按 漢字[かな] 格式标注振假名，假名、标点、数字与非汉字单词不加方括号。
-忠实呈现图片中实际出现的内容，维持原有顺序与分行。
+注意 <annotated_source> 与 <translation> 是结构占位符，输出时替换为对应内容，本身不保留。忠实呈现图片中实际出现的内容，维持原有顺序与分行
 """;
 
     #endregion
@@ -109,15 +101,16 @@ internal static class PromptTemplates
 
     /// <summary>两阶段精讲默认追问提示词（复用前缀历史以命中 Prompt Cache）。</summary>
     internal const string DefaultExplainUserPrompt = """
-请对上述内容进行深度精讲拆解。注意：只分析N3及以上难度的重点词汇、短语与语法句型，过滤掉N4/N5等初级简单基础词与基础句型，太简单的不要分析。
+请对上述内容进行深度精讲拆解。注意：只分析N3及以上难度的重点词汇、短语与语法句型，初级简单基础的不管
 请严格按以下微结构卡片格式输出，所有释义与解析使用目标语言：
 ### [词汇/短语]
 - **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
 ### [语法/句型]
 - **句型** | 语法功能与释义
-### [语境与地道表达]
-语境分析与自然表达说明
-【词性约束】动词词性必须严格标注为一类动词、二类动词或三类动词（辞書形原形），避免未然形等旧称；形容词标注为一类/二类形容词。
+### [翻译精讲]
+结合语境与背景/语法知识分析解释为何如此翻译
+
+【词性约束】动词词性必须严格标注为一类动词、二类动词或三类动词（辞書形原形），形容词标注为一类/二类形容词，全部使用教育语法的术语
 """;
 
     #endregion
