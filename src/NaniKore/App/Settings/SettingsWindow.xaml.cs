@@ -23,6 +23,9 @@ internal sealed partial class SettingsWindow : Window
     /// <summary>业务配置是否已成功落盘；决定关闭时尺寸记录克隆哪份副本。</summary>
     private bool _settingsSaved;
 
+    /// <summary>尺寸比较容差：吸收不同 DPI 下 Actual* 的取整漂移，偏差小于该值视为未变化。</summary>
+    private const double SizeEpsilon = 1.0;
+
     public SettingsWindow(
         AppConfig current,
         Action<AppConfig> save,
@@ -62,7 +65,7 @@ internal sealed partial class SettingsWindow : Window
         }
 
         NavigationList.SelectedIndex = 0;
-        // 无论保存还是取消，关闭时都记录窗口尺寸；尺寸走独立副本，不携带尚未保存的页面编辑。
+        // 关闭时记录窗口尺寸（仅在实际改变过尺寸时才写盘）；尺寸走独立副本，不携带尚未保存的页面编辑。
         Closed += (_, _) =>
         {
             _successStatusTimer.Stop();
@@ -177,9 +180,7 @@ internal sealed partial class SettingsWindow : Window
     /// <summary>关闭时把实际窗口尺寸写回配置，下次打开按上次大小恢复。</summary>
     private void SaveWindowSize()
     {
-        // 最小化或布局尚未完成时 Actual* 不是可信尺寸，跳过本次记录。
-        if (WindowState == WindowState.Minimized ||
-            !double.IsFinite(ActualWidth) || !double.IsFinite(ActualHeight))
+        if (WindowState == WindowState.Minimized)
         {
             return;
         }
@@ -187,10 +188,18 @@ internal sealed partial class SettingsWindow : Window
         // 页面在输入时会直接改动 _working，不能无条件克隆它：
         // 保存成功过才以 _working 为基础（业务配置已落盘，只叠加尺寸）；
         // 否则退回打开时的初始快照，未保存的页面编辑不会跟着写盘。
-        var next = AppConfigCloner.Clone(_settingsSaved ? _working : _initialConfig);
-        // 以 XAML 声明的最小尺寸为下限，防止异常 DPI 数据把窗口缩到不可操作。
-        next.Windows.SettingsWidth = Math.Max(MinWidth, ActualWidth);
-        next.Windows.SettingsHeight = Math.Max(MinHeight, ActualHeight);
+        var baseline = _settingsSaved ? _working : _initialConfig;
+        if (ResolvePersistedSize(baseline.Windows, ActualWidth, ActualHeight, MinWidth, MinHeight) is not { } size)
+        {
+            // 尺寸与基线一致（或取不到可信尺寸）时完全不写盘：保存过说明业务配置和
+            // 当前尺寸已经落盘，没保存过说明用户什么都没改——“进设置窗口逛一圈直接
+            // 关掉”不该重写 config.yaml（丢注释、~ 被规范化成 '' 等副作用）。
+            return;
+        }
+
+        var next = AppConfigCloner.Clone(baseline);
+        next.Windows.SettingsWidth = size.Width;
+        next.Windows.SettingsHeight = size.Height;
         try
         {
             _save(next);
@@ -199,5 +208,31 @@ internal sealed partial class SettingsWindow : Window
         {
             // 尺寸记忆是尽力而为的：关闭流程不该因写盘失败而中断。
         }
+    }
+
+    /// <summary>
+    /// 尺寸记忆的纯决策：返回需要写回的窗口尺寸，没有任何变化时返回 null 表示不必写盘。
+    /// 尺寸不可信（布局尚未完成、窗口从未显示）或与基线一致时跳过；
+    /// WPF 的 ActualWidth 与 Width 严格相等（已实测多轮开关零漂移），故 1px 容差足够。
+    /// </summary>
+    internal static (double Width, double Height)? ResolvePersistedSize(
+        WindowConfig baseline, double actualWidth, double actualHeight, double minWidth, double minHeight)
+    {
+        if (!double.IsFinite(actualWidth) || !double.IsFinite(actualHeight) ||
+            actualWidth <= 0 || actualHeight <= 0)
+        {
+            return null;
+        }
+
+        // 以 XAML 声明的最小尺寸为下限，防止异常 DPI 数据把窗口缩到不可操作。
+        var width = Math.Max(minWidth, actualWidth);
+        var height = Math.Max(minHeight, actualHeight);
+        if (Math.Abs(baseline.SettingsWidth - width) < SizeEpsilon &&
+            Math.Abs(baseline.SettingsHeight - height) < SizeEpsilon)
+        {
+            return null;
+        }
+
+        return (width, height);
     }
 }

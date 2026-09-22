@@ -19,7 +19,39 @@ internal static partial class SelfTest
         TestSettingsPagesUseAdaptiveLayout();
         TestGeneralPagePipelineDependencyVisibility();
         TestTranslationPagePromptEditing();
+        TestSettingsCloseSizeMemory();
         TestRubyDocumentBuilderAndDualMode();
+    }
+
+    /// <summary>
+    /// 回归测试：关闭设置窗口必须“有变化才写盘”。
+    /// 曾经无条件回写，导致“什么都不改、直接关闭”也会重写 config.yaml。
+    /// </summary>
+    private static void TestSettingsCloseSizeMemory()
+    {
+        var baseline = new WindowConfig { SettingsWidth = 800, SettingsHeight = 640 };
+
+        Check(
+            "settings close without any change resolves no size write-back",
+            SettingsWindow.ResolvePersistedSize(baseline, 800, 640, 620, 460) is null);
+
+        Check(
+            "settings close tolerates sub-pixel DPI drift within the epsilon",
+            SettingsWindow.ResolvePersistedSize(baseline, 800.6, 639.4, 620, 460) is null);
+
+        Check(
+            "settings close after a real resize resolves the new size to write back",
+            SettingsWindow.ResolvePersistedSize(baseline, 1024.5, 700.25, 620, 460) is { Width: 1024.5, Height: 700.25 });
+
+        Check(
+            "settings close clamps the resolved size to the declared minimum",
+            SettingsWindow.ResolvePersistedSize(baseline, 300, 200, 620, 460) is { Width: 620, Height: 460 });
+
+        Check(
+            "settings close skips invalid or not-yet-laid-out window sizes",
+            SettingsWindow.ResolvePersistedSize(baseline, 0, 0, 620, 460) is null &&
+            SettingsWindow.ResolvePersistedSize(baseline, double.NaN, 640, 620, 460) is null &&
+            SettingsWindow.ResolvePersistedSize(baseline, double.PositiveInfinity, 640, 620, 460) is null);
     }
 
     private static void TestTranslationPagePromptEditing()
