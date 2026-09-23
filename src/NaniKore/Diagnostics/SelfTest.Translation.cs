@@ -312,10 +312,10 @@ internal static partial class SelfTest
             new UnderstandRequest(UnderstandKind.Explain, "Appleの新しいiPhone発表会", null, "中文（简体）"),
             new PromptConfig());
         Check(
-            "mixed Japanese and English explain prompt shares ruby and IPA conventions",
+            "explain prompt focuses purely on structured explanation without ruby or IPA plugins",
             mixedExplain.Contains("### [词汇/短语]", StringComparison.Ordinal) &&
-            mixedExplain.Contains(RubyRule, StringComparison.Ordinal) &&
-            mixedExplain.Contains(IpaRule, StringComparison.Ordinal));
+            !mixedExplain.Contains(RubyRule, StringComparison.Ordinal) &&
+            !mixedExplain.Contains(IpaRule, StringComparison.Ordinal));
 
         // 2. 少量拉丁混入同样纳入英语规约：规则是条件式的，模型可逐 token 取舍，不误伤
         var sparseLatin = PromptTemplates.GetSystemPrompt(

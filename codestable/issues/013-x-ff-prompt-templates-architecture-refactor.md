@@ -2,7 +2,7 @@
 kind: issue
 title: "提示词系统重构与清理：SectionChannelRouter 解耦与精讲契约收敛"
 type: ff
-status: open
+status: closed
 priority: normal
 created: 2026-09-23
 ---
@@ -94,9 +94,16 @@ created: 2026-09-23
 
 ## 验收标准
 
-- [ ] `PromptTemplates.cs` 代码行数缩减至 250 行以内，只保留提示词定义、段组合真值与路径分派。
-- [ ] `SectionChannelRouter.cs` 作为独立流式通道解析器存在于 `Translation/` 目录下。
-- [ ] 彻底清理 3 个无引用的 `Build*` 历史死代码方法。
-- [ ] 精讲单轮组装与多轮设计理念一致，不再附带翻译注音插件。
-- [ ] `./scripts/dev.ps1 test` 无 UI 自测全部通过。
+- [x] `PromptTemplates.cs` 代码行数缩减至 250 行以内，只保留提示词定义、段组合真值与路径分派（重构后为 247 行）。
+- [x] `SectionChannelRouter.cs` 作为独立流式通道解析器存在于 `Translation/` 目录下。
+- [x] 彻底清理 3 个无引用的 `Build*` 历史死代码方法。
+- [x] 精讲单轮组装与多轮设计理念一致，不再附带翻译注音插件。
+- [x] `./scripts/dev.ps1 test` 无 UI 自测全部通过。
+
+## 执行记录
+
+- **流式通道路由器解耦**：创建 `src/NaniKore/Translation/SectionChannelRouter.cs`，将 `SectionChannelRouter` 及其噪声标签定义、滑动窗口截断状态机从 `PromptTemplates.cs` 完整迁出。保持命名空间为 `NaniKore.Translation`，上游调用方与自测零感知。
+- **死代码与过渡方法清理**：删除 `PromptTemplates.cs` 中全工程无引用的 `BuildModularSystemPrompt`、`BuildVisionSystemPrompt`、`BuildExplainSystemPrompt`。
+- **精讲契约收敛**：修正 `DescribeExplainSections`，移除 `AppendLanguagePlugins` 调用，单轮精讲统一只下发 `explain` 段，与两阶段阶段二追问行为完全对齐；同步校准 `SelfTest.Translation.cs` 中的精讲测试断言与 `scripts/prompt-preview.html` 离线快照。
+- **精简与自测防护**：`PromptTemplates.cs` 从 968 行瘦身至 247 行；运行 `./scripts/dev.ps1 test` 全部无 UI 自测 100% 通过。
 
