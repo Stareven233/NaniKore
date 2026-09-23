@@ -31,7 +31,7 @@ namespace NaniKore.Translation;
 ///   必填  {JapanesePlugin}
 ///   必填  {EnglishPlugin}
 ///   图为唯一输入，语言探测无从做起，两个插件恒定同拼；两者的规则本身都是条件式的
-///   （「对日式汉字标注振假名」/「为原文中拉丁字母拼写的单词标注 IPA」），模型按图中
+///   （「对日本汉字标注振假名」/「为原文中拉丁字母拼写的单词标注 IPA」），模型按图中
 ///   实际出现的文字逐条取舍。附带收益：视觉 system prompt 与输入无关、恒定单变体，
 ///   前缀缓存 100% 命中（路径一有 ≤3 个变体）。
 ///
@@ -63,8 +63,6 @@ internal static class PromptTemplates
         <translation>
 
         注意 <annotated_source> 与 <translation> 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅
-
-        译文/分析全部使用{{target_language}}撰写
         """);
 
     // ── 语言特化插件：日语在前、英语在后 ─────────────────────────────
@@ -72,20 +70,20 @@ internal static class PromptTemplates
     /// <summary>日语插件：约束汉字振假名注音格式；只服务原文标注，不携带精讲文法。</summary>
     internal static readonly string JapanesePlugin = PromptLiteral("""
         [日语注音规范]
-          - 对日式汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）
+        对 JLPT N3 及以上难度的日本汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）
         """);
 
     /// <summary>英语插件：约束国际音标（IPA）标注规范，且只作用于拉丁字母拼写的单词。</summary>
     internal static readonly string EnglishPlugin = PromptLiteral("""
         [英语音标规范]
-          - 为原文中拉丁字母拼写的少见、困难单词用方括号标注国际音标（IPA），如 apple[ˈæpl]
+        为原文中拉丁字母拼写的少见、困难单词用方括号标注国际音标（IPA），如 apple[ˈæpl]
         """);
 
     // ── 路径二 · 视觉一条龙 Base（与两个语言插件共同组装） ───────────
 
     /// <summary>视觉 Base：转录图中文字并直接给出标注原文与译文；注音格式由两个语言插件提供，自身不重复声明。</summary>
     internal static readonly string DefaultVisionBasePrompt = PromptLiteral("""
-        你当前工作在一个翻译应用中，所有输入图片都是需翻译文本的截图，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将转录并完成注音标注的原文、对应译文按顺序输出，两部分中间用"---TRANSLATION---"分隔，例如：
+        你当前工作在一个翻译应用中，需翻译文本都在输入图片里，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将转录并完成注音标注的原文、对应译文按顺序输出，两部分中间用"---TRANSLATION---"分隔，例如：
 
         <annotated_source>
         ---TRANSLATION---
@@ -99,17 +97,18 @@ internal static class PromptTemplates
     /// <summary>两阶段精讲的默认追问消息；同时也充当不带 session 的一次性精讲请求的 system prompt。</summary>
     internal static readonly string DefaultExplainUserPrompt = PromptLiteral("""
         按以下三个小节输出结构化 Markdown：
-
+        ```
         ### [词汇/短语]
-          - **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
+        **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析
 
         ### [语法/句型]
-          - **句型** | 语法功能与释义
+        **句型** | 语法功能与释义
 
         ### [翻译精讲]
-          结合语境与背景/语法知识分析解释为何如此翻译
+        结合语境与背景/语法知识分析解释为何如此翻译
+        ```
 
-        注：全部使用教育语法术语，仅列出 JLPT N3 及以上难度的重点词汇、短语与语法句型
+        注：日语术语全部使用教育语法，且仅挑出 JLPT N3 及以上难度的重点词汇、短语与语法句型；若是英语则只挑选CET-6及以上难度的
         """);
 
     /// <summary>行尾归一化闸门：仓库按 core.autocrlf=true 检出，原始字符串字面量会继承 \r\n，统一收敛为 \n 后再下发。</summary>

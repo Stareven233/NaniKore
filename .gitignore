@@ -21,6 +21,7 @@ _todo.md
 # IDE
 .vs/
 .vscode/
+.playwright-mcp/
 .idea/
 *.user
 *.suo
