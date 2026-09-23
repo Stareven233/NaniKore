@@ -76,6 +76,37 @@ if ($null -eq $listener) {
 
 $serverUrl = "http://127.0.0.1:$boundPort/"
 
+# Ctrl+C 即时响应：
+#   HttpListener.GetContext() 是同步阻塞调用，PowerShell 引擎在阻塞期间
+#   无法收到中断信号（这就是「按了 Ctrl+C 没反应、要刷新页面终端才退出」的根因）。
+#   这里注册 CancelKeyPress 处理器：收到 Ctrl+C 时主动 Stop() 监听器，
+#   令挂起中的 GetContext 立即抛异常打破阻塞，同时顺手结束正在进行的 CLI 取真值子进程。
+$script:stopRequested = $false
+$script:activeProc = $null
+$script:cancelHandler = {
+    param($sender, $eventArgs)
+    try { $eventArgs.Cancel = $true } catch { }
+    $script:stopRequested = $true
+    try {
+        if ($null -ne $script:listener -and $script:listener.IsListening) {
+            $script:listener.Stop()
+        }
+    }
+    catch { }
+    if ($null -ne $script:activeProc) {
+        try { Stop-Process -Id $script:activeProc.Id -Force -ErrorAction SilentlyContinue }
+        catch { }
+    }
+}
+# 兜底：若宿主以 CLR CancelKeyPress 事件送达 Ctrl+C，直接置位并回收监听器。
+# 注意本处理器不是主要机制——PowerShell 宿主自己会接管 Ctrl+C（症状就是"要刷新
+# 页面才退出"），所以真正的解法在下面的取上下文循环：绝不让引擎卡死在阻塞调用里。
+if ($null -ne [Console]::CancelKeyPress) {
+    try { $null = [Console]::CancelKeyPress.Add($script:cancelHandler) }
+    catch { Write-Warning "注册 Ctrl+C 兜底处理器失败：$($_.Exception.Message)" }
+}
+
+
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host " NaniKore 提示词实时预览中转服务已启动" -ForegroundColor Green
 Write-Host " 本地地址: $serverUrl" -ForegroundColor Yellow
@@ -89,8 +120,22 @@ if (-not $NoLaunch) {
 }
 
 try {
-    while ($listener.IsListening) {
-        $context = $listener.GetContext()
+    # 用异步 GetContextAsync + 短超时轮询替代同步 GetContext()：
+    # 同步阻塞调用会把 PowerShell 引擎钉死在当前语句，
+    # Ctrl+C 只能排队等下一次语句边界（表现为"要刷新页面触发新请求才退出"）。
+    # 轮询循环里每条语句边界都可被引擎检查中断，Ctrl+C 毫秒级生效。
+    while ($listener.IsListening -and -not $script:stopRequested) {
+        $pending = $listener.GetContextAsync()
+        while (-not $pending.Wait(250) -and -not $script:stopRequested) {
+            # Start-Sleep 是 cmdlet 调用，构成引擎中断检查点
+            Start-Sleep -Milliseconds 50
+        }
+        if ($script:stopRequested -or -not $listener.IsListening)
+        {
+            try { $pending.Dispose() } catch { }
+            break
+        }
+        $context = $pending.Result
         $request = $context.Request
         $response = $context.Response
 
@@ -157,6 +202,7 @@ try {
 
             try {
                 $proc = [System.Diagnostics.Process]::Start($psi)
+                $script:activeProc = $proc
                 $stdout = $proc.StandardOutput.ReadToEnd()
                 $stderr = $proc.StandardError.ReadToEnd()
                 $proc.WaitForExit()
@@ -189,6 +235,9 @@ try {
                 $errBytes = [System.Text.Encoding]::UTF8.GetBytes($errObj)
                 $response.OutputStream.Write($errBytes, 0, $errBytes.Length)
             }
+            finally {
+                $script:activeProc = $null
+            }
 
             $response.Close()
             continue
@@ -199,7 +248,20 @@ try {
         $response.Close()
     }
 }
+catch [System.Management.Automation.PipelineStoppedException] {
+    # 引擎把 Ctrl+C 转成管线停止时静默收尾，清理逻辑统一在 finally
+}
+catch {
+    # 个别宿主（如 WinPS 5.1 无 HaltException 类型）会把中断包成其他异常，
+    # 仅"中断类"静默，其余放行不掩盖真实错误
+    if ($_.Exception.GetType().Name -match 'Stop|Halt|Interrupt' -or "$($_.FullyQualifiedErrorId)" -match 'Stop|FlowControl') {
+    }
+    else {
+        throw
+    }
+}
 finally {
+    try { [Console]::CancelKeyPress.Remove($script:cancelHandler) } catch { }
     if ($null -ne $listener) {
         if ($listener.IsListening) {
             $listener.Stop()
