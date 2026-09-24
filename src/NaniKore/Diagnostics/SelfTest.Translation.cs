@@ -16,6 +16,8 @@ internal static partial class SelfTest
         TestModularPromptTemplates();
         TestVisionPromptComposition();
         TestMixedLanguagePluginGating();
+        TestTargetLanguagePluginMutex();
+        TestPluginRuleExampleConsistency();
         TestPromptSectionDescription();
         TestLanguageDetector();
         TestRubyTextParser();
@@ -362,6 +364,122 @@ internal static partial class SelfTest
             customMixed.Contains("[Custom en-US Plugin]", StringComparison.Ordinal) &&
             !customMixed.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
             !customMixed.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 目标语言互斥门控契约（talk 003 核心决策）：语言特化插件是「为源语言学习者提供生词阅读辅助」，
+    /// 一旦某语言本身就是目标语言，辅助即失效，必须整条剔除。钉住文本与视觉两条路径在目标为日/英语时的
+    /// 剪枝行为、中文目标下维持现状，以及剪枝后视觉 prompt 仍是单一缓存友好变体。
+    /// </summary>
+    private static void TestTargetLanguagePluginMutex()
+    {
+        const string RubyRule = "漢字[かな]";
+        const string IpaRule = "国际音标（IPA）";
+
+        // 1. 日译英：日英混排、目标为英语 → 剔除英语 IPA 插件（不再给 Nintendo Switch 标 IPA），保留日语振假名。
+        foreach (var target in new[] { "英语", "English", "en" })
+        {
+            var jpToEn = PromptTemplates.GetSystemPrompt(
+                new UnderstandRequest(UnderstandKind.Translate, "Nintendo Switchの最新ゲームをプレイする", null, target),
+                new PromptConfig());
+            Check(
+                $"target english prunes the english plugin but keeps the japanese ruby plugin (target={target})",
+                jpToEn.Contains(RubyRule, StringComparison.Ordinal) &&
+                !jpToEn.Contains(IpaRule, StringComparison.Ordinal));
+        }
+
+        // 2. 目标为英语、纯英文源 → 两条插件都不注入（英语按目标剔除、源无日语）。
+        var enToEn = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "英语"),
+            new PromptConfig());
+        Check(
+            "target english with pure english source injects neither ruby nor ipa plugin",
+            !enToEn.Contains(RubyRule, StringComparison.Ordinal) &&
+            !enToEn.Contains(IpaRule, StringComparison.Ordinal));
+
+        // 3. 英/中译日：源含引述假名、目标为日语 → 剔除日语振假名插件（不再给假名标振假名）。
+        foreach (var target in new[] { "日语", "日本語", "ja" })
+        {
+            var toJa = PromptTemplates.GetSystemPrompt(
+                new UnderstandRequest(UnderstandKind.Translate, "これは「護美」という名前です", null, target),
+                new PromptConfig());
+            Check(
+                $"target japanese prunes the japanese ruby plugin even when the source quotes kana (target={target})",
+                !toJa.Contains(RubyRule, StringComparison.Ordinal) &&
+                !toJa.Contains(IpaRule, StringComparison.Ordinal));
+        }
+
+        // 4. 英译日：日英混排、目标为日语 → 剔除日语插件，英语 IPA 插件保留（源含拉丁、仍需阅读辅助）。
+        var enToJa = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Translate, "Nintendo Switchの最新ゲーム", null, "日语"),
+            new PromptConfig());
+        Check(
+            "target japanese prunes the japanese plugin but keeps the english ipa plugin for latin source",
+            !enToJa.Contains(RubyRule, StringComparison.Ordinal) &&
+            enToJa.Contains(IpaRule, StringComparison.Ordinal));
+
+        // 5. 目标中文维持现状：日英混排照旧同享两套规约（互斥不应误伤默认场景）。
+        var toZh = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Translate, "Appleの新しいiPhone発表会", null, "中文（简体）"),
+            new PromptConfig());
+        Check(
+            "chinese target keeps both plugins so the default mixed-language behaviour is untouched",
+            toZh.Contains(RubyRule, StringComparison.Ordinal) &&
+            toZh.Contains(IpaRule, StringComparison.Ordinal));
+
+        // 6. 视觉路径同样施加互斥：目标英语只留日语插件，目标日语只留英语插件。
+        var visionToEn = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, "英语"),
+            new PromptConfig());
+        Check(
+            "vision path prunes the english plugin when the target language is english",
+            visionToEn.Contains(RubyRule, StringComparison.Ordinal) &&
+            !visionToEn.Contains(IpaRule, StringComparison.Ordinal));
+
+        var visionToJa = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, "日语"),
+            new PromptConfig());
+        Check(
+            "vision path prunes the japanese plugin when the target language is japanese",
+            !visionToJa.Contains(RubyRule, StringComparison.Ordinal) &&
+            visionToJa.Contains(IpaRule, StringComparison.Ordinal));
+
+        // 7. 视觉 prompt 仍是单一变体：目标固定为英语时，不同源文本给出完全相同的 system prompt（缓存友好）。
+        var visionVariantsEn = new[]
+        {
+            PromptTemplates.GetSystemPrompt(new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, "英语"), new PromptConfig()),
+            PromptTemplates.GetSystemPrompt(new UnderstandRequest(UnderstandKind.Translate, "ここは通れないよ", new byte[] { 1 }, "英语"), new PromptConfig()),
+            PromptTemplates.GetSystemPrompt(new UnderstandRequest(UnderstandKind.Translate, "Hello", new byte[] { 1 }, "英语"), new PromptConfig()),
+        };
+        Check(
+            "vision system prompt stays a single cache-friendly variant under an english target",
+            visionVariantsEn.Distinct(StringComparer.Ordinal).Count() == 1);
+    }
+
+    /// <summary>
+    /// 插件「规则与示例自洽」契约（talk 003 第三节）：规则设高门槛，正例就必须是高难度词，
+    /// 杜绝「规则说 N3+ 却拿 N5 的私/学生 举例」诱导模型无差别注音；同时要有明确的负向抑制兜底。
+    /// </summary>
+    private static void TestPluginRuleExampleConsistency()
+    {
+        // 日语插件：规则高门槛（JLPT N3+）+ 高难度正例 + 入门字负向抑制，且不得再拿 N5 私/学生 举例。
+        Check(
+            "japanese plugin pairs its N3 rule with a hard-kanji example and an everyday-kanji exclusion",
+            PromptTemplates.JapanesePlugin.Contains("JLPT N3 及以上", StringComparison.Ordinal) &&
+            PromptTemplates.JapanesePlugin.Contains("漢字[かな]", StringComparison.Ordinal) &&
+            PromptTemplates.JapanesePlugin.Contains("挨拶[あいさつ]", StringComparison.Ordinal) &&
+            PromptTemplates.JapanesePlugin.Contains("严禁标注", StringComparison.Ordinal) &&
+            !PromptTemplates.JapanesePlugin.Contains("私[わたし]", StringComparison.Ordinal) &&
+            !PromptTemplates.JapanesePlugin.Contains("学生[がくせい]", StringComparison.Ordinal));
+
+        // 英语插件：规则高门槛（少见、困难）+ 高难度正例（ubiquitous）+ 基础词/专名/缩写负向抑制，且不再拿 apple 举例。
+        Check(
+            "english plugin pairs its hard-word rule with a ubiquitous example and a basic-name-acronym exclusion",
+            PromptTemplates.EnglishPlugin.Contains("拉丁字母拼写的少见、困难单词", StringComparison.Ordinal) &&
+            PromptTemplates.EnglishPlugin.Contains("国际音标（IPA）", StringComparison.Ordinal) &&
+            PromptTemplates.EnglishPlugin.Contains("ubiquitous[juːˈbɪkwɪtəs]", StringComparison.Ordinal) &&
+            PromptTemplates.EnglishPlugin.Contains("不标注", StringComparison.Ordinal) &&
+            !PromptTemplates.EnglishPlugin.Contains("apple[ˈæpl]", StringComparison.Ordinal));
     }
 
     /// <summary>

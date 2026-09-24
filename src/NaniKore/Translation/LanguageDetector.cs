@@ -159,6 +159,41 @@ internal static class LanguageDetector
     }
 
     /// <summary>
+    /// 判断目标语言是否为英语。用于插件门控的目标语言互斥：目标即英语时不再注入英语 IPA 插件，
+    /// 避免日译英等场景给源文本中本就属于目标语言的英文（含商标、缩写、专名）乱注音标。
+    /// 匹配展示名「英语」、英文名「English」与语言代码「en」三种形态，与 <see cref="IsJapaneseToChinesePreference"/> 同款宽松口径。
+    /// 目标语言取自设置页固定选项的闭集，闭集内仅英语名含 "en" 子串，不至误伤其他语言。
+    /// </summary>
+    public static bool IsEnglishTarget(string? targetLanguage)
+    {
+        if (string.IsNullOrWhiteSpace(targetLanguage))
+        {
+            return false;
+        }
+
+        return targetLanguage.Contains("英语", StringComparison.OrdinalIgnoreCase) ||
+               targetLanguage.Contains("English", StringComparison.OrdinalIgnoreCase) ||
+               targetLanguage.Contains("en", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 判断目标语言是否为日语。用于插件门控的目标语言互斥：目标即日语时不再注入日语振假名插件，
+    /// 避免英/中译日场景把源文本里引述的假名或汉字按日文汉字标注假名。
+    /// 匹配展示名「日语」、日文名「日本語」与语言代码「ja」三种形态，同款宽松口径；闭集内仅日语名含 "ja" 子串。
+    /// </summary>
+    public static bool IsJapaneseTarget(string? targetLanguage)
+    {
+        if (string.IsNullOrWhiteSpace(targetLanguage))
+        {
+            return false;
+        }
+
+        return targetLanguage.Contains("日语", StringComparison.OrdinalIgnoreCase) ||
+               targetLanguage.Contains("日本語", StringComparison.OrdinalIgnoreCase) ||
+               targetLanguage.Contains("ja", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// 判断字符是否为日文平假名或片假名。
     /// </summary>
     private static bool IsKana(char ch) =>

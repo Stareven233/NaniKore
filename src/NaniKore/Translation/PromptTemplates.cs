@@ -10,7 +10,7 @@ namespace NaniKore.Translation;
 ///   {DefaultTranslationBasePrompt}  路径一 · 文本翻译
 ///   {DefaultVisionBasePrompt}       路径二 · 视觉一条龙
 ///   {DefaultExplainUserPrompt}      路径三 · 精讲（同时充当阶段二追问消息）
-/// 两个语言特化插件（对应 japanese_plugin / english_plugin 两键）由探测结果决定是否纳入。
+/// 两个语言特化插件（对应 japanese_plugin / english_plugin 两键）由探测结果与目标语言互斥共同决定是否纳入。
 ///
 /// 语言探测机制（LanguageDetector，对原文做纯内存字符扫描，< 1ms）：
 ///   - 含假名 → 日语；含拉丁字母 → 英语；命中简体独占字或简体偏旁（讠纟钅门马车贝页风鸟）→ 简体中文，不注音；
@@ -20,20 +20,23 @@ namespace NaniKore.Translation;
 /// 插件门控职责分离：探测器只回答「这篇原文要不要纳入某种语言的规约」，不判断该语言的适用范围；
 /// 噪声防护（片假名外来语、日文汉字不得误标 IPA）由英语插件的文案限定承担。
 /// 因此两个门控彼此独立，日英混排句同享振仮名与 IPA 两套规约。
+/// 目标语言互斥：语言特化插件是「为源语言学习者提供生词阅读辅助」，一旦某语言本身就是目标语言，辅助即失效——
+/// 此时继续注入只会让模型给本就属于目标语言的内容注音（日译英给 Nintendo Switch 标 IPA、英/中译日给引述假名标振假名），
+/// 故目标为日语/英语时整条剔除对应插件；中文目标无注音插件、维持现状。剪枝后文本路径变体由 ≤3 收敛为 ≤2，前缀缓存命中率反得益。
 ///
 /// 路径一 · 文本翻译：
 ///   必填  {DefaultTranslationBasePrompt}
-///   条件注入（探测到日语时）                {JapanesePlugin}
-///   条件注入（含拉丁字母时）                {EnglishPlugin}
+///   条件注入（探测到日语且目标语言非日语时）                {JapanesePlugin}
+///   条件注入（含拉丁字母且目标语言非英语时）                {EnglishPlugin}
 ///
 /// 路径二 · 视觉一条龙（请求携带图片时整体替代路径一）：
 ///   必填  {DefaultVisionBasePrompt}
-///   必填  {JapanesePlugin}
-///   必填  {EnglishPlugin}
-///   图为唯一输入，语言探测无从做起，两个插件恒定同拼；两者的规则本身都是条件式的
-///   （「对日本汉字标注振假名」/「为原文中拉丁字母拼写的单词标注 IPA」），模型按图中
-///   实际出现的文字逐条取舍。附带收益：视觉 system prompt 与输入无关、恒定单变体，
-///   前缀缓存 100% 命中（路径一有 ≤3 个变体）。
+///   条件注入（目标语言非日语时）              {JapanesePlugin}
+///   条件注入（目标语言非英语时）              {EnglishPlugin}
+///   图为唯一输入、语言探测无从做起，默认令日英插件双双入围成为候选，再经目标语言互斥剔除同语种插件；
+///   两者的规则本身都是条件式的（「对日本汉字标注振假名」/「为原文中拉丁字母拼写的单词标注 IPA」），
+///   模型按图中实际出现的文字逐条取舍。目标语言为中文时两者保留，与旧版「恒定同拼」等价；即便目标为日/英语
+///   剔除其一，目标语言也是全局静态项，视觉 system prompt 仍是唯一单变体，前缀缓存 100% 命中不受损。
 ///
 /// 路径三 · 精讲（追问消息为 {DefaultExplainUserPrompt}）：
 ///   必填  {DefaultExplainUserPrompt}（精讲专注词汇释义与文法解析，不注入翻译注音插件）
@@ -56,13 +59,13 @@ internal static class PromptTemplates
 
     /// <summary>文本 Base：两段式输出协议、翻译纪律与目标语言约束；设置页「翻译提示词」展示与恢复默认即此变量。</summary>
     internal static readonly string DefaultTranslationBasePrompt = PromptLiteral("""
-        你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将注音标注的原文、对应译文按顺序输出，两部分中间用"---TRANSLATION---"分隔，例如：
+        你当前工作在一个翻译应用中，你需要按照要求将输入准确、自然地翻译为{{target_language}}，并将注音标注的原文、对应译文按顺序输出，两部分中间用"---TRANSLATION---"分隔，例如：
 
         <annotated_source>
         ---TRANSLATION---
         <translation>
 
-        注意 <annotated_source> 与 <translation> 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅
+        注意 <annotated_source> 与 <translation> 是结构占位符，输出时替换为对应内容，本身不保留。若原文中已有部分词句属于{{target_language}}（如专有名词、已为目标语言的短语），在译文中直接保留或自然融入，无需生硬二次转译；若整段已是{{target_language}}，忠实呈现即可。若原文无需注音或无对应注音规范，第一部分直接输出原始文本即可。忠实地按文本原有格式进行翻译，追求信达雅，严禁输出诸如【原文】、【译文】等前缀或 Markdown 代码块标记，直接从第一部分内容开始输出
         """);
 
     // ── 语言特化插件：日语在前、英语在后 ─────────────────────────────
@@ -70,13 +73,13 @@ internal static class PromptTemplates
     /// <summary>日语插件：约束汉字振假名注音格式；只服务原文标注，不携带精讲文法。</summary>
     internal static readonly string JapanesePlugin = PromptLiteral("""
         [日语注音规范]
-        对 JLPT N3 及以上难度的日本汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）
+        对 JLPT N3 及以上难度的日本汉字标注振假名，格式为 漢字[かな]（例：挨拶[あいさつ]、躊躇[ちゅうちょ]）。日常基础汉字（如 私、学生、今日）严禁标注
         """);
 
     /// <summary>英语插件：约束国际音标（IPA）标注规范，且只作用于拉丁字母拼写的单词。</summary>
     internal static readonly string EnglishPlugin = PromptLiteral("""
         [英语音标规范]
-        为原文中拉丁字母拼写的少见、困难单词用方括号标注国际音标（IPA），如 apple[ˈæpl]
+        为原文中拉丁字母拼写的少见、困难单词用方括号标注国际音标（IPA），如 ubiquitous[juːˈbɪkwɪtəs]；常见基础词、专有名词与技术缩写（如 API、GitHub、dog）不标注
         """);
 
     // ── 路径二 · 视觉一条龙 Base（与两个语言插件共同组装） ───────────
@@ -146,29 +149,38 @@ internal static class PromptTemplates
             : ResolvePath(request) switch
             {
                 PromptPath.Explain => DescribeExplainSections(prompts),
-                PromptPath.Vision => DescribeVisionSections(prompts),
+                PromptPath.Vision => DescribeVisionSections(request.TargetLanguage, prompts),
                 _ => DescribeTextSections(request, prompts),
             };
 
     /// <summary>
-    /// 按探测结果把语言插件追加进 sections：日语门控与英语门控彼此独立，
-    /// 用户自定义插件优先，留空回落到内置常量。文本路径专用。
+    /// 按探测结果把语言插件追加进 sections，并施加「目标语言互斥」门控剪枝：语言特化插件的定位是
+    /// 「为源语言的学习者提供生词阅读辅助（振假名 / 音标）」，一旦该语言本身就是目标语言，辅助即失效——
+    /// 继续注入只会让模型给本就属于目标语言的内容注音（日译英给 Nintendo Switch 标 IPA、
+    /// 英/中译日给引述假名标振假名），故目标即日语/英语时绝不注入对应插件；中文目标无注音插件、维持现状。
+    /// 剪枝后目标语言仍是全局静态项，文本/视觉 prompt 在其下各自保持唯一变体，前缀缓存命中不受损反得益。
+    /// 探测结果决定「纳入哪些语言的规约」，目标语言决定「哪些规约必须剔除」，两者职责分离、互不越界。
+    /// 日语门控与英语门控彼此独立，用户自定义插件优先，留空回落到内置常量；文本与视觉路径共用本方法。
     /// </summary>
     private static void AppendLanguagePlugins(
         List<PromptSection> sections,
         LanguageDetectionResult detection,
+        string targetLanguage,
         PromptConfig? prompts)
     {
-        if (detection.NeedsJapaneseRuby || detection.HasJapanese)
+        var japaneseIsTarget = LanguageDetector.IsJapaneseTarget(targetLanguage);
+        var englishIsTarget = LanguageDetector.IsEnglishTarget(targetLanguage);
+
+        // 日语门控独立化：探测到日语即纳入振假名规约，但目标语言已是日语时整条剔除。
+        if (!japaneseIsTarget && (detection.NeedsJapaneseRuby || detection.HasJapanese))
         {
             sections.Add(Choose("japanese_plugin", prompts?.JapanesePlugin, JapanesePlugin));
         }
 
-        // 英语插件门控独立化：曾以 !HasJapanese 排他，防止片假名外来语被误标 IPA，
-        // 代价是日英混排句（Appleの新しいiPhone発表会）的英语部分拿不到任何 IPA 指引。
-        // 现由插件文案限定「拉丁字母拼写的单词」承担噪声防护，门控只回答
-        // 「这篇原文要不要纳入英语规约」——含拉丁字母就要，与是否混排日语无关。
-        if (detection.NeedsEnglishIpa || detection.HasEnglish)
+        // 英语门控独立化：曾以 !HasJapanese 排他，防止片假名外来语被误标 IPA；现已放开、由插件文案限定
+        // 「拉丁字母拼写的单词」承担噪声防护，门控只回答「这篇原文要不要纳入英语规约」（含拉丁字母就要、
+        // 与是否混排日语无关）——但目标语言已是英语时整条剔除。
+        if (!englishIsTarget && (detection.NeedsEnglishIpa || detection.HasEnglish))
         {
             sections.Add(Choose("english_plugin", prompts?.EnglishPlugin, EnglishPlugin));
         }
@@ -178,17 +190,32 @@ internal static class PromptTemplates
     private static List<PromptSection> DescribeTextSections(UnderstandRequest request, PromptConfig? prompts)
     {
         var sections = new List<PromptSection> { Choose("base", prompts?.Base, DefaultTranslationBasePrompt) };
-        AppendLanguagePlugins(sections, LanguageDetector.Detect(request.SourceText, request.TargetLanguage), prompts);
+        AppendLanguagePlugins(sections, LanguageDetector.Detect(request.SourceText, request.TargetLanguage), request.TargetLanguage, prompts);
         return sections;
     }
 
-    /// <summary>路径二 · 视觉一条龙的组成：视觉 Base + 两个语言插件，恒定同拼、宁全勿缺。</summary>
-    private static List<PromptSection> DescribeVisionSections(PromptConfig? prompts) =>
-    [
-        Choose("vision_base", prompts?.VisionBase, DefaultVisionBasePrompt),
-        Choose("japanese_plugin", prompts?.JapanesePlugin, JapanesePlugin),
-        Choose("english_plugin", prompts?.EnglishPlugin, EnglishPlugin),
-    ];
+    /// <summary>
+    /// 视觉一条龙的探测替身：图为唯一输入、无从预扫字符，按「日英两者皆可能在图中出现」给出候选，
+    /// 再交由 <see cref="AppendLanguagePlugins"/> 的目标语言互斥剪枝。既保留「宁全勿缺」的初衷，
+    /// 又不会在目标语言恰为日语/英语时给同语种内容乱注音。
+    /// </summary>
+    private static readonly LanguageDetectionResult VisionBothLanguages =
+        new(LanguageFeatures.Japanese | LanguageFeatures.English,
+            NeedsJapaneseRuby: false,
+            NeedsEnglishIpa: false,
+            IsPureHanziJapaneseCandidate: false);
+
+    /// <summary>
+    /// 路径二 · 视觉一条龙的组成：视觉 Base + 按目标语言互斥后的语言插件。
+    /// 图为唯一输入、语言探测无从做起，以 <see cref="VisionBothLanguages"/> 令日英插件双双入围成为候选，
+    /// 再经目标语言互斥剔除同语种插件；目标语言为中文时两者保留，与旧版「恒定同拼」等价。
+    /// </summary>
+    private static List<PromptSection> DescribeVisionSections(string targetLanguage, PromptConfig? prompts)
+    {
+        var sections = new List<PromptSection> { Choose("vision_base", prompts?.VisionBase, DefaultVisionBasePrompt) };
+        AppendLanguagePlugins(sections, VisionBothLanguages, targetLanguage, prompts);
+        return sections;
+    }
 
     /// <summary>
     /// 路径三 · 精讲的组成：仅下发唯一的精讲提示词（用户自定义或内置回落），
@@ -224,7 +251,7 @@ internal enum PromptPath
     /// <summary>路径一 · 文本翻译：Base + 按探测结果纳入的语言插件。</summary>
     Text,
 
-    /// <summary>路径二 · 视觉一条龙：视觉 Base + 两个语言插件恒定同拼。</summary>
+    /// <summary>路径二 · 视觉一条龙：视觉 Base + 经目标语言互斥后的语言插件（中文目标时两者俱全）。</summary>
     Vision,
 
     /// <summary>路径三 · 精讲：精讲 Base 独立下发，不含翻译注音插件。</summary>
