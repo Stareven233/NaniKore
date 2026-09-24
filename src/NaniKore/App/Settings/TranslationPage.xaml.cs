@@ -30,6 +30,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
 
         PluginLanguageBox.Items.Add("日语插件 (ja-JP)");
         PluginLanguageBox.Items.Add("英语插件 (en-US)");
+        PluginLanguageBox.Items.Add("中文插件 (zh-CN)");
         PluginLanguageBox.SelectedIndex = 0;
         PluginLanguageBox.SelectionChanged += (_, _) => SwitchPluginLanguage();
 
@@ -68,9 +69,12 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         _pluginDrafts["en-US"] = string.IsNullOrWhiteSpace(config.Prompts.EnglishPlugin)
             ? PromptTemplates.EnglishPlugin
             : config.Prompts.EnglishPlugin;
+        _pluginDrafts["zh-CN"] = string.IsNullOrWhiteSpace(config.Prompts.ChinesePlugin)
+            ? PromptTemplates.ChinesePlugin
+            : config.Prompts.ChinesePlugin;
         LoadCurrentPluginPrompt();
 
-        // 视觉 Base：与两个语言插件共同组装，不单独承担注音格式规约。
+        // 视觉 Base：与三个语言插件共同组装，不单独承担注音格式规约。
         VisionPromptBox.Text = string.IsNullOrWhiteSpace(config.Prompts.VisionBase)
             ? PromptTemplates.DefaultVisionBasePrompt
             : config.Prompts.VisionBase;
@@ -130,6 +134,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         config.Prompts.Base = PromptBox.Text.Trim();
         config.Prompts.JapanesePlugin = _pluginDrafts.TryGetValue("ja-JP", out var ja) ? ja.Trim() : string.Empty;
         config.Prompts.EnglishPlugin = _pluginDrafts.TryGetValue("en-US", out var en) ? en.Trim() : string.Empty;
+        config.Prompts.ChinesePlugin = _pluginDrafts.TryGetValue("zh-CN", out var zh) ? zh.Trim() : string.Empty;
         config.Prompts.VisionBase = VisionPromptBox.Text.Trim();
     }
 
@@ -282,9 +287,25 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
     private void SwitchPluginLanguage()
     {
         SaveCurrentPluginPrompt();
-        _currentPluginLanguage = PluginLanguageBox.SelectedIndex == 1 ? "en-US" : "ja-JP";
+        _currentPluginLanguage = PluginLanguageCode(PluginLanguageBox.SelectedIndex);
         LoadCurrentPluginPrompt();
     }
+
+    /// <summary>下拉框索引到语言代码的映射：0 日语、1 英语、2 中文；越界回落日语（与默认选中项一致）。</summary>
+    private static string PluginLanguageCode(int index) => index switch
+    {
+        1 => "en-US",
+        2 => "zh-CN",
+        _ => "ja-JP",
+    };
+
+    /// <summary>各语言插件的内置默认模板；新增语言只在此补齐映射。</summary>
+    private static string BuiltinPluginPrompt(string languageCode) => languageCode switch
+    {
+        "en-US" => PromptTemplates.EnglishPlugin,
+        "zh-CN" => PromptTemplates.ChinesePlugin,
+        _ => PromptTemplates.JapanesePlugin,
+    };
 
     private void SaveCurrentPluginPrompt()
     {
@@ -302,17 +323,13 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         }
         else
         {
-            PluginPromptBox.Text = _currentPluginLanguage == "en-US"
-                ? PromptTemplates.EnglishPlugin
-                : PromptTemplates.JapanesePlugin;
+            PluginPromptBox.Text = BuiltinPluginPrompt(_currentPluginLanguage);
         }
     }
 
     private void RestoreDefaultPluginPrompt()
     {
-        var defaultPlugin = _currentPluginLanguage == "en-US"
-            ? PromptTemplates.EnglishPlugin
-            : PromptTemplates.JapanesePlugin;
+        var defaultPlugin = BuiltinPluginPrompt(_currentPluginLanguage);
         PluginPromptBox.Text = defaultPlugin;
         _pluginDrafts[_currentPluginLanguage] = defaultPlugin;
         _ = PluginPromptBox.Focus();

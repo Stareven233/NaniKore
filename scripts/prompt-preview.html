@@ -333,12 +333,8 @@
     min-height: 40px;
     margin-top: 8px;
     letter-spacing: 0.3px;
+    color: var(--fg-dim);
   }
-  .echo .kana { color: var(--ja); }
-  .echo .latin { color: var(--en); }
-  .echo .cjk { color: var(--cjk); }
-  .echo .simplified { color: var(--zh); }
-  .echo .none { color: var(--fg-dim); }
 
   .sections { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
   .sections li {
@@ -407,35 +403,6 @@
     word-break: break-all;
   }
 
-  .caps { display: flex; flex-wrap: wrap; gap: 8px; }
-  .capsule {
-    padding: 5px 13px;
-    border-radius: 999px;
-    font-size: 12.5px;
-    cursor: pointer;
-    border: 1px solid var(--line);
-    background: #11151f;
-    color: var(--fg-dim);
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    transition: all 0.15s ease;
-    user-select: none;
-  }
-  .capsule:hover {
-    border-color: var(--accent);
-    color: var(--fg);
-    background: #181d2a;
-    transform: translateY(-1px);
-  }
-  .capsule.active {
-    background: var(--accent-subtle);
-    border-color: var(--accent);
-    color: var(--accent);
-    font-weight: 600;
-  }
-
   .submit-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
   button.primary {
     background: linear-gradient(180deg, #388bfd 0%, #1f6feb 100%);
@@ -476,34 +443,6 @@
   }
   .note-footer code { background: rgba(0, 0, 0, 0.35); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--line-subtle); }
 
-  /* 语言探测器内部双栏排版 */
-  .detector-layout {
-    display: grid;
-    grid-template-columns: minmax(300px, 1fr) minmax(320px, 1.2fr);
-    gap: 16px;
-    align-items: start;
-  }
-  @media (max-width: 860px) {
-    .detector-layout { grid-template-columns: 1fr; }
-  }
-  table.ranges { border-collapse: collapse; width: 100%; font-size: 12px; }
-  table.ranges th, table.ranges td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
-  table.ranges th { background: var(--panel-2); font-weight: 600; color: var(--fg); }
-  table.ranges td.mono { font-family: "Cascadia Code", Consolas, monospace; }
-  .explicit-box {
-    background: #090c12;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 12px 14px;
-    font-size: 12px;
-    color: var(--fg-dim);
-    line-height: 1.8;
-  }
-  .explicit-box b {
-    color: var(--fg);
-    display: block;
-    margin-bottom: 6px;
-  }
   .muted { color: var(--fg-dim); font-size: 12px; }
 </style>
 </head>
@@ -515,7 +454,7 @@
         NaniKore 提示词预览
         <span style="font-size: 11px; padding: 2px 7px; border-radius: 4px; background: var(--accent-subtle); color: var(--accent); font-weight: normal; border: 1px solid rgba(88,166,255,0.3);">Dev Tool</span>
       </h1>
-      <p style="margin: 4px 0 0; color: var(--fg-dim); font-size: 13px;">所见即所发 —— 按 Enter 或「确认」才向 <code>--dump-prompt</code> 真值源取数，JS 只负责渲染展示。</p>
+      <p style="margin: 4px 0 0; color: var(--fg-dim); font-size: 13px;">所见即所发 —— 按 Enter 或「确认」才向 <code>--dump-prompt</code> 真值源取数；页面零镜像，JS 只负责渲染展示。</p>
     </div>
     <div id="service-status">
       <span class="badge" id="status-badge" style="padding: 4px 12px; font-size: 12px;">检测连接中...</span>
@@ -525,18 +464,11 @@
 
 <main>
   <section class="panel">
-    <h2>样例输入 <span class="hint">共 <b id="caps-count">0</b> 条 · 点击胶囊自动键入输入框（不发送）</span></h2>
-    <div class="body">
-      <div class="caps" id="caps"></div>
-    </div>
-  </section>
-
-  <section class="panel">
     <h2>组装输入 <span class="hint">类别 / 目标语言 / 图片开关参与路径判定；按 Enter 或点「确认」才请求真值，Shift+Enter 换行</span></h2>
     <div class="body controls">
       <div>
         <label for="src">原文（选区 OCR 结果或剪贴板文本）</label>
-        <textarea id="src" spellcheck="false" placeholder="输入原句，或点上方样例胶囊自动填入"></textarea>
+        <textarea id="src" spellcheck="false" placeholder="输入原句，按 Enter 或点「确认 · 获取提示词」取真值"></textarea>
         <div class="echo" id="echo"></div>
       </div>
       <div class="side">
@@ -588,37 +520,18 @@
     <div class="body" id="sections"></div>
   </section>
 
-  <section class="panel">
-    <h2>语言探测器 <span class="hint">字符区间与简体独占字表 · 实时命中分析</span></h2>
-    <div class="body">
-      <div class="chips" id="detector-chips" style="margin-bottom: 14px;"></div>
-      <div class="detector-layout">
-        <div>
-          <table class="ranges">
-            <thead><tr><th>区段</th><th>区间</th><th>当前输入命中</th></tr></thead>
-            <tbody id="detector-rows"></tbody>
-          </table>
-        </div>
-        <div>
-          <div class="explicit-box" id="explicit-chars"></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <footer class="note-footer">
-    零漂移契约：页面所有组装结果均由 <code>NaniKore.exe --dump-prompt</code> 取真值，JS 只负责渲染，绝不复刻语言探测与提示词组装逻辑。<br>
-    离线打开时仅有内嵌样本快照；运行 <code>pwsh scripts/serve-preview.ps1</code> 可对任意输入实时取真值。<br>
-    数据来源：<code>NaniKore.exe --dump-prompt</code> · <code>src/NaniKore/Translation/LanguageDetector.cs</code>
+    零漂移契约：页面所有组装结果均由 <code>NaniKore.exe --dump-prompt</code> 经 <code>scripts/serve-preview.ps1</code> 中转取真值，JS 只负责渲染展示，<b>不内嵌任何提示词或探测器镜像</b>——改动 <code>PromptTemplates.cs</code> / <code>LanguageDetector.cs</code> 后无需重新生成快照，刷新即得最新真值。<br>
+    未启动中转服务时页面明确提示降级，绝不用过期镜像冒充真值；启动方式：<code>pwsh scripts/serve-preview.ps1</code>。<br>
+    数据来源：<code>NaniKore.exe --dump-prompt</code>（唯一真值源）
   </footer>
 </main>
 
 <script>
-/*__EMBEDDED_DATA__*/
-const EMBEDDED = {"source":{"prompts":"src/NaniKore/Translation/PromptTemplates.cs","detector":"src/NaniKore/Translation/LanguageDetector.cs"},"prompts":{"translationBase":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文/分析全部使用{{target_language}}撰写","visionBase":"你当前工作在一个翻译应用中，所有输入图片都是需翻译文本的截图，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将转录并完成注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实呈现图片中实际出现的内容，维持原有顺序与分行","explainUser":"按以下三个小节输出结构化 Markdown：\n\n### [词汇/短语]\n  - **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析\n\n### [语法/句型]\n  - **句型** | 语法功能与释义\n\n### [翻译精讲]\n  结合语境与背景/语法知识分析解释为何如此翻译\n\n注：全部使用教育语法术语，仅列出 JLPT N3 及以上难度的重点词汇、短语与语法句型","japanese":"[日语注音规范]\n  - 对日式汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）","english":"[英语音标规范]\n  - 为原文中拉丁字母拼写的少见、困难单词用方括号标注国际音标（IPA），如 apple[ˈæpl]"},"detector":{"kana":[[12352,12447],[12448,12543],[12784,12799]],"latin":[[65,90],[97,122]],"cjk":[[19968,40959],[13312,19903]],"simplified":[[35744,35842],[32415,32565],[38021,38262],[38376,38415],[39532,39608],[36710,36763],[36125,36195],[39029,39068],[39118,39135],[40479,40536]],"explicit":"这们个时经让从说为长头书电动两单变总质现专网报还运远选边处较办怎样哪谁什么进关开问题风鸟鱼车马门贝页场买卖发实热类树层广导岁农军战戏击护挥损摆搞搬难爱乐帮带气标极"},"samples":[{"label":"纯假名日语","note":"009 之前视觉与文本共用同一句提示词；009 之后文本路径的日语注音规约来自独立插件，可按需替换。只有日语插件命中，英语插件不注入。","dump":{"kind":"translate","path":"text","target_language":"中文（简体）","source_preview":"こんにちは","detection":{"features":["Japanese"],"needs_japanese_ruby":true,"needs_english_ipa":false,"is_pure_hanzi_japanese_candidate":false},"sections":[{"name":"base","source":"builtin","text":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用{{target_language}}撰写。"},{"name":"japanese_plugin","source":"builtin","text":"[日语注音规范]\n  - 对日式汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）"}],"system_prompt":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为中文（简体），并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用中文（简体）撰写。\n\n[日语注音规范]\n  - 对日式汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）","estimated_tokens":196}},{"label":"日英混排","note":"010 之前 !HasJapanese 守卫让混排句只拿振仮名、丢掉 IPA；010 之后两个门控彼此独立，日英混排同享两套规约。","dump":{"kind":"translate","path":"text","target_language":"中文（简体）","source_preview":"Appleの新しいiPhone発表会","detection":{"features":["Japanese","English"],"needs_japanese_ruby":true,"needs_english_ipa":false,"is_pure_hanzi_japanese_candidate":false},"sections":[{"name":"base","source":"builtin","text":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用{{target_language}}撰写。"},{"name":"japanese_plugin","source":"builtin","text":"[日语注音规范]\n  - 对日式汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）"},{"name":"english_plugin","source":"builtin","text":"[英语音标规范]\n  - 为原文中拉丁字母拼写的少见、困难单词用方括号标注国际音标（IPA），如 apple[ˈæpl]"}],"system_prompt":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为中文（简体），并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用中文（简体）撰写。\n\n[日语注音规范]\n  - 对日式汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）\n\n[英语音标规范]\n  - 为原文中拉丁字母拼写的少见、困难单词用方括号标注国际音标（IPA），如 apple[ˈæpl]","estimated_tokens":237}},{"label":"片假名 + 少量拉丁","note":"010 的稀疏拉丁场景：混入的拉丁借词同样纳入英语规约，噪声防护由插件文案「拉丁字母拼写的单词」承担。","dump":{"kind":"translate","path":"text","target_language":"中文（简体）","source_preview":"ゲームSTART","detection":{"features":["Japanese","English"],"needs_japanese_ruby":true,"needs_english_ipa":false,"is_pure_hanzi_japanese_candidate":false},"sections":[{"name":"base","source":"builtin","text":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用{{target_language}}撰写。"},{"name":"japanese_plugin","source":"builtin","text":"[日语注音规范]\n  - 对日式汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）"},{"name":"english_plugin","source":"builtin","text":"[英语音标规范]\n  - 为原文中拉丁字母拼写的少见、困难单词用方括号标注国际音标（IPA），如 apple[ˈæpl]"}],"system_prompt":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为中文（简体），并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用中文（简体）撰写。\n\n[日语注音规范]\n  - 对日式汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）\n\n[英语音标规范]\n  - 为原文中拉丁字母拼写的少见、困难单词用方括号标注国际音标（IPA），如 apple[ˈæpl]","estimated_tokens":237}},{"label":"纯日语无拉丁","note":"010 之后：去掉守卫并没有放宽注入面——无拉丁字母仍只拿振仮名，英语插件照旧不注入。","dump":{"kind":"translate","path":"text","target_language":"中文（简体）","source_preview":"ラーメンは美味しい","detection":{"features":["Japanese"],"needs_japanese_ruby":true,"needs_english_ipa":false,"is_pure_hanzi_japanese_candidate":false},"sections":[{"name":"base","source":"builtin","text":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用{{target_language}}撰写。"},{"name":"japanese_plugin","source":"builtin","text":"[日语注音规范]\n  - 对日式汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）"}],"system_prompt":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为中文（简体），并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用中文（简体）撰写。\n\n[日语注音规范]\n  - 对日式汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）","estimated_tokens":196}},{"label":"纯汉字日文（目标中文）","note":"无假名的纯汉字 + 目标语言为中文 → 判定纯汉字日文，注入日语注音插件（is_pure_hanzi_japanese_candidate）。","dump":{"kind":"translate","path":"text","target_language":"中文（简体）","source_preview":"進入禁止","detection":{"features":["Japanese"],"needs_japanese_ruby":true,"needs_english_ipa":false,"is_pure_hanzi_japanese_candidate":true},"sections":[{"name":"base","source":"builtin","text":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用{{target_language}}撰写。"},{"name":"japanese_plugin","source":"builtin","text":"[日语注音规范]\n  - 对日式汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）"}],"system_prompt":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为中文（简体），并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用中文（简体）撰写。\n\n[日语注音规范]\n  - 对日式汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）","estimated_tokens":196}},{"label":"纯汉字日文（目标英文）","note":"同一句原文、目标语言改为英文 → 不再判定纯汉字日文，两个插件都不注入：目标语言参与探测，不能只看字符。","dump":{"kind":"translate","path":"text","target_language":"English","source_preview":"進入禁止","detection":{"features":[],"needs_japanese_ruby":false,"needs_english_ipa":false,"is_pure_hanzi_japanese_candidate":false},"sections":[{"name":"base","source":"builtin","text":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用{{target_language}}撰写。"}],"system_prompt":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为English，并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用English撰写。","estimated_tokens":149}},{"label":"简体中文","note":"命中简体独占字 → 判定简体中文，两套注音规约都不注入；这是探测层「排除」价值的所在。","dump":{"kind":"translate","path":"text","target_language":"中文（简体）","source_preview":"今天天气很好，我们一起去公园散步吧","detection":{"features":["SimplifiedChinese"],"needs_japanese_ruby":false,"needs_english_ipa":false,"is_pure_hanzi_japanese_candidate":false},"sections":[{"name":"base","source":"builtin","text":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用{{target_language}}撰写。"}],"system_prompt":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为中文（简体），并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用中文（简体）撰写。","estimated_tokens":155}},{"label":"纯英语","note":"纯拉丁 → 只有英语插件命中，IPA 规约只作用于拉丁字母拼写的单词。","dump":{"kind":"translate","path":"text","target_language":"中文（简体）","source_preview":"Hello world","detection":{"features":["English"],"needs_japanese_ruby":false,"needs_english_ipa":true,"is_pure_hanzi_japanese_candidate":false},"sections":[{"name":"base","source":"builtin","text":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用{{target_language}}撰写。"},{"name":"english_plugin","source":"builtin","text":"[英语音标规范]\n  - 为原文中拉丁字母拼写的少见、困难单词用方括号标注国际音标（IPA），如 apple[ˈæpl]"}],"system_prompt":"你当前工作在一个翻译应用中，所有的输入都是需要翻译的文本，你需要按照要求将其准确、自然地翻译为中文（简体），并将注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实地按文本原有格式进行翻译，追求信达雅\n\n译文全部使用中文（简体）撰写。\n\n[英语音标规范]\n  - 为原文中拉丁字母拼写的少见、困难单词用方括号标注国际音标（IPA），如 apple[ˈæpl]","estimated_tokens":196}},{"label":"视觉一条龙","note":"009 之后：视觉 Base + 两个语言插件恒定同拼，system prompt 与输入无关、恒定单变体，前缀缓存 100% 命中。","dump":{"kind":"translate","path":"vision","target_language":"中文（简体）","source_preview":"","detection":{"features":["Japanese"],"needs_japanese_ruby":true,"needs_english_ipa":false,"is_pure_hanzi_japanese_candidate":false},"sections":[{"name":"vision_base","source":"builtin","text":"你当前工作在一个翻译应用中，所有输入图片都是需翻译文本的截图，你需要按照要求将其准确、自然地翻译为{{target_language}}，并将转录并完成注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实呈现图片中实际出现的内容，维持原有顺序与分行"},{"name":"japanese_plugin","source":"builtin","text":"[日语注音规范]\n  - 对日式汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）"},{"name":"english_plugin","source":"builtin","text":"[英语音标规范]\n  - 为原文中拉丁字母拼写的少见、困难单词用方括号标注国际音标（IPA），如 apple[ˈæpl]"}],"system_prompt":"你当前工作在一个翻译应用中，所有输入图片都是需翻译文本的截图，你需要按照要求将其准确、自然地翻译为中文（简体），并将转录并完成注音标注的原文、对应译文按顺序输出，两部分中间用\"---TRANSLATION---\"分隔，例如：\n\n\u003cannotated_source\u003e\n---TRANSLATION---\n\u003ctranslation\u003e\n\n注意 \u003cannotated_source\u003e 与 \u003ctranslation\u003e 是结构占位符，输出时替换为对应内容，本身不保留。忠实呈现图片中实际出现的内容，维持原有顺序与分行\n\n[日语注音规范]\n  - 对日式汉字标注振假名，格式为 漢字[かな]（例：私[わたし]は 学生[がくせい]です。）\n\n[英语音标规范]\n  - 为原文中拉丁字母拼写的少见、困难单词用方括号标注国际音标（IPA），如 apple[ˈæpl]","estimated_tokens":236}},{"label":"精讲 · 日语","note":"精讲 Base 独立下发，不含翻译注音插件。注意应用内的精讲是阶段二追问：届时 system 通道沿用阶段一锁定值，本行展示的是不带 session 的一次性精讲组装。","dump":{"kind":"explain","path":"explain","target_language":"中文（简体）","source_preview":"通れない","detection":{"features":["Japanese"],"needs_japanese_ruby":true,"needs_english_ipa":false,"is_pure_hanzi_japanese_candidate":false},"sections":[{"name":"explain","source":"builtin","text":"按以下三个小节输出结构化 Markdown：\n\n### [词汇/短语]\n  - **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析\n\n### [语法/句型]\n  - **句型** | 语法功能与释义\n\n### [翻译精讲]\n  结合语境与背景/语法知识分析解释为何如此翻译\n\n注：全部使用教育语法术语，仅列出 JLPT N3 及以上难度的重点词汇、短语与语法句型"}],"system_prompt":"按以下三个小节输出结构化 Markdown：\n\n### [词汇/短语]\n  - **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析\n\n### [语法/句型]\n  - **句型** | 语法功能与释义\n\n### [翻译精讲]\n  结合语境与背景/语法知识分析解释为何如此翻译\n\n注：全部使用教育语法术语，仅列出 JLPT N3 及以上难度的重点词汇、短语与语法句型","estimated_tokens":129}},{"label":"精讲 · 日英混排","note":"013 契约收敛：精讲路径不注入翻译注音插件，单轮组装与多轮设计理念一致，专注结构化精讲。","dump":{"kind":"explain","path":"explain","target_language":"中文（简体）","source_preview":"Appleの新しいiPhone発表会","detection":{"features":["Japanese","English"],"needs_japanese_ruby":true,"needs_english_ipa":false,"is_pure_hanzi_japanese_candidate":false},"sections":[{"name":"explain","source":"builtin","text":"按以下三个小节输出结构化 Markdown：\n\n### [词汇/短语]\n  - **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析\n\n### [语法/句型]\n  - **句型** | 语法功能与释义\n\n### [翻译精讲]\n  结合语境与背景/语法知识分析解释为何如此翻译\n\n注：全部使用教育语法术语，仅列出 JLPT N3 及以上难度的重点词汇、短语与语法句型"}],"system_prompt":"按以下三个小节输出结构化 Markdown：\n\n### [词汇/短语]\n  - **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析\n\n### [语法/句型]\n  - **句型** | 语法功能与释义\n\n### [翻译精讲]\n  结合语境与背景/语法知识分析解释为何如此翻译\n\n注：全部使用教育语法术语，仅列出 JLPT N3 及以上难度的重点词汇、短语与语法句型","estimated_tokens":129}}]};
-/*__END_EMBEDDED_DATA__*/
-
 // ── 渲染辅助 ────────────────────────────────────────────────────────────
+// 零漂移契约：本页只依赖 NaniKore.exe --dump-prompt 的程序输出（经 serve-preview.ps1 中转），
+// 不内嵌任何提示词字面量或探测器区间镜像——改动 PromptTemplates.cs / LanguageDetector.cs 后
+// 无需重新生成快照，刷新即得最新真值；未连接中转服务时明确降级，绝不用过期镜像冒充真值。
 const $ = (id) => document.getElementById(id);
 const PATH_LABEL = {
   text: '路径一 · 文本翻译',
@@ -626,8 +539,6 @@ const PATH_LABEL = {
   explain: '路径三 · 精讲',
 };
 const SOURCE_LABEL = { builtin: '内置', custom: '自定义', session: '阶段一锁定' };
-const BUCKET_LABEL = { kana: '假名', latin: '拉丁', cjk: '汉字', simplified: '简体独占' };
-const BUCKET_CLASS = { kana: 'kana', latin: 'latin', cjk: 'cjk', simplified: 'simplified', none: 'none' };
 function getKind() {
   const checked = document.querySelector('input[name="kind"]:checked');
   return checked ? checked.value : 'translate';
@@ -643,8 +554,6 @@ function escapeHtml(text) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
-
-const hex = (n) => 'U+' + n.toString(16).toUpperCase().padStart(4, '0');
 
 // 剪贴板：file:// 下 navigator.clipboard 偶有缺失，保留 execCommand 兜底。
 async function copyText(text, button) {
@@ -669,77 +578,9 @@ async function copyText(text, button) {
   setTimeout(() => { button.textContent = previous; }, 1200);
 }
 
-// ── 字符区间可视化 ──────────────────────────────────────────────────────
-// 只按内嵌区间上色，是「区间」的可视化，不是新的语言判定；真判定永远来自 CLI 的 detection 字段。
-const detector = EMBEDDED.detector || { kana: [], latin: [], cjk: [], simplified: [], explicit: '' };
-
-function bucketOf(char) {
-  const code = char.codePointAt(0);
-  const inRanges = (ranges) => ranges.some((range) => code >= range[0] && code <= range[1]);
-  if (inRanges(detector.kana)) return 'kana';
-  if (inRanges(detector.latin)) return 'latin';
-  if (inRanges(detector.simplified)) return 'simplified';
-  if (detector.explicit && detector.explicit.includes(char)) return 'simplified';
-  if (inRanges(detector.cjk)) return 'cjk';
-  return 'none';
-}
-
+// ── 原文回显（纯展示；语言判定真值只来自 dump 的 detection 字段） ──────
 function renderEcho(text) {
-  const target = $('echo');
-  if (!text) {
-    target.innerHTML = '<span class="none">（空文本：视觉路径下语言探测无从做起）</span>';
-    return;
-  }
-  const counts = {};
-  target.innerHTML = Array.from(text)
-    .map((char) => {
-      const bucket = bucketOf(char);
-      counts[bucket] = (counts[bucket] || 0) + 1;
-      const visible = char === '\n' ? '\\n' : escapeHtml(char);
-      return `<span class="${BUCKET_CLASS[bucket]}" title="${BUCKET_LABEL[bucket] || '其他'}">${visible}</span>`;
-    })
-    .join('');
-  renderDetector(counts);
-}
-
-// ── 探测器面板 ─────────────────────────────────────────────────────────
-function renderDetector(counts) {
-  const groups = [
-    ['kana', '假名', detector.kana],
-    ['latin', '拉丁字母', detector.latin],
-    ['cjk', 'CJK 汉字', detector.cjk],
-    ['simplified', '简体独占', detector.simplified],
-  ];
-  $('detector-chips').innerHTML = groups
-    .map(([key, label]) => {
-      const hits = counts[key] || 0;
-      const cls = key === 'cjk' ? 'cjk' : key === 'simplified' ? 'zh' : key === 'kana' ? 'jana' : 'en';
-      return `<span class="chip ${hits > 0 ? 'on ' + cls : ''}">${label}${hits > 0 ? ' × ' + hits : ''}</span>`;
-    })
-    .join('');
-  $('detector-rows').innerHTML = groups
-    .map(([key, label, ranges]) => {
-      const text = ranges.map((range) => `${hex(range[0])}–${hex(range[1])}`).join('、') || '—';
-      return `<tr><td>${label}</td><td class="mono">${text}</td><td>${counts[key] || 0}</td></tr>`;
-    })
-    .join('');
-  $('explicit-chars').innerHTML =
-    `<b>简体独占字表（${detector.explicit.length} 字 · 区间外高频字）</b><div style="margin-top:6px;word-break:break-all;">${escapeHtml(detector.explicit)}</div>`;
-}
-
-// ── 当前请求：只在预计算结果里取真值 ──────────────────────────────────
-function findSample() {
-  const samples = EMBEDDED.samples || [];
-  const text = $('src').value.trim();
-  const kind = getKind();
-  const image = $('image').checked;
-  const target = $('target').value.trim();
-  return samples.find((sample) =>
-    sample.dump &&
-    sample.dump.kind === kind &&
-    sample.dump.target_language === target &&
-    (sample.dump.path === 'vision') === image &&
-    (image ? sample.dump.source_preview === '' : sample.dump.source_preview === text));
+  $('echo').textContent = text || '（空文本：视觉路径下语言探测无从做起）';
 }
 
 function renderCommand(dump) {
@@ -801,10 +642,10 @@ async function checkServiceHealth() {
       return true;
     }
   } catch {
-    // 忽略异常，降级离线模式
+    // 忽略异常，进入未连接态
   }
   isLive = false;
-  badge.textContent = '○ 离线快照模式（仅内置样本）';
+  badge.textContent = '○ 未连接中转服务（无离线镜像）';
   badge.style.color = 'var(--warn-fg)';
   badge.style.borderColor = 'var(--warn-line)';
   badge.style.background = 'rgba(255,217,138,.12)';
@@ -852,94 +693,55 @@ function renderIdle() {
   $('current-path').textContent = '等待确认';
   $('current-meta').textContent = '';
   $('current').innerHTML = `<div class="placeholder">
-    <b>就绪。</b>输入原文或点击上方样例胶囊键入输入框，然后按 <b>Enter</b> 或点击「确认 · 获取提示词」，
+    <b>就绪。</b>输入原文，然后按 <b>Enter</b> 或点击「确认 · 获取提示词」，
     才会调用 <code>NaniKore.exe --dump-prompt</code> 取回本次请求的真实 system prompt。
   </div>`;
   $('sections').innerHTML = `<div class="placeholder">确认后在此显示各分段的原文与来源。</div>`;
 }
 
+// 未连接中转服务：页面不持有任何镜像，明确提示启动方式，绝不用过期数据冒充真值
 function renderMissing() {
   $('current-path').textContent = '未取到真值';
   $('current-meta').textContent = '';
   $('current').innerHTML = `<div class="missing">
-    <b>当前处于离线快照模式，该输入不在预计算样本矩阵中。</b><br>
-    若要针对任意输入获得实时真值与组装预览，请先启动中转服务：
+    <b>未连接到实时中转服务，本页不内嵌任何离线镜像。</b><br>
+    所有组装真值均来自 <code>NaniKore.exe --dump-prompt</code> 的程序输出，请先启动中转服务：
     <code>pwsh scripts/serve-preview.ps1</code>
     或在终端直接运行 CLI 取真值：
     <code>${escapeHtml(renderCommand({ kind: getKind(), path: $('image').checked ? 'vision' : 'text' }))}</code>
   </div>`;
-  $('sections').innerHTML = `<div class="placeholder">当前输入未取到真值，暂无分段。</div>`;
+  $('sections').innerHTML = `<div class="placeholder">未取到真值，暂无分段。</div>`;
 }
 
 async function renderCurrent() {
-  const text = $('src').value;
-  const kind = getKind();
-  const image = $('image').checked;
-  const target = $('target').value.trim();
-
-  if (isLive) {
-    if (currentAbortController) {
-      currentAbortController.abort();
-    }
-    currentAbortController = new AbortController();
-
-    try {
-      const url = `/api/dump?kind=${encodeURIComponent(kind)}&target=${encodeURIComponent(target)}` +
-        (image ? '&image=1' : `&text=${encodeURIComponent(text)}`);
-      const res = await fetch(url, { signal: currentAbortController.signal });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const dump = await res.json();
-      renderDumpContent(dump);
-      return;
-    } catch (err) {
-      if (err.name === 'AbortError') return;
-      console.warn('获取真值失败，尝试降级离线模式:', err);
-    }
+  // 唯一取真值入口：中转服务代理的 --dump-prompt；未连接时明确降级，绝无内嵌数据回退
+  if (!isLive) {
+    renderMissing();
+    return;
   }
+  if (currentAbortController) {
+    currentAbortController.abort();
+  }
+  currentAbortController = new AbortController();
 
-  // 离线模式降级查找预置样本
-  const sample = findSample();
-  if (sample && sample.dump) {
-    renderDumpContent(sample.dump);
-  } else {
+  try {
+    const text = $('src').value;
+    const kind = getKind();
+    const image = $('image').checked;
+    const target = $('target').value.trim();
+    const url = `/api/dump?kind=${encodeURIComponent(kind)}&target=${encodeURIComponent(target)}` +
+      (image ? '&image=1' : `&text=${encodeURIComponent(text)}`);
+    const res = await fetch(url, { signal: currentAbortController.signal });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const dump = await res.json();
+    renderDumpContent(dump);
+  } catch (err) {
+    if (err.name === 'AbortError') return;
+    console.warn('获取真值失败:', err);
     renderMissing();
   }
-}
-
-// ── 样例胶囊（只键入输入框，不发送） ───────────────────────────────────
-function renderCapsules() {
-  const samples = EMBEDDED.samples || [];
-  $('caps-count').textContent = String(samples.length);
-  $('caps').innerHTML = samples.length === 0
-    ? '<span class="muted">无内嵌样本，请先构建 Debug 版本并重新生成快照。</span>'
-    : samples.map((sample, index) => {
-      const dump = sample.dump;
-      const label = (dump && dump.source_preview) || sample.label;
-      const tip = [
-        sample.label,
-        dump ? `${dump.kind} · ${dump.target_language}${dump.path === 'vision' ? ' · 视觉路径' : ''}` : '',
-        sample.note || ''
-      ].filter(Boolean).join('\n');
-      return `<button type="button" class="capsule" data-load="${index}" title="${escapeHtml(tip)}">${escapeHtml(label)}</button>`;
-    }).join('');
-
-  $('caps').querySelectorAll('button[data-load]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const dump = samples[Number(button.dataset.load)].dump;
-      if (!dump) return;
-      setKind(dump.kind);
-      $('target').value = dump.target_language;
-      $('image').checked = dump.path === 'vision';
-      $('src').value = dump.source_preview || '';
-      $('caps').querySelectorAll('.capsule').forEach((other) => other.classList.remove('active'));
-      button.classList.add('active');
-      // 只刷新本地回显与探测器，绝不自动发起取真值请求
-      render();
-      $('src').focus();
-    });
-  });
 }
 
 // ── 提交：唯一的取真值入口 ──────────────────────────────────────────────
@@ -949,7 +751,7 @@ async function submit() {
   submitInFlight = true;
   button.disabled = true;
   button.textContent = '获取中…';
-  $('current-meta').textContent = isLive ? '正在获取实时真值...' : '正在匹配内嵌样本...';
+  $('current-meta').textContent = isLive ? '正在获取实时真值...' : '中转服务未连接...';
   try {
     await renderCurrent();
   } finally {
@@ -960,7 +762,7 @@ async function submit() {
 }
 
 // ── 入口 ───────────────────────────────────────────────────────────────
-// 输入变化只刷新字符回显与探测器，不再触发任何请求
+// 输入变化只刷新原文回显，不再触发任何请求
 function render() {
   renderEcho($('src').value);
 }
@@ -983,19 +785,6 @@ $('target').addEventListener('keydown', (event) => {
 });
 
 (async function init() {
-  renderCapsules();
-
-  // 首屏把第一个文本路径样本填入输入框供参考，但不自动取真值（等用户按确认）
-  const firstTextSample = (EMBEDDED.samples || []).find((sample) => sample.dump && sample.dump.path === 'text');
-  if (firstTextSample) {
-    setKind(firstTextSample.dump.kind);
-    $('target').value = firstTextSample.dump.target_language;
-    $('src').value = firstTextSample.dump.source_preview || '';
-    const index = (EMBEDDED.samples || []).indexOf(firstTextSample);
-    const capsule = $('caps').querySelector(`button[data-load="${index}"]`);
-    if (capsule) capsule.classList.add('active');
-  }
-
   await checkServiceHealth();
   render();
   renderIdle();

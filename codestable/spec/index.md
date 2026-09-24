@@ -27,7 +27,7 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 ### 翻译、结果与配置（初版，待真机整改）
 
 - 已有 OpenAI（completions/responses）、Claude、Gemini 的流式 provider 契约，支持 `local_ocr` 与 `vision_oneshot` 两条输入路径。
-- 提示词为模块化组装（`PromptTemplates`）：设置页对应 `base` / `vision_base` / `explain` 三个 Base 键与 `japanese_plugin` / `english_plugin` 两个语言插件键，留空即回落到内置常量。Base 与插件支持 `{{target_language}}`；视觉一条龙由视觉 Base + 两个语言插件恒定同拼，与输入无关，前缀缓存 100% 命中。
+- 提示词为模块化组装（`PromptTemplates`）：设置页对应 `base` / `vision_base` / `explain` 三个 Base 键与 `japanese_plugin` / `english_plugin` / `chinese_plugin` 三个语言插件键，留空即回落到内置常量。Base 与插件支持 `{{target_language}}`；视觉一条龙由视觉 Base + 语言插件恒定同拼，与输入无关，前缀缓存 100% 命中。语言插件经「探测结果纳入 + 目标语言互斥剔除」双重门控：某语言本身就是目标语言时对应插件整条不注入（日译英不标 IPA、外译中不标拼音等）。
 - 结果窗口可显示 OCR 原文和流式译文，设置页包含通用、翻译、热键和关于页；API Key 以当前 Windows 用户的 DPAPI 密文保存。
 - 2026-08-09 真机验收发现结果卡层级/编辑、翻译目标可靠性、配置档切换、配置版本、设置生命周期和热键录制等问题，尚不能视为稳定体验。下一轮实施与验收以 `codestable/roadmap/002-csharp-single-process-migration/phase-3-post-test-remediation.md` 为准。
 ### 工具链与发布
@@ -38,7 +38,7 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 - 应用设置页的“下载依赖”操作在用户确认后将依赖保存到当前可执行程序目录的 `deps/`；ModelScope `master` 为默认源，OCR 文件失败时逐项回退 Hugging Face。
 - 应用不会静默联网，不支持 `NANIKORE_MODEL_DIR`；模型和 DLL 不得维护在其他目录。
 - 目标机器需要 .NET 10 Desktop Runtime。
-- 提示词开发期工具链：`NaniKore.exe --dump-prompt [--text/--image/--kind/--target/--json]` 是「最终下发什么」的真值源（经 `ConfigStore` 读真实配置，输出 path、detection、带来源标注的 sections、完整 system prompt 与 token 估算）；`scripts/prompt-preview.html` 为单文件可视化预览；`scripts/update-prompt-preview.ps1` 从源码抽取提示词常量与探测区间，并调用已构建的 exe 生成样本矩阵内嵌进 HTML。**改动 `PromptTemplates.cs` 或 `LanguageDetector.cs` 后必须重跑该脚本**，否则预览将与实际下发漂移。
+- 提示词开发期工具链：`NaniKore.exe --dump-prompt [--text/--image/--kind/--target/--json]` 是「最终下发什么」的真值源（经 `ConfigStore` 读真实配置，输出 path、detection、带来源标注的 sections、完整 system prompt 与 token 估算）；`scripts/prompt-preview.html` 为单文件可视化预览，由 `scripts/serve-preview.ps1` 托管并代理 `/api/dump` 实时取真值——页面**零内嵌镜像**，不复制任何提示词字面量或探测器区间，改动 `PromptTemplates.cs` / `LanguageDetector.cs` 后刷新即得最新真值，无快照漂移可言；未启动中转服务时页面明确提示降级。
 
 ## 已验证边界
 

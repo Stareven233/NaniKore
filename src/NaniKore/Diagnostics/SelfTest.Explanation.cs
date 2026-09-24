@@ -250,7 +250,18 @@ internal static partial class SelfTest
             PromptTemplates.DefaultExplainUserPrompt.Contains("### [语法/句型]") &&
             PromptTemplates.DefaultExplainUserPrompt.Contains("### [翻译精讲]") &&
             PromptTemplates.DefaultExplainUserPrompt.Contains("N3 及以上") &&
-            PromptTemplates.DefaultExplainUserPrompt.Contains("教育语法术语"));
+            PromptTemplates.DefaultExplainUserPrompt.Contains("教育语法"));
+
+        // 排版契约（talk 003 遗留项 · 精讲 Prompt 深度重构）：条目必须是解析器可消费的
+        // 「- 」开头、竖线分隔的列表行，并显式禁止 Markdown 表格——旧模板缺表头分割线，
+        // 小模型会生成破损伪表格，前端渲染崩塌；难度标准泛化为中高级（N3 / CET-6/B2）。
+        Check(
+            "Prompt.Explain.ListLineContractWithGeneralizedDifficulty",
+            PromptTemplates.DefaultExplainUserPrompt.Contains("- **词汇** | 假名读音或IPA | 词性 | 详细释义与在句中的语境分析") &&
+            PromptTemplates.DefaultExplainUserPrompt.Contains("- **句型** | 语法功能与释义") &&
+            PromptTemplates.DefaultExplainUserPrompt.Contains("严禁输出 Markdown 表格") &&
+            PromptTemplates.DefaultExplainUserPrompt.Contains("中高级难度") &&
+            PromptTemplates.DefaultExplainUserPrompt.Contains("CET-6/B2"));
 
         // 阶段二追问只走 user 通道：会话历史里追加的是这条提示词，system 仍沿用阶段一锁定值。
         // 按真实运行时流程走一遍：锁定 system → 回放阶段一 Assistant 输出 → 追加追问消息。

@@ -35,6 +35,7 @@ internal static partial class SelfTest
                   base: ~
                   japanese_plugin: ~
                   english_plugin: ~
+                  chinese_plugin: ~
                   vision_base: ~
                   explain: ~
                 """);
@@ -44,6 +45,7 @@ internal static partial class SelfTest
                 store.Current.Prompts.Base is { Length: 0 } &&
                 store.Current.Prompts.JapanesePlugin is { Length: 0 } &&
                 store.Current.Prompts.EnglishPlugin is { Length: 0 } &&
+                store.Current.Prompts.ChinesePlugin is { Length: 0 } &&
                 store.Current.Prompts.VisionBase is { Length: 0 } &&
                 store.Current.Prompts.Explain is { Length: 0 } &&
                 store.Current.Hotkeys.TranslateClipboard is { Length: 0 });
@@ -56,6 +58,7 @@ internal static partial class SelfTest
                 rewritten.Contains("  base: ", StringComparison.Ordinal) &&
                 rewritten.Contains("  japanese_plugin: ", StringComparison.Ordinal) &&
                 rewritten.Contains("  english_plugin: ", StringComparison.Ordinal) &&
+                rewritten.Contains("  chinese_plugin: ", StringComparison.Ordinal) &&
                 rewritten.Contains("  vision_base: ", StringComparison.Ordinal) &&
                 rewritten.Contains("  explain: ", StringComparison.Ordinal) &&
                 rewritten.Contains("  translate_clipboard: ", StringComparison.Ordinal) &&
@@ -133,6 +136,7 @@ internal static partial class SelfTest
                   base: 'Custom Base {{target_language}}'
                   japanese_plugin: 'Custom ja-JP'
                   english_plugin: 'Custom en-US'
+                  chinese_plugin: 'Custom zh-CN'
                   translate: 'Translate into {{target_language}} only.'
                   vision_base: "Transcribe\n\n---\n\nTranslate into {{target_language}}."
                 unknown_field: ignored
@@ -155,6 +159,7 @@ internal static partial class SelfTest
                 store.Current.Prompts.Base == "Custom Base {{target_language}}" &&
                 store.Current.Prompts.JapanesePlugin == "Custom ja-JP" &&
                 store.Current.Prompts.EnglishPlugin == "Custom en-US" &&
+                store.Current.Prompts.ChinesePlugin == "Custom zh-CN" &&
                 store.Current.Prompts.VisionBase == "Transcribe\n\n---\n\nTranslate into {{target_language}}.");
             store.AtomicWrite(store.Current);
             var reloaded = new ConfigStore(directory);
@@ -165,6 +170,7 @@ internal static partial class SelfTest
                 reloaded.Current.Prompts.Base == "Custom Base {{target_language}}" &&
                 reloaded.Current.Prompts.JapanesePlugin == "Custom ja-JP" &&
                 reloaded.Current.Prompts.EnglishPlugin == "Custom en-US" &&
+                reloaded.Current.Prompts.ChinesePlugin == "Custom zh-CN" &&
                 reloaded.Current.Prompts.VisionBase == "Transcribe\n\n---\n\nTranslate into {{target_language}}." &&
                 reloaded.Current.Windows.SettingsWidth == 800 &&
                 reloaded.Current.Windows.SettingsHeight == 640 &&

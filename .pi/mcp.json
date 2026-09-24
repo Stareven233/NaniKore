@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "disabled": true
+    },
+    "chrome-devtools": {
+      "disabled": true
+    }
+  }
+}

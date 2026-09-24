@@ -110,22 +110,20 @@ internal static class LanguageDetector
             features |= LanguageFeatures.Japanese;
             needsJapaneseRuby = true;
         }
-        else if (hasCjk)
+        else if (hasCjk && !hasSimplifiedOnly && IsJapaneseToChinesePreference(targetLanguage))
         {
-            // 无假名但包含汉字：进行启发式排查
-            if (hasSimplifiedOnly)
-            {
-                // 命中简体中文独占字，判定为纯中文，不注入假名注音
-                features |= LanguageFeatures.SimplifiedChinese;
-            }
-            else if (IsJapaneseToChinesePreference(targetLanguage))
-            {
-                // 未命中简体字，且用户处于日译中偏好：
-                // 判定为纯汉字日文（如「進入禁止」「案内図」「攻撃力」「取扱説明書」）
-                features |= LanguageFeatures.Japanese;
-                needsJapaneseRuby = true;
-                isPureHanziJapaneseCandidate = true;
-            }
+            // 未命中简体字，且用户处于日译中偏好：
+            // 判定为纯汉字日文（如「進入禁止」「案内図」「攻撃力」「取扱説明書」）
+            features |= LanguageFeatures.Japanese;
+            needsJapaneseRuby = true;
+            isPureHanziJapaneseCandidate = true;
+        }
+
+        // 简体独占字特征独立于假名置位：混排句（如「这是一个iPhoneの発表会」）同样是简体中文，
+        // 中文拼音插件的门控据此纳入拼音规约，与振假名 / IPA 同享；日文汉字不含简体独占字，无误伤。
+        if (hasSimplifiedOnly)
+        {
+            features |= LanguageFeatures.SimplifiedChinese;
         }
 
         if (hasLatin)
@@ -191,6 +189,25 @@ internal static class LanguageDetector
         return targetLanguage.Contains("日语", StringComparison.OrdinalIgnoreCase) ||
                targetLanguage.Contains("日本語", StringComparison.OrdinalIgnoreCase) ||
                targetLanguage.Contains("ja", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 判断目标语言是否为中文。用于插件门控的目标语言互斥：目标即中文时不再注入中文拼音插件，
+    /// 避免外译中场景给源文本中本就属于目标语言的汉字标注拼音。
+    /// 匹配展示名「中文」、英文名「Chinese」与语言代码「zh」三种形态，同款宽松口径；闭集内仅中文名含 "zh" 子串。
+    /// 与 <see cref="IsJapaneseToChinesePreference"/> 的差别仅在空值口径：后者是探测启发式的偏好（空值按日译中处理），
+    /// 本谓词是互斥剪枝判定（空值不剪枝），与 <see cref="IsEnglishTarget"/>/<see cref="IsJapaneseTarget"/> 一致。
+    /// </summary>
+    public static bool IsChineseTarget(string? targetLanguage)
+    {
+        if (string.IsNullOrWhiteSpace(targetLanguage))
+        {
+            return false;
+        }
+
+        return targetLanguage.Contains("中文", StringComparison.OrdinalIgnoreCase) ||
+               targetLanguage.Contains("Chinese", StringComparison.OrdinalIgnoreCase) ||
+               targetLanguage.Contains("zh", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

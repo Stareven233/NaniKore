@@ -153,7 +153,7 @@ internal static partial class SelfTest
 
         Check(
             "translation settings load Japanese plugin prompt by default with correct language options",
-            pluginLanguageBox?.Items.Count == 2 &&
+            pluginLanguageBox?.Items.Count == 3 &&
             pluginLanguageBox.SelectedIndex == 0 &&
             pluginPromptBox?.Text == PromptTemplates.JapanesePlugin);
 
@@ -193,6 +193,21 @@ internal static partial class SelfTest
             "switching back to Japanese plugin restores the modified draft",
             pluginPromptBox.Text == "Custom Japanese plugin");
 
+        // 切换到中文插件：显示内置中文拼音插件默认模板，日文草稿不受影响
+        pluginLanguageBox.SelectedIndex = 2;
+        Check(
+            "switching to the chinese plugin displays the built-in chinese pinyin plugin",
+            pluginPromptBox.Text == PromptTemplates.ChinesePlugin);
+
+        // 修改中文插件草稿后切回日文，确认三份草稿各自独立
+        pluginPromptBox.Text = "Custom Chinese plugin";
+        pluginLanguageBox.SelectedIndex = 0;
+        pluginLanguageBox.SelectedIndex = 2;
+        Check(
+            "chinese plugin draft survives switching away and back",
+            pluginPromptBox.Text == "Custom Chinese plugin");
+        pluginLanguageBox.SelectedIndex = 0;
+
         visionPromptBox!.Text = "temporary";
         restoreVisionButton!.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
         Check(
@@ -207,6 +222,7 @@ internal static partial class SelfTest
             config.Prompts.Base == "Custom base prompt {{target_language}}" &&
             config.Prompts.JapanesePlugin == "Custom Japanese plugin" &&
             config.Prompts.EnglishPlugin == PromptTemplates.EnglishPlugin &&
+            config.Prompts.ChinesePlugin == "Custom Chinese plugin" &&
             config.Prompts.VisionBase == "Custom vision {{target_language}}\n\n---\n\n<translation>");
     }
 

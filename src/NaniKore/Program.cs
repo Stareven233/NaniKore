@@ -215,7 +215,7 @@ internal static class Program
             var systemPrompt = PromptTemplates.GetSystemPrompt(request, prompts);
             var path = PromptTemplates.ResolvePath(request);
 
-            // 字段名即 prompt-preview 生成器的消费契约，改名需同步 update-prompt-preview.ps1。
+            // 字段名即 prompt-preview 页面（经 serve-preview.ps1 代理 /api/dump）的消费契约，改名需同步页面与中转服务。
             var report = new
             {
                 kind = kind == UnderstandKind.Explain ? "explain" : "translate",

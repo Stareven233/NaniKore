@@ -63,9 +63,3 @@ created: 2026-09-24
 - **文档同步：** 更新 `PromptTemplates` 类级 XML 注释与 `PromptPath.Vision` 枚举说明，反映互斥与「中文目标两者俱全、日英目标单变体」。
 - **自测：** 基线为 3 个既有失败；改动后 `./scripts/dev.ps1 test` 仍为**同样 3 个既有失败、零新增**，新增 13 项断言（互斥 11 + 规则/示例 2）全 PASS。
 - **缓存影响：** 文本路径在目标英语/日语下，注入变体由 ≤3 收敛为 ≤2（Base、Base+另一语言插件）；视觉路径目标固定时保持唯一单变体——前缀缓存命中率不降反得益。
-
-## 暂不纳入 / 已知遗留（非本次范围）
-
-- **精讲 Prompt 深度重构（talk 003 第 5 节）：** 既有两条 explain 自测（`SelfTest.Translation`、`SelfTest.Explanation`）因提示词 `教育语法` 与断言 `教育语法术语` 的漂移而红，与本次目标语言优化无关，留待精讲排版专项统一处理。
-- **视觉 Base 措辞漂移：** `TestVisionPromptComposition` 仍断言旧串 `所有输入图片都是需翻译文本的截图`，与 issue 009/013 改写过的新视觉 Base 措辞不符，属另一处既有红，留待视觉专项校准。
-- **`scripts/prompt-preview.html` 的 `EMBEDDED` 离线镜像整体滞后：** 其 `prompts.*` 与 `samples[].dump` 仍含 `译文/分析`、旧视觉措辞、旧插件文案与 `教育语法术语`。运行时预览以 `serve-preview.ps1` 代理的 `--dump-prompt` 真值为准、不受影响；建议后续单独做一次离线快照再生成，使其与现行 `PromptTemplates` 对齐。
