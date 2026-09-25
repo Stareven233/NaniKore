@@ -28,8 +28,11 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 
 - 已有 OpenAI（completions/responses）、Claude、Gemini 的流式 provider 契约，支持 `local_ocr` 与 `vision_oneshot` 两条输入路径。
 - 提示词为模块化组装（`PromptTemplates`）：设置页对应 `base` / `vision_base` / `explain` 三个 Base 键与 `japanese_plugin` / `english_plugin` / `chinese_plugin` 三个语言插件键，留空即回落到内置常量。Base 与插件支持 `{{target_language}}`；视觉一条龙由视觉 Base + 语言插件恒定同拼，与输入无关，前缀缓存 100% 命中。语言插件经「探测结果纳入 + 目标语言互斥剔除」双重门控：某语言本身就是目标语言时对应插件整条不注入（日译英不标 IPA、外译中不标拼音等）。
-- 结果窗口可显示 OCR 原文和流式译文，设置页包含通用、翻译、热键和关于页；API Key 以当前 Windows 用户的 DPAPI 密文保存。
+- 结果窗口可显示 OCR 原文和流式译文，设置页包含通用、翻译、热键、收藏和关于页；API Key 以当前 Windows 用户的 DPAPI 密文保存。
 - 2026-08-09 真机验收发现结果卡层级/编辑、翻译目标可靠性、配置档切换、配置版本、设置生命周期和热键录制等问题，尚不能视为稳定体验。下一轮实施与验收以 `codestable/roadmap/002-csharp-single-process-migration/phase-3-post-test-remediation.md` 为准。
+- 学习型演进（Epic 001，已全部切片交付）：原文区支持振假名（Ruby）FlowDocument 只读排版与双击原地纯文本编辑双模（光标定位不全选、未修改失焦复原）；翻译采用两阶段流式协议（阶段 1 假名原句 + `---TRANSLATION---` + 译文，阶段 2 精讲完整回放阶段 1 图文历史以命中前缀缓存）；精讲以微结构化 Markdown 渲染为词汇/语法/语境卡片并逐卡 `[★ 收藏]`，正文与译文划词浮出微型气泡（分类/微调/收藏，失焦自动关闭），大模型格式异常时降级为原始 Markdown 排版。
+- 本地知识库（生词本）：收藏持久化到应用根目录 `nanikore.db`（SQLite，首次收藏惰性建库，通用 `favorites` 表：`category/content/note/created_at`，note 为纯文本分层标注），设置面板 `[收藏]` Tab 支持类别筛选、关键词搜索、单条复制/删除与复制全部；收藏不写入 `config.yaml`。
+- 结果卡底部状态栏呈现本次调用的 Token 消耗与首字延迟（TTFT）、生成速度指标，兼容 OpenAI/Claude/Gemini 流式 Usage 与非标端点启发式估算。
 ### 工具链与发布
 
 - .NET SDK、NuGet 缓存和可选的本地运行时依赖按各自入口准备。
@@ -49,6 +52,6 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 ## 尚未实现
 
 - 可选 GGUF 本地翻译运行时。
-- 精讲的实际调用、内容结构与持久化。
 - 阶段 3 初版体验的真机整改，见上述整改规格。
+- Anki 导出（`.apkg`/TSV）与本地词典分词假名快关（MeCab 等），均记录在 Epic 001 悬挂项。
 下一阶段规划见 `codestable/roadmap/002-csharp-single-process-migration/spec.md`。

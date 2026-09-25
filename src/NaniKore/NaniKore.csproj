@@ -31,12 +31,10 @@
       根目录配置是无密钥的可审阅模板。运行时按 AppContext.BaseDirectory 读取，
       所以 Debug 输出与发布目录都必须各自携带副本；实际 API Key 仍由 DPAPI 单独保存。
     -->
-    <None Include="..\..\config.yaml"
-          Link="config.yaml"
-          CopyToOutputDirectory="PreserveNewest"
-          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\config.yaml" Link="config.yaml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.28.0" />
     <!-- 阶段 3：YAML 配置解析 -->
     <PackageReference Include="YamlDotNet" Version="16.3.0" />

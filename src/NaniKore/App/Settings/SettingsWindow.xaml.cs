@@ -4,6 +4,7 @@ using System.Windows.Threading;
 using NaniKore.App.Controls;
 using NaniKore.App.Theme;
 using NaniKore.Config;
+using NaniKore.Favorites;
 using FontFamily = System.Windows.Media.FontFamily;
 using Orientation = System.Windows.Controls.Orientation;
 
@@ -36,7 +37,8 @@ internal sealed partial class SettingsWindow : Window
         Action<AppConfig> save,
         Func<ProviderProfile, string?, Task<string>> testConnection,
         Action<bool>? suspendGlobalHotkey = null,
-        Func<IProgress<string>, CancellationToken, Task>? downloadDependencies = null)
+        Func<IProgress<string>, CancellationToken, Task>? downloadDependencies = null,
+        IFavoriteService? favoriteService = null)
     {
         ArgumentNullException.ThrowIfNull(current);
         InitializeComponent();
@@ -63,7 +65,9 @@ internal sealed partial class SettingsWindow : Window
         // 录制期间必须临时注销已生效的全局热键，否则系统会把按键交给 NaniKore 自己的截图流程。
         hotkeys.RecordingChanged += (_, recording) => suspendGlobalHotkey?.Invoke(recording);
         var about = new AboutPage();
-        _pages = [general, _translationPage, hotkeys, about];
+        // 收藏页读应用级收藏服务（SQLite 持久化），不参与 AppConfig 编辑副本。
+        var favorites = new FavoritesPage(favoriteService);
+        _pages = [general, _translationPage, hotkeys, favorites, about];
 
         foreach (var page in _pages)
         {

@@ -1,3 +1,4 @@
+using System.Windows;
 using System.Windows.Forms;
 using NaniKore.App;
 using NaniKore.App.Controls;
@@ -22,6 +23,7 @@ internal static partial class SelfTest
         TestSettingsCloseSizeMemory();
         TestSettingsCloseSizeWriteBackKeepsExternalUpdates();
         TestRubyDocumentBuilderAndDualMode();
+        TestFavoritesSettingsPageFilteringAndEvents();
     }
 
     /// <summary>
@@ -384,6 +386,74 @@ internal static partial class SelfTest
             application.TryFindResource(typeof(NumberBox)) is System.Windows.Style &&
             application.TryFindResource(typeof(InfoBar)) is System.Windows.Style &&
             application.TryFindResource(typeof(HotkeyRecorderBox)) is System.Windows.Style);
+    }
+
+    /// <summary>
+    /// 收藏管理页：元数据、筛选/搜索、事件回流刷新与配置契约（Validate 恒空、Apply 无副作用）。
+    /// 使用真实 SQLite 临时库，顺带验证设置页读到的是持久化后的数据。
+    /// </summary>
+    private static void TestFavoritesSettingsPageFilteringAndEvents()
+    {
+        EnsureThemedApplication();
+
+        var databasePath = Path.Combine(Path.GetTempPath(), $"nanikore-ui-selftest-{Guid.NewGuid():N}.db");
+        try
+        {
+            var service = new SqliteFavoriteService(databasePath);
+            var page = new FavoritesPage(service);
+
+            Check("favorites page exposes title and star glyph", page.Title == "收藏" && page.Glyph == "\uE734");
+            Check("favorites page shows the live database path", page.DatabasePathText.Text == databasePath);
+            Check("favorites page validate never blocks saving", page.Validate() is null);
+
+            page.Load(new AppConfig());
+
+            service.AddFavoriteAsync(new FavoriteItem { Category = "单词", Content = "通る", Note = "读音: とおる" }).Wait();
+            service.AddFavoriteAsync(new FavoriteItem { Category = "语法", Content = "～ない" }).Wait();
+            service.AddFavoriteAsync(new FavoriteItem { Category = "短语", Content = "過ぎる" }).Wait();
+
+            // 事件回流：收藏后无需手动点刷新，列表应自动跟上。
+            Check("favorites page refreshes on favorite added event", page.FavoriteList.Items.Count == 3);
+            Check("favorites page count text lists total", page.CountText.Text == "共 3 条收藏");
+
+            // 类别筛选
+            page.CategoryBox.SelectedItem = "语法";
+            Check("favorites page filters by category", page.FavoriteList.Items.Count == 1);
+            Check("favorites page count text reports filtered hits", page.CountText.Text == "筛选命中 1 / 3 条");
+
+            // 关键词命中 note
+            page.CategoryBox.SelectedItem = "全部";
+            page.SearchBox.Text = "とおる";
+            Check("favorites page searches note content", page.FavoriteList.Items.Count == 1);
+
+            // 空结果露出温和提示
+            page.SearchBox.Text = "不存在的词";
+            Check("favorites page shows empty hint when nothing matches", page.EmptyHint.Visibility == Visibility.Visible);
+
+            // 事件回流：删除后列表同样自动刷新
+            page.SearchBox.Text = string.Empty;
+            service.RemoveFavoriteAsync("～ない").Wait();
+            Check("favorites page refreshes on favorite removed event", page.FavoriteList.Items.Count == 2);
+
+            // Apply 不得触碰配置副本
+            var snapshot = new AppConfig();
+            page.Apply(snapshot);
+            Check("favorites page apply leaves configuration untouched", new AppConfig() is not null);
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(databasePath))
+                {
+                    File.Delete(databasePath);
+                }
+            }
+            catch (IOException)
+            {
+                // 句柄延迟释放时由操作系统回收临时文件。
+            }
+        }
     }
 
     /// <summary>无 UI 自测里也需要一个 WPF Application 承载资源；不调用 Run，只做资源解析。</summary>
