@@ -82,7 +82,7 @@ internal static class PromptTemplates
     /// <summary>中文插件：约束汉字拼音标注格式；目标语言即中文时整条剔除。</summary>
     internal static readonly string ChinesePlugin = PromptLiteral("""
         [中文拼音规范]
-        为原文中少见、难读的汉字标注拼音，格式为 汉字[pinyin]（例：棘手[jí shǒu]）
+        为原文中少见、难读的汉字标注拼音，格式为 汉字[pinyin]（例：蕞尔[zuì ěr]）
         """);
 
     // ── 路径二 · 视觉一条龙 Base ───────────────────────────────────
@@ -105,12 +105,12 @@ internal static class PromptTemplates
         按以下三个小节输出结构化 Markdown；每个条目独占一行、以「- 」开头，字段间用竖线「|」分隔，严禁输出 Markdown 表格：
         ```
         ### [词汇/短语]
-        - **词汇** | 读音或音标 | 词性 | 详细释义与在句中的语境分析
+        - **词汇** | 读音或音标 | 词性 | 释义
 
         ### [语法/句型]
         - **句型** | 语法功能与释义
 
-        ### [翻译精讲]
+        ### [精讲]
         结合语境与背景/语法知识分析解释为何如此翻译
         ```
 
@@ -206,7 +206,7 @@ internal static class PromptTemplates
     /// 视觉路径的探测替身：图为唯一输入、无从预扫字符，按「日英中皆可能在图中出现」给出候选，
     /// 再交由 <see cref="AppendLanguagePlugins"/> 做目标语言互斥剪枝——宁全勿缺，又不会给同语种内容乱注音。
     /// </summary>
-    private static readonly LanguageDetectionResult VisionBothLanguages =
+    internal static readonly LanguageDetectionResult VisionBothLanguages =
         new(LanguageFeatures.Japanese | LanguageFeatures.English | LanguageFeatures.SimplifiedChinese,
             NeedsJapaneseRuby: false,
             NeedsEnglishIpa: false,

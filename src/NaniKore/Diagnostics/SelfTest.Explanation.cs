@@ -248,7 +248,7 @@ internal static partial class SelfTest
             "Prompt.Explain.SinglePromptCarriesSectionsAndDifficultyFilter",
             PromptTemplates.DefaultExplainUserPrompt.Contains("### [词汇/短语]") &&
             PromptTemplates.DefaultExplainUserPrompt.Contains("### [语法/句型]") &&
-            PromptTemplates.DefaultExplainUserPrompt.Contains("### [翻译精讲]") &&
+            PromptTemplates.DefaultExplainUserPrompt.Contains("### [精讲]") &&
             PromptTemplates.DefaultExplainUserPrompt.Contains("中高级难度"));
 
         // 排版契约：条目必须是解析器可消费的「- 」开头、竖线分隔的列表行，并显式禁止 Markdown 表格；

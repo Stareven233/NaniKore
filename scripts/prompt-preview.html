@@ -114,7 +114,7 @@
     margin-bottom: 6px;
     font-weight: 500;
   }
-  textarea, input[type=text] {
+  textarea, input[type=text], select {
     width: 100%;
     background: #090c12;
     color: var(--fg);
@@ -127,10 +127,17 @@
     letter-spacing: 0.2px;
     transition: border-color 0.15s, box-shadow 0.15s;
   }
-  textarea:focus, input[type=text]:focus {
+  textarea:focus, input[type=text]:focus, select:focus {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.18);
+  }
+  select {
+    cursor: pointer;
+  }
+  select option {
+    background: var(--panel);
+    color: var(--fg);
   }
   textarea {
     min-height: 84px;
@@ -558,7 +565,19 @@
         </div>
         <div>
           <label for="target">目标语言（对应 {{target_language}}）</label>
-          <input type="text" id="target" value="中文（简体）" spellcheck="false">
+          <select id="target">
+            <option value="中文（简体）" selected>中文（简体）</option>
+            <option value="中文（繁体）">中文（繁体）</option>
+            <option value="英语">英语</option>
+            <option value="日语">日语</option>
+            <option value="韩语">韩语</option>
+            <option value="俄语">俄语</option>
+            <option value="法语">法语</option>
+            <option value="德语">德语</option>
+            <option value="西班牙语">西班牙语</option>
+            <option value="葡萄牙语">葡萄牙语</option>
+            <option value="意大利语">意大利语</option>
+          </select>
         </div>
         <label class="toggle-card">
           <input type="checkbox" id="image">
@@ -652,8 +671,8 @@ const SAMPLES = [
     label: '纯汉字日文（目标英文）',
     text: '進入禁止',
     kind: 'translate',
-    target: 'English',
-    note: '同一句原文、目标语言改为英文 → 不再判定纯汉字日文，插件都不注入：目标语言参与探测，不能只看字符。'
+    target: '英语',
+    note: '无假名纯汉字日文 + 目标语言为英文 → 判定为纯汉字日文，注入日语振假名插件（目标非日语且无简体独占字）。'
   },
   {
     label: '简体中文',
@@ -675,7 +694,7 @@ const SAMPLES = [
     image: true,
     kind: 'translate',
     target: '中文（简体）',
-    note: '视觉 Base + 语言插件恒定同拼，system prompt 与输入无关、恒定单变体，前缀缓存 100% 命中。'
+    note: '图为唯一输入，所有语言插件常驻候选并施加目标语言互斥；视觉 system prompt 保持单变体，前缀缓存 100% 命中。'
   },
   {
     label: '精讲 · 日语',
@@ -972,6 +991,35 @@ async function renderCurrent() {
   renderMissing();
 }
 
+function setTargetLanguage(val) {
+  const select = $('target');
+  if (!val) {
+    select.value = '中文（简体）';
+    return;
+  }
+  for (let i = 0; i < select.options.length; i++) {
+    const opt = select.options[i];
+    if (opt.value === val || opt.text === val) {
+      select.selectedIndex = i;
+      return;
+    }
+  }
+  const lower = String(val).toLowerCase();
+  if (lower.includes('en') || lower.includes('english') || val.includes('英')) {
+    select.value = '英语';
+    return;
+  }
+  if (lower.includes('ja') || val.includes('日')) {
+    select.value = '日语';
+    return;
+  }
+  if (lower.includes('zh') || val.includes('中文')) {
+    select.value = val.includes('繁') ? '中文（繁体）' : '中文（简体）';
+    return;
+  }
+  select.value = val;
+}
+
 // ── 样例胶囊（只键入输入框，不发送） ───────────────────────────────────
 function renderCapsules() {
   $('caps-count').textContent = String(SAMPLES.length);
@@ -993,7 +1041,7 @@ function renderCapsules() {
       const sample = SAMPLES[Number(button.dataset.load)];
       if (!sample) return;
       setKind(sample.kind || 'translate');
-      $('target').value = sample.target || '中文（简体）';
+      setTargetLanguage(sample.target || '中文（简体）');
       $('image').checked = !!sample.image;
       $('src').value = sample.text || '';
       $('caps').querySelectorAll('.capsule').forEach((other) => other.classList.remove('active'));
@@ -1052,7 +1100,7 @@ $('target').addEventListener('keydown', (event) => {
   const firstTextSample = SAMPLES.find((sample) => !sample.image);
   if (firstTextSample) {
     setKind(firstTextSample.kind || 'translate');
-    $('target').value = firstTextSample.target || '中文（简体）';
+    setTargetLanguage(firstTextSample.target || '中文（简体）');
     $('src').value = firstTextSample.text || '';
     const index = SAMPLES.indexOf(firstTextSample);
     const capsule = $('caps').querySelector(`button[data-load="${index}"]`);

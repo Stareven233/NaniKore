@@ -210,10 +210,12 @@ internal static class Program
                 sourceText,
                 imagePng is { Length: > 0 } ? new ReadOnlyMemory<byte>(imagePng) : null,
                 targetLanguage);
-            var detection = LanguageDetector.Detect(request.SourceText, request.TargetLanguage);
+            var path = PromptTemplates.ResolvePath(request);
+            var detection = path == PromptPath.Vision
+                ? PromptTemplates.VisionBothLanguages
+                : LanguageDetector.Detect(request.SourceText, request.TargetLanguage);
             var sections = PromptTemplates.DescribeSections(request, prompts);
             var systemPrompt = PromptTemplates.GetSystemPrompt(request, prompts);
-            var path = PromptTemplates.ResolvePath(request);
 
             // 字段名即 prompt-preview 页面（经 serve-preview.ps1 代理 /api/dump）的消费契约，改名需同步页面与中转服务。
             var report = new

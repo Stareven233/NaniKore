@@ -176,6 +176,15 @@ internal static partial class SelfTest
             pureKanjiPrompt.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
             pureKanjiPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal));
 
+        // 2.5 纯汉字日文词条在目标语言为英文时依然注入 JapanesePlugin，且不误注入 EnglishPlugin
+        var pureKanjiEnReq = new UnderstandRequest(UnderstandKind.Translate, "進入禁止", null, "English");
+        var pureKanjiEnPrompt = PromptTemplates.GetSystemPrompt(pureKanjiEnReq, new PromptConfig());
+        Check(
+            "system prompt for pure kanji Japanese phrase with target English injects Japanese plugin",
+            pureKanjiEnPrompt.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
+            !pureKanjiEnPrompt.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal) &&
+            pureKanjiEnPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal));
+
         // 3. 纯简体中文输入不注入 JapanesePlugin
         var chineseReq = new UnderstandRequest(UnderstandKind.Translate, "今天天气很好，我们去散步", null, "English");
         var chinesePrompt = PromptTemplates.GetSystemPrompt(chineseReq, new PromptConfig());
@@ -390,6 +399,19 @@ internal static partial class SelfTest
                 !jpToEn.Contains(ipa, StringComparison.Ordinal));
         }
 
+        // 1.5 纯汉字日文译英：目标为英语 → 纯汉字日文依然识别为日语注入振假名，且剔除英语 IPA 插件
+        foreach (var target in new[] { "英语", "English", "en" })
+        {
+            var pureKanjiToEn = PromptTemplates.GetSystemPrompt(
+                new UnderstandRequest(UnderstandKind.Translate, "進入禁止", null, target),
+                new PromptConfig());
+            Check(
+                $"target english injects japanese ruby plugin for pure kanji source (target={target})",
+                pureKanjiToEn.Contains(ruby, StringComparison.Ordinal) &&
+                !pureKanjiToEn.Contains(ipa, StringComparison.Ordinal) &&
+                !pureKanjiToEn.Contains(pinyin, StringComparison.Ordinal));
+        }
+
         // 2. 目标为英语、纯英文源 → 两条插件都不注入（英语按目标剔除、源无日语）。
         var enToEn = PromptTemplates.GetSystemPrompt(
             new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "英语"),
@@ -483,6 +505,16 @@ internal static partial class SelfTest
             !visionToZh.Contains(pinyin, StringComparison.Ordinal) &&
             visionToZh.Contains(ruby, StringComparison.Ordinal) &&
             visionToZh.Contains(ipa, StringComparison.Ordinal));
+
+        // 6.6 视觉路径对非日英中目标（如韩语）常驻全部三个插件（宁全勿缺）
+        var visionToKo = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, "韩语"),
+            new PromptConfig());
+        Check(
+            "vision path retains all three plugins when target language is other",
+            visionToKo.Contains(ruby, StringComparison.Ordinal) &&
+            visionToKo.Contains(ipa, StringComparison.Ordinal) &&
+            visionToKo.Contains(pinyin, StringComparison.Ordinal));
 
         // 7. 视觉 prompt 仍是单一变体：目标固定为英语时，不同源文本给出完全相同的 system prompt（缓存友好）。
         var visionVariantsEn = new[]
@@ -600,6 +632,11 @@ internal static partial class SelfTest
             attackPower.HasJapanese && attackPower.NeedsJapaneseRuby && attackPower.IsPureHanziJapaneseCandidate &&
             emergencyExit.HasJapanese && emergencyExit.NeedsJapaneseRuby && emergencyExit.IsPureHanziJapaneseCandidate &&
             manual.HasJapanese && manual.NeedsJapaneseRuby && manual.IsPureHanziJapaneseCandidate);
+
+        var entryForbiddenEn = LanguageDetector.Detect("進入禁止", "English");
+        Check(
+            "detector identifies pure-kanji Japanese phrases and recommends ruby when target is English",
+            entryForbiddenEn.HasJapanese && entryForbiddenEn.NeedsJapaneseRuby && entryForbiddenEn.IsPureHanziJapaneseCandidate);
 
         // 4. 纯简体中文句子（命中独占字集）
         var simplifiedWalk = LanguageDetector.Detect("今天天气很好，我们去散步");

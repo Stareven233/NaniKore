@@ -54,8 +54,8 @@ internal static class LanguageDetector
     {
         if (string.IsNullOrWhiteSpace(text))
         {
-            // 图像或空文本场景下，若偏好为日译中，依然推荐准备日语注音插件以供模型兜底
-            var defaultToJapanese = IsJapaneseToChinesePreference(targetLanguage);
+            // 图像或空文本场景下，若目标语言非日语，依然推荐准备日语注音插件以供模型兜底
+            var defaultToJapanese = !IsJapaneseTarget(targetLanguage);
             return new LanguageDetectionResult(
                 defaultToJapanese ? LanguageFeatures.Japanese : LanguageFeatures.None,
                 NeedsJapaneseRuby: defaultToJapanese,
@@ -110,10 +110,11 @@ internal static class LanguageDetector
             features |= LanguageFeatures.Japanese;
             needsJapaneseRuby = true;
         }
-        else if (hasCjk && !hasSimplifiedOnly && IsJapaneseToChinesePreference(targetLanguage))
+        else if (hasCjk && !hasSimplifiedOnly && !IsJapaneseTarget(targetLanguage))
         {
-            // 未命中简体字，且用户处于日译中偏好：
+            // 未命中简体字，且目标语言非日语：
             // 判定为纯汉字日文（如「進入禁止」「案内図」「攻撃力」「取扱説明書」）
+            // 无论目标语言是中文还是英文/其他非日语，均认定为日语并需要振假名注音
             features |= LanguageFeatures.Japanese;
             needsJapaneseRuby = true;
             isPureHanziJapaneseCandidate = true;

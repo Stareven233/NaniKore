@@ -112,9 +112,9 @@ public static class ExplanationParser
         @"^#{2,4}\s*\[?(语法|句型|文法|Grammar)\]?",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    // 「翻译精讲」是内置精讲提示词采用的第三个小节名，与「语境与地道表达」同属语境分析段，一并纳入识别
+    // 「精讲」（旧版「翻译精讲」）是内置精讲提示词采用的第三个小节名，与「语境与地道表达」同属语境分析段，一并纳入识别
     private static readonly Regex ContextHeaderRegex = new(
-        @"^#{2,4}\s*\[?(语境|地道表达|语境与地道表达|翻译精讲|Context)\]?",
+        @"^#{2,4}\s*\[?(语境|地道表达|语境与地道表达|翻译精讲|精讲|Context)\]?",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>
