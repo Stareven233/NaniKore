@@ -35,7 +35,7 @@ updated: 2026-09-29
 | 1.3 | 词汇注音重复：`気付く[きづく] (きづく)` | 提示词缺口 + 解析层不去噪，模型随机性触发 | 中 | 提示词、解析器、展示层三层设防（含语法卡片 `Pattern`） |
 | 1.4 | 收藏项因注音残留产生重复行 | 数据脏 | 中 | **不做历史合并**；陈列卡片时归一化匹配点亮星标 + 入库归一化，阻止后续重复 |
 | 2.1 | 数据库位置：需单行描述 + 复制支持 | 信息架构调整 | 低 | 取消独立区域，单行放**导航条下方** |
-| 2.2 | 检索与操作 → 顶部横向导航条；列表直铺 | 信息架构调整 | 中 | 按此改 |
+| 2.2 | 检索与操作 → 顶部横向导航条；列表直铺；**搜索条填满剩余横向空间（主人 2026-09-29 晚追加）** | 信息架构调整 | 中 | 按此改（搜索条改占星号列，窄窗收敛而非换行） |
 | 2.3 | 导航条增加语言筛选 | 新功能 | 中 | **方案 B：新增 language 列**；语言列表与设置页目标语言**共用一份且各用母语写法**；探测现算后映射回列表对应项；**旧行回填「日本語」仅针对已存在的收藏**；划词气泡允许用户调整 |
 | 2.4 | 词性 badge 风格与精讲卡片统一 | 视觉一致性 | 低 | 只换样式（沿用 `category` 文案），共享精讲卡片徽章款式 |
 | 2.5 | （新增）收藏条目事后编辑 | 功能补全 | 中 | 就地编辑，失焦即保存 + 成功提示，**允许修改 content 及其他字段** |
@@ -79,12 +79,28 @@ updated: 2026-09-29
 
 **阶段二：修复（无论落在哪个候选都覆盖，四件套）**
 
-1. `BubblePopup` 改 `StaysOpen="True"`——内置外部关闭抢在 `Button.Click` 前执行的竞态直接消失，关闭时机完全交给窗口侧显式管理（窗口 PreviewMouseDown / Esc / LocationChanged 已覆盖）。
-2. `Deactivated` 处理器改为延迟判定：`Dispatcher.BeginInvoke`（Input 优先级）里仅在气泡**未持有键盘焦点**时才 Hide。判定用新增的 `SelectionBubblePopup.ContainsLogicalFocus()`：从 `Keyboard.FocusedElement` 沿 `LogicalTreeHelper.GetParent` 上溯命中本控件即算——**逻辑树可跨 PopupRoot 边界**，比 `IsKeyboardFocusWithin`（视觉树被 HWND 边界截断）可靠。
-3. `ShowAt*` 打开前清理残留鼠标捕获：`Mouse.Captured` 非空且不在气泡逻辑树内时 `Mouse.Capture(null)`，杜绝"划选残留捕获把后续点击导回文本框"分支。
-4. 纵深防御：收藏动作从 `Click`（依赖 MouseUp 送达）前移到 `FavoriteButton.PreviewMouseLeftButtonDown` 触发，保留 300ms 视觉正反馈。
+1. ~~`BubblePopup` 改 `StaysOpen="True"`~~ → 保留（无害），但**不是本轮的根因**。
+2. ~~`Deactivated` 处理器改为延迟判定~~ → 保留（无害）：实测 11/11 次复现里 `Deactivated` 从未触发。
+3. ~~`ShowAt*` 打开前清理残留鼠标捕获~~ → 保留（无害）。
+4. ~~收藏动作从 `Click` 前移到 `FavoriteButton.PreviewMouseLeftButtonDown`~~ → 保留（无害）。
 
-**回归标准**：点气泡内编辑框、类别下拉、收藏按钮，气泡保持打开、**不产生新气泡**；三条划词入口的收藏/取消收藏、星标点亮、状态提示正常；点别处文字、拖动、Esc、切换到其他窗口仍立即收起（`SelfTest.Ui.cs` 原有编号 15/17 断言覆盖）。
+> ### 2026-09-29 晚：第二轮实测翻案——根因不在上述四件套
+>
+> 主人用带埋点的版本复现 11 次，日志 11/11 全是同一条路径：`Popup.Closed` → `MouseUp translation len=3` → `Hide via PanelPreviewMouseDown` → 新气泡；`Deactivated` / `LocationChanged` / Esc 一条都没出现。`len=3` 说明划选残留捕获没有清空选区（候选 ⑤ 出局）。
+>
+> 用临时诊断探针（真实 Show 面板 + `SetCursorPos`/`mouse_event` 在气泡矩形中心合成真实点击 + 抓 `GetWindowRect`/`WindowFromPoint`/z-order）拿到铁证：
+> - 气泡 PopupRoot 的 HWND **与面板窗口同在 topmost band，却排在面板之下**（`WindowFromPoint(气泡中心) = 面板 HWND`）；
+> - 于是气泡与面板重叠的区域被面板窗口盖住：点气泡 = 点面板 → `OnPanelPreviewMouseDown` 收起气泡 → 同一位置的 MouseUp（`handledEventsToo`）选区仍完好 → `ShowAt` 在同址再弹一个，正是主人看到的「点气泡就消失并在点击处冒出新气泡」。
+> - 面板窗口是 `Topmost=True` 且被 `SetWindowPos(HWND_TOPMOST)` 显式声明过（`BringToTopmostBand`），而 WPF 的 PopupRoot 虽自带 `WS_EX_TOPMOST`，在 topmost band 里却排在这之后声明的窗口之下。
+>
+> **真正的修复（已实施）**：打开气泡后把 PopupRoot 的 HWND 显式提升到 topmost band 最上沿（`SelectionBubblePopup.BringBubbleToTopmostBand`，与 `BringToTopmostBand` 对面板的声明同源）。
+> **双保险（已实施）**：窗口侧所有收起路径（`OnPanelPreviewMouseDown`）与三个划词 MouseUp 不再因「点击实际落在气泡矩形内」而收起/重弹（`SelectionBubblePopup.ContainsScreenPoint`，物理像素与 DIP 已按 DPI 换算同口径）。
+>
+> **真实输入回归（探针实测，全绿）**：A 点气泡内「收藏」按钮 → 入收藏 + 300ms 反馈后收起、不冒新气泡；B 点气泡中部语言下拉 → 气泡保持打开且下拉展开；C 点面板其他区域 → 立即收起；D 面板已激活时点气泡空白边缘 → 保持打开、不冒新气泡。
+>
+> **终版复跑（适配 125% DPI 的真机环境，仍是 12/12 全绿）**：`WindowFromPoint(气泡中心)` 返回**气泡自己的 HWND**（0x003602C0），不再是结果面板（0x005005C4）——z-order 修复在 DPI 缩放下同样成立；收藏按钮点击被气泡窗口接收（`window-below = 气泡`），`favorited=True`、选区 3 字完好、300ms 反馈后干净收起不再生新气泡；语言下拉/面板别处/气泡空白边缘三项行为均符合预期。探针已按"临时诊断"约定从代码树移除。
+>
+> **回归标准（待主人实机验收）**：点气泡内编辑框、类别下拉、收藏按钮，气泡保持打开、**不产生新气泡**；三条划词入口的收藏/取消收藏、星标点亮、状态提示正常；点别处文字、拖动、Esc、切换到其他窗口仍立即收起（`SelfTest.Ui.cs` 原有编号 15/17/19 断言覆盖）。
 
 ### 1.2 默认窗口高度下无法看到/滚动到精讲底部
 
@@ -147,7 +163,9 @@ updated: 2026-09-29
 [收藏条目卡片列表（沿用现有 ItemTemplate、单条复制/删除/编辑）]
 ```
 
-删除"检索与操作"与"收藏列表"两个 `SettingsGroup`；`ApplyFilter` / `Refresh` / `OnCopyAllClick` / `OnDeleteItemClick` 逻辑整体保留，只是宿主容器换成导航条（`StackPanel Orientation="Horizontal"`，窄窗换行用 `WrapPanel`）。页面根保持自适应高度，滚动继续交给设置窗 `PageHost`。
+删除"检索与操作"与"收藏列表"两个 `SettingsGroup`；`ApplyFilter` / `Refresh` / `OnCopyAllClick` / `OnDeleteItemClick` 逻辑整体保留，只是宿主容器换成导航条。页面根保持自适应高度，滚动继续交给设置窗 `PageHost`。
+
+**主人追加要求（2026-09-29 晚）：搜索条填满剩余横向空间。** 导航条由 `WrapPanel` 改为 5 列 `Grid`（Auto | Auto | **\*** | Auto | Auto）：类别、语言下拉与刷新/复制全部保持 Auto 按最窄可用宽度收敛，关键词搜索框占星号列，随窗口宽度伸缩，不再在行尾留一段难看的固定空白；窗口收窄时搜索框让位（不设硬 MinWidth，保证其他控件不被裁切）。
 
 ### 2.3 导航条语言筛选（方案 B：新增 language 列）
 
@@ -200,10 +218,11 @@ updated: 2026-09-29
 实施顺序：**埋点最优先**（不依赖其他改动，让主人尽早取到诊断日志）→ 数据正确性（1.3/1.4）→ 收藏 Tab 改造（2.2 先行，2.1/2.4 随行，2.3 次之，2.5 收尾）→ 1.1 阶段二修复 → 1.2 布局收尾。第 3 节的自测清单随各子项同步完成。
 
 - [x] **1.1-A** 气泡诊断埋点（`%TEMP%` 日志：五条收起路径 + `Closed` + 收藏按钮入口 + 三个 MouseUp 带 `SelectionLength`），交付主人复现
-- [x] **1.1-B** 根因确认后实施四件套修复（`StaysOpen=True`；`Deactivated` 延迟 + 逻辑焦点判定；`ShowAt` 清理残留鼠标捕获；收藏触发移至 `PreviewMouseLeftButtonDown`），并**移除全部埋点**
+- [x] **1.1-B** 首轮四件套（`StaysOpen=True`；`Deactivated` 延迟 + 逻辑焦点判定；`ShowAt` 清理残留鼠标捕获；收藏触发移至 `PreviewMouseLeftButtonDown`）；埋点随修复一并移除
+- [x] **1.1-C** 第二轮实测翻案：PopupRoot 在 topmost band 里排在面板之下 → 点击漏到面板被 `OnPanelPreviewMouseDown` 收起、MouseUp 同址二次冒泡。修复：打开后把 PopupRoot 显式提升到 topmost 顶端（`BringBubbleToTopmostBand`）+ 窗口侧收起/重弹守卫（`ContainsScreenPoint`，按 DPI 同口径）；探针真实输入回归 A/B/C/D 四项全绿；补自测契约断言
 - [x] **1.3** 精讲提示词加"词条/句型不嵌注音"约束；解析器剥离 `Term`/`Pattern` 内嵌注音并与 `Reading` 去重；补解析自测 case
 - [x] **1.4** 归一化函数（Add 落库 + `IsFavorited`/`RemoveFavoriteAsync` 匹配）；陈列星标按归一化 content 匹配（不强制类别）；补自测 case
-- [x] **2.2** 收藏页横向导航条 + 条目直铺，删除"检索与操作""收藏列表"两个 `SettingsGroup`
+- [x] **2.2** 收藏页横向导航条 + 条目直铺，删除"检索与操作""收藏列表"两个 `SettingsGroup`；**搜索条占星号列填满剩余横向空间**（主人追加，见 2.2 节）
 - [x] **2.1** 数据库路径单行 + 复制按钮（导航条下方），长说明降级为 ToolTip
 - [x] **2.4** 抽 `Badge.Tag` 共享样式（Accent.Subtle 底 + Control.Border 描边），精讲卡与收藏页双引用；文案沿用 `category`
 - [x] **2.3-A** `LanguageChoice` 提取为共享 `LanguageChoices`（选项母语写法 + `FromDetection` 映射），`GeneralPage` 改引用
@@ -215,18 +234,23 @@ updated: 2026-09-29
 
 ## 5. 实施记录（2026-09-29）
 
-全部代码项已完成，`./scripts/dev.ps1 test` 全绿；下表为各子项落点与自测覆盖。
+全部代码项已完成，`./scripts/dev.ps1 test` 全绿（436 项 PASS / 0 FAIL；自测运行时不再有句柄竞争的进程级异常退出）；下表为各子项落点与自测覆盖。
+
+> **1.1 的两轮根因结论（务必先读）**：首轮四件套修的都是"气泡被误关"的候选路径，实测 11/11 复现里这些路径一条都没触发；真正根因是**气泡 PopupRoot 在 topmost band 里排在结果面板之下**，气泡与面板重叠区被面板窗口盖住——点气泡等于点面板，被 `OnPanelPreviewMouseDown` 收起后同址 MouseUp 又弹一个新的。修复是打开气泡后显式把 PopupRoot 提升到 topmost 顶端，另加窗口侧"点击落在气泡矩形内就不收起/不重弹"的双保险。
 
 | 子项 | 落点 | 自测覆盖 |
 | --- | --- | --- |
-| 1.1-A/B | 埋点随 1.1-B 一并移除（`BubbleDebugLog` 已删除）；`StaysOpen=True`、`Deactivated` 延迟 + `ContainsLogicalFocus()`、`ShowAt*` 清理残留捕获、收藏触发移至 `PreviewMouseLeftButtonDown`（Handled 防 Click 双算） | StaysOpen 契约、PreviewMouseDown 触发收藏、逻辑焦点判据可用 |
+| 1.1-A/B | 埋点随首轮修复一并移除（`BubbleDebugLog` 已删除）；`StaysOpen=True`、`Deactivated` 延迟 + `ContainsLogicalFocus()`、`ShowAt*` 清理残留捕获、收藏触发移至 `PreviewMouseLeftButtonDown`（Handled 防 Click 双算） | StaysOpen 契约、PreviewMouseDown 触发收藏、逻辑焦点判据可用 |
+| 1.1-C | **真根因与真修复**：`BringBubbleToTopmostBand`（打开后把 PopupRoot 显式 `SetWindowPos(HWND_TOPMOST)`，首帧无句柄时 Input 优先级补偿，上限 8 次）+ `ContainsScreenPoint` 守卫（`OnPanelPreviewMouseDown` 与三处划词 MouseUp 均不再因"点击落在气泡内"而收起/重弹；`PointToScreen` 物理像素与 `RenderSize` DIP 已按 DPI 换算同口径）+ `Hide()` 线程安全化（顺带修掉无 UI 自测里 `Task.Delay` 续体落线程池导致的进程异常退出，基线同样存在） | 探针真实输入回归（125% DPI 下 12/12 全绿，含 `WindowFromPoint` z-order 铁证）；`ContainsScreenPoint` 关闭态恒 false 契约断言 |
 | 1.3 | 提示词显式禁嵌注音；`RubyTextParser.StripRubyAnnotations` 剥离 `Term`/`Pattern` 内嵌注音并与 `Reading` 去重；IPA/下标/标签不误剥 | 解析 case + 误伤防护直断 |
 | 1.4 | `FavoriteContentNormalizer`（Add 落库 + 匹配）；星标按归一化 content 且不强制类别；`IsFavorited`/`RemoveFavoriteAsync` 归一化兜底 | 三种括号形态互认、upsert 单行、跨形态移除 |
-| 2.1/2.2/2.4 | 横向导航条（类别/语言/关键词/刷新/复制全部）+ 路径单行 + 复制按钮 + 清单直铺；`Badge.Tag` 共享样式双引用 | 去 Group 断言、语言筛选、路径按钮存在 |
+| 2.1/2.2/2.4 | 横向导航条（类别/语言/关键词/刷新/复制全部）+ 路径单行 + 复制按钮 + 清单直铺；`Badge.Tag` 共享样式双引用；**导航条改 5 列 Grid，搜索条占星号列填满剩余横向空间**（主人追加） | 去 Group 断言、语言筛选、路径按钮存在 |
 | 2.3-A/B/C | `LanguageChoices` 共享列表（母语写法 + `FromDetection`）；`language` 列新库含列、旧库 `ALTER` 回填「日本語」；面板探测现算透传卡片/气泡；气泡/收藏页下拉；复制格式带语言 | 共享列表同一实例、别名命中、探测映射、旧库迁移、语言筛选、气泡默认语言 |
 | 2.5 | `UpdateFavoriteAsync`（按 Id，双实现）+ `FavoriteUpdated` 事件；行内编辑失焦保存/Esc/Enter + 归一化冲突拒绝 + Success InfoBar | Update 字段与冲突拒绝、编辑往返 |
 | 1.2 | 内容根 Grid 外包 `ScrollViewer`（`MinHeight` 绑 `ViewportHeight`，内容不高时星号行仍撑满）；精讲保留 `MaxHeight` 二级滚动 | 滚动契约断言 |
 
-**待主人实机验收**：1.1 的回归标准（点气泡内编辑框/类别下拉/收藏按钮不关闭也不冒新气泡；点别处文字、拖动、Esc、切窗仍立即收起）与 1.2 的验证点（默认高度下长短两种精讲都能滚到底部卡片下边缘与状态栏；最大化后无滚动条、无裁切）。
+**待主人实机验收**：1.1 的回归标准（点气泡内编辑框/类别下拉/收藏按钮不关闭也不冒新气泡；点别处文字、拖动、Esc、切窗仍立即收起——本轮已用真机 DPI 的真实 OS 级点击回归，仍需主人在自己的版面下复核一次）、收藏页导航条搜索条随窗口填满剩余宽度的观感，以及 1.2 的验证点（默认高度下长短两种精讲都能滚到底部卡片下边缘与状态栏；最大化后无滚动条、无裁切）。
+
+**注：本轮修复已编译到标准构建输出（`src\NaniKore\bin\Debug\net10.0-windows10.0.19041.0\NaniKore.exe`），主人直接启动就是新版；诊断 / 回归用探针（`--bubble-selection-probe`）已按"临时诊断"约定从代码树移除。**
 
 

@@ -126,38 +126,53 @@
     </UserControl.Resources>
 
     <StackPanel>
-        <!-- 顶部横向导航条：窄窗时各控件自动换行（WrapPanel）。 -->
+        <!--
+            顶部横向导航条（issue 015 / 2.2，主人追加要求）：关键词搜索条占星号列，
+            自动填满类别/语言下拉与操作按钮之外的剩余横向空间——窗口变宽时搜索框随之拉宽，
+            不再在行尾留一截难看的空白；各控件按最窄可用宽度收敛，窄窗时也不会被裁切。
+        -->
         <Border Background="{DynamicResource Brush.Card.Background}"
                 BorderBrush="{DynamicResource Brush.Card.Border}"
                 BorderThickness="1"
                 CornerRadius="{StaticResource Radius.Card}"
                 Padding="10,8">
-            <WrapPanel Orientation="Horizontal">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
                 <ComboBox x:Name="CategoryBox"
-                          Width="120"
+                          Grid.Column="0"
+                          Width="88"
                           Margin="0,0,8,0"
                           ToolTip="按类别筛选"
                           SelectionChanged="OnFilterChanged" />
                 <ComboBox x:Name="LanguageBox"
-                          Width="130"
+                          Grid.Column="1"
+                          Width="116"
                           Margin="0,0,8,0"
                           ToolTip="按语言筛选"
                           SelectionChanged="OnFilterChanged" />
                 <TextBox x:Name="SearchBox"
-                         MinWidth="180"
+                         Grid.Column="2"
                          Margin="0,0,8,0"
                          ToolTip="关键词：同时匹配核心文本与备注，忽略大小写"
                          TextChanged="OnFilterChanged" />
                 <Button x:Name="RefreshButton"
+                        Grid.Column="3"
                         Content="刷新"
-                        MinWidth="80"
+                        MinWidth="60"
                         Margin="0,0,8,0"
                         Click="OnRefreshClick" />
                 <Button x:Name="CopyAllButton"
+                        Grid.Column="4"
                         Content="复制全部"
-                        MinWidth="92"
+                        MinWidth="72"
                         Click="OnCopyAllClick" />
-            </WrapPanel>
+            </Grid>
         </Border>
 
         <!-- 数据库位置单行：路径 + 复制图标按钮；原「知识库」分组的长说明降级为 ToolTip。 -->

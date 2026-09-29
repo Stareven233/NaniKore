@@ -469,8 +469,8 @@ internal static partial class SelfTest
             Check("favorites page exposes database path copy button", page.CopyPathButton is not null);
             Check("favorites page validate never blocks saving", page.Validate() is null);
 
-            // 布局契约（issue 015 / 2.2）：横向导航条直铺，旧版两个 SettingsGroup 全部移除，
-            // 窄窗换行由 WrapPanel 承担；语言筛选下拉先占位「全部」（2.3-C 填共享语言列表）。
+            // 布局契约（issue 015 / 2.2 + 主人追加要求）：横向导航条直铺，旧版两个 SettingsGroup 全部移除；
+            // 关键词搜索条占星号列、填满剩余横向空间；语言筛选下拉先占位「全部」（2.3-C 填共享语言列表）。
             Check(
                 "favorites page uses flat nav bar without settings groups",
                 page.LanguageBox.SelectedItem as string == "全部" &&
@@ -1006,6 +1006,19 @@ internal static partial class SelfTest
             Check(
                 "bubble logical focus containment reports false when nothing holds focus",
                 selectionBubble?.ContainsLogicalFocus() == false);
+
+            // 23. issue 015 / 1.1 第二轮回归（根因：PopupRoot 在 topmost band 里排在面板之下，
+            // 点击漏到面板被 OnPanelPreviewMouseDown 收起、MouseUp 又二次冒泡）。
+            // 无 UI 环境断言可确定的契约：未打开时屏幕点判定恒不命中，打开路径照常可用；
+            // HWND 置顶提升与真实点击回归由临时探针实测（见 issue 015 实施记录）。
+            Check(
+                "bubble screen-point guard stays inactive while popup closed",
+                selectionBubble?.ContainsScreenPoint(new System.Windows.Point(0, 0)) == false);
+            selectionBubble?.ShowAt(new System.Windows.Point(100, 100), "東京");
+            Check(
+                "bubble reopens after close without losing favorite detection state",
+                selectionBubble?.BubblePopup.IsOpen == true);
+            selectionBubble?.Hide();
 
             // 22. 1.2 布局契约：内容区外包整页 ScrollViewer（Auto），精讲区另有 MaxHeight 形成二级滚动。
             var contentScroller = (System.Windows.Controls.ScrollViewer?)expPanel.FindName("ContentScrollViewer");

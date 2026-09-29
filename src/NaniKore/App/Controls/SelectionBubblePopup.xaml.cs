@@ -6,9 +6,12 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using NaniKore.App.Settings;
 using NaniKore.Favorites;
+using NaniKore.Interop;
 
 /// <summary>
 /// 正文自由划词微型悬浮收藏气泡。
@@ -16,6 +19,11 @@ using NaniKore.Favorites;
 /// </summary>
 public partial class SelectionBubblePopup : UserControl
 {
+    private const nint HwndTopmost = -1;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoMove = 0x0002;
+    private const uint SwpNoActivate = 0x0010;
+
     private IFavoriteService? _favoriteService;
     private bool _isCurrentContentFavorited;
 
@@ -67,7 +75,7 @@ public partial class SelectionBubblePopup : UserControl
         BubblePopup.VerticalOffset = 16;
 
         UpdateFavoriteState();
-        BubblePopup.IsOpen = true;
+        OpenBubble();
     }
 
     /// <summary>
@@ -93,7 +101,7 @@ public partial class SelectionBubblePopup : UserControl
         BubblePopup.VerticalOffset = 4;
 
         UpdateFavoriteState();
-        BubblePopup.IsOpen = true;
+        OpenBubble();
     }
 
     /// <summary>以指定控件及相对坐标弹出微型气泡（优先使用 Relative，防止 DPI 缩放漂移）。</summary>
@@ -117,7 +125,7 @@ public partial class SelectionBubblePopup : UserControl
         BubblePopup.VerticalOffset = relativePoint.Y + 4;
 
         UpdateFavoriteState();
-        BubblePopup.IsOpen = true;
+        OpenBubble();
     }
 
     /// <summary>在屏幕指定坐标弹出微型气泡（带 DPI 自动修正）。</summary>
@@ -146,13 +154,97 @@ public partial class SelectionBubblePopup : UserControl
         BubblePopup.VerticalOffset = (screenPoint.Y / dpiY) + 4;
 
         UpdateFavoriteState();
-        BubblePopup.IsOpen = true;
+        OpenBubble();
     }
 
-    /// <summary>主动关闭气泡。</summary>
+    /// <summary>主动关闭气泡；可从任意线程安全调用（收藏反馈延时后的收起可能已脱离同步上下文）。</summary>
     public void Hide()
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            // 无 UI 环境（自测）里同步上下文缺失，Task 续体会落到线程池，直接写 DependencyProperty 会抛异常。
+            Dispatcher.BeginInvoke(Hide);
+            return;
+        }
+
         BubblePopup.IsOpen = false;
+    }
+
+    private const int MaxTopmostLiftAttempts = 8;
+    private int _topmostLiftAttempts;
+
+    /// <summary>
+    /// 打开气泡的统一出口：除了置 <see cref="BubblePopup"/>.IsOpen，还必须在打开后把 PopupRoot 的 HWND
+    /// 显式提升到 topmost band 顶端（issue 015 / 1.1 第二轮实测根因）。
+    /// </summary>
+    private void OpenBubble()
+    {
+        BubblePopup.IsOpen = true;
+        _topmostLiftAttempts = 0;
+        BringBubbleToTopmostBand();
+    }
+
+    /// <summary>
+    /// 把气泡的 PopupRoot 窗口显式声明到 topmost band 最上沿，与 <see cref="ResultPanelWindow.BringToTopmostBand"/>
+    /// 对新结果面板的声明同源。WPF 的 PopupRoot 虽自带 WS_EX_TOPMOST，但在 topmost band 里排在结果面板
+    /// （同为 topmost 且被 SetWindowPos(HWND_TOPMOST) 显式声明过）之下：气泡与面板重叠的区域被面板窗口盖住，
+    /// 点击落在面板上 → 面板 PreviewMouseDown 收起气泡 → MouseUp 又在同一位置二次弹出，正是主人实测
+    ///「点气泡就消失并在点击处冒出新气泡」的根因（诊断日志 11/11 都是 PanelPreviewMouseDown 这条路径）。
+    /// </summary>
+    private void BringBubbleToTopmostBand()
+    {
+        if (!BubblePopup.IsOpen || BubblePopup.Child is not Visual child)
+        {
+            return;
+        }
+
+        // PopupRoot 可能在打开后的布局期才落地，首帧取不到句柄时延迟到 Input 优先级再补几次；
+        // 有尝试次数上限，避免极端情况下无限回压调度。
+        if (PresentationSource.FromVisual(child) is not HwndSource source)
+        {
+            if (_topmostLiftAttempts++ < MaxTopmostLiftAttempts)
+            {
+                Dispatcher.BeginInvoke(BringBubbleToTopmostBand, DispatcherPriority.Input);
+            }
+
+            return;
+        }
+
+        _ = NativeMethods.SetWindowPos(
+            source.Handle,
+            HwndTopmost,
+            0,
+            0,
+            0,
+            0,
+            SwpNoMove | SwpNoSize | SwpNoActivate);
+    }
+
+    /// <summary>
+    /// 屏幕坐标（物理像素，与 Mouse.GetPosition → PointToScreen 的口径一致）是否落在气泡当前矩形内。
+    /// 窗口侧收起路径用它做双保险：即便置顶提升存在竞态（或第三方 topmost 窗口插手）让点击漏到了面板，
+    /// 也不该把气泡收起、再让 MouseUp 冒出一个新气泡。
+    /// </summary>
+    public bool ContainsScreenPoint(Point screenPoint)
+    {
+        if (!BubblePopup.IsOpen || BubblePopup.Child is not Visual child)
+        {
+            return false;
+        }
+
+        // 尚未落到真实 HwndSource（例如测试里未 Show 的窗口）时没有可信屏幕矩形，按不含处理。
+        if (PresentationSource.FromVisual(child) is not HwndSource source)
+        {
+            return false;
+        }
+
+        // PointToScreen 给的是物理像素，RenderSize 是 DIP，需按 DPI 放大后才可与鼠标坐标同口径比较。
+        var origin = child.PointToScreen(new Point(0, 0));
+        var scale = source.CompositionTarget.TransformToDevice;
+        var width = ((UIElement)child).RenderSize.Width * scale.M11;
+        var height = ((UIElement)child).RenderSize.Height * scale.M22;
+
+        return new Rect(origin, new Size(width, height)).Contains(screenPoint);
     }
 
     /// <summary>

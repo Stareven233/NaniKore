@@ -780,6 +780,11 @@ internal sealed partial class ResultPanelWindow : Window
 
     private void OnTranslationTextBoxMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (IsMouseUpInsideBubble(e))
+        {
+            return;
+        }
+
         if (TranslationTextBox.SelectionLength is >= 1 and <= 100)
         {
             var text = TranslationTextBox.SelectedText.Trim();
@@ -794,6 +799,11 @@ internal sealed partial class ResultPanelWindow : Window
 
     private void OnSourceTextBoxMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (IsMouseUpInsideBubble(e))
+        {
+            return;
+        }
+
         if (SourceTextBox.SelectionLength is >= 1 and <= 100)
         {
             var text = SourceTextBox.SelectedText.Trim();
@@ -808,6 +818,11 @@ internal sealed partial class ResultPanelWindow : Window
 
     private void OnSourceViewerMouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (IsMouseUpInsideBubble(e))
+        {
+            return;
+        }
+
         if (SourceViewer.Selection is { IsEmpty: false } selection)
         {
             var text = RubyDocumentBuilder.ExtractFromSelection(selection, RubyCopyKind.Plain)?.Trim();
@@ -822,14 +837,45 @@ internal sealed partial class ResultPanelWindow : Window
 
     /// <summary>
     /// 当气泡可见且用户在主窗口内点击任何区域（包括其他文字、空白处、按钮）时立即隐藏气泡。
-    /// 由于气泡处于独立 PopupRoot HWND，气泡内部的点击不会触发此事件。
+    /// 气泡处于独立 PopupRoot HWND 且打开时已被显式提升到 topmost band 顶端（1.1 修复），
+    /// 内部点击不会触发此事件；ContainsScreenPoint 兜底防止置顶竞态把气泡内点击误判成窗口点击。
     /// </summary>
     private void OnPanelPreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (SelectionBubble.BubblePopup.IsOpen)
+        if (!SelectionBubble.BubblePopup.IsOpen)
         {
-            // 点击窗口内其他文字/按钮/空白处：气泡在独立 PopupRoot HWND，其内部点击不会走到这里。
-            SelectionBubble.Hide();
+            return;
         }
+
+        if (TryGetMouseScreenPoint(e, out var point) && SelectionBubble.ContainsScreenPoint(point))
+        {
+            return;
+        }
+
+        // 点击窗口内其他文字/按钮/空白处：气泡在独立 PopupRoot HWND，其内部点击不会走到这里。
+        SelectionBubble.Hide();
+    }
+
+    /// <summary>
+    /// 划词 MouseUp 的第二道保险（issue 015 / 1.1）：鼠标松开点落在已打开气泡的矩形内时，
+    /// 说明这次点击本来属于气泡（即便因置顶竞态漏到了文本框，选区也仍然完好），不再二次弹出新气泡。
+    /// 选区被点击清空的正常路径（SelectionLength=0）本来就不会走到这里，不受影响。
+    /// </summary>
+    private bool IsMouseUpInsideBubble(MouseButtonEventArgs e) =>
+        SelectionBubble.BubblePopup.IsOpen &&
+        TryGetMouseScreenPoint(e, out var point) &&
+        SelectionBubble.ContainsScreenPoint(point);
+
+    /// <summary>把鼠标事件的窗口相对坐标换算成屏幕物理像素；窗口尚未落到 HwndSource（未 Show）时返回 false。</summary>
+    private bool TryGetMouseScreenPoint(MouseButtonEventArgs e, out System.Windows.Point screenPoint)
+    {
+        if (PresentationSource.FromVisual(this) is null)
+        {
+            screenPoint = default;
+            return false;
+        }
+
+        screenPoint = PointToScreen(e.GetPosition(this));
+        return true;
     }
 }
