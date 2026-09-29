@@ -139,7 +139,7 @@
                 <Border Style="{DynamicResource Divider.Row}" />
                 <controls:SettingsRow x:Name="VisionPromptRow"
                                       Header="视觉一条龙 Base 提示词"
-                                      Description="{}{{target_language}} 会替换为「通用」页选择的目标语言；提示词中的 ---TRANSLATION--- 分隔原文与译文。该 Base 与日语、英语、中文三个语言插件共同组装成视觉模式的完整 system prompt，注音格式由插件提供。留空则使用内置默认 Base。"
+                                      Description="{}{{target_language}} 会替换为「通用」页选择的目标语言；提示词中的 ---TRANSLATION--- 分隔原文与译文。该 Base 与所有语言插件共同组装成视觉模式的完整 system prompt，注音格式由插件提供。留空则使用内置默认 Base。"
                                       IsStacked="True">
                     <controls:SettingsRow.HeaderAction>
                         <Button x:Name="RestoreVisionPromptButton"

@@ -206,27 +206,6 @@ internal static class RubyTextParser
     }
 
     /// <summary>
-    /// 将分段序列重新拼合为带方括号注音的标准格式。
-    /// </summary>
-    public static string ToAnnotatedText(IEnumerable<RubySegment> segments)
-    {
-        var sb = new StringBuilder();
-        foreach (var segment in segments)
-        {
-            if (segment.IsRuby)
-            {
-                sb.Append(segment.Text).Append('[').Append(segment.Ruby).Append(']');
-            }
-            else
-            {
-                sb.Append(segment.Text);
-            }
-        }
-
-        return sb.ToString();
-    }
-
-    /// <summary>
     /// 从方括号前一个字符向前回溯，识别同类字符组成的底字起点。
     /// 例如“ここは通[とお]”中的“通”，“進入禁止[しんにゅうきんし]”中的“進入禁止”。
     /// </summary>

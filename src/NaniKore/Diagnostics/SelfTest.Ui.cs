@@ -435,10 +435,17 @@ internal static partial class SelfTest
             service.RemoveFavoriteAsync("～ない").Wait();
             Check("favorites page refreshes on favorite removed event", page.FavoriteList.Items.Count == 2);
 
-            // Apply 不得触碰配置副本
+            // Apply 不得触碰配置副本：收藏页不拥有任何配置字段，快照必须保持默认值
+            var defaults = new AppConfig();
             var snapshot = new AppConfig();
             page.Apply(snapshot);
-            Check("favorites page apply leaves configuration untouched", new AppConfig() is not null);
+            Check(
+                "favorites page apply leaves configuration untouched",
+                snapshot.General.AutoExplain == defaults.General.AutoExplain &&
+                snapshot.General.TargetLanguage == defaults.General.TargetLanguage &&
+                snapshot.Pipeline.Mode == defaults.Pipeline.Mode &&
+                snapshot.Hotkeys.Capture == defaults.Hotkeys.Capture &&
+                snapshot.Profiles.Count == defaults.Profiles.Count);
         }
         finally
         {

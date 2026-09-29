@@ -302,7 +302,6 @@ internal sealed partial class ResultPanelWindow : Window
 
         // 1. 通用正则清理已知标签前缀
         var cleaned = Regex.Replace(annotated, @"^(\[|<)\s*annotated_source\s*(\]|>)\s*", "", RegexOptions.IgnoreCase);
-        cleaned = Regex.Replace(cleaned, @"^(\[|<)\s*transcription\s*(\]|>)\s*", "", RegexOptions.IgnoreCase);
         cleaned = Regex.Replace(cleaned, @"^【\s*(原文|注音)\s*】\s*", "");
         cleaned = Regex.Replace(cleaned, @"^(原文|注音)\s*[:：]\s*", "");
 
@@ -332,7 +331,6 @@ internal sealed partial class ResultPanelWindow : Window
 
         // 3. 清理尾部可能残留的闭合标签
         cleaned = Regex.Replace(cleaned, @"(\[|<)\s*/\s*annotated_source\s*(\]|>)\s*$", "", RegexOptions.IgnoreCase);
-        cleaned = Regex.Replace(cleaned, @"(\[|<)\s*/\s*transcription\s*(\]|>)\s*$", "", RegexOptions.IgnoreCase);
         return cleaned;
     }
 
@@ -719,27 +717,6 @@ internal sealed partial class ResultPanelWindow : Window
     private void OnAutoExplainToggleClicked(object sender, RoutedEventArgs e)
     {
         AutoExplainChanged?.Invoke(this, AutoExplainToggle.IsChecked == true);
-    }
-
-    private bool TryGetScreenPoint(UIElement element, System.Windows.Point relativePoint, out System.Windows.Point screenPoint)
-    {
-        screenPoint = default;
-        if (PresentationSource.FromVisual(element) == null)
-        {
-            screenPoint = relativePoint;
-            return true;
-        }
-
-        try
-        {
-            screenPoint = element.PointToScreen(relativePoint);
-            return true;
-        }
-        catch
-        {
-            screenPoint = relativePoint;
-            return false;
-        }
     }
 
     private static Rect GetSelectionOrMouseRect(WpfTextBox textBox, MouseButtonEventArgs e)

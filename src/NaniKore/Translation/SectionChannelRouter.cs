@@ -226,6 +226,9 @@ internal sealed class SectionChannelRouter
         "```"
     ];
 
+    // 源通道尾部滑动保护候选：分段哨兵与源闭合标签共用同一个后缀检测窗口
+    private static readonly string[] SourceTailSentinelTags = [PromptTemplates.TranslationSentinel, .. SourceCloseTags];
+
     private static readonly string[] ExplanationSectionPrefixes =
     [
         "\r\n### [词汇",
@@ -282,7 +285,33 @@ internal sealed class SectionChannelRouter
         "\n【语法",
     ];
 
-    private static string StripSourceTags(string text)
+    private static readonly string[] SourceResidualNoise =
+    [
+        "</annotated_source>",
+        "<annotated_source>",
+        "[/annotated_source]",
+        "[annotated_source>",
+        "【原文】",
+        "【注音】",
+        "```markdown",
+        "```text",
+        "```"
+    ];
+
+    private static readonly string[] TranslationResidualNoise =
+    [
+        "</translation>",
+        "<translation>",
+        "[/translation]",
+        "[translation>",
+        "【译文】",
+        "```markdown",
+        "```text",
+        "```"
+    ];
+
+    /// <summary>段级噪声标签清洗：原文/译文两通道共用唯一实现，差别仅在各自的标签与残留清单。</summary>
+    private static string StripSectionTags(string text, string[] leadingTags, string[] closeTags, string[] residualNoise)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -294,7 +323,7 @@ internal sealed class SectionChannelRouter
         do
         {
             changed = false;
-            foreach (var tag in SourceLeadingTags)
+            foreach (var tag in leadingTags)
             {
                 if (text.StartsWith(tag, StringComparison.OrdinalIgnoreCase))
                 {
@@ -304,7 +333,7 @@ internal sealed class SectionChannelRouter
                 }
             }
 
-            foreach (var tag in SourceCloseTags)
+            foreach (var tag in closeTags)
             {
                 if (text.EndsWith(tag, StringComparison.OrdinalIgnoreCase))
                 {
@@ -315,80 +344,32 @@ internal sealed class SectionChannelRouter
             }
         } while (changed);
 
-        // 彻底清除可能残留或嵌入的标签文本（支持尖括号、方括号与反引号）
-        text = text.Replace("</annotated_source>", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("<annotated_source>", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("[/annotated_source]", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("[annotated_source]", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("【原文】", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("【注音】", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("```markdown", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("```text", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("```", "", StringComparison.OrdinalIgnoreCase)
-                   .Trim();
-
-        return text;
-    }
-
-    private static string StripTranslationTags(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
+        foreach (var noise in residualNoise)
         {
-            return string.Empty;
+            text = text.Replace(noise, string.Empty, StringComparison.OrdinalIgnoreCase);
         }
 
-        text = text.Trim();
-        bool changed;
-        do
-        {
-            changed = false;
-            foreach (var tag in TranslationLeadingTags)
-            {
-                if (text.StartsWith(tag, StringComparison.OrdinalIgnoreCase))
-                {
-                    text = text[tag.Length..].TrimStart();
-                    changed = true;
-                    break;
-                }
-            }
-
-            foreach (var tag in TranslationCloseTags)
-            {
-                if (text.EndsWith(tag, StringComparison.OrdinalIgnoreCase))
-                {
-                    text = text[..^tag.Length].TrimEnd();
-                    changed = true;
-                    break;
-                }
-            }
-        } while (changed);
-
-        text = text.Replace("</translation>", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("<translation>", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("[/translation]", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("[translation]", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("【译文】", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("```markdown", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("```text", "", StringComparison.OrdinalIgnoreCase)
-                   .Replace("```", "", StringComparison.OrdinalIgnoreCase)
-                   .Trim();
-
-        return text;
+        return text.Trim();
     }
 
-    private string StripSourceLeadingTags(string text)
-    {
-        if (_channelsWithContent.Contains(DeltaChannel.SourceText))
-        {
-            return text;
-        }
+    private static string StripSourceTags(string text) =>
+        StripSectionTags(text, SourceLeadingTags, SourceCloseTags, SourceResidualNoise);
 
+    private static string StripTranslationTags(string text) =>
+        StripSectionTags(text, TranslationLeadingTags, TranslationCloseTags, TranslationResidualNoise);
+
+    /// <summary>
+    /// 循环剥离前导噪声标签，首部 CR/LF/空格顺带清掉；两通道共用同一核心循环。
+    /// 原文通道在已产出正文后不再回剥（内容是真实注音），译文通道沿用恒定行为。
+    /// </summary>
+    private static string TrimLeadingTagsCore(string text, string[] tags)
+    {
         bool changed;
         do
         {
             changed = false;
             text = text.TrimStart('\r', '\n', ' ');
-            foreach (var tag in SourceLeadingTags)
+            foreach (var tag in tags)
             {
                 if (text.StartsWith(tag, StringComparison.OrdinalIgnoreCase))
                 {
@@ -402,26 +383,13 @@ internal sealed class SectionChannelRouter
         return text;
     }
 
-    private static string StripTranslationLeadingTags(string text)
-    {
-        bool changed;
-        do
-        {
-            changed = false;
-            text = text.TrimStart('\r', '\n', ' ');
-            foreach (var tag in TranslationLeadingTags)
-            {
-                if (text.StartsWith(tag, StringComparison.OrdinalIgnoreCase))
-                {
-                    text = text[tag.Length..].TrimStart('\r', '\n', ' ');
-                    changed = true;
-                    break;
-                }
-            }
-        } while (changed);
+    private string StripSourceLeadingTags(string text) =>
+        _channelsWithContent.Contains(DeltaChannel.SourceText)
+            ? text
+            : TrimLeadingTagsCore(text, SourceLeadingTags);
 
-        return text;
-    }
+    private static string StripTranslationLeadingTags(string text) =>
+        TrimLeadingTagsCore(text, TranslationLeadingTags);
 
     private int GetSafeSourceFlushLength(string text)
     {
@@ -468,7 +436,7 @@ internal sealed class SectionChannelRouter
         }
 
         // 3. 检查尾部是否可能截断在哨兵标记或闭合标签前缀中（未完结前缀滑动保护）
-        var potentialSuffixIndex = FindPotentialSeparatorOrTagPrefixIndex(text);
+        var potentialSuffixIndex = FindPotentialSuffixIndex(text, SourceTailSentinelTags);
         if (potentialSuffixIndex >= 0)
         {
             var safeLength = potentialSuffixIndex;
@@ -610,7 +578,7 @@ internal sealed class SectionChannelRouter
         for (var i = scanStart; i < text.Length; i++)
         {
             var ch = text[i];
-            if (ch is not ('\r' or '\n' or '<' or '[' or '`'))
+            if (ch is not ('\r' or '\n' or '-' or '<' or '[' or '`'))
             {
                 continue;
             }
@@ -638,35 +606,5 @@ internal sealed class SectionChannelRouter
         }
 
         return false;
-    }
-
-    private static int FindPotentialSeparatorOrTagPrefixIndex(string text)
-    {
-        var scanStart = Math.Max(0, text.Length - MaxSeparatorLength);
-        for (var i = scanStart; i < text.Length; i++)
-        {
-            var ch = text[i];
-            if (ch is not ('\r' or '\n' or '-' or '<' or '[' or '`'))
-            {
-                continue;
-            }
-
-            var suffix = text[i..];
-
-            if (PromptTemplates.TranslationSentinel.StartsWith(suffix, StringComparison.OrdinalIgnoreCase))
-            {
-                return i;
-            }
-
-            foreach (var tag in SourceCloseTags)
-            {
-                if (tag.StartsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                {
-                    return i;
-                }
-            }
-        }
-
-        return -1;
     }
 }

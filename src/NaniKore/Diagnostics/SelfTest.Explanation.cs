@@ -227,11 +227,9 @@ internal static partial class SelfTest
 
         var plain = RubyTextParser.ToPlainText(brokenText);
         var reading = RubyTextParser.ToReadingText(brokenText);
-        var annotated = RubyTextParser.ToAnnotatedText(segments);
 
         Check("RubyParser.Noise.ToPlainTextClean", plain == "亡くなった");
         Check("RubyParser.Noise.ToReadingTextClean", reading == "なくなった");
-        Check("RubyParser.Noise.ToAnnotatedTextClean", annotated == "亡[な]くなった");
 
         // 测试内部问号 [な?] 与汉字多问号 亡??[な]
         var innerNoise = "亡??[な?]";
@@ -265,7 +263,7 @@ internal static partial class SelfTest
 
         // 阶段二追问只走 user 通道：会话历史里追加的是这条提示词，system 仍沿用阶段一锁定值。
         // 按真实运行时流程走一遍：锁定 system → 回放阶段一 Assistant 输出 → 追加追问消息。
-        var session = new TranslationSession("stage1 locked", "中文（简体）", "通れない", null);
+        var session = new TranslationSession("stage1 locked", "通れない", null);
         session.AppendRawAssistantOutput("通[とお]れない\n---TRANSLATION---\n这里过不去");
         session.FinalizeStage1Output();
         session.PrepareStage2Request(PromptTemplates.DefaultExplainUserPrompt);

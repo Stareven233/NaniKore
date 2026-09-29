@@ -578,7 +578,7 @@ internal static partial class SelfTest
                 .SequenceEqual(new[] { ("base", PromptSectionSource.Custom), ("english_plugin", PromptSectionSource.Custom) }));
 
         // 多轮会话：系统提示词原样沿用阶段一锁定值，既不分拆也不二次展开占位符。
-        var session = new TranslationSession("locked {{target_language}} prompt", "中文（简体）", "通れない", null);
+        var session = new TranslationSession("locked {{target_language}} prompt", "通れない", null);
         var stage2Request = new UnderstandRequest(UnderstandKind.Explain, "通れない", null, "中文（简体）", session);
         var lockedSections = PromptTemplates.DescribeSections(stage2Request, builtin);
         Check(
@@ -683,8 +683,7 @@ internal static partial class SelfTest
             segments1[1].IsRuby && segments1[1].Text == "通" && segments1[1].Ruby == "とお" &&
             !segments1[2].IsRuby && segments1[2].Text == "れないよ" &&
             RubyTextParser.ToPlainText(sample1) == "こ こ は  通れないよ" &&
-            RubyTextParser.ToReadingText(sample1) == "こ こ は  とおれないよ" &&
-            RubyTextParser.ToAnnotatedText(segments1) == sample1);
+            RubyTextParser.ToReadingText(sample1) == "こ こ は  とおれないよ");
 
         // 2. 复合汉字词组与连续注音
         var sample2 = "私[わたし]は 学生[がくせい]です。進入禁止[しんにゅうきんし]";
@@ -1006,22 +1005,21 @@ internal static partial class SelfTest
         }
 
         Check("text-only request does not require vision capability", textOnlyAccepted);
-        var noImageRequest = new UnderstandRequest(UnderstandKind.Translate, "text", (ReadOnlyMemory<byte>?)null, "zh-CN");
-        Check("nullable image payload remains absent", noImageRequest.ImagePng is null);
-        byte[]? noImage = null;
-        ReadOnlyMemory<byte>? conditionalPayload = noImage is null ? null : new ReadOnlyMemory<byte>(noImage);
-        var conditionalRequest = new UnderstandRequest(UnderstandKind.Translate, "text", conditionalPayload, "zh-CN");
-        var zeroLengthImageAcceptedAsText = true;
+        // null 与零长度图像负载都等同“未提供图像”，不得触发视觉能力校验
+        var nullImageRequest = new UnderstandRequest(UnderstandKind.Translate, "text", null, "zh-CN");
+        var zeroLengthImageRequest = new UnderstandRequest(UnderstandKind.Translate, "text", new ReadOnlyMemory<byte>([]), "zh-CN");
+        var nullOrZeroLengthImageAcceptedAsText = true;
         try
         {
-            ProviderFactory.ValidateCapabilities(conditionalRequest, capabilities);
+            ProviderFactory.ValidateCapabilities(nullImageRequest, capabilities);
+            ProviderFactory.ValidateCapabilities(zeroLengthImageRequest, capabilities);
         }
         catch (ProviderCapabilityException)
         {
-            zeroLengthImageAcceptedAsText = false;
+            nullOrZeroLengthImageAcceptedAsText = false;
         }
 
-        Check("zero-length image payload is treated as absent", zeroLengthImageAcceptedAsText);
+        Check("null and zero-length image payloads are treated as absent", nullOrZeroLengthImageAcceptedAsText);
         Check(
             "error mapper explains unauthorized key failures",
             ProviderErrorMapper.ToUserMessage(new ProviderHttpException(HttpStatusCode.Unauthorized, null)).Contains("API Key", StringComparison.Ordinal));
@@ -1143,7 +1141,7 @@ internal static partial class SelfTest
     {
         // 1. 测试 TranslationSession 初始化与阶段 1 原始增量无损累积
         var imageBytes = new byte[] { 137, 80, 78, 71 };
-        var session = new TranslationSession("system_test_prompt", "中文（简体）", "こ こ は 通れないよ", imageBytes);
+        var session = new TranslationSession("system_test_prompt", "こ こ は 通れないよ", imageBytes);
         Check(
             "translation session initializes user message with text and image payload",
             session.Messages.Count == 1 &&

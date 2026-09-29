@@ -29,9 +29,6 @@ internal sealed class TranslationSession
     /// <summary>多轮对话消息序列（User/Assistant 交替）。</summary>
     public List<ChatMessage> Messages { get; } = [];
 
-    /// <summary>本次会话的目标语言。</summary>
-    public string TargetLanguage { get; set; } = string.Empty;
-
     /// <summary>视觉一条龙模式下的原始图像二进制，若存在则在多轮中完整保留。</summary>
     public ReadOnlyMemory<byte>? ImagePng { get; set; }
 
@@ -44,16 +41,12 @@ internal sealed class TranslationSession
     /// <summary>标记第二阶段精讲是否正在流式生成中。</summary>
     public bool IsExplainInProgress { get; set; }
 
-    public TranslationSession() { }
-
     public TranslationSession(
         string systemPrompt,
-        string targetLanguage,
         string? sourceText,
         ReadOnlyMemory<byte>? imagePng)
     {
         SystemPrompt = systemPrompt;
-        TargetLanguage = targetLanguage;
         InitialSourceText = sourceText ?? string.Empty;
         ImagePng = imagePng;
 

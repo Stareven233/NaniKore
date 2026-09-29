@@ -62,6 +62,28 @@ internal abstract class TranslationProviderBase : ITranslationProvider
         };
     }
 
+    /// <summary>
+    /// 各厂商共用的增量分派：Translate 交给分栏路由器拆原文/译文通道，
+    /// Explain 无哨兵协议，直接落到 Explanation 通道。空增量原样短路。
+    /// </summary>
+    protected static IEnumerable<UnderstandDelta> Route(SectionChannelRouter? router, string text, UnderstandKind kind)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return [];
+        }
+
+        if (router is not null)
+        {
+            return router.Push(text);
+        }
+
+        var channel = kind == UnderstandKind.Explain
+            ? DeltaChannel.Explanation
+            : DeltaChannel.Translation;
+        return [new UnderstandDelta(channel, text)];
+    }
+
     protected static Uri BuildUri(string baseUrl, string relative) => new(
         baseUrl.TrimEnd('/') + "/" + relative.TrimStart('/'),
         UriKind.Absolute);

@@ -51,9 +51,6 @@ else {
     }
 }
 
-& (Join-Path $PSScriptRoot 'bootstrap-models.ps1')
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
 Write-Host "Restoring dependencies with NuGet cache: $env:NUGET_PACKAGES"
 & $dotnet restore $solution -p:NuGetAudit=false
 exit $LASTEXITCODE

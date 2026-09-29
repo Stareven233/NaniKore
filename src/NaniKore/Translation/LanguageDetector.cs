@@ -142,25 +142,9 @@ internal static class LanguageDetector
     }
 
     /// <summary>
-    /// 判断是否处于日译中或通用汉字偏好。
-    /// </summary>
-    public static bool IsJapaneseToChinesePreference(string? targetLanguage)
-    {
-        if (string.IsNullOrWhiteSpace(targetLanguage))
-        {
-            return true;
-        }
-
-        // 默认目标语言为中文时，默认输入假定为外语（日文为主）
-        return targetLanguage.Contains("中文", StringComparison.OrdinalIgnoreCase) ||
-               targetLanguage.Contains("zh", StringComparison.OrdinalIgnoreCase) ||
-               targetLanguage.Contains("Chinese", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
     /// 判断目标语言是否为英语。用于插件门控的目标语言互斥：目标即英语时不再注入英语 IPA 插件，
     /// 避免日译英等场景给源文本中本就属于目标语言的英文（含商标、缩写、专名）乱注音标。
-    /// 匹配展示名「英语」、英文名「English」与语言代码「en」三种形态，与 <see cref="IsJapaneseToChinesePreference"/> 同款宽松口径。
+    /// 匹配展示名「英语」、英文名「English」与语言代码「en」三种形态的宽松口径。
     /// 目标语言取自设置页固定选项的闭集，闭集内仅英语名含 "en" 子串，不至误伤其他语言。
     /// </summary>
     public static bool IsEnglishTarget(string? targetLanguage)
@@ -195,9 +179,8 @@ internal static class LanguageDetector
     /// <summary>
     /// 判断目标语言是否为中文。用于插件门控的目标语言互斥：目标即中文时不再注入中文拼音插件，
     /// 避免外译中场景给源文本中本就属于目标语言的汉字标注拼音。
-    /// 匹配展示名「中文」、英文名「Chinese」与语言代码「zh」三种形态，同款宽松口径；闭集内仅中文名含 "zh" 子串。
-    /// 与 <see cref="IsJapaneseToChinesePreference"/> 的差别仅在空值口径：后者是探测启发式的偏好（空值按日译中处理），
-    /// 本谓词是互斥剪枝判定（空值不剪枝），与 <see cref="IsEnglishTarget"/>/<see cref="IsJapaneseTarget"/> 一致。
+    /// 匹配展示名「中文」、英文名「Chinese」与语言代码「zh」三种形态的宽松口径；
+    /// 与两个同族谓词 <see cref="IsEnglishTarget"/>/<see cref="IsJapaneseTarget"/> 一致，空值不剪枝。
     /// </summary>
     public static bool IsChineseTarget(string? targetLanguage)
     {

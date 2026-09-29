@@ -112,6 +112,14 @@ public static class ExplanationParser
         @"^#{2,4}\s*\[?(语法|句型|文法|Grammar)\]?",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    private static readonly Regex ListPrefixRegex = new(
+        @"^[-*•]\s+|\d+\.\s+",
+        RegexOptions.Compiled);
+
+    /// <summary>剥离列表条目行首的 - * • 或有序序号前缀。</summary>
+    private static string StripListPrefix(string line) =>
+        ListPrefixRegex.Replace(line, string.Empty).Trim();
+
     // 「精讲」（旧版「翻译精讲」）是内置精讲提示词采用的第三个小节名，与「语境与地道表达」同属语境分析段，一并纳入识别
     private static readonly Regex ContextHeaderRegex = new(
         @"^#{2,4}\s*\[?(语境|地道表达|语境与地道表达|翻译精讲|精讲|Context)\]?",
@@ -327,7 +335,7 @@ public static class ExplanationParser
     private static bool TryParseVocabularyLine(string line, out ExplanationVocabularyCard card)
     {
         card = null!;
-        var stripped = Regex.Replace(line, @"^[-*•]\s+|\d+\.\s+", string.Empty).Trim();
+        var stripped = StripListPrefix(line);
         if (string.IsNullOrEmpty(stripped) || !stripped.Contains('|'))
         {
             return false;
@@ -432,7 +440,7 @@ public static class ExplanationParser
     private static bool TryParseGrammarLine(string line, out ExplanationGrammarCard card)
     {
         card = null!;
-        var stripped = Regex.Replace(line, @"^[-*•]\s+|\d+\.\s+", string.Empty).Trim();
+        var stripped = StripListPrefix(line);
         if (string.IsNullOrEmpty(stripped) || !stripped.Contains('|'))
         {
             return false;
@@ -460,6 +468,11 @@ public static class ExplanationParser
         return true;
     }
 
+    // 单元格外层 Markdown 包裹：粗体、斜体与行内代码三选一，整体剥离
+    private static readonly Regex MarkdownWrapRegex = new(
+        @"^\*\*([^*]+)\*\*$|^\*([^*]+)\*$|^`([^`]+)`$",
+        RegexOptions.Compiled);
+
     private static string CleanMarkdownFormatting(string input)
     {
         if (string.IsNullOrEmpty(input))
@@ -467,12 +480,8 @@ public static class ExplanationParser
             return string.Empty;
         }
 
-        var text = input.Trim();
         // 去除外层的 **粗体** 或 *斜体* 或 `代码`
-        text = Regex.Replace(text, @"^\*\*([^*]+)\*\*$", "$1");
-        text = Regex.Replace(text, @"^\*([^*]+)\*$", "$1");
-        text = Regex.Replace(text, @"^`([^`]+)`$", "$1");
-        return text.Trim();
+        return MarkdownWrapRegex.Replace(input.Trim(), "$1$2$3").Trim();
     }
 }
 

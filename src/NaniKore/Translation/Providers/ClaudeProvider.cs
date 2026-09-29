@@ -97,7 +97,7 @@ internal sealed class ClaudeProvider : TranslationProviderBase
 
         var blocks = new List<object>
         {
-            new { type = "image", source = new { type = "base64", media_type = "image/png", data = Convert.ToBase64String(image.Span) } },
+            new { type = "image", source = new { type = "base64", media_type = "image/png", data = Base64(image) } },
         };
         if (!string.IsNullOrWhiteSpace(sourceText))
         {
@@ -133,24 +133,6 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         {
             return string.Empty;
         }
-    }
-
-    private static IEnumerable<UnderstandDelta> Route(SectionChannelRouter? router, string text, UnderstandKind kind)
-    {
-        if (string.IsNullOrEmpty(text))
-        {
-            return [];
-        }
-
-        if (router is not null)
-        {
-            return router.Push(text);
-        }
-
-        var channel = kind == UnderstandKind.Explain
-            ? DeltaChannel.Explanation
-            : DeltaChannel.Translation;
-        return [new UnderstandDelta(channel, text)];
     }
 
     internal static void ExtractClaudeTokens(SseEvent frame, ref int inputTokens, ref int outputTokens)

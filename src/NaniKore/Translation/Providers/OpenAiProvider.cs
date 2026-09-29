@@ -230,24 +230,6 @@ internal sealed class OpenAiProvider : TranslationProviderBase
         }
     }
 
-    private static IEnumerable<UnderstandDelta> Route(SectionChannelRouter? router, string text, UnderstandKind kind)
-    {
-        if (string.IsNullOrEmpty(text))
-        {
-            return [];
-        }
-
-        if (router is not null)
-        {
-            return router.Push(text);
-        }
-
-        var channel = kind == UnderstandKind.Explain
-            ? DeltaChannel.Explanation
-            : DeltaChannel.Translation;
-        return [new UnderstandDelta(channel, text)];
-    }
-
     internal static TokenUsage? ExtractCompletionsUsage(string data)
     {
         try

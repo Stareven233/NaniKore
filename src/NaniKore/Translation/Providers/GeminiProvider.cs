@@ -106,24 +106,6 @@ internal sealed class GeminiProvider : TranslationProviderBase
         }
     }
 
-    private static IEnumerable<UnderstandDelta> Route(SectionChannelRouter? router, string text, UnderstandKind kind)
-    {
-        if (string.IsNullOrEmpty(text))
-        {
-            return [];
-        }
-
-        if (router is not null)
-        {
-            return router.Push(text);
-        }
-
-        var channel = kind == UnderstandKind.Explain
-            ? DeltaChannel.Explanation
-            : DeltaChannel.Translation;
-        return [new UnderstandDelta(channel, text)];
-    }
-
     internal static void ExtractGeminiTokens(string data, ref int inputTokens, ref int outputTokens)
     {
         try

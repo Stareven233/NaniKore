@@ -172,7 +172,7 @@ internal sealed class NaniKoreApp : Application
             var config = _configStore.Current;
             var request = new UnderstandRequest(UnderstandKind.Translate, source, imagePng, config.General.TargetLanguage);
             var sysPrompt = PromptTemplates.GetSystemPrompt(request, config.Prompts);
-            var session = new TranslationSession(sysPrompt, config.General.TargetLanguage, source, imagePng);
+            var session = new TranslationSession(sysPrompt, source, imagePng);
             request = request with { Session = session };
             _currentSession = session;
 
@@ -219,31 +219,13 @@ internal sealed class NaniKoreApp : Application
                             panel.ExpandExplanation();
                         }
 
-                        var actualTtft = ttftMs ?? totalDurationMs;
-                        TokenUsage finalUsage;
-                        if (reportedUsage.HasValue)
-                        {
-                            finalUsage = reportedUsage.Value;
-                        }
-                        else
-                        {
-                            // 降级兜底估算：输入包含提示词与原句/图片，输出包含注音与译文
-                            var estimatedInput = TokenEstimator.Estimate(sysPrompt + "\n" + source, imagePng is { Length: > 0 });
-                            var estimatedOutput = TokenEstimator.Estimate(panel.SourceText + "\n" + panel.TranslationText);
-                            finalUsage = new TokenUsage(estimatedInput, Math.Max(1, estimatedOutput), IsEstimated: true);
-                        }
-
-                        var generationTimeMs = Math.Max(1, totalDurationMs - actualTtft);
-                        var speed = (finalUsage.OutputTokens * 1000.0) / generationTimeMs;
-                        var metrics = new TranslationMetrics(
-                            InputTokens: finalUsage.InputTokens,
-                            OutputTokens: finalUsage.OutputTokens,
-                            TimeToFirstTokenMs: actualTtft,
-                            TotalDurationMs: totalDurationMs,
-                            TokensPerSecond: speed,
-                            IsEstimated: finalUsage.IsEstimated);
-
-                        panel.SetMetrics(metrics);
+                        // 降级兜底估算：输入包含提示词与原句/图片，输出包含注音与译文
+                        panel.SetMetrics(BuildMetrics(
+                            reportedUsage,
+                            ttftMs,
+                            totalDurationMs,
+                            () => TokenEstimator.Estimate(sysPrompt + "\n" + source, imagePng is { Length: > 0 }),
+                            () => TokenEstimator.Estimate(panel.SourceText + "\n" + panel.TranslationText)));
                     }
                 });
             }
@@ -358,32 +340,14 @@ internal sealed class NaniKoreApp : Application
                         session.HasExplained = true;
                         session.Messages.Add(new ChatMessage(ChatRole.Assistant, fullExplanation.ToString()));
 
-                        var actualTtft = ttftMs ?? totalDurationMs;
-                        TokenUsage finalUsage;
-                        if (reportedUsage.HasValue)
-                        {
-                            finalUsage = reportedUsage.Value;
-                        }
-                        else
-                        {
-                            var estimatedInput = TokenEstimator.Estimate(
+                        panel.SetMetrics(BuildMetrics(
+                            reportedUsage,
+                            ttftMs,
+                            totalDurationMs,
+                            () => TokenEstimator.Estimate(
                                 session.SystemPrompt + "\n" + session.GetStage1Output() + "\n" + explainPrompt,
-                                session.ImagePng is { Length: > 0 });
-                            var estimatedOutput = TokenEstimator.Estimate(fullExplanation.ToString());
-                            finalUsage = new TokenUsage(estimatedInput, Math.Max(1, estimatedOutput), IsEstimated: true);
-                        }
-
-                        var generationTimeMs = Math.Max(1, totalDurationMs - actualTtft);
-                        var speed = (finalUsage.OutputTokens * 1000.0) / generationTimeMs;
-                        var metrics = new TranslationMetrics(
-                            InputTokens: finalUsage.InputTokens,
-                            OutputTokens: finalUsage.OutputTokens,
-                            TimeToFirstTokenMs: actualTtft,
-                            TotalDurationMs: totalDurationMs,
-                            TokensPerSecond: speed,
-                            IsEstimated: finalUsage.IsEstimated);
-
-                        panel.SetMetrics(metrics);
+                                session.ImagePng is { Length: > 0 }),
+                            () => TokenEstimator.Estimate(fullExplanation.ToString())));
                     }
                 });
             }
@@ -412,6 +376,29 @@ internal sealed class NaniKoreApp : Application
 
             cancellation.Dispose();
         }
+    }
+
+    /// <summary>
+    /// 汇总一轮调用的首字延迟、总耗时与 Token 产出：服务端未上报 usage 时按估算输入/输出兜底，
+    /// 估算只在确实需要时才计算。翻译与精讲两条流共用，杜绝两份各自漂移的指标公式。
+    /// </summary>
+    private static TranslationMetrics BuildMetrics(
+        TokenUsage? reportedUsage,
+        long? ttftMs,
+        long totalDurationMs,
+        Func<int> estimateInput,
+        Func<int> estimateOutput)
+    {
+        var timeToFirstTokenMs = ttftMs ?? totalDurationMs;
+        var usage = reportedUsage ?? new TokenUsage(estimateInput(), Math.Max(1, estimateOutput()), IsEstimated: true);
+        var generationTimeMs = Math.Max(1, totalDurationMs - timeToFirstTokenMs);
+        return new TranslationMetrics(
+            InputTokens: usage.InputTokens,
+            OutputTokens: usage.OutputTokens,
+            TimeToFirstTokenMs: timeToFirstTokenMs,
+            TotalDurationMs: totalDurationMs,
+            TokensPerSecond: usage.OutputTokens * 1000.0 / generationTimeMs,
+            IsEstimated: usage.IsEstimated);
     }
 
     private ResultPanelWindow EnsureResultPanel(System.Drawing.Rectangle? selectionOnDesktop = null)
