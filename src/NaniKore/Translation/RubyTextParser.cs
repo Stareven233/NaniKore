@@ -286,5 +286,100 @@ internal static class RubyTextParser
 
         return false;
     }
+
+    /// <summary>
+    /// 判定括号内容是否为“纯注音形态”：全为假名、长音符号、中黑与空白。
+    /// 英文 IPA 含 ˈ、ː 等非假名字符，代码下标为数字，[语法/句型] 式标签含汉字与斜杠，均被此判据排除——
+    /// 这是词条/句型注音剥离与收藏归一化共用的误伤防护判据。
+    /// </summary>
+    public static bool IsRubyAnnotationContent(string content) =>
+        content.Length > 0 && content.All(c => IsKana(c) || c is 'ー' or '・' or ' ' or '\u3000');
+
+    /// <summary>
+    /// 剥离字符串中内嵌的注音标注：<c>漢字[かな]</c> 与 <c>漢字 (かな)</c>（半角/全角括号，括号前允许一个空格）。
+    /// <paramref name="firstReading"/> 输出首段被剥离的注音文本（无注音时为空串），供读音列去重兜底。
+    /// 误伤防护：括号前必须紧邻汉字或假名底字——拉丁字母/数字底字视为代码或 IPA 语境
+    /// （如 <c>arr[0]</c>、<c>ubiquitous[juːˈbɪkwɪtəs]</c>）原样保留；行首或空白后的孤立方括号（如 <c>[标签]</c>）同样保留。
+    /// </summary>
+    public static string StripRubyAnnotations(string? text, out string firstReading)
+    {
+        firstReading = string.Empty;
+        if (string.IsNullOrEmpty(text))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(text.Length);
+        var index = 0;
+        while (index < text.Length)
+        {
+            var ch = text[index];
+
+            // 圆括号注音（漢字 (かな)）：括号前允许一个空格，连空格一并剥离
+            if (ch is ' ' or '\u3000' && index + 1 < text.Length && text[index + 1] is '(' or '（')
+            {
+                if (TryConsumeRubyAnnotation(text, ref index, isSpaceFirst: true, out var spaced))
+                {
+                    firstReading = spaced.Length > 0 ? spaced : firstReading;
+                    continue;
+                }
+            }
+
+            if (ch is not ('[' or '(' or '（'))
+            {
+                builder.Append(ch);
+                index++;
+                continue;
+            }
+
+            // 方括号/圆括号注音：底字必须是已累积文本末尾的汉字或假名
+            var hasRubyBase = builder.Length > 0 &&
+                (IsCjkKanji(builder[^1]) || IsKana(builder[^1]));
+            if (hasRubyBase && TryConsumeRubyAnnotation(text, ref index, isSpaceFirst: false, out var reading))
+            {
+                firstReading = reading.Length > 0 ? reading : firstReading;
+                continue;
+            }
+
+            builder.Append(ch);
+            index++;
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>尝试从当前位置消费一个完整注音括号组；命中则推进下标并输出括号内读音。</summary>
+    private static bool TryConsumeRubyAnnotation(string text, ref int index, bool isSpaceFirst, out string reading)
+    {
+        reading = string.Empty;
+        var openIndex = isSpaceFirst ? index + 1 : index;
+        var closeChar = text[openIndex] switch
+        {
+            '[' => ']',
+            '(' => ')',
+            '（' => '）',
+            _ => '\0',
+        };
+        if (closeChar == '\0')
+        {
+            return false;
+        }
+
+        var closeIndex = text.IndexOf(closeChar, openIndex + 1);
+        if (closeIndex < 0)
+        {
+            return false;
+        }
+
+        var content = text[(openIndex + 1)..closeIndex];
+        if (!IsRubyAnnotationContent(content))
+        {
+            return false;
+        }
+
+        reading = content.Trim();
+        index = closeIndex + 1;
+        return true;
+    }
 }
 

@@ -76,20 +76,11 @@
                                                          Foreground="{DynamicResource Brush.Text.Primary}"
                                                          VerticalAlignment="Center"
                                                          Margin="0,0,8,0" />
-                                                <!-- 词性徽章 Tag：紧随词汇标题右侧，不单独占行 -->
-                                                <Border Background="{DynamicResource Brush.Accent.Subtle}"
-                                                        BorderBrush="{DynamicResource Brush.Control.Border}"
-                                                        BorderThickness="1"
-                                                        CornerRadius="4"
-                                                        Padding="6,1"
-                                                        VerticalAlignment="Center"
-                                                        Margin="0,0,0,0"
+                                                <!-- 词性徽章 Tag：紧随词汇标题右侧，不单独占行；样式与收藏页类别徽章共用 Badge.Tag。 -->
+                                                <Border Style="{DynamicResource Badge.Tag}"
                                                         Visibility="{Binding RoleVisibility}">
                                                     <TextBox Style="{StaticResource TextBox.SelectableCardText}"
-                                                             Text="{Binding RoleBadgeText, Mode=OneWay}"
-                                                             FontSize="11"
-                                                             FontWeight="Medium"
-                                                             Foreground="{DynamicResource Brush.Text.Primary}" />
+                                                             Text="{Binding RoleBadgeText, Mode=OneWay}" />
                                                 </Border>
                                             </WrapPanel>
                                             <Button Style="{DynamicResource Button.Icon}"

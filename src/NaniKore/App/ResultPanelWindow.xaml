@@ -19,135 +19,147 @@
         FontSize="14"
         Foreground="{DynamicResource Brush.Text.Primary}"
         Background="{DynamicResource Brush.Window.Background}">
-    <Grid Margin="16,14,16,14">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" MinHeight="80" />
-            <RowDefinition Height="8" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" MinHeight="80" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+    <ScrollViewer x:Name="ContentScrollViewer"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled"
+                  Focusable="False">
+        <!--
+            整体内容区滚动（issue 015 / 1.2）：8 行 Grid 在原布局下总高于默认 520 客户区，
+            Grid 不滚动直接溢出裁切，精讲底部与状态栏看不见也滚不到。整页滚动后任何内容都可到达。
+            MinHeight 绑回视口高度：内容不高时星号行仍然撑满窗口，内容超高时才出现纵向滚动条；
+            精讲区另有 MaxHeight（SizeChanged 维持 ActualHeight * 0.45）形成外层整页滚 + 内层局部滚的两级滚动。
+        -->
+        <Grid Margin="16,14,16,14"
+              MinHeight="{Binding ViewportHeight, ElementName=ContentScrollViewer, Mode=OneWay}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" MinHeight="80" />
+                <RowDefinition Height="8" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" MinHeight="80" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-        <DockPanel Grid.Row="0" Margin="0,0,0,6">
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <Button MinWidth="72" Content="设置" Click="OnSettingsClick" />
-                <Button x:Name="NormalizeSourceButton" MinWidth="72" Margin="8,0,0,0"
-                        Content="规范化"
-                        ToolTip="整理换行和空格，并补齐中日韩文字与拉丁字母、数字之间的空格"
-                        Click="OnNormalizeSourceClick" />
-                <Button x:Name="TranslateButton" Style="{DynamicResource Button.Accent}" MinWidth="72" Margin="8,0,0,0"
-                        Content="翻译" Click="OnTranslateClick" />
-            </StackPanel>
-            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-                <TextBlock Text="原文" FontWeight="SemiBold" VerticalAlignment="Center" />
-                <TextBlock x:Name="SourceCaptionTextBlock" Style="{DynamicResource Text.Caption}" Margin="8,0,0,0" VerticalAlignment="Center"
-                           Text="双击可编辑" />
-            </StackPanel>
-        </DockPanel>
+            <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button MinWidth="72" Content="设置" Click="OnSettingsClick" />
+                    <Button x:Name="NormalizeSourceButton" MinWidth="72" Margin="8,0,0,0"
+                            Content="规范化"
+                            ToolTip="整理换行和空格，并补齐中日韩文字与拉丁字母、数字之间的空格"
+                            Click="OnNormalizeSourceClick" />
+                    <Button x:Name="TranslateButton" Style="{DynamicResource Button.Accent}" MinWidth="72" Margin="8,0,0,0"
+                            Content="翻译" Click="OnTranslateClick" />
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                    <TextBlock Text="原文" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <TextBlock x:Name="SourceCaptionTextBlock" Style="{DynamicResource Text.Caption}" Margin="8,0,0,0" VerticalAlignment="Center"
+                               Text="双击可编辑" />
+                </StackPanel>
+            </DockPanel>
 
-        <Grid Grid.Row="1">
-            <Border x:Name="SourceViewerBorder"
-                    Background="{DynamicResource Brush.Control.Background}"
-                    BorderBrush="{DynamicResource Brush.Control.Border}"
-                    BorderThickness="1"
-                    CornerRadius="{StaticResource Radius.Control}"
-                    SnapsToDevicePixels="True">
-                <FlowDocumentScrollViewer x:Name="SourceViewer"
-                                          IsToolBarVisible="False"
-                                          VerticalScrollBarVisibility="Auto"
-                                          HorizontalScrollBarVisibility="Disabled"
-                                          Background="Transparent"
-                                          BorderThickness="0"
-                                          Padding="10,6"
-                                          PreviewMouseDoubleClick="OnSourceViewerPreviewMouseDoubleClick"
-                                          PreviewMouseUp="OnSourceViewerMouseUp">
-                    <FlowDocumentScrollViewer.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="复制纯日文" Click="OnCopyPlainSourceClick" />
-                            <MenuItem Header="复制带注音文本 (汉字[假名])" Click="OnCopyAnnotatedSourceClick" />
-                            <MenuItem Header="复制纯假名读音" Click="OnCopyReadingSourceClick" />
-                            <Separator />
-                            <MenuItem Command="ApplicationCommands.SelectAll" Header="全选" />
-                        </ContextMenu>
-                    </FlowDocumentScrollViewer.ContextMenu>
-                </FlowDocumentScrollViewer>
-            </Border>
+            <Grid Grid.Row="1">
+                <Border x:Name="SourceViewerBorder"
+                        Background="{DynamicResource Brush.Control.Background}"
+                        BorderBrush="{DynamicResource Brush.Control.Border}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource Radius.Control}"
+                        SnapsToDevicePixels="True">
+                    <FlowDocumentScrollViewer x:Name="SourceViewer"
+                                              IsToolBarVisible="False"
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled"
+                                              Background="Transparent"
+                                              BorderThickness="0"
+                                              Padding="10,6"
+                                              PreviewMouseDoubleClick="OnSourceViewerPreviewMouseDoubleClick"
+                                              PreviewMouseUp="OnSourceViewerMouseUp">
+                        <FlowDocumentScrollViewer.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="复制纯日文" Click="OnCopyPlainSourceClick" />
+                                <MenuItem Header="复制带注音文本 (汉字[假名])" Click="OnCopyAnnotatedSourceClick" />
+                                <MenuItem Header="复制纯假名读音" Click="OnCopyReadingSourceClick" />
+                                <Separator />
+                                <MenuItem Command="ApplicationCommands.SelectAll" Header="全选" />
+                            </ContextMenu>
+                        </FlowDocumentScrollViewer.ContextMenu>
+                    </FlowDocumentScrollViewer>
+                </Border>
 
-            <TextBox x:Name="SourceTextBox"
+                <TextBox x:Name="SourceTextBox"
+                         Style="{DynamicResource TextBox.Multiline}"
+                         Visibility="Collapsed"
+                         PreviewKeyDown="OnSourceTextBoxPreviewKeyDown"
+                         LostFocus="OnSourceTextBoxLostFocus" />
+            </Grid>
+
+            <GridSplitter Grid.Row="2" Height="8" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                          ResizeBehavior="PreviousAndNext" />
+
+            <Grid Grid.Row="3" Margin="0,0,0,6">
+                <TextBlock Text="译文" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <Button x:Name="ClearTranslationButton"
+                        Style="{DynamicResource Button.Icon}"
+                        HorizontalAlignment="Right"
+                        ToolTip="清除译文"
+                        AutomationProperties.Name="清除译文"
+                        Click="OnClearTranslationClick">
+                    <TextBlock Text="&#xE894;" FontFamily="Segoe MDL2 Assets" />
+                </Button>
+            </Grid>
+            <TextBox x:Name="TranslationTextBox" Grid.Row="4"
                      Style="{DynamicResource TextBox.Multiline}"
-                     Visibility="Collapsed"
-                     PreviewKeyDown="OnSourceTextBoxPreviewKeyDown"
-                     LostFocus="OnSourceTextBoxLostFocus" />
-        </Grid>
+                     IsReadOnly="True" />
 
-        <GridSplitter Grid.Row="2" Height="8" HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                      ResizeBehavior="PreviousAndNext" />
+            <Grid Grid.Row="5" Margin="0,10,0,0">
+                <Expander x:Name="ExplanationExpander"
+                          Header="📖 精讲与语法解析 (点击展开)"
+                          IsEnabled="False"
+                          Expanded="OnExplanationExpanderExpanded">
+                    <controls:ExplanationCardView x:Name="ExplanationView"
+                                                 MinHeight="80" MaxHeight="200" Margin="0,6,0,0" />
+                </Expander>
 
-        <Grid Grid.Row="3" Margin="0,0,0,6">
-            <TextBlock Text="译文" FontWeight="SemiBold" VerticalAlignment="Center" />
-            <Button x:Name="ClearTranslationButton"
-                    Style="{DynamicResource Button.Icon}"
-                    HorizontalAlignment="Right"
-                    ToolTip="清除译文"
-                    AutomationProperties.Name="清除译文"
-                    Click="OnClearTranslationClick">
-                <TextBlock Text="&#xE894;" FontFamily="Segoe MDL2 Assets" />
-            </Button>
-        </Grid>
-        <TextBox x:Name="TranslationTextBox" Grid.Row="4"
-                 Style="{DynamicResource TextBox.Multiline}"
-                 IsReadOnly="True" />
+                <!-- 仅在精讲折叠条的标题行右侧放置自动精讲开关，展开后下方的卡片区依然占满全宽 -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,4,0">
+                    <TextBlock Text="自动" VerticalAlignment="Center" Margin="0,0,6,0" Style="{DynamicResource Text.Caption}" />
+                    <ToggleButton x:Name="AutoExplainToggle"
+                                  Style="{DynamicResource ToggleSwitch}"
+                                  ToolTip="阶段 1 翻译完成后自动触发深度语法精讲并展开"
+                                  Click="OnAutoExplainToggleClicked" />
+                </StackPanel>
+            </Grid>
 
-        <Grid Grid.Row="5" Margin="0,10,0,0">
-            <Expander x:Name="ExplanationExpander"
-                      Header="📖 精讲与语法解析 (点击展开)"
-                      IsEnabled="False"
-                      Expanded="OnExplanationExpanderExpanded">
-                <controls:ExplanationCardView x:Name="ExplanationView"
-                                             MinHeight="80" MaxHeight="200" Margin="0,6,0,0" />
+            <StackPanel Grid.Row="6" Margin="0,10,0,0">
+                <controls:InfoBar x:Name="StatusBar" />
+                <Border x:Name="MetricsBar" Margin="0,6,0,0"
+                        Background="{DynamicResource Brush.Control.Background}"
+                        BorderBrush="{DynamicResource Brush.Control.Border}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource Radius.Control}"
+                        Padding="10,5"
+                        Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="&#xE9D2;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                                   VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock x:Name="MetricsTextBlock"
+                                   Style="{DynamicResource Text.Caption}"
+                                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                                   VerticalAlignment="Center"
+                                   TextWrapping="NoWrap" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <Expander x:Name="ErrorDetailsExpander" Grid.Row="7" Header="查看完整错误"
+                      Margin="0,8,0,0" Visibility="Collapsed">
+                <TextBox x:Name="ErrorDetailsTextBox" Style="{DynamicResource TextBox.Multiline}"
+                         IsReadOnly="True" MaxHeight="160" />
             </Expander>
 
-            <!-- 仅在精讲折叠条的标题行右侧放置自动精讲开关，展开后下方的卡片区依然占满全宽 -->
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,2,4,0">
-                <TextBlock Text="自动" VerticalAlignment="Center" Margin="0,0,6,0" Style="{DynamicResource Text.Caption}" />
-                <ToggleButton x:Name="AutoExplainToggle"
-                              Style="{DynamicResource ToggleSwitch}"
-                              ToolTip="阶段 1 翻译完成后自动触发深度语法精讲并展开"
-                              Click="OnAutoExplainToggleClicked" />
-            </StackPanel>
+            <controls:SelectionBubblePopup x:Name="SelectionBubble" />
         </Grid>
-
-        <StackPanel Grid.Row="6" Margin="0,10,0,0">
-            <controls:InfoBar x:Name="StatusBar" />
-            <Border x:Name="MetricsBar" Margin="0,6,0,0"
-                    Background="{DynamicResource Brush.Control.Background}"
-                    BorderBrush="{DynamicResource Brush.Control.Border}"
-                    BorderThickness="1"
-                    CornerRadius="{StaticResource Radius.Control}"
-                    Padding="10,5"
-                    Visibility="Collapsed">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="&#xE9D2;" FontFamily="Segoe MDL2 Assets" FontSize="11"
-                               Foreground="{DynamicResource Brush.Text.Secondary}"
-                               VerticalAlignment="Center" Margin="0,0,6,0" />
-                    <TextBlock x:Name="MetricsTextBlock"
-                               Style="{DynamicResource Text.Caption}"
-                               Foreground="{DynamicResource Brush.Text.Secondary}"
-                               VerticalAlignment="Center"
-                               TextWrapping="NoWrap" />
-                </StackPanel>
-            </Border>
-        </StackPanel>
-
-        <Expander x:Name="ErrorDetailsExpander" Grid.Row="7" Header="查看完整错误"
-                  Margin="0,8,0,0" Visibility="Collapsed">
-            <TextBox x:Name="ErrorDetailsTextBox" Style="{DynamicResource TextBox.Multiline}"
-                     IsReadOnly="True" MaxHeight="160" />
-        </Expander>
-
-        <controls:SelectionBubblePopup x:Name="SelectionBubble" />
-    </Grid>
+    </ScrollViewer>
 </Window>

@@ -6,7 +6,7 @@
              mc:Ignorable="d">
     <Popup x:Name="BubblePopup"
            AllowsTransparency="True"
-           StaysOpen="False"
+           StaysOpen="True"
            Placement="Bottom"
            PopupAnimation="Fade"
            Closed="OnPopupClosed">
@@ -40,6 +40,15 @@
                     <ComboBoxItem Content="备注" />
                 </ComboBox>
 
+                <!-- 语言下拉（issue 015 / 2.3）：默认取面板本轮探测的源语言，允许用户临场改选 -->
+                <ComboBox x:Name="LanguageComboBox"
+                          Width="104"
+                          Height="26"
+                          FontSize="12"
+                          VerticalAlignment="Center"
+                          Margin="0,0,4,0"
+                          SelectedIndex="0" />
+
                 <!-- 选中文本编辑微调框 -->
                 <TextBox x:Name="ContentTextBox"
                          Height="26"
@@ -52,14 +61,15 @@
                          Margin="0,0,4,0"
                          TextChanged="OnContentTextChanged" />
 
-                <!-- 收藏按钮（支持根据字符串即时反馈是否已收藏） -->
+                <!-- 收藏按钮：触发前移到 PreviewMouseLeftButtonDown（issue 015 / 1.1-B），
+                     避免 Popup 外部关闭竞态抢在 Button.Click 之前把气泡拆掉。 -->
                 <Button x:Name="FavoriteButton"
                         Height="26"
                         MinWidth="64"
                         Padding="8,0"
                         VerticalAlignment="Center"
                         Style="{DynamicResource Button.Secondary}"
-                        Click="OnFavoriteClick">
+                        PreviewMouseLeftButtonDown="OnFavoriteClick">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <TextBlock x:Name="FavoriteIconTextBlock"
                                    Text="&#xE734;"

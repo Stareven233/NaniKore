@@ -2,6 +2,7 @@ namespace NaniKore.Diagnostics;
 
 using System;
 using System.IO;
+using Microsoft.Data.Sqlite;
 using NaniKore.Favorites;
 
 internal static partial class SelfTest
@@ -19,6 +20,11 @@ internal static partial class SelfTest
         TestSqliteUpsertSemantics();
         TestSqliteRemove();
         TestSqliteRejectsBlankContent();
+        TestSqliteNormalizedMatchingAndStorage();
+        TestInMemoryNormalizedMatching();
+        TestSqliteLegacyLanguageColumnMigration();
+        TestSqliteUpdateFavorite();
+        TestInMemoryUpdateFavorite();
     }
 
     /// <summary>创建确定性的临时库路径；调用方负责用完即删。</summary>
@@ -230,6 +236,184 @@ internal static partial class SelfTest
 
             Check("SqliteFavorites.Blank.Rejected", !added);
             Check("SqliteFavorites.Blank.NoFile", !File.Exists(path));
+        }
+        finally
+        {
+            DeleteDatabaseQuietly(path);
+        }
+    }
+
+    private static void TestSqliteNormalizedMatchingAndStorage()
+    {
+        var path = NewTempDatabasePath();
+        try
+        {
+            var service = new SqliteFavoriteService(path);
+
+            // 入库归一化：带注音形态的写入落库即收敛为规范形态。
+            service.AddFavoriteAsync(MakeFavorite("気付く[きづく]", "单词", "读音: きづく")).Wait();
+            Check("SqliteFavorites.Normalize.StoredStripped", service.GetAllFavorites()[0].Content == "気付く");
+
+            // 三种括号形态互认：词条本体、方括号注音、圆括号读音。
+            Check("SqliteFavorites.Normalize.SquareBracketHit", service.IsFavorited("気付く[きづく]"));
+            Check("SqliteFavorites.Normalize.RoundBracketHit", service.IsFavorited("気付く (きづく)"));
+            Check("SqliteFavorites.Normalize.PlainHit", service.IsFavorited("気付く"));
+
+            // 归一化 upsert：旧脏行与规范形态重复收藏时更新同一行，不产生第二行。
+            service.AddFavoriteAsync(MakeFavorite("気付く (きづく)", "单词", "读音: きづく\n释义: 注意到")).Wait();
+            Check("SqliteFavorites.Normalize.UpsertSingleRow", service.GetAllFavorites().Count == 1);
+            Check("SqliteFavorites.Normalize.UpsertNoteUpdated", service.GetAllFavorites()[0].Note!.Contains("注意到"));
+
+            // 移除按归一化匹配：用另一形态入参也能点掉规范行。
+            Check("SqliteFavorites.Normalize.RemoveByOtherForm", service.RemoveFavoriteAsync("気付く[きづく]").Result);
+            Check("SqliteFavorites.Normalize.RemoveEmpties", service.GetAllFavorites().Count == 0);
+
+            // 类别在归一化匹配下仍然生效：仅作默认写入值，不影响跨类别去重语义。
+            service.AddFavoriteAsync(MakeFavorite("～ない", "语法")).Wait();
+            Check("SqliteFavorites.Normalize.CategoryScopeStillWorks",
+                service.IsFavorited("～ない", "语法") && !service.IsFavorited("～ない", "单词"));
+            Check("SqliteFavorites.Normalize.CategoryScopeNormalizedHit", service.IsFavorited("～ない[ない]", "语法"));
+        }
+        finally
+        {
+            DeleteDatabaseQuietly(path);
+        }
+
+        // 归一化函数直断：IPA、代码下标、行首标签、全角括号汉字一律不得误剥。
+        Check("FavoriteNormalizer.IpaUntouched", FavoriteContentNormalizer.Normalize("ubiquitous[juːˈbɪkwɪtəs]") == "ubiquitous[juːˈbɪkwɪtəs]");
+        Check("FavoriteNormalizer.CodeIndexUntouched", FavoriteContentNormalizer.Normalize("arr[0]") == "arr[0]");
+        Check("FavoriteNormalizer.LeadingTagUntouched", FavoriteContentNormalizer.Normalize("[标签]词条") == "[标签]词条");
+        Check("FavoriteNormalizer.KanjiParenUntouched", FavoriteContentNormalizer.Normalize("〜わけだ（理由）") == "〜わけだ（理由）");
+        Check("FavoriteNormalizer.StripSquare", FavoriteContentNormalizer.Normalize("気付く[きづく]") == "気付く");
+        Check("FavoriteNormalizer.StripRound", FavoriteContentNormalizer.Normalize("気付く (きづく)") == "気付く");
+        Check("FavoriteNormalizer.StripFullWidthRound", FavoriteContentNormalizer.Normalize("気付く（きづく）") == "気付く");
+        Check("FavoriteNormalizer.TrimsInput", FavoriteContentNormalizer.Normalize("  Apple  ") == "Apple");
+        Check("FavoriteNormalizer.BlankToEmpty", FavoriteContentNormalizer.Normalize("   ") == string.Empty);
+        Check("FavoriteNormalizer.EqualsCrossForms", FavoriteContentNormalizer.Equals("気付く[きづく]", "気付く"));
+    }
+
+    private static void TestInMemoryNormalizedMatching()
+    {
+        // 内存态与 SQLite 态共用同一归一化键，两处实现不得漂移。
+        var service = new InMemoryFavoriteService();
+        service.AddFavoriteAsync(MakeFavorite("気付く[きづく]", "单词")).Wait();
+
+        Check("InMemoryFavorites.Normalize.StoredStripped", service.GetAllFavorites()[0].Content == "気付く");
+        Check("InMemoryFavorites.Normalize.CrossFormHit", service.IsFavorited("気付く (きづく)"));
+        Check("InMemoryFavorites.Normalize.RemoveByOtherForm", service.RemoveFavoriteAsync("気付く[きづく]").Result);
+        Check("InMemoryFavorites.Normalize.RemoveEmpties", service.GetAllFavorites().Count == 0);
+    }
+
+    private static void TestInMemoryUpdateFavorite()
+    {
+        var service = new InMemoryFavoriteService();
+        service.AddFavoriteAsync(MakeFavorite("通る", "单词")).Wait();
+        service.AddFavoriteAsync(MakeFavorite("～ない", "语法")).Wait();
+
+        var updatedCount = 0;
+        service.FavoriteUpdated += (_, _) => updatedCount++;
+
+        var target = service.GetAllFavorites().First(x => x.Content == "通る");
+        target.Content = "通[とお]る";
+        target.Note = "读音: とおる";
+        Check("InMemoryFavorites.Update.Applied", service.UpdateFavoriteAsync(target).Result);
+        Check("InMemoryFavorites.Update.StoredNormalized", service.GetAllFavorites().Single(x => x.Id == target.Id).Content == "通る");
+        Check("InMemoryFavorites.Update.EventFired", updatedCount == 1);
+
+        // 归一化冲突：改后内容命中另一行 → 拒绝。注意构造全新条目（内存态快照即库内对象本身）。
+        var other = service.GetAllFavorites().First(x => x.Content == "～ない");
+        var edited = new FavoriteItem { Id = other.Id, Category = other.Category, Content = "通る (とおる)" };
+        Check("InMemoryFavorites.Update.ConflictRejected", !service.UpdateFavoriteAsync(edited).Result);
+        Check("InMemoryFavorites.Update.ConflictKeepsOriginal", service.GetAllFavorites().Any(x => x.Content == "～ない"));
+    }
+
+    private static void TestSqliteLegacyLanguageColumnMigration()
+    {
+        var path = NewTempDatabasePath();
+        try
+        {
+            // 手工构造旧 schema（无 language 列）的库并塞一行历史收藏，模拟主人现网旧库。
+            using (var connection = new SqliteConnection($"Data Source={path}"))
+            {
+                connection.Open();
+                using var create = connection.CreateCommand();
+                create.CommandText = """
+                    CREATE TABLE favorites (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        category TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        note TEXT,
+                        created_at INTEGER NOT NULL
+                    );
+                    """;
+                create.ExecuteNonQuery();
+                using var insert = connection.CreateCommand();
+                insert.CommandText =
+                    "INSERT INTO favorites (category, content, note, created_at) VALUES ('单词', '通る', '读音: とおる', 1730000000000);";
+                insert.ExecuteNonQuery();
+            }
+
+            var service = new SqliteFavoriteService(path);
+            var all = service.GetAllFavorites();
+            Check("SqliteFavorites.Migrate.ColumnAddedOnRead", all.Count == 1);
+            // 主人拍板：旧行回填「日本語」只针对已存在的收藏行。
+            Check("SqliteFavorites.Migrate.LegacyRowBackfilledJapanese", all[0].Language == "日本語");
+
+            // 新收藏一律显式赋值语言，不依赖列默认。
+            var newItem = MakeFavorite("student", "单词");
+            newItem.Language = "English";
+            service.AddFavoriteAsync(newItem).Wait();
+            Check(
+                "SqliteFavorites.Migrate.NewRowExplicitLanguage",
+                service.GetAllFavorites().Any(x => x.Content == "student" && x.Language == "English"));
+
+            // 迁移幂等：重新打开不再重复 ALTER，数据不丢。
+            var reopened = new SqliteFavoriteService(path);
+            Check("SqliteFavorites.Migrate.IdempotentReopen", reopened.GetAllFavorites().Count == 2);
+        }
+        finally
+        {
+            DeleteDatabaseQuietly(path);
+        }
+    }
+
+    private static void TestSqliteUpdateFavorite()
+    {
+        var path = NewTempDatabasePath();
+        try
+        {
+            var service = new SqliteFavoriteService(path);
+            service.AddFavoriteAsync(MakeFavorite("通る", "单词", "读音: とおる")).Wait();
+            service.AddFavoriteAsync(MakeFavorite("～ない", "语法")).Wait();
+
+            var updatedCount = 0;
+            service.FavoriteUpdated += (_, _) => updatedCount++;
+
+            // 按 Id 更新多字段；content 仍走归一化（编辑后带回注音形态也收敛）。
+            var target = service.GetAllFavorites().First(x => x.Content == "通る");
+            target.Category = "短语";
+            target.Content = "通[とお]る";
+            target.Note = "释义: 修订";
+            Check("SqliteFavorites.Update.Applied", service.UpdateFavoriteAsync(target).Result);
+            Check("SqliteFavorites.Update.EventFired", updatedCount == 1);
+
+            var after = service.GetAllFavorites().Single(x => x.Id == target.Id);
+            Check("SqliteFavorites.Update.FieldsPersisted",
+                after.Category == "短语" && after.Content == "通る" && after.Note == "释义: 修订");
+            Check("SqliteFavorites.Update.CountUnchanged", service.GetAllFavorites().Count == 2);
+
+            // 归一化冲突：改后内容与另一行（注音形态不同）同一词条 → 拒绝且原行不动。
+            var conflict = service.GetAllFavorites().First(x => x.Id == target.Id);
+            conflict.Content = "～ない[ない]";
+            Check("SqliteFavorites.Update.ConflictRejected", !service.UpdateFavoriteAsync(conflict).Result);
+            Check("SqliteFavorites.Update.ConflictKeepsOriginal",
+                service.GetAllFavorites().Single(x => x.Id == target.Id).Content == "通る");
+
+            // 空内容与未知 Id 一律拒绝。
+            conflict.Content = "   ";
+            Check("SqliteFavorites.Update.BlankRejected", !service.UpdateFavoriteAsync(conflict).Result);
+            Check("SqliteFavorites.Update.UnknownIdRejected",
+                !service.UpdateFavoriteAsync(new FavoriteItem { Id = 99999, Content = "x" }).Result);
         }
         finally
         {

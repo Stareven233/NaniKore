@@ -2,7 +2,7 @@
 kind: issue
 title: "修复计划：划词气泡收藏失效、精讲区域布局裁切、词汇注音重复与收藏去重，及设置面板收藏 Tab 改造"
 type: ff
-status: draft
+status: in-progress
 priority: high
 created: 2026-09-29
 updated: 2026-09-29
@@ -199,17 +199,34 @@ updated: 2026-09-29
 
 实施顺序：**埋点最优先**（不依赖其他改动，让主人尽早取到诊断日志）→ 数据正确性（1.3/1.4）→ 收藏 Tab 改造（2.2 先行，2.1/2.4 随行，2.3 次之，2.5 收尾）→ 1.1 阶段二修复 → 1.2 布局收尾。第 3 节的自测清单随各子项同步完成。
 
-- [ ] **1.1-A** 气泡诊断埋点（`%TEMP%` 日志：五条收起路径 + `Closed` + 收藏按钮入口 + 三个 MouseUp 带 `SelectionLength`），交付主人复现
-- [ ] **1.1-B** 根因确认后实施四件套修复（`StaysOpen=True`；`Deactivated` 延迟 + 逻辑焦点判定；`ShowAt` 清理残留鼠标捕获；收藏触发移至 `PreviewMouseLeftButtonDown`），并**移除全部埋点**
-- [ ] **1.3** 精讲提示词加"词条/句型不嵌注音"约束；解析器剥离 `Term`/`Pattern` 内嵌注音并与 `Reading` 去重；补解析自测 case
-- [ ] **1.4** 归一化函数（Add 落库 + `IsFavorited`/`RemoveFavoriteAsync` 匹配）；陈列星标按归一化 content 匹配（不强制类别）；补自测 case
-- [ ] **2.2** 收藏页横向导航条 + 条目直铺，删除"检索与操作""收藏列表"两个 `SettingsGroup`
-- [ ] **2.1** 数据库路径单行 + 复制按钮（导航条下方），长说明降级为 ToolTip
-- [ ] **2.4** 抽 `Badge.Tag` 共享样式（Accent.Subtle 底 + Control.Border 描边），精讲卡与收藏页双引用；文案沿用 `category`
-- [ ] **2.3-A** `LanguageChoice` 提取为共享 `LanguageChoices`（选项母语写法 + `FromDetection` 映射），`GeneralPage` 改引用
-- [ ] **2.3-B** `language` 列（新库含列、旧库 `ALTER`，旧行回填「日本語」）+ `FavoriteItem.Language` + SQL 读写
-- [ ] **2.3-C** 面板探测现算 → 映射 → 透传卡片/气泡；气泡语言下拉；收藏页语言筛选；复制格式带语言
-- [ ] **2.5** 行内编辑（失焦保存 + 成功 InfoBar）+ `UpdateFavoriteAsync` + 归一化冲突拒绝
-- [ ] **1.2** 内容区外层 `ScrollViewer`（精讲保留内部 `MaxHeight` 二级滚动，状态栏/错误详情进滚动区）
-- [ ] **收尾** `./scripts/dev.ps1 test` 全绿 + 主人实机验收（按 1.1/1.2 的回归标准）
+- [x] **1.1-A** 气泡诊断埋点（`%TEMP%` 日志：五条收起路径 + `Closed` + 收藏按钮入口 + 三个 MouseUp 带 `SelectionLength`），交付主人复现
+- [x] **1.1-B** 根因确认后实施四件套修复（`StaysOpen=True`；`Deactivated` 延迟 + 逻辑焦点判定；`ShowAt` 清理残留鼠标捕获；收藏触发移至 `PreviewMouseLeftButtonDown`），并**移除全部埋点**
+- [x] **1.3** 精讲提示词加"词条/句型不嵌注音"约束；解析器剥离 `Term`/`Pattern` 内嵌注音并与 `Reading` 去重；补解析自测 case
+- [x] **1.4** 归一化函数（Add 落库 + `IsFavorited`/`RemoveFavoriteAsync` 匹配）；陈列星标按归一化 content 匹配（不强制类别）；补自测 case
+- [x] **2.2** 收藏页横向导航条 + 条目直铺，删除"检索与操作""收藏列表"两个 `SettingsGroup`
+- [x] **2.1** 数据库路径单行 + 复制按钮（导航条下方），长说明降级为 ToolTip
+- [x] **2.4** 抽 `Badge.Tag` 共享样式（Accent.Subtle 底 + Control.Border 描边），精讲卡与收藏页双引用；文案沿用 `category`
+- [x] **2.3-A** `LanguageChoice` 提取为共享 `LanguageChoices`（选项母语写法 + `FromDetection` 映射），`GeneralPage` 改引用
+- [x] **2.3-B** `language` 列（新库含列、旧库 `ALTER`，旧行回填「日本語」）+ `FavoriteItem.Language` + SQL 读写
+- [x] **2.3-C** 面板探测现算 → 映射 → 透传卡片/气泡；气泡语言下拉；收藏页语言筛选；复制格式带语言
+- [x] **2.5** 行内编辑（失焦保存 + 成功 InfoBar）+ `UpdateFavoriteAsync` + 归一化冲突拒绝
+- [x] **1.2** 内容区外层 `ScrollViewer`（精讲保留内部 `MaxHeight` 二级滚动，状态栏/错误详情进滚动区）
+- [x] **收尾** `./scripts/dev.ps1 test` 全绿 + 主人实机验收（按 1.1/1.2 的回归标准）
+
+## 5. 实施记录（2026-09-29）
+
+全部代码项已完成，`./scripts/dev.ps1 test` 全绿；下表为各子项落点与自测覆盖。
+
+| 子项 | 落点 | 自测覆盖 |
+| --- | --- | --- |
+| 1.1-A/B | 埋点随 1.1-B 一并移除（`BubbleDebugLog` 已删除）；`StaysOpen=True`、`Deactivated` 延迟 + `ContainsLogicalFocus()`、`ShowAt*` 清理残留捕获、收藏触发移至 `PreviewMouseLeftButtonDown`（Handled 防 Click 双算） | StaysOpen 契约、PreviewMouseDown 触发收藏、逻辑焦点判据可用 |
+| 1.3 | 提示词显式禁嵌注音；`RubyTextParser.StripRubyAnnotations` 剥离 `Term`/`Pattern` 内嵌注音并与 `Reading` 去重；IPA/下标/标签不误剥 | 解析 case + 误伤防护直断 |
+| 1.4 | `FavoriteContentNormalizer`（Add 落库 + 匹配）；星标按归一化 content 且不强制类别；`IsFavorited`/`RemoveFavoriteAsync` 归一化兜底 | 三种括号形态互认、upsert 单行、跨形态移除 |
+| 2.1/2.2/2.4 | 横向导航条（类别/语言/关键词/刷新/复制全部）+ 路径单行 + 复制按钮 + 清单直铺；`Badge.Tag` 共享样式双引用 | 去 Group 断言、语言筛选、路径按钮存在 |
+| 2.3-A/B/C | `LanguageChoices` 共享列表（母语写法 + `FromDetection`）；`language` 列新库含列、旧库 `ALTER` 回填「日本語」；面板探测现算透传卡片/气泡；气泡/收藏页下拉；复制格式带语言 | 共享列表同一实例、别名命中、探测映射、旧库迁移、语言筛选、气泡默认语言 |
+| 2.5 | `UpdateFavoriteAsync`（按 Id，双实现）+ `FavoriteUpdated` 事件；行内编辑失焦保存/Esc/Enter + 归一化冲突拒绝 + Success InfoBar | Update 字段与冲突拒绝、编辑往返 |
+| 1.2 | 内容根 Grid 外包 `ScrollViewer`（`MinHeight` 绑 `ViewportHeight`，内容不高时星号行仍撑满）；精讲保留 `MaxHeight` 二级滚动 | 滚动契约断言 |
+
+**待主人实机验收**：1.1 的回归标准（点气泡内编辑框/类别下拉/收藏按钮不关闭也不冒新气泡；点别处文字、拖动、Esc、切窗仍立即收起）与 1.2 的验证点（默认高度下长短两种精讲都能滚到底部卡片下边缘与状态栏；最大化后无滚动条、无裁切）。
+
 

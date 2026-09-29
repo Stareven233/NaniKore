@@ -347,7 +347,9 @@ public static class ExplanationParser
             return false;
         }
 
-        var term = rawParts[0];
+        // 提示词已禁止词条内嵌注音，但模型随机性仍可能写出 気付く[きづく]；
+        // 解析层兜底剥离，杜绝与 DisplayTitle 追加的读音形成「気付く[きづく] (きづく)」双层展示。
+        var term = StripEmbeddedRuby(rawParts[0], out var embeddedReading);
         if (string.IsNullOrWhiteSpace(term))
         {
             return false;
@@ -422,6 +424,13 @@ public static class ExplanationParser
             }
         }
 
+        // 词条内嵌读音与读音列去重：两处一致时只保留读音列一份；读音列缺失时以内嵌读音兜底，
+        // 既消灭重复展示，也不丢失原本只写在内嵌括号里的读音信息。
+        if (!string.IsNullOrEmpty(embeddedReading))
+        {
+            reading = string.IsNullOrEmpty(reading) ? embeddedReading : reading;
+        }
+
         if (reading == "-" || string.Equals(reading, term, StringComparison.OrdinalIgnoreCase))
         {
             reading = string.Empty;
@@ -452,7 +461,8 @@ public static class ExplanationParser
             return false;
         }
 
-        var pattern = CleanMarkdownFormatting(parts[0]);
+        // 语法卡片同样只有一个「句型」字段，模型附带的振假名一律剥离且不做保留（无读音列可去重）。
+        var pattern = StripEmbeddedRuby(CleanMarkdownFormatting(parts[0]), out _);
         if (string.IsNullOrWhiteSpace(pattern))
         {
             return false;
@@ -472,6 +482,22 @@ public static class ExplanationParser
     private static readonly Regex MarkdownWrapRegex = new(
         @"^\*\*([^*]+)\*\*$|^\*([^*]+)\*$|^`([^`]+)`$",
         RegexOptions.Compiled);
+
+    /// <summary>
+    /// 注音括号内允许的字符集合：假名、长音符号、中黑与空白。
+    /// 英文 IPA 含 ˈ、ː 等非假名字符，代码下标为数字，[语法/句型] 式标签含汉字与斜杠，均会被此判定排除。
+    /// </summary>
+    private static bool IsRubyOnlyContent(string content) => RubyTextParser.IsRubyAnnotationContent(content);
+
+    /// <summary>
+    /// 剥离词条/句型第一字段内模型擅自附带的注音形态：<c>漢字[かな]</c> 与 <c>漢字 (かな)</c>（半角/全角括号、括号前允许一个空格）。
+    /// 误伤防护（与 RubyTextParser.IsCodeBracket 同思路）：括号前必须是汉字或假名底字——
+    /// 拉丁字母或数字作底字一律视为代码/IPA 语境（如 <c>arr[0]</c>、<c>ubiquitous[juːˈbɪkwɪtəs]</c>）原样保留；
+    /// 行首或空白后的孤立方括号（如 <c>[语法/句型]</c> 标签）同样保留。
+    /// 与收藏归一化（<c>FavoriteContentNormalizer</c>）共用同一套剥离实现，杜绝两处判据漂移。
+    /// </summary>
+    private static string StripEmbeddedRuby(string term, out string embeddedReading) =>
+        RubyTextParser.StripRubyAnnotations(term, out embeddedReading);
 
     private static string CleanMarkdownFormatting(string input)
     {

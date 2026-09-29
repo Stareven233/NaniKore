@@ -128,8 +128,12 @@ public sealed class GrammarCardViewModel : INotifyPropertyChanged
 /// </summary>
 public partial class ExplanationCardView : UserControl
 {
+    /// <summary>卡片收藏默认语言的兜底值：面板未注入探测器（如孤立测试）时使用，与旧库回填口径一致。</summary>
+    private const string FallbackFavoriteLanguage = "日本語";
+
     private readonly StringBuilder _accumulatedMarkdown = new();
     private IFavoriteService? _favoriteService;
+    private Func<string>? _sourceLanguageProvider;
     private bool _isDegraded;
 
     public ObservableCollection<VocabularyCardViewModel> VocabularyItems { get; } = new();
@@ -176,6 +180,7 @@ public partial class ExplanationCardView : UserControl
         {
             _favoriteService.FavoriteAdded -= OnExternalFavoriteChanged;
             _favoriteService.FavoriteRemoved -= OnExternalFavoriteRemoved;
+            _favoriteService.FavoriteUpdated -= OnExternalFavoriteUpdated;
         }
 
         _favoriteService = service;
@@ -184,10 +189,26 @@ public partial class ExplanationCardView : UserControl
         {
             _favoriteService.FavoriteAdded += OnExternalFavoriteChanged;
             _favoriteService.FavoriteRemoved += OnExternalFavoriteRemoved;
+            // 就地编辑（issue 015 / 2.5）可能改变 content 归一化形态，整体重评星标而不是按旧内容打补丁。
+            _favoriteService.FavoriteUpdated += OnExternalFavoriteUpdated;
         }
 
         RefreshFavoriteStates();
     }
+
+    /// <summary>
+    /// 注入本轮源语言探测器（issue 015 / 2.3-C）：卡片收藏时直接取当前值作为默认语言，不做选择 UI；
+    /// 划词气泡侧则展示同一默认值并允许用户下拉改选。
+    /// </summary>
+    public void SetSourceLanguageProvider(Func<string>? provider)
+    {
+        _sourceLanguageProvider = provider;
+    }
+
+    /// <summary>当前轮次要写入收藏的语言：优先面板探测映射值，缺省回落兜底常量。</summary>
+    private string CurrentFavoriteLanguage => _sourceLanguageProvider?.Invoke() is { Length: > 0 } detected
+        ? detected
+        : FallbackFavoriteLanguage;
 
     /// <summary>清空所有卡片与累积流式文本。</summary>
     public void Clear()
@@ -281,7 +302,9 @@ public partial class ExplanationCardView : UserControl
         for (var i = 0; i < cards.Count; i++)
         {
             var card = cards[i];
-            var isFavorited = _favoriteService?.IsFavorited(card.Term, "单词") ?? false;
+            // 星标按归一化 content 匹配且不强制类别（issue 015 / 1.4）：
+            // 词条净化前的旧形态行（気付く[きづく]）也能点亮，用户在陈列时就看到“已收藏”而不会重复点。
+            var isFavorited = _favoriteService?.IsFavorited(card.Term) ?? false;
             if (i < VocabularyItems.Count)
             {
                 var vm = VocabularyItems[i];
@@ -309,7 +332,8 @@ public partial class ExplanationCardView : UserControl
         for (var i = 0; i < cards.Count; i++)
         {
             var card = cards[i];
-            var isFavorited = _favoriteService?.IsFavorited(card.Pattern, "语法") ?? false;
+            // 语法卡同理：按归一化 content 匹配，类别只作为默认写入值。
+            var isFavorited = _favoriteService?.IsFavorited(card.Pattern) ?? false;
             if (i < GrammarItems.Count)
             {
                 var vm = GrammarItems[i];
@@ -340,12 +364,18 @@ public partial class ExplanationCardView : UserControl
 
         foreach (var item in VocabularyItems)
         {
-            item.IsFavorited = _favoriteService.IsFavorited(item.Term, "单词");
+            item.IsFavorited = _favoriteService.IsFavorited(item.Term);
         }
         foreach (var item in GrammarItems)
         {
-            item.IsFavorited = _favoriteService.IsFavorited(item.Pattern, "语法");
+            item.IsFavorited = _favoriteService.IsFavorited(item.Pattern);
         }
+    }
+
+    private void OnExternalFavoriteUpdated(object? sender, FavoriteItem item)
+    {
+        // 编辑不携带旧内容，无法做增量比对；直接切回 UI 线程整体重评。
+        Dispatcher.InvokeAsync(RefreshFavoriteStates);
     }
 
     private void OnExternalFavoriteChanged(object? sender, FavoriteItem item)
@@ -354,14 +384,14 @@ public partial class ExplanationCardView : UserControl
         {
             foreach (var vocab in VocabularyItems)
             {
-                if (string.Equals(vocab.Term, item.Content, StringComparison.OrdinalIgnoreCase))
+                if (FavoriteContentNormalizer.Equals(vocab.Term, item.Content))
                 {
                     vocab.IsFavorited = true;
                 }
             }
             foreach (var grammar in GrammarItems)
             {
-                if (string.Equals(grammar.Pattern, item.Content, StringComparison.OrdinalIgnoreCase))
+                if (FavoriteContentNormalizer.Equals(grammar.Pattern, item.Content))
                 {
                     grammar.IsFavorited = true;
                 }
@@ -375,14 +405,14 @@ public partial class ExplanationCardView : UserControl
         {
             foreach (var vocab in VocabularyItems)
             {
-                if (string.Equals(vocab.Term, content, StringComparison.OrdinalIgnoreCase))
+                if (FavoriteContentNormalizer.Equals(vocab.Term, content))
                 {
                     vocab.IsFavorited = false;
                 }
             }
             foreach (var grammar in GrammarItems)
             {
-                if (string.Equals(grammar.Pattern, content, StringComparison.OrdinalIgnoreCase))
+                if (FavoriteContentNormalizer.Equals(grammar.Pattern, content))
                 {
                     grammar.IsFavorited = false;
                 }
@@ -408,6 +438,7 @@ public partial class ExplanationCardView : UserControl
                 {
                     Category = "单词",
                     Content = vm.Term,
+                    Language = CurrentFavoriteLanguage,
                     Note = vm.Model.ToFavoriteNote()
                 });
             }
@@ -438,6 +469,7 @@ public partial class ExplanationCardView : UserControl
                 {
                     Category = "语法",
                     Content = vm.Pattern,
+                    Language = CurrentFavoriteLanguage,
                     Note = vm.Model.ToFavoriteNote()
                 });
             }

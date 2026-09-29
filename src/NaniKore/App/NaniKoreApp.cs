@@ -439,6 +439,8 @@ internal sealed class NaniKoreApp : Application
         panel.TranslateRequested += (_, _) => _ = StartTranslationAsync(panel.SourceText, _lastImagePng);
         panel.ExplanationRequested += (_, _) => _ = StartExplanationAsync();
         panel.SetFavoriteService(_favoriteService);
+        // 收藏语言的探测兜底口径与提示词展开共用同一份目标语言配置。
+        panel.SetTargetLanguage(_configStore.Current.General.TargetLanguage);
         panel.AutoExplainChanged += (_, autoExplain) =>
         {
             var config = _configStore.Current;
@@ -510,6 +512,8 @@ internal sealed class NaniKoreApp : Application
         _configStore.AtomicWrite(next);
         _providerFactory?.Dispose();
         _providerFactory = new ProviderFactory(next);
+        // 目标语言可能已变：同步刷新结果卡上的收藏语言探测口径（不打断当前展示）。
+        _resultPanel?.SetTargetLanguage(next.General.TargetLanguage);
     }
 
     /// <summary>热键录制期间临时注销全局热键，避免录制正在生效的组合时反而触发截图。</summary>

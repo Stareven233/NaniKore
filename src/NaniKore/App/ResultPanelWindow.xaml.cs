@@ -6,7 +6,9 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using NaniKore.App.Controls;
+using NaniKore.App.Settings;
 using NaniKore.App.Theme;
 using NaniKore.Interop;
 using NaniKore.Translation;
@@ -33,6 +35,7 @@ internal sealed partial class ResultPanelWindow : Window
     private string _initialTranslationSource = string.Empty;
     private bool _isEditingSource;
     private bool _receivedAnnotatedSource;
+    private string _targetLanguage = "中文（简体）";
 
     public ResultPanelWindow()
     {
@@ -59,6 +62,8 @@ internal sealed partial class ResultPanelWindow : Window
                 SetStatus("未能完全识别为微结构化卡片，已展示原始排版精讲。");
             }
         };
+        // 卡片收藏的默认语言由面板按本轮原文探测现算后透传（issue 015 / 2.3-C）：词汇/语法卡不做选择 UI。
+        ExplanationView.SetSourceLanguageProvider(() => CurrentSourceLanguage);
         ExplanationView.FavoriteToggled += (_, args) =>
         {
             SetStatus(args.Added ? $"已收藏{args.Category}：{args.Content}" : $"已取消收藏{args.Category}：{args.Content}");
@@ -87,6 +92,7 @@ internal sealed partial class ResultPanelWindow : Window
         PreviewMouseDown += OnPanelPreviewMouseDown;
         LocationChanged += (_, _) =>
         {
+            // 移动窗口会带走气泡的定位基准，直接收起。
             if (SelectionBubble.BubblePopup.IsOpen)
             {
                 SelectionBubble.Hide();
@@ -94,10 +100,16 @@ internal sealed partial class ResultPanelWindow : Window
         };
         Deactivated += (_, _) =>
         {
-            if (SelectionBubble.BubblePopup.IsOpen)
+            // 延迟判定（issue 015 / 1.1-B）：点气泡（独立 PopupRoot HWND）会抢激活并触发 Deactivated，
+            // 立即 Hide 正是“点编辑框/下拉/收藏按钮气泡就消失”的根因；推迟到输入优先级回读，
+            // 仅当气泡未持有键盘焦点（用户真的切到别处）时才收起。
+            Dispatcher.BeginInvoke(new Action(() =>
             {
-                SelectionBubble.Hide();
-            }
+                if (SelectionBubble.BubblePopup.IsOpen && !SelectionBubble.ContainsLogicalFocus())
+                {
+                    SelectionBubble.Hide();
+                }
+            }), DispatcherPriority.Input);
         };
     }
 
@@ -124,6 +136,25 @@ internal sealed partial class ResultPanelWindow : Window
     {
         ExplanationView.SetFavoriteService(service);
         SelectionBubble.SetFavoriteService(service);
+    }
+
+    /// <summary>同步设置页当前的目标语言（源语言探测的兜底口径与提示词展开保持一致）。</summary>
+    public void SetTargetLanguage(string? targetLanguage)
+    {
+        _targetLanguage = string.IsNullOrWhiteSpace(targetLanguage) ? "中文（简体）" : targetLanguage;
+    }
+
+    /// <summary>
+    /// 本轮原文的源语言：对当前纯文本原文现算探测，映射回共享语言列表的母语写法展示名。
+    /// 卡片收藏与划词气泡的语言默认值都取这里，保证「探测 → 映射 → 落库」单点维护。
+    /// </summary>
+    internal string CurrentSourceLanguage
+    {
+        get
+        {
+            var detection = LanguageDetector.Detect(SourceText, _targetLanguage);
+            return LanguageChoices.FromDetection(detection);
+        }
     }
 
     /// <summary>更新并显示本次调用的 Token 消耗与性能指标。</summary>
@@ -755,6 +786,7 @@ internal sealed partial class ResultPanelWindow : Window
             if (!string.IsNullOrEmpty(text))
             {
                 var rect = GetSelectionOrMouseRect(TranslationTextBox, e);
+                SelectionBubble.SetDefaultLanguage(CurrentSourceLanguage);
                 SelectionBubble.ShowAt(TranslationTextBox, rect, text);
             }
         }
@@ -768,6 +800,7 @@ internal sealed partial class ResultPanelWindow : Window
             if (!string.IsNullOrEmpty(text))
             {
                 var rect = GetSelectionOrMouseRect(SourceTextBox, e);
+                SelectionBubble.SetDefaultLanguage(CurrentSourceLanguage);
                 SelectionBubble.ShowAt(SourceTextBox, rect, text);
             }
         }
@@ -781,6 +814,7 @@ internal sealed partial class ResultPanelWindow : Window
             if (!string.IsNullOrEmpty(text) && text.Length <= 100)
             {
                 var mousePos = e.GetPosition(SourceViewer);
+                SelectionBubble.SetDefaultLanguage(CurrentSourceLanguage);
                 SelectionBubble.ShowAt(SourceViewer, new Rect(mousePos.X, mousePos.Y, 1, 1), text);
             }
         }
@@ -794,6 +828,7 @@ internal sealed partial class ResultPanelWindow : Window
     {
         if (SelectionBubble.BubblePopup.IsOpen)
         {
+            // 点击窗口内其他文字/按钮/空白处：气泡在独立 PopupRoot HWND，其内部点击不会走到这里。
             SelectionBubble.Hide();
         }
     }

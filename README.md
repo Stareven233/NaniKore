@@ -11,6 +11,7 @@
 - 通过 ONNX Runtime 直接运行 PP-OCRv6-small，不依赖 Python、OpenCV 或外部 OCR 服务。
 - 支持 OpenAI、Claude、Gemini 协议的流式翻译配置，以及 `local_ocr`、`vision_oneshot` 两条输入管线。
 - 结果自动复制到剪贴板；设置、热键和 API Key 可在应用内管理。
+- 结果卡精讲与正文划词均可一键收藏进本地生词本：SQLite 持久化（`nanikore.db`），支持类别/语言/关键词筛选与就地编辑。
 - API Key 仅使用当前 Windows 用户的 DPAPI 保存，不会写入仓库或 `config.yaml`。
 
 ## 系统要求
@@ -77,6 +78,10 @@ deps/
 根目录 `config.yaml` 是不含密钥、可审阅的默认模板。构建和发布时会复制到各自运行目录，因此应用设置页保存的配置不会回写仓库模板。要修改新实例的默认配置，请编辑根目录模板后重新构建或发布。
 
 翻译服务、模型、目标语言和快捷键均可通过设置页调整。请只在自己信任的服务商端点中填写 API Key。
+
+## 收藏与生词本
+
+收藏保存在可执行文件同目录的 `nanikore.db`（SQLite 表 `favorites`，列为 `category`、`content`、`note`、`created_at`、`language`;绿色便携、覆盖升级不丢数据，删除该文件即回到空态。设置页「收藏」可按类别、语言、关键词组合筛选，支持复制全部、单条删除与失焦即保存的就地编辑。
 
 ## OCR 诊断
 

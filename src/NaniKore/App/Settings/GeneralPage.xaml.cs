@@ -9,21 +9,6 @@ namespace NaniKore.App.Settings;
 
 internal sealed partial class GeneralPage : UserControl, ISettingsPage
 {
-    private static readonly LanguageChoice[] TargetLanguages =
-    [
-        new("中文（简体）", "zh-CN", "中文", "简体中文", "Chinese", "Chinese (Simplified)"),
-        new("中文（繁体）", "zh-TW", "繁體中文", "Chinese (Traditional)"),
-        new("英语", "en", "English"),
-        new("日语", "ja", "日本語", "Japanese"),
-        new("韩语", "ko", "한국어", "Korean"),
-        new("俄语", "ru", "Русский", "Russian"),
-        new("法语", "fr", "Français", "French"),
-        new("德语", "de", "Deutsch", "German"),
-        new("西班牙语", "es", "Español", "Spanish"),
-        new("葡萄牙语", "pt", "Português", "Portuguese"),
-        new("意大利语", "it", "Italiano", "Italian"),
-    ];
-
     private readonly Func<IProgress<string>, CancellationToken, Task>? _downloadDependencies;
 
     public GeneralPage(Func<IProgress<string>, CancellationToken, Task>? downloadDependencies = null)
@@ -35,7 +20,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         DependencyStatus.Show(
             dependenciesReady ? "本地 OCR 依赖已就绪。" : "本地 OCR 依赖尚未下载。",
             dependenciesReady ? InfoSeverity.Success : InfoSeverity.Warning);
-        foreach (var language in TargetLanguages)
+        foreach (var language in LanguageChoices.All)
         {
             TargetLanguageBox.Items.Add(language);
         }
@@ -56,7 +41,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         ArgumentNullException.ThrowIfNull(config);
         AutoTranslateToggle.IsChecked = config.General.AutoTranslate;
         AutoExplainToggle.IsChecked = config.General.AutoExplain;
-        TargetLanguageBox.SelectedItem = FindLanguage(config.General.TargetLanguage) ?? TargetLanguages[0];
+        TargetLanguageBox.SelectedItem = LanguageChoices.Find(config.General.TargetLanguage) ?? LanguageChoices.All[0];
         PipelineModeBox.SelectedItem = config.Pipeline.Mode;
         if (PipelineModeBox.SelectedIndex < 0)
         {
@@ -120,17 +105,5 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         }
     }
 
-    private static LanguageChoice? FindLanguage(string configuredValue) => TargetLanguages.FirstOrDefault(choice =>
-        choice.Matches(configuredValue));
-
-    /// <summary>保留旧版语言代码兼容；保存后统一改用适合提示词与设置页展示的自然语言名称。</summary>
-    private sealed class LanguageChoice(string name, params string[] aliases)
-    {
-        public string Name { get; } = name;
-
-        public bool Matches(string value) => aliases.Append(Name).Any(alias =>
-            string.Equals(alias, value, StringComparison.OrdinalIgnoreCase));
-
-        public override string ToString() => Name;
-    }
+    private static LanguageChoice? FindLanguage(string configuredValue) => LanguageChoices.Find(configuredValue);
 }

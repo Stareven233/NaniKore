@@ -16,6 +16,7 @@ internal static partial class SelfTest
         TestExplanationParserDegradation();
         TestExplanationParserStreamingAccumulation();
         TestExplanationParserBuiltinSectionNames();
+        TestExplanationParserEmbeddedRubyStripping();
         TestFavoritesStringMatching();
         TestFavoritesEventsAndNoteFormat();
         TestRubyParserNoiseTolerance();
@@ -145,6 +146,48 @@ internal static partial class SelfTest
         Check("ExplanationParser.BuiltinSections.TranslationAnalysisCaptured", doc.ContextExplanation.Contains("为何如此翻译"));
     }
 
+    private static void TestExplanationParserEmbeddedRubyStripping()
+    {
+        // issue 015 / 1.3 解析层兜底：模型有时会把阶段一的振假名规范顺手写进词条第一字段，
+        // 显示层又追加一次读音，形成「気付く[きづく] (きづく)」。解析器必须剥离内嵌注音并与读音列去重。
+        var markdown = """
+            ### [词汇/短语]
+            - **気付く[きづく]** | きづく | 动词 | 注意到、意识到
+            - **通[とお]る** | 动词 | 通过、走过
+            - **学生 (がくせい)** | 名词 | 学生
+
+            ### [语法/句型]
+            - **〜ない[ない]** | 否定表达
+            """;
+
+        var doc = ExplanationParser.Parse(markdown);
+
+        Check("ExplanationParser.EmbeddedRuby.VocabCount", doc.VocabularyCards.Count == 3);
+        Check("ExplanationParser.EmbeddedRuby.Vocab1TermStripped", doc.VocabularyCards[0].Term == "気付く");
+        Check("ExplanationParser.EmbeddedRuby.Vocab1ReadingKept", doc.VocabularyCards[0].Reading == "きづく");
+        Check("ExplanationParser.EmbeddedRuby.Vocab2ReadingPromoted",
+            doc.VocabularyCards[1].Term == "通る" && doc.VocabularyCards[1].Reading == "とお");
+        Check("ExplanationParser.EmbeddedRuby.Vocab3AsciiParenStripped",
+            doc.VocabularyCards[2].Term == "学生" && doc.VocabularyCards[2].Reading == "がくせい");
+        Check("ExplanationParser.EmbeddedRuby.Grammar1PatternStripped", doc.GrammarCards[0].Pattern == "〜ない");
+
+        // 误伤防护：英文 IPA、代码下标、 bracketed 标签、全角括号内的汉字一律不得剥离
+        var guarded = ExplanationParser.Parse("""
+            ### [词汇/短语]
+            - **ubiquitous[juːˈbɪkwɪtəs]** | verb | 无处不在的
+            - **arr[0]** | 名词 | 数组首元素
+            - **[标签]词条** | 名词 | 行首标签
+
+            ### [语法/句型]
+            - **〜わけだ（理由）** | 表示“原来如此”
+            """);
+
+        Check("ExplanationParser.EmbeddedRuby.Guard.IpaUntouched", guarded.VocabularyCards[0].Term == "ubiquitous[juːˈbɪkwɪtəs]");
+        Check("ExplanationParser.EmbeddedRuby.Guard.CodeIndexUntouched", guarded.VocabularyCards[1].Term == "arr[0]");
+        Check("ExplanationParser.EmbeddedRuby.Guard.LeadingTagUntouched", guarded.VocabularyCards[2].Term == "[标签]词条");
+        Check("ExplanationParser.EmbeddedRuby.Guard.KanjiParenUntouched", guarded.GrammarCards[0].Pattern == "〜わけだ（理由）");
+    }
+
     private static void TestFavoritesStringMatching()
     {
         var service = new InMemoryFavoriteService();
@@ -260,6 +303,14 @@ internal static partial class SelfTest
             !PromptTemplates.DefaultExplainUserPrompt.Contains("CET-6") &&
             !PromptTemplates.DefaultExplainUserPrompt.Contains("JLPT") &&
             !PromptTemplates.DefaultExplainUserPrompt.Contains("教育语法"));
+
+        // 词条/句型禁嵌注音约束（issue 015 / 1.3 提示词防线）：显式点名两种越界形态，堵住
+        // 「気付く[きづく] + DisplayTitle 再追加 (きづく)」的双层重复展示。
+        Check(
+            "Prompt.Explain.TermAndPatternForbidEmbeddedRuby",
+            PromptTemplates.DefaultExplainUserPrompt.Contains("只写原型本身") &&
+            PromptTemplates.DefaultExplainUserPrompt.Contains("严禁在内部附带振假名或括号读音") &&
+            PromptTemplates.DefaultExplainUserPrompt.Contains("读音只写入专属"));
 
         // 阶段二追问只走 user 通道：会话历史里追加的是这条提示词，system 仍沿用阶段一锁定值。
         // 按真实运行时流程走一遍：锁定 system → 回放阶段一 Assistant 输出 → 追加追问消息。

@@ -326,6 +326,20 @@
         <Setter Property="Margin" Value="12,0" />
     </Style>
 
+    <!-- 类别/词性徽章：精讲卡片词性 Tag 与收藏页类别徽章共用的弱强调小标签。
+         Accent.Subtle 底 + Control.Border 1px 描边，字号 11 常规字重、主文本色，深浅色由色板自动跟随。 -->
+    <Style x:Key="Badge.Tag" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource Brush.Accent.Subtle}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Padding" Value="6,1" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="TextElement.FontSize" Value="11" />
+        <Setter Property="TextElement.FontWeight" Value="Normal" />
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+    </Style>
+
     <!-- 左侧导航项：选中时左侧强调色指示条，与 Win11 设置一致。 -->
     <Style x:Key="Nav.Item" TargetType="ListBoxItem">
         <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />

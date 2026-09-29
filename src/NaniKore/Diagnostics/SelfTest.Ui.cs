@@ -19,6 +19,7 @@ internal static partial class SelfTest
         TestThemeResourcesResolve();
         TestSettingsPagesUseAdaptiveLayout();
         TestGeneralPagePipelineDependencyVisibility();
+        TestSharedLanguageChoicesAndDetectionMapping();
         TestTranslationPagePromptEditing();
         TestSettingsCloseSizeMemory();
         TestSettingsCloseSizeWriteBackKeepsExternalUpdates();
@@ -362,6 +363,66 @@ internal static partial class SelfTest
         Check(
             "general page applies AutoExplain toggle change to configuration",
             !appliedConfig.General.AutoExplain);
+
+        // 2.3-A：目标语言下拉直接引用共享列表的同一批实例（母语写法），
+        // 旧配置的中文名/语言代码别名仍能命中，无需配置迁移。
+        var targetBox = (System.Windows.Controls.ComboBox?)page.FindName("TargetLanguageBox");
+        Check(
+            "general page target languages reference the shared native-name list",
+            targetBox is not null &&
+            targetBox.Items.Count == LanguageChoices.All.Count &&
+            ReferenceEquals(targetBox.Items[3], LanguageChoices.All[3]) &&
+            LanguageChoices.All[3].Name == "日本語");
+
+        page.Load(new AppConfig { General = new GeneralConfig { TargetLanguage = "日语" } });
+        Check(
+            "general page resolves legacy chinese alias to native display name",
+            targetBox!.SelectedItem is LanguageChoice legacyChoice && legacyChoice.Name == "日本語");
+    }
+
+    /// <summary>共享语言列表（issue 015 / 2.3）：母语写法唯一、旧别名命中、探测现算映射回列表项。</summary>
+    private static void TestSharedLanguageChoicesAndDetectionMapping()
+    {
+        EnsureThemedApplication();
+
+        Check(
+            "shared language list exposes native display names in a stable order",
+            LanguageChoices.All.Select(choice => choice.Name).SequenceEqual(new[]
+            {
+                "中文（简体）", "繁體中文", "English", "日本語", "한국어",
+                "Русский", "Français", "Deutsch", "Español", "Português", "Italiano",
+            }));
+        Check(
+            "shared language list display names are unique",
+            LanguageChoices.All.Select(choice => choice.Name).Distinct().Count() == LanguageChoices.All.Count);
+
+        // 旧配置值（中文习惯名、英文名、语言代码）全部仍可命中；真正的生造值不命中。
+        Check(
+            "shared language choices still match legacy configuration values",
+            LanguageChoices.Find("日语")?.Name == "日本語" &&
+            LanguageChoices.Find("ja")?.Name == "日本語" &&
+            LanguageChoices.Find("英语")?.Name == "English" &&
+            LanguageChoices.Find("en")?.Name == "English" &&
+            LanguageChoices.Find("中文（繁体）")?.Name == "繁體中文" &&
+            LanguageChoices.Find("中文（繁體）") is null &&
+            LanguageChoices.Find("完全不成语言的值") is null);
+
+        // 探测现算 → 映射回共享列表对应项（不是三档硬编码）：假名/纯汉字日语、简体独占字、仅拉丁、兜底。
+        Check(
+            "detection maps kana source to native japanese name",
+            LanguageChoices.FromDetection(LanguageDetector.Detect("こ こ は  通[とお]れないよ", "中文（简体）")) == "日本語");
+        Check(
+            "detection maps pure hanzi japanese to native japanese name",
+            LanguageChoices.FromDetection(LanguageDetector.Detect("進入禁止", "中文（简体）")) == "日本語");
+        Check(
+            "detection maps simplified chinese source to its native name",
+            LanguageChoices.FromDetection(LanguageDetector.Detect("这是一个测试", "English")) == "中文（简体）");
+        Check(
+            "detection maps latin only source to english",
+            LanguageChoices.FromDetection(LanguageDetector.Detect("Hello world", "中文（简体）")) == "English");
+        Check(
+            "detection falls back to japanese for empty or neutral text",
+            LanguageChoices.FromDetection(LanguageDetector.Detect("", "日本語")) == "日本語");
     }
 
     /// <summary>主题资源与控件模板必须可用；顺带验证两份色板与两份控件字典都能解析。</summary>
@@ -371,8 +432,9 @@ internal static partial class SelfTest
         var application = System.Windows.Application.Current!;
         var expectedKeys = new[]
         {
-            "Brush.Window.Background", "Brush.Card.Background", "Brush.Accent", "Brush.Text.Primary",
+            "Brush.Window.Background", "Brush.Card.Background", "Brush.Accent", "Brush.Accent.Subtle", "Brush.Text.Primary",
             "Font.Ui", "Radius.Control", "ToggleSwitch", "Button.Accent", "Nav.List", "TextBox.Multiline",
+            "Badge.Tag",
         };
         Check(
             "theme dictionaries expose every semantic key used by the settings pages",
@@ -404,7 +466,15 @@ internal static partial class SelfTest
 
             Check("favorites page exposes title and star glyph", page.Title == "收藏" && page.Glyph == "\uE734");
             Check("favorites page shows the live database path", page.DatabasePathText.Text == databasePath);
+            Check("favorites page exposes database path copy button", page.CopyPathButton is not null);
             Check("favorites page validate never blocks saving", page.Validate() is null);
+
+            // 布局契约（issue 015 / 2.2）：横向导航条直铺，旧版两个 SettingsGroup 全部移除，
+            // 窄窗换行由 WrapPanel 承担；语言筛选下拉先占位「全部」（2.3-C 填共享语言列表）。
+            Check(
+                "favorites page uses flat nav bar without settings groups",
+                page.LanguageBox.SelectedItem as string == "全部" &&
+                FindDescendants<NaniKore.App.Controls.SettingsGroup>(page).Count() == 0);
 
             page.Load(new AppConfig());
 
@@ -434,6 +504,43 @@ internal static partial class SelfTest
             page.SearchBox.Text = string.Empty;
             service.RemoveFavoriteAsync("～ない").Wait();
             Check("favorites page refreshes on favorite removed event", page.FavoriteList.Items.Count == 2);
+
+            // 语言筛选（2.3-C）：与类别、关键词三者 AND；新收藏显式写入语言。
+            service.AddFavoriteAsync(new FavoriteItem { Category = "单词", Content = "run", Language = "English" }).Wait();
+            page.LanguageBox.SelectedItem = "English";
+            Check("favorites page filters by language", page.FavoriteList.Items.Count == 1);
+            page.LanguageBox.SelectedItem = "日本語";
+            Check("favorites page language filter keeps japanese rows", page.FavoriteList.Items.Count == 2);
+            page.LanguageBox.SelectedItem = "全部";
+            Check("favorites page language filter restores all rows", page.FavoriteList.Items.Count == 3);
+
+            // 就地编辑往返（issue 015 / 2.5）：进入编辑态 → 保存（归一化 + 多字段）→ 还原展示态。
+            var editTarget = service.GetAllFavorites().First(x => x.Content == "通る");
+            page.BeginEdit(editTarget);
+            Check(
+                "favorites page enters inline edit mode",
+                page.FavoriteList.Items.OfType<FavoriteEditViewModel>().Count() == 1);
+
+            var saved = page.SaveEditAsync(editTarget, "通[とお]る", "读音: とおる\n释义: 修订", "短语", "日本語")
+                .GetAwaiter().GetResult();
+            Check("favorites page inline edit saves successfully", saved);
+            var stored = service.GetAllFavorites().Single(x => x.Id == editTarget.Id);
+            Check(
+                "favorites page inline edit persists normalized fields",
+                stored.Content == "通る" && stored.Category == "短语" && stored.Note!.Contains("修订"));
+            Check(
+                "favorites page inline edit restores display mode",
+                page.FavoriteList.Items.OfType<FavoriteDisplayViewModel>()
+                    .Any(vm => vm.Item.Content == "通る" && vm.Item.Category == "短语"));
+
+            // 归一化冲突：改后内容命中另一条收藏 → 拒绝且原行不动。
+            var collision = service.GetAllFavorites().First(x => x.Content == "過ぎる");
+            var rejected = page.SaveEditAsync(collision, "通る (とおる)", null, "单词", "日本語")
+                .GetAwaiter().GetResult();
+            Check("favorites page inline edit rejects normalized conflict", !rejected);
+            Check(
+                "favorites page inline edit keeps original on conflict",
+                service.GetAllFavorites().Any(x => x.Id == collision.Id && x.Content == "過ぎる"));
 
             // Apply 不得触碰配置副本：收藏页不拥有任何配置字段，快照必须保持默认值
             var defaults = new AppConfig();
@@ -854,7 +961,13 @@ internal static partial class SelfTest
             translationBox.RaiseEvent(mouseUpArgs);
             Check("TranslationTextBox selection raises SelectionBubble on MouseUp", selectionBubble?.BubblePopup.IsOpen == true);
 
-            // 17. 验证当气泡处于打开状态时，点击窗口内其他文字或区域（PreviewMouseDown）能立即隐藏气泡
+            // 18. 2.3-C：划词入口会把面板本轮探测的源语言灌入气泡语言下拉（含假名原文 → 日本語）。
+            Check(
+                "selection bubble language default follows panel detected source language",
+                expPanel.CurrentSourceLanguage == "日本語" &&
+                (selectionBubble?.LanguageComboBox.SelectedItem as LanguageChoice)?.Name == "日本語");
+
+            // 19. 验证当气泡处于打开状态时，点击窗口内其他文字或区域（PreviewMouseDown）能立即隐藏气泡
             var clickOtherArgs = new System.Windows.Input.MouseButtonEventArgs(
                 System.Windows.Input.Mouse.PrimaryDevice,
                 0,
@@ -865,6 +978,44 @@ internal static partial class SelfTest
             };
             expPanel.RaiseEvent(clickOtherArgs);
             Check("clicking other text or area inside window hides SelectionBubble immediately", selectionBubble?.BubblePopup.IsOpen == false);
+
+            // 20. 1.1-B 回归：StaysOpen 契约 + 收藏触发前移到 PreviewMouseLeftButtonDown，
+            // 气泡内点击（编辑框/下拉/收藏按钮）既不会关闭气泡，也不会在文本框上二次冒出新气泡。
+            Check(
+                "bubble popup stays open so in-popup clicks never race with outside dismissal",
+                selectionBubble?.BubblePopup.StaysOpen == true);
+
+            selectionBubble?.ShowAt(new System.Windows.Point(100, 100), "食べる");
+            var favoriteButton = selectionBubble?.FavoriteButton;
+            var favoritePreviewDown = new System.Windows.Input.MouseButtonEventArgs(
+                System.Windows.Input.Mouse.PrimaryDevice,
+                0,
+                System.Windows.Input.MouseButton.Left)
+            {
+                RoutedEvent = System.Windows.UIElement.PreviewMouseLeftButtonDownEvent,
+                Source = favoriteButton,
+            };
+            favoriteButton?.RaiseEvent(favoritePreviewDown);
+            Check(
+                "favorite action triggers on preview mouse down without closing via click race",
+                favoritePreviewDown.Handled &&
+                mockService.IsFavorited("食べる") &&
+                selectionBubble?.BubblePopup.IsOpen == true);
+
+            // 21. 1.1-B 回归：ContainsLogicalFocus 判据可用（无焦点时返回 false，Deactivated 延迟判定据此放行收起）。
+            Check(
+                "bubble logical focus containment reports false when nothing holds focus",
+                selectionBubble?.ContainsLogicalFocus() == false);
+
+            // 22. 1.2 布局契约：内容区外包整页 ScrollViewer（Auto），精讲区另有 MaxHeight 形成二级滚动。
+            var contentScroller = (System.Windows.Controls.ScrollViewer?)expPanel.FindName("ContentScrollViewer");
+            Check(
+                "result panel content area scrolls as a whole while explanation keeps local max height",
+                contentScroller is not null &&
+                contentScroller.VerticalScrollBarVisibility == System.Windows.Controls.ScrollBarVisibility.Auto &&
+                contentScroller.HorizontalScrollBarVisibility == System.Windows.Controls.ScrollBarVisibility.Disabled &&
+                explanationView is not null &&
+                explanationView.MaxHeight > 0);
 
             selectionBubble?.Hide();
         }
