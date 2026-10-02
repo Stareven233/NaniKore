@@ -28,14 +28,14 @@ internal sealed class ThinkingStreamSanitizer
         var index = 0;
         if (_skipNextNewline)
         {
-            _skipNextNewline = false;
-            if (text.StartsWith("\r\n", StringComparison.Ordinal))
+            while (index < text.Length && (text[index] == '\r' || text[index] == '\n'))
             {
-                index = 2;
+                index++;
             }
-            else if (text.StartsWith("\n", StringComparison.Ordinal))
+
+            if (index < text.Length)
             {
-                index = 1;
+                _skipNextNewline = false;
             }
         }
 
@@ -54,7 +54,16 @@ internal sealed class ThinkingStreamSanitizer
                         continue;
                     }
 
-                    if (IsPrefixOfAny(current, OpenTags))
+                    if (MatchesAny(current, CloseTags))
+                    {
+                        // 孤立闭合标签（如以 </think> 开头的模型流）：静默吞掉并跳过紧随的换行
+                        _insideThinking = false;
+                        _tagBuffer.Clear();
+                        SkipNewline(text, ref index);
+                        continue;
+                    }
+
+                    if (IsPrefixOfAny(current, OpenTags) || IsPrefixOfAny(current, CloseTags))
                     {
                         continue;
                     }
@@ -94,6 +103,12 @@ internal sealed class ThinkingStreamSanitizer
                     _insideThinking = true;
                     _tagBuffer.Clear();
                 }
+                else if (MatchesAny(buf, CloseTags))
+                {
+                    _insideThinking = false;
+                    _tagBuffer.Clear();
+                    SkipNewline(text, ref index);
+                }
             }
             else
             {
@@ -105,21 +120,7 @@ internal sealed class ThinkingStreamSanitizer
                     {
                         _insideThinking = false;
                         _tagBuffer.Clear();
-                        if (index < text.Length)
-                        {
-                            if (text.AsSpan(index).StartsWith("\r\n"))
-                            {
-                                index += 2;
-                            }
-                            else if (text[index] == '\n')
-                            {
-                                index += 1;
-                            }
-                        }
-                        else
-                        {
-                            _skipNextNewline = true;
-                        }
+                        SkipNewline(text, ref index);
                         continue;
                     }
 
@@ -136,21 +137,7 @@ internal sealed class ThinkingStreamSanitizer
 
                     if (!_insideThinking)
                     {
-                        if (index < text.Length)
-                        {
-                            if (text.AsSpan(index).StartsWith("\r\n"))
-                            {
-                                index += 2;
-                            }
-                            else if (text[index] == '\n')
-                            {
-                                index += 1;
-                            }
-                        }
-                        else
-                        {
-                            _skipNextNewline = true;
-                        }
+                        SkipNewline(text, ref index);
                         continue;
                     }
 
@@ -177,23 +164,22 @@ internal sealed class ThinkingStreamSanitizer
                 {
                     _insideThinking = false;
                     _tagBuffer.Clear();
-                    if (index < text.Length)
-                    {
-                        if (text.AsSpan(index).StartsWith("\r\n"))
-                        {
-                            index += 2;
-                        }
-                        else if (text[index] == '\n')
-                        {
-                            index += 1;
-                        }
-                    }
-                    else
-                    {
-                        _skipNextNewline = true;
-                    }
+                    SkipNewline(text, ref index);
                 }
             }
+        }
+    }
+
+    private void SkipNewline(string text, ref int index)
+    {
+        while (index < text.Length && (text[index] == '\r' || text[index] == '\n'))
+        {
+            index++;
+        }
+
+        if (index >= text.Length)
+        {
+            _skipNextNewline = true;
         }
     }
 
@@ -206,6 +192,13 @@ internal sealed class ThinkingStreamSanitizer
         {
             var remaining = _tagBuffer.ToString();
             _tagBuffer.Clear();
+
+            // 若残留内容是思考标签或孤立闭合标签，静默丢弃，绝不泄漏给正文
+            if (MatchesAny(remaining, OpenTags) || MatchesAny(remaining, CloseTags))
+            {
+                yield break;
+            }
+
             if (_insideThinking)
             {
                 yield return (null, remaining);
@@ -221,18 +214,43 @@ internal sealed class ThinkingStreamSanitizer
     {
         while (_tagBuffer.Length > 0)
         {
-            var tags = insideThinking ? CloseTags : OpenTags;
             var current = _tagBuffer.ToString();
-            if (MatchesAny(current, tags))
+            if (insideThinking)
             {
-                _insideThinking = !insideThinking;
-                _tagBuffer.Clear();
-                yield break;
-            }
+                if (MatchesAny(current, CloseTags))
+                {
+                    _insideThinking = false;
+                    _tagBuffer.Clear();
+                    _skipNextNewline = true;
+                    yield break;
+                }
 
-            if (IsPrefixOfAny(current, tags))
+                if (IsPrefixOfAny(current, CloseTags))
+                {
+                    yield break;
+                }
+            }
+            else
             {
-                yield break;
+                if (MatchesAny(current, OpenTags))
+                {
+                    _insideThinking = true;
+                    _tagBuffer.Clear();
+                    yield break;
+                }
+
+                if (MatchesAny(current, CloseTags))
+                {
+                    _insideThinking = false;
+                    _tagBuffer.Clear();
+                    _skipNextNewline = true;
+                    yield break;
+                }
+
+                if (IsPrefixOfAny(current, OpenTags) || IsPrefixOfAny(current, CloseTags))
+                {
+                    yield break;
+                }
             }
 
             var ch = _tagBuffer[0].ToString();

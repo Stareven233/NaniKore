@@ -847,6 +847,11 @@ internal static partial class SelfTest
         }
         Check("expanding explanation expander raises ExplanationRequested event", explanationRequested);
 
+        // 验证精讲前先有译文，并在精讲思考链中暂存与正文到达后无缝恢复
+        var expTransBox = (System.Windows.Controls.TextBox?)expPanel.FindName("TranslationTextBox");
+        expPanel.Append(new UnderstandDelta(DeltaChannel.Translation, "这里过不去哦。"));
+        Check("translation text is established before explanation", expTransBox?.Text == "这里过不去哦。");
+
         // 验证 BeginExplanation 进入生成态
         expPanel.BeginExplanation();
         Check(
@@ -855,8 +860,19 @@ internal static partial class SelfTest
             expander?.IsExpanded == true &&
             string.IsNullOrEmpty(expPanel.ExplanationText));
 
-        // 验证 Append 接收 DeltaChannel.Explanation 流式增量并输出至 ExplanationView
+        // 验证精讲思考增量就地刷新，但正文到达瞬间无缝恢复原有译文
+        expPanel.Append(new UnderstandDelta(DeltaChannel.Thinking, "正在深度思考语法结构"));
+        Check(
+            "thinking during explanation displays placeholder temporarily",
+            expTransBox?.Text.Contains("正在深度思考语法结构") == true);
+
+        // 验证 Append 接收 DeltaChannel.Explanation 流式增量并输出至 ExplanationView，同时恢复译文
         expPanel.Append(new UnderstandDelta(DeltaChannel.Explanation, "### [词汇/短语]\n- **通る** | とおる"));
+        Check(
+            "explanation delta arriving seamlessly restores saved translation in TranslationTextBox",
+            expTransBox?.Text == "这里过不去哦。" &&
+            !expTransBox.Text.Contains("思考中"));
+
         expPanel.Append(new UnderstandDelta(DeltaChannel.Explanation, " | 动词原形 | 通过\n\n### [语法/句型]\n- **～ない** | 否定表达"));
         Check(
             "streaming explanation delta appends to explanation card view",
@@ -869,6 +885,17 @@ internal static partial class SelfTest
         // 验证 CompleteExplanation 恢复常态标题
         expPanel.CompleteExplanation(true);
         Check("CompleteExplanation restores title to normal header", expander?.Header as string == "📖 精讲与语法解析");
+        Check("CompleteExplanation retains restored translation text", expTransBox?.Text == "这里过不去哦。");
+
+        // 验证精讲中途若只出现思考便异常结束，CompleteExplanation 兜底恢复译文
+        expPanel.BeginExplanation();
+        expPanel.Append(new UnderstandDelta(DeltaChannel.Thinking, "未完成的精讲思考"));
+        Check("expander thinking replaces text temporarily again", expTransBox?.Text.Contains("未完成的精讲思考") == true);
+        expPanel.CompleteExplanation(false);
+        Check(
+            "CompleteExplanation on failure restores saved translation text",
+            expTransBox?.Text == "这里过不去哦。" &&
+            !expTransBox.Text.Contains("思考中"));
 
         // 验证发起新一轮翻译时 Expander 自动复位折叠、禁用并清空
         expPanel.BeginTranslation();

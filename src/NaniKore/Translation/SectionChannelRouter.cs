@@ -177,12 +177,21 @@ internal sealed class SectionChannelRouter
     /// 噪声标签清单（按现行两段式协议校准）：仅收录在现行协议下仍有真实产生源的兜底条目——
     /// 1. 提示词显式声明的结构占位符（&lt;annotated_source&gt; / &lt;translation&gt;，含方括号与冒号变体）；
     /// 2. 模型自发的中文分区标签（提示词将第一部分描述为「完成注音标注的原文」，故 原文/注音/译文 均有产生源）；
-    /// 3. Markdown 代码围栏习惯。
-    /// 旧版英文视觉提示词的 &lt;transcription&gt; 占位符系列随协议废弃已整体移除，不再兜底。
-    /// 新增条目前先确认产生源，并由 TestNoiseTagCalibration 守住该契约。
-    /// </summary>
+    private static readonly string[] ThinkingNoiseTags =
+    [
+        "<think>",
+        "</think>",
+        "<thought>",
+        "</thought>",
+        "[think]",
+        "[/think]",
+        "[thought]",
+        "[/thought]"
+    ];
+
     internal static readonly string[] SourceLeadingTags =
     [
+        .. ThinkingNoiseTags,
         "<annotated_source>",
         "[annotated_source]",
         "annotated_source:",
@@ -197,6 +206,7 @@ internal sealed class SectionChannelRouter
 
     internal static readonly string[] TranslationLeadingTags =
     [
+        .. ThinkingNoiseTags,
         "<translation>",
         "[translation]",
         "```markdown",
@@ -210,6 +220,7 @@ internal sealed class SectionChannelRouter
 
     internal static readonly string[] SourceCloseTags =
     [
+        .. ThinkingNoiseTags,
         "</annotated_source>",
         "[/annotated_source]",
         "```markdown",
@@ -219,6 +230,7 @@ internal sealed class SectionChannelRouter
 
     internal static readonly string[] TranslationCloseTags =
     [
+        .. ThinkingNoiseTags,
         "</translation>",
         "[/translation]",
         "```markdown",
@@ -287,6 +299,7 @@ internal sealed class SectionChannelRouter
 
     private static readonly string[] SourceResidualNoise =
     [
+        .. ThinkingNoiseTags,
         "</annotated_source>",
         "<annotated_source>",
         "[/annotated_source]",
@@ -300,6 +313,7 @@ internal sealed class SectionChannelRouter
 
     private static readonly string[] TranslationResidualNoise =
     [
+        .. ThinkingNoiseTags,
         "</translation>",
         "<translation>",
         "[/translation]",

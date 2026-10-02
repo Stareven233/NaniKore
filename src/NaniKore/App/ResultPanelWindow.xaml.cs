@@ -39,6 +39,7 @@ internal sealed partial class ResultPanelWindow : Window
     private readonly System.Text.StringBuilder _thinkingBuffer = new();
     private long _lastThinkingUpdateTick;
     private bool _isDisplayingThinking;
+    private string? _savedTranslationForExplanation;
 
     public ResultPanelWindow()
     {
@@ -207,6 +208,7 @@ internal sealed partial class ResultPanelWindow : Window
         _isDisplayingThinking = false;
         _thinkingBuffer.Clear();
         _lastThinkingUpdateTick = 0;
+        _savedTranslationForExplanation = null;
         ErrorDetailsTextBox.Clear();
         ErrorDetailsExpander.Visibility = Visibility.Collapsed;
         ErrorDetailsExpander.IsExpanded = false;
@@ -256,6 +258,7 @@ internal sealed partial class ResultPanelWindow : Window
         _isDisplayingThinking = false;
         _thinkingBuffer.Clear();
         _lastThinkingUpdateTick = 0;
+        _savedTranslationForExplanation = null;
         _initialTranslationSource = RubyTextParser.ToPlainText(_annotatedSource) is { Length: > 0 } plain ? plain : SourceTextBox.Text;
         ClearMetrics();
         TranslateButton.Content = "翻译";
@@ -290,6 +293,7 @@ internal sealed partial class ResultPanelWindow : Window
         _isDisplayingThinking = false;
         _thinkingBuffer.Clear();
         _lastThinkingUpdateTick = 0;
+        _savedTranslationForExplanation = null;
     }
 
     /// <summary>将结果卡贴在本次桌面选区下方；下方空间不足时自动翻到选区上方。</summary>
@@ -427,6 +431,12 @@ internal sealed partial class ResultPanelWindow : Window
 
         if (delta.Channel == Translation.DeltaChannel.Explanation)
         {
+            if (_isDisplayingThinking)
+            {
+                TranslationTextBox.Text = _savedTranslationForExplanation ?? string.Empty;
+                _isDisplayingThinking = false;
+            }
+
             ExplanationView.AppendChunk(delta.Text);
             return;
         }
@@ -748,7 +758,7 @@ internal sealed partial class ResultPanelWindow : Window
         ExplanationExpander.IsEnabled = enabled;
     }
 
-    /// <summary>第二阶段精讲开始生成：重置内容并更新标题为生成中状态。</summary>
+    /// <summary>第二阶段精讲开始生成：重置内容并更新标题为生成中状态，暂存译文避免被思考提示覆盖。</summary>
     public void BeginExplanation()
     {
         if (!Dispatcher.CheckAccess())
@@ -757,12 +767,17 @@ internal sealed partial class ResultPanelWindow : Window
             return;
         }
 
+        _savedTranslationForExplanation = TranslationTextBox.Text;
+        _isDisplayingThinking = false;
+        _thinkingBuffer.Clear();
+        _lastThinkingUpdateTick = 0;
+
         ExplanationExpander.Header = "📖 精讲与语法解析 (正在生成…)";
         ExplanationExpander.IsExpanded = true;
         ExplanationView.Clear();
     }
 
-    /// <summary>第二阶段精讲流式结束：恢复常态标题或提示重试。</summary>
+    /// <summary>第二阶段精讲流式结束：恢复常态标题或提示重试，若译文区仍处于思考提示状态则无缝恢复暂存译文。</summary>
     public void CompleteExplanation(bool success)
     {
         if (!Dispatcher.CheckAccess())
@@ -770,6 +785,13 @@ internal sealed partial class ResultPanelWindow : Window
             Dispatcher.Invoke(() => CompleteExplanation(success));
             return;
         }
+
+        if (_isDisplayingThinking)
+        {
+            TranslationTextBox.Text = _savedTranslationForExplanation ?? string.Empty;
+            _isDisplayingThinking = false;
+        }
+        _savedTranslationForExplanation = null;
 
         ExplanationExpander.Header = success
             ? "📖 精讲与语法解析"

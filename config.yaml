@@ -1,6 +1,6 @@
 # 此文件是可提交的运行配置模板：API Key 仅由 Windows DPAPI 保存到当前用户配置目录，不写入此文件。
 # 修改根目录模板后重新构建；运行时在 Debug 或发布目录各自使用其副本。
-version: 0.2.14
+version: 0.2.14+4
 general:
   auto_translate: false
   target_language: 中文（简体）
@@ -39,6 +39,14 @@ profiles:
   base_url: https://note3-prev-api.askdiandian.com/v1
   model: dots3-note-prev
   supports_vision: true
+  timeout_seconds: 30
+- id: openai-index-translate
+  name: index-translate
+  kind: openai
+  api_type: completions
+  base_url: https://index-translate.bilibili.com/v1
+  model: index-homura-9b
+  supports_vision: false
   timeout_seconds: 30
 - id: gemini-hachimi
   name: 哈基米

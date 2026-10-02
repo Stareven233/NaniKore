@@ -1291,6 +1291,42 @@ internal static partial class SelfTest
             "ThinkingStreamSanitizer passes through non-thinking xml tags as clean text",
             normalClean == "<annotated_source>原文</annotated_source>" &&
             string.IsNullOrEmpty(normalThinking));
+
+        // 6. 孤立闭合标签（如以 </think> 开头的模型流）静默吞除，且吞掉随后的换行符
+        var isolatedCloseSanitizer = new ThinkingStreamSanitizer();
+        var iso1 = isolatedCloseSanitizer.Push("</think>\n\n你好世界").ToList();
+        var isoClean = string.Concat(iso1.Select(o => o.CleanText));
+        var isoThinking = string.Concat(iso1.Select(o => o.ThinkingText));
+        Check(
+            "ThinkingStreamSanitizer silently swallows isolated close tag and trailing newlines",
+            isoClean == "你好世界" &&
+            string.IsNullOrEmpty(isoThinking));
+
+        // 7. 跨 chunk 切分的孤立闭合标签（如 </thi + nk> + \n\n + 纯译文）
+        var splitCloseSanitizer = new ThinkingStreamSanitizer();
+        var sc1 = splitCloseSanitizer.Push("</thi").ToList();
+        var sc2 = splitCloseSanitizer.Push("nk>\n\n").ToList();
+        var sc3 = splitCloseSanitizer.Push("纯译文内容").ToList();
+        var scComplete = splitCloseSanitizer.Complete().ToList();
+        var scAll = sc1.Concat(sc2).Concat(sc3).Concat(scComplete).ToList();
+        var scClean = string.Concat(scAll.Select(o => o.CleanText));
+        var scThinking = string.Concat(scAll.Select(o => o.ThinkingText));
+        Check(
+            "ThinkingStreamSanitizer handles cross-chunk isolated close tag and newlines cleanly",
+            scClean == "纯译文内容" &&
+            string.IsNullOrEmpty(scThinking));
+
+        // 8. 结合 SectionChannelRouter 验证孤立闭合标签不破坏纯译文 fallback
+        var router = new SectionChannelRouter();
+        var testSanitizer = new ThinkingStreamSanitizer();
+        var d1 = TranslationProviderBase.Route(router, testSanitizer, "</think>", UnderstandKind.Translate);
+        var d2 = TranslationProviderBase.Route(router, testSanitizer, "\n\n这是纯译文结果。", UnderstandKind.Translate);
+        var dEnd = TranslationProviderBase.CompleteStream(router, testSanitizer, UnderstandKind.Translate);
+        var allDeltas = d1.Concat(d2).Concat(dEnd).ToList();
+        Check(
+            "Isolated close tag with plain translation successfully fallbacks to Translation channel without leaking to SourceText",
+            allDeltas.All(d => d.Channel == DeltaChannel.Translation) &&
+            string.Concat(allDeltas.Select(d => d.Text)) == "这是纯译文结果。");
     }
 
     private static void TestProviderThinkingParameters()

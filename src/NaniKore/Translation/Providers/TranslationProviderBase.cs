@@ -66,7 +66,7 @@ internal abstract class TranslationProviderBase : ITranslationProvider
     /// 各厂商共用的增量分派：可选接入 ThinkingStreamSanitizer 进行思考链过滤；
     /// Translate 交给分栏路由器拆原文/译文通道，Explain 直接落到 Explanation 通道。空增量原样短路。
     /// </summary>
-    protected static IEnumerable<UnderstandDelta> Route(
+    internal static IEnumerable<UnderstandDelta> Route(
         SectionChannelRouter? router,
         ThinkingStreamSanitizer? sanitizer,
         string text,
@@ -99,7 +99,7 @@ internal abstract class TranslationProviderBase : ITranslationProvider
         return results;
     }
 
-    protected static IEnumerable<UnderstandDelta> Route(SectionChannelRouter? router, string text, UnderstandKind kind) =>
+    internal static IEnumerable<UnderstandDelta> Route(SectionChannelRouter? router, string text, UnderstandKind kind) =>
         Route(router, null, text, kind);
 
     private static IEnumerable<UnderstandDelta> RouteCore(SectionChannelRouter? router, string text, UnderstandKind kind)
@@ -123,7 +123,7 @@ internal abstract class TranslationProviderBase : ITranslationProvider
     /// <summary>
     /// 流结束时刷新 Sanitizer 与 Router 中残留的增量。
     /// </summary>
-    protected static IEnumerable<UnderstandDelta> CompleteStream(
+    internal static IEnumerable<UnderstandDelta> CompleteStream(
         SectionChannelRouter? router,
         ThinkingStreamSanitizer? sanitizer,
         UnderstandKind kind)
