@@ -36,6 +36,9 @@ internal sealed partial class ResultPanelWindow : Window
     private bool _isEditingSource;
     private bool _receivedAnnotatedSource;
     private string _targetLanguage = "中文（简体）";
+    private readonly System.Text.StringBuilder _thinkingBuffer = new();
+    private long _lastThinkingUpdateTick;
+    private bool _isDisplayingThinking;
 
     public ResultPanelWindow()
     {
@@ -201,6 +204,9 @@ internal sealed partial class ResultPanelWindow : Window
         ClearMetrics();
         _translationInsertIndex = 0;
         _translationHasContent = false;
+        _isDisplayingThinking = false;
+        _thinkingBuffer.Clear();
+        _lastThinkingUpdateTick = 0;
         ErrorDetailsTextBox.Clear();
         ErrorDetailsExpander.Visibility = Visibility.Collapsed;
         ErrorDetailsExpander.IsExpanded = false;
@@ -233,6 +239,11 @@ internal sealed partial class ResultPanelWindow : Window
         if (!inProgress)
         {
             TranslateButton.Content = "翻译";
+            if (_isDisplayingThinking)
+            {
+                TranslationTextBox.Clear();
+                _isDisplayingThinking = false;
+            }
         }
     }
 
@@ -242,6 +253,9 @@ internal sealed partial class ResultPanelWindow : Window
         _translationInsertIndex = 0;
         _translationHasContent = false;
         _receivedAnnotatedSource = false;
+        _isDisplayingThinking = false;
+        _thinkingBuffer.Clear();
+        _lastThinkingUpdateTick = 0;
         _initialTranslationSource = RubyTextParser.ToPlainText(_annotatedSource) is { Length: > 0 } plain ? plain : SourceTextBox.Text;
         ClearMetrics();
         TranslateButton.Content = "翻译";
@@ -273,6 +287,9 @@ internal sealed partial class ResultPanelWindow : Window
         TranslationTextBox.Clear();
         _translationInsertIndex = 0;
         _translationHasContent = false;
+        _isDisplayingThinking = false;
+        _thinkingBuffer.Clear();
+        _lastThinkingUpdateTick = 0;
     }
 
     /// <summary>将结果卡贴在本次桌面选区下方；下方空间不足时自动翻到选区上方。</summary>
@@ -372,6 +389,25 @@ internal sealed partial class ResultPanelWindow : Window
             return;
         }
 
+        if (delta.Channel == Translation.DeltaChannel.Thinking)
+        {
+            _thinkingBuffer.Append(delta.Text);
+            var now = Environment.TickCount64;
+            // 首次思考片段立即反馈，后续以约 1200ms 节流刷新
+            if (_lastThinkingUpdateTick == 0 || now - _lastThinkingUpdateTick >= 1200)
+            {
+                _lastThinkingUpdateTick = now;
+                var snippet = ExtractThinkingSnippet(_thinkingBuffer.ToString());
+                if (snippet.Length > 0)
+                {
+                    TranslationTextBox.Text = $"💭 [思考中] {snippet}";
+                    _isDisplayingThinking = true;
+                    TranslationTextBox.ScrollToHome();
+                }
+            }
+            return;
+        }
+
         if (delta.Channel == Translation.DeltaChannel.SourceText)
         {
             if (!_receivedAnnotatedSource)
@@ -405,6 +441,12 @@ internal sealed partial class ResultPanelWindow : Window
         var text = delta.Text;
         if (delta.Channel == Translation.DeltaChannel.Translation)
         {
+            if (_isDisplayingThinking)
+            {
+                TranslationTextBox.Clear();
+                _isDisplayingThinking = false;
+            }
+
             if (!_translationHasContent)
             {
                 // 不让模型流式输出的换行把译文框顶出两行空白；跨增量保留“尚未出现正文”的状态。
@@ -433,6 +475,32 @@ internal sealed partial class ResultPanelWindow : Window
 
         target.AppendText(text);
         target.ScrollToEnd();
+    }
+
+    private static string ExtractThinkingSnippet(string thinking)
+    {
+        if (string.IsNullOrWhiteSpace(thinking))
+        {
+            return string.Empty;
+        }
+
+        var lines = thinking.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+        var latest = lines.Length > 0 ? lines[^1].Trim() : string.Empty;
+        if (latest.Length == 0 && lines.Length > 1)
+        {
+            latest = lines[^2].Trim();
+        }
+
+        if (latest.Length == 0)
+        {
+            latest = thinking.Trim();
+        }
+
+        latest = Regex.Replace(latest, @"\s+", " ");
+        const int maxLength = 60;
+        return latest.Length > maxLength
+            ? latest[..maxLength] + "..."
+            : latest + "...";
     }
 
     /// <summary>状态文本统一走内联提示条；新的非错误状态会清除上一轮的可展开错误详情。</summary>

@@ -194,6 +194,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         ModelBox.Text = profile.Model;
         TimeoutBox.Value = profile.TimeoutSeconds;
         SupportsVisionToggle.IsChecked = profile.SupportsVision;
+        EnableThinkingToggle.IsChecked = profile.EnableThinking;
         // 优先回显本次设置会话中尚未提交的修改，避免切换配置档后丢失编辑内容。
         SetApiKey(_pendingKeys.GetValueOrDefault(profile.Id) ?? SecretStore.Load(profile.Id) ?? string.Empty);
         SetApiKeyVisibility(false);
@@ -224,6 +225,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         profile.Model = ModelBox.Text.Trim();
         profile.TimeoutSeconds = TimeoutBox.Value;
         profile.SupportsVision = SupportsVisionToggle.IsChecked == true;
+        profile.EnableThinking = EnableThinkingToggle.IsChecked == true;
         if (GetApiKey() is { Length: > 0 } apiKey && !string.IsNullOrWhiteSpace(apiKey))
         {
             _pendingKeys[profile.Id] = apiKey;

@@ -27,6 +27,9 @@ internal static partial class SelfTest
         TestProviderCapabilitiesAndErrors();
         TestTokenUsageAndMetrics();
         TestTranslationSessionAndMultiTurnReplay();
+        TestThinkingStreamSanitizer();
+        TestProviderThinkingParameters();
+        TestProviderOutOfBandThinkingExtraction();
     }
 
     private static void TestTranslationPromptTemplates()
@@ -1230,6 +1233,270 @@ internal static partial class SelfTest
             geminiDoc.RootElement.GetProperty("contents")[1].GetProperty("role").GetString() == "model" &&
             geminiDoc.RootElement.GetProperty("contents")[1].GetProperty("parts")[0].GetProperty("text").GetString() == "こ こ は  通[とお]れないよ\n---TRANSLATION---\n这里过不去哦" &&
             geminiDoc.RootElement.GetProperty("contents")[2].GetProperty("role").GetString() == "user");
+    }
+
+    private static void TestThinkingStreamSanitizer()
+    {
+        // 1. 基础隔离：单 chunk 内包含完整 <think> 思考链
+        var sanitizer = new ThinkingStreamSanitizer();
+        var outputs = sanitizer.Push("<think>思考词性与语法</think>私[わたし]は 学生[がくせい]です。").ToList();
+        var clean = string.Concat(outputs.Select(o => o.CleanText));
+        var thinking = string.Concat(outputs.Select(o => o.ThinkingText));
+        Check(
+            "ThinkingStreamSanitizer separates full inline <think> tags into thinking and clean text",
+            clean == "私[わたし]は 学生[がくせい]です。" &&
+            thinking == "思考词性与语法");
+
+        // 2. 跨 chunk 标签拆分（<thi + nk> 与 </thi + nk>）
+        var chunkSanitizer = new ThinkingStreamSanitizer();
+        var c1 = chunkSanitizer.Push("<thi").ToList();
+        var c2 = chunkSanitizer.Push("nk>深度思考中").ToList();
+        var c3 = chunkSanitizer.Push("</thi").ToList();
+        var c4 = chunkSanitizer.Push("nk>\n你好世界").ToList();
+        var allChunks = c1.Concat(c2).Concat(c3).Concat(c4).ToList();
+        var chunkClean = string.Concat(allChunks.Select(o => o.CleanText));
+        var chunkThinking = string.Concat(allChunks.Select(o => o.ThinkingText));
+        Check(
+            "ThinkingStreamSanitizer buffers cross-chunk open and close tags correctly",
+            chunkClean == "你好世界" &&
+            chunkThinking == "深度思考中");
+
+        // 3. 思考流异常中断未闭合：不向干净正文通道泄漏任何字符
+        var unclosedSanitizer = new ThinkingStreamSanitizer();
+        var u1 = unclosedSanitizer.Push("<think>未完成的思考").ToList();
+        var uComplete = unclosedSanitizer.Complete().ToList();
+        var unclosedClean = string.Concat(u1.Concat(uComplete).Select(o => o.CleanText));
+        var unclosedThinking = string.Concat(u1.Concat(uComplete).Select(o => o.ThinkingText));
+        Check(
+            "ThinkingStreamSanitizer preserves unclosed thinking content and never leaks to clean channel",
+            string.IsNullOrEmpty(unclosedClean) &&
+            unclosedThinking == "未完成的思考");
+
+        // 4. 思考内部包含 '<' 符号（如 1 < 2）不被误判为闭标签
+        var mathSanitizer = new ThinkingStreamSanitizer();
+        var m1 = mathSanitizer.Push("<think>比较 1 < 2 与 3 > 2</think>正文").ToList();
+        var mathClean = string.Concat(m1.Select(o => o.CleanText));
+        var mathThinking = string.Concat(m1.Select(o => o.ThinkingText));
+        Check(
+            "ThinkingStreamSanitizer tolerates less-than signs inside thinking block",
+            mathClean == "正文" &&
+            mathThinking == "比较 1 < 2 与 3 > 2");
+
+        // 5. 非思考标签前缀退回（如 <annotated_source>）原样输出为干净正文
+        var normalSanitizer = new ThinkingStreamSanitizer();
+        var n1 = normalSanitizer.Push("<annotated_source>原文</annotated_source>").ToList();
+        var normalClean = string.Concat(n1.Select(o => o.CleanText));
+        var normalThinking = string.Concat(n1.Select(o => o.ThinkingText));
+        Check(
+            "ThinkingStreamSanitizer passes through non-thinking xml tags as clean text",
+            normalClean == "<annotated_source>原文</annotated_source>" &&
+            string.IsNullOrEmpty(normalThinking));
+    }
+
+    private static void TestProviderThinkingParameters()
+    {
+        var request = new UnderstandRequest(UnderstandKind.Translate, "测试", null, "zh-CN");
+
+        // 1. 官方 OpenAI端点：completions 模式
+        var officialProfileOff = new ProviderProfile
+        {
+            Id = "openai-official",
+            BaseUrl = "https://api.openai.com/v1",
+            Model = "gpt-4o",
+            EnableThinking = false,
+        };
+        var officialProviderOff = new OpenAiProvider(officialProfileOff, "key", new PromptConfig());
+        using var offMsg = officialProviderOff.CreateCompletionsRequest(request);
+        using var offDoc = JsonDocument.Parse(offMsg.Content!.ReadAsStringAsync().Result);
+        Check(
+            "Official OpenAI with EnableThinking=false does not inject enable_thinking or reasoning_effort",
+            !offDoc.RootElement.TryGetProperty("enable_thinking", out _) &&
+            !offDoc.RootElement.TryGetProperty("reasoning_effort", out _));
+
+        var officialProfileOnO1 = new ProviderProfile
+        {
+            Id = "openai-o1",
+            BaseUrl = "https://api.openai.com/v1",
+            Model = "o1-mini",
+            EnableThinking = true,
+        };
+        var officialProviderOnO1 = new OpenAiProvider(officialProfileOnO1, "key", new PromptConfig());
+        using var onO1Msg = officialProviderOnO1.CreateCompletionsRequest(request);
+        using var onO1Doc = JsonDocument.Parse(onO1Msg.Content!.ReadAsStringAsync().Result);
+        Check(
+            "Official OpenAI with EnableThinking=true and o1 model injects reasoning_effort=low but never enable_thinking",
+            !onO1Doc.RootElement.TryGetProperty("enable_thinking", out _) &&
+            onO1Doc.RootElement.GetProperty("reasoning_effort").GetString() == "low");
+
+        // 2. 官方 OpenAI端点：responses 模式
+        var responsesProfile = new ProviderProfile
+        {
+            Id = "openai-resp",
+            ApiType = "responses",
+            BaseUrl = "https://api.openai.com/v1",
+            Model = "o3-mini",
+            EnableThinking = true,
+        };
+        var responsesProvider = new OpenAiProvider(responsesProfile, "key", new PromptConfig());
+        using var respMsg = responsesProvider.CreateResponsesRequest(request);
+        using var respDoc = JsonDocument.Parse(respMsg.Content!.ReadAsStringAsync().Result);
+        Check(
+            "OpenAI Responses API with EnableThinking=true injects reasoning object and never enable_thinking",
+            !respDoc.RootElement.TryGetProperty("enable_thinking", out _) &&
+            respDoc.RootElement.GetProperty("reasoning").GetProperty("effort").GetString() == "low");
+
+        // 3. 第三方兼容端点（如 SiliconFlow / Qwen / DeepSeek）
+        var compatProfileOff = new ProviderProfile
+        {
+            Id = "compat-off",
+            BaseUrl = "https://api.siliconflow.cn/v1",
+            Model = "Qwen/Qwen2.5-7B",
+            EnableThinking = false,
+        };
+        var compatProviderOff = new OpenAiProvider(compatProfileOff, "key", new PromptConfig());
+        using var compatOffMsg = compatProviderOff.CreateCompletionsRequest(request);
+        using var compatOffDoc = JsonDocument.Parse(compatOffMsg.Content!.ReadAsStringAsync().Result);
+        Check(
+            "OpenAI compatible provider with EnableThinking=false injects enable_thinking=false and thinking.type=disabled",
+            compatOffDoc.RootElement.GetProperty("enable_thinking").GetBoolean() == false &&
+            compatOffDoc.RootElement.GetProperty("thinking").GetProperty("type").GetString() == "disabled");
+
+        var compatProfileOn = new ProviderProfile
+        {
+            Id = "compat-on",
+            BaseUrl = "https://api.siliconflow.cn/v1",
+            Model = "deepseek-ai/DeepSeek-R1",
+            EnableThinking = true,
+        };
+        var compatProviderOn = new OpenAiProvider(compatProfileOn, "key", new PromptConfig());
+        using var compatOnMsg = compatProviderOn.CreateCompletionsRequest(request);
+        using var compatOnDoc = JsonDocument.Parse(compatOnMsg.Content!.ReadAsStringAsync().Result);
+        Check(
+            "OpenAI compatible provider with EnableThinking=true injects enable_thinking=true and thinking.type=enabled",
+            compatOnDoc.RootElement.GetProperty("enable_thinking").GetBoolean() == true &&
+            compatOnDoc.RootElement.GetProperty("thinking").GetProperty("type").GetString() == "enabled");
+
+        // 4. Claude Provider：关闭时严禁下发 thinking，开启时注入 budget_tokens
+        var claudeProfileOff = new ProviderProfile
+        {
+            Id = "claude-off",
+            BaseUrl = "https://api.anthropic.com",
+            Model = "claude-3-5-sonnet-20241022",
+            EnableThinking = false,
+        };
+        var claudeProviderOff = new ClaudeProvider(claudeProfileOff, "key", new PromptConfig());
+        using var claudeOffMsg = claudeProviderOff.CreateRequest(request);
+        using var claudeOffDoc = JsonDocument.Parse(claudeOffMsg.Content!.ReadAsStringAsync().Result);
+        Check(
+            "Claude provider with EnableThinking=false completely omits thinking parameter to avoid 400 rejection",
+            !claudeOffDoc.RootElement.TryGetProperty("thinking", out _));
+
+        var claudeProfileOn = new ProviderProfile
+        {
+            Id = "claude-on",
+            BaseUrl = "https://api.anthropic.com",
+            Model = "claude-3-7-sonnet-20250219",
+            EnableThinking = true,
+        };
+        var claudeProviderOn = new ClaudeProvider(claudeProfileOn, "key", new PromptConfig());
+        using var claudeOnMsg = claudeProviderOn.CreateRequest(request);
+        using var claudeOnDoc = JsonDocument.Parse(claudeOnMsg.Content!.ReadAsStringAsync().Result);
+        Check(
+            "Claude provider with EnableThinking=true injects enabled thinking with budget_tokens 1024",
+            claudeOnDoc.RootElement.GetProperty("thinking").GetProperty("type").GetString() == "enabled" &&
+            claudeOnDoc.RootElement.GetProperty("thinking").GetProperty("budget_tokens").GetInt32() == 1024);
+
+        // 5. Gemini Provider：嵌套在 generationConfig 内
+        var geminiProfileOff = new ProviderProfile
+        {
+            Id = "gemini-off",
+            BaseUrl = "https://generativelanguage.googleapis.com/v1beta",
+            Model = "gemini-2.0-flash",
+            EnableThinking = false,
+        };
+        var geminiProviderOff = new GeminiProvider(geminiProfileOff, "key", new PromptConfig());
+        using var geminiOffMsg = geminiProviderOff.CreateRequest(request);
+        using var geminiOffDoc = JsonDocument.Parse(geminiOffMsg.Content!.ReadAsStringAsync().Result);
+        Check(
+            "Gemini provider with EnableThinking=false nests thinkingBudget=0 inside generationConfig",
+            geminiOffDoc.RootElement.GetProperty("generationConfig").GetProperty("thinkingConfig").GetProperty("thinkingBudget").GetInt32() == 0);
+
+        var geminiProfileOn = new ProviderProfile
+        {
+            Id = "gemini-on",
+            BaseUrl = "https://generativelanguage.googleapis.com/v1beta",
+            Model = "gemini-2.0-flash",
+            EnableThinking = true,
+        };
+        var geminiProviderOn = new GeminiProvider(geminiProfileOn, "key", new PromptConfig());
+        using var geminiOnMsg = geminiProviderOn.CreateRequest(request);
+        using var geminiOnDoc = JsonDocument.Parse(geminiOnMsg.Content!.ReadAsStringAsync().Result);
+        Check(
+            "Gemini provider with EnableThinking=true nests thinkingBudget=-1 inside generationConfig",
+            geminiOnDoc.RootElement.GetProperty("generationConfig").GetProperty("thinkingConfig").GetProperty("thinkingBudget").GetInt32() == -1);
+    }
+
+    private static void TestProviderOutOfBandThinkingExtraction()
+    {
+        // 1. DeepSeek / OpenAI 兼容 completions：choices[0].delta.reasoning_content
+        const string deepSeekFrame = """
+        {
+            "choices": [
+                {
+                    "delta": {
+                        "reasoning_content": "DeepSeek思考过程片段"
+                    }
+                }
+            ]
+        }
+        """;
+        var (dsText, dsThinking) = OpenAiProvider.ExtractCompletionsDelta(deepSeekFrame);
+        Check(
+            "ExtractCompletionsDelta captures reasoning_content into Thinking stream",
+            string.IsNullOrEmpty(dsText) && dsThinking == "DeepSeek思考过程片段");
+
+        // 2. OpenAI responses：response.reasoning_text.delta
+        var respFrame = new SseEvent(
+            "response.reasoning_text.delta",
+            """{"type":"response.reasoning_text.delta","delta":"OpenAI思考中"}""");
+        var (respText, respThinking) = OpenAiProvider.ExtractResponsesDelta(respFrame);
+        Check(
+            "ExtractResponsesDelta captures response.reasoning_text.delta into Thinking stream",
+            string.IsNullOrEmpty(respText) && respThinking == "OpenAI思考中");
+
+        // 3. Claude：thinking_delta 事件
+        var claudeFrame = new SseEvent(
+            "content_block_delta",
+            """{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"Claude思考过程"}}""");
+        var (claudeText, claudeThinking) = ClaudeProvider.ExtractDelta(claudeFrame);
+        Check(
+            "Claude ExtractDelta captures thinking_delta into Thinking stream",
+            string.IsNullOrEmpty(claudeText) && claudeThinking == "Claude思考过程");
+
+        // 4. Gemini：candidates[0].content.parts[0].thought == true
+        const string geminiFrame = """
+        {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "text": "Gemini思考过程",
+                                "thought": true
+                            },
+                            {
+                                "text": "正式译文"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+        """;
+        var (geminiText, geminiThinking) = GeminiProvider.ExtractDelta(geminiFrame);
+        Check(
+            "Gemini ExtractDelta separates thought parts from regular text parts",
+            geminiText == "正式译文" && geminiThinking == "Gemini思考过程");
     }
 }
 

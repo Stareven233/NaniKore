@@ -19,31 +19,34 @@ internal sealed class GeminiProvider : TranslationProviderBase
         var router = request.Kind == UnderstandKind.Translate
             ? new SectionChannelRouter()
             : null;
+        var sanitizer = new ThinkingStreamSanitizer();
         var inputTokens = 0;
         var outputTokens = 0;
 
         await foreach (var frame in SseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
         {
             ExtractGeminiTokens(frame.Data, ref inputTokens, ref outputTokens);
-            var text = ExtractDelta(frame.Data);
+            var (text, thinking) = ExtractDelta(frame.Data);
+
+            if (!string.IsNullOrEmpty(thinking))
+            {
+                yield return new UnderstandDelta(DeltaChannel.Thinking, thinking);
+            }
 
             if (!string.IsNullOrEmpty(text) && request.Session is not null && request.Kind == UnderstandKind.Translate)
             {
                 request.Session.AppendRawAssistantOutput(text);
             }
 
-            foreach (var delta in Route(router, text, request.Kind))
+            foreach (var delta in Route(router, sanitizer, text, request.Kind))
             {
                 yield return delta;
             }
         }
 
-        if (router is not null)
+        foreach (var delta in CompleteStream(router, sanitizer, request.Kind))
         {
-            foreach (var delta in router.Complete())
-            {
-                yield return delta;
-            }
+            yield return delta;
         }
 
         if (inputTokens > 0 || outputTokens > 0)
@@ -82,27 +85,87 @@ internal sealed class GeminiProvider : TranslationProviderBase
             contents = new[] { new { role = "user", parts } };
         }
 
-        var body = new
+        var bodyDict = new Dictionary<string, object?>
         {
-            system_instruction = new { parts = new[] { new { text = system } } },
-            contents,
+            ["system_instruction"] = new { parts = new[] { new { text = system } } },
+            ["contents"] = contents,
         };
+
+        if (Profile.EnableThinking)
+        {
+            bodyDict["generationConfig"] = new
+            {
+                thinkingConfig = new
+                {
+                    thinkingBudget = -1
+                }
+            };
+        }
+        else if (Profile.Model.Contains("thinking", StringComparison.OrdinalIgnoreCase) ||
+                 Profile.Model.Contains("2.5", StringComparison.OrdinalIgnoreCase) ||
+                 Profile.Model.Contains("2.0", StringComparison.OrdinalIgnoreCase))
+        {
+            bodyDict["generationConfig"] = new
+            {
+                thinkingConfig = new
+                {
+                    thinkingBudget = 0
+                }
+            };
+        }
+
         var endpoint = $"models/{Uri.EscapeDataString(Profile.Model)}:streamGenerateContent?alt=sse";
-        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, endpoint), body);
+        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, endpoint), bodyDict);
         message.Headers.Add("x-goog-api-key", ApiKey);
         return message;
     }
 
-    private static string ExtractDelta(string data)
+    internal static (string Text, string Thinking) ExtractDelta(string data)
     {
         try
         {
             using var document = JsonDocument.Parse(data);
-            return GetTextContent(document.RootElement, "candidates");
+            var root = document.RootElement;
+            if (!root.TryGetProperty("candidates", out var candidates) || candidates.ValueKind != JsonValueKind.Array)
+            {
+                return (string.Empty, string.Empty);
+            }
+
+            var textBuilder = new System.Text.StringBuilder();
+            var thinkingBuilder = new System.Text.StringBuilder();
+
+            foreach (var candidate in candidates.EnumerateArray())
+            {
+                if (candidate.TryGetProperty("content", out var content) &&
+                    content.TryGetProperty("parts", out var parts) &&
+                    parts.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var part in parts.EnumerateArray())
+                    {
+                        var isThought = part.TryGetProperty("thought", out var thoughtElem) &&
+                                        thoughtElem.ValueKind == JsonValueKind.True;
+
+                        if (part.TryGetProperty("text", out var textElem) && textElem.ValueKind == JsonValueKind.String)
+                        {
+                            var str = textElem.GetString() ?? string.Empty;
+                            if (isThought)
+                            {
+                                thinkingBuilder.Append(str);
+                            }
+                            else
+                            {
+                                textBuilder.Append(str);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return (textBuilder.ToString(), thinkingBuilder.ToString());
         }
         catch (JsonException)
         {
-            return string.Empty;
+            return (string.Empty, string.Empty);
         }
     }
 

@@ -20,6 +20,7 @@ internal enum DeltaChannel
     SourceText,
     Translation,
     Explanation,
+    Thinking,
 }
 
 /// <summary>一次大模型调用所消耗的实际或估算 Token 计数。</summary>

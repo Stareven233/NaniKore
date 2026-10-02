@@ -697,6 +697,13 @@ internal static partial class SelfTest
 
         // 7. 流式接收 SourceText 增量更新振假名与纯文本，翻译完成后保持“翻译”
         panel.BeginTranslation();
+        panel.Append(new UnderstandDelta(DeltaChannel.Thinking, "正在分析复合适词与时态"));
+        var transBox = (System.Windows.Controls.TextBox?)panel.FindName("TranslationTextBox");
+        Check(
+            "thinking delta displays throttled thinking placeholder in TranslationTextBox",
+            transBox?.Text.StartsWith("💭 [思考中]") == true &&
+            transBox.Text.Contains("正在分析复合适词与时态"));
+
         panel.Append(new UnderstandDelta(DeltaChannel.SourceText, "私[わたし]は"));
         panel.Append(new UnderstandDelta(DeltaChannel.SourceText, " 学生[がくせい]"));
         panel.Append(new UnderstandDelta(DeltaChannel.SourceText, "です。"));
@@ -707,7 +714,9 @@ internal static partial class SelfTest
             viewerBorder?.Visibility == System.Windows.Visibility.Visible &&
             panel.SourceText == "私は 学生です。" &&
             sourceBox?.Text == "私は 学生です。" &&
-            translateBtn?.Content as string == "翻译");
+            translateBtn?.Content as string == "翻译" &&
+            transBox?.Text == "我是学生。" &&
+            !transBox.Text.Contains("思考中"));
 
         // 8. 产出有效译文后，再次实质修改或规范化激活“重译”
         panel.EnterEditMode();

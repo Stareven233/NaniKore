@@ -20,6 +20,7 @@ internal sealed class OpenAiProvider : TranslationProviderBase
         var router = request.Kind == UnderstandKind.Translate
             ? new SectionChannelRouter()
             : null;
+        var sanitizer = new ThinkingStreamSanitizer();
         TokenUsage? usage = null;
 
         await foreach (var frame in SseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
@@ -37,27 +38,29 @@ internal sealed class OpenAiProvider : TranslationProviderBase
                 usage = frameUsage;
             }
 
-            var text = isResponses
+            var (text, thinking) = isResponses
                 ? ExtractResponsesDelta(frame)
                 : ExtractCompletionsDelta(frame.Data);
+
+            if (!string.IsNullOrEmpty(thinking))
+            {
+                yield return new UnderstandDelta(DeltaChannel.Thinking, thinking);
+            }
 
             if (!string.IsNullOrEmpty(text) && request.Session is not null && request.Kind == UnderstandKind.Translate)
             {
                 request.Session.AppendRawAssistantOutput(text);
             }
 
-            foreach (var delta in Route(router, text, request.Kind))
+            foreach (var delta in Route(router, sanitizer, text, request.Kind))
             {
                 yield return delta;
             }
         }
 
-        if (router is not null)
+        foreach (var delta in CompleteStream(router, sanitizer, request.Kind))
         {
-            foreach (var delta in router.Complete())
-            {
-                yield return delta;
-            }
+            yield return delta;
         }
 
         if (usage.HasValue)
@@ -106,14 +109,36 @@ internal sealed class OpenAiProvider : TranslationProviderBase
             };
         }
 
-        var body = new
+        var isOfficialOpenAi = Profile.BaseUrl.Contains("api.openai.com", StringComparison.OrdinalIgnoreCase);
+        var isReasoningModel = Profile.Model.StartsWith("o1", StringComparison.OrdinalIgnoreCase) ||
+                               Profile.Model.StartsWith("o3", StringComparison.OrdinalIgnoreCase);
+
+        var bodyDict = new Dictionary<string, object?>
         {
-            model = Profile.Model,
-            stream = true,
-            stream_options = new { include_usage = true },
-            messages,
+            ["model"] = Profile.Model,
+            ["stream"] = true,
+            ["stream_options"] = new { include_usage = true },
+            ["messages"] = messages,
         };
-        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, "chat/completions"), body);
+
+        if (isOfficialOpenAi)
+        {
+            if (Profile.EnableThinking && isReasoningModel)
+            {
+                bodyDict["reasoning_effort"] = "low";
+            }
+        }
+        else
+        {
+            bodyDict["enable_thinking"] = Profile.EnableThinking;
+            bodyDict["thinking"] = new { type = Profile.EnableThinking ? "enabled" : "disabled" };
+            if (Profile.EnableThinking && isReasoningModel)
+            {
+                bodyDict["reasoning_effort"] = "low";
+            }
+        }
+
+        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, "chat/completions"), bodyDict);
         SetBearerToken(message, ApiKey);
         return message;
     }
@@ -169,64 +194,90 @@ internal sealed class OpenAiProvider : TranslationProviderBase
             inputList.Add(new { role = "user", content });
         }
 
-        var body = new
+        var isReasoningModel = Profile.Model.StartsWith("o1", StringComparison.OrdinalIgnoreCase) ||
+                               Profile.Model.StartsWith("o3", StringComparison.OrdinalIgnoreCase);
+
+        var bodyDict = new Dictionary<string, object?>
         {
-            model = Profile.Model,
-            stream = true,
-            input = inputList.ToArray(),
+            ["model"] = Profile.Model,
+            ["stream"] = true,
+            ["input"] = inputList.ToArray(),
         };
-        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, "responses"), body);
+
+        if (Profile.EnableThinking && isReasoningModel)
+        {
+            bodyDict["reasoning"] = new { effort = "low" };
+        }
+
+        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, "responses"), bodyDict);
         SetBearerToken(message, ApiKey);
         return message;
     }
 
-    private static string ExtractCompletionsDelta(string data)
+    internal static (string Text, string Thinking) ExtractCompletionsDelta(string data)
     {
         try
         {
             using var document = JsonDocument.Parse(data);
             var root = document.RootElement;
+            var thinking = GetTextContent(root, "choices", "0", "delta", "reasoning_content");
+            if (string.IsNullOrEmpty(thinking))
+            {
+                thinking = GetTextContent(root, "choices", "0", "delta", "reasoning");
+            }
+
             var delta = GetTextContent(root, "choices", "0", "delta", "content");
             if (delta.Length > 0)
             {
-                return delta;
+                return (delta, thinking);
             }
 
             delta = GetTextContent(root, "choices", "0", "delta");
-            return delta.Length > 0
+            var text = delta.Length > 0
                 ? delta
                 : GetTextContent(root, "choices", "0", "message", "content");
+            return (text, thinking);
         }
         catch (JsonException)
         {
-            return string.Empty;
+            return (string.Empty, string.Empty);
         }
     }
 
-    private static string ExtractResponsesDelta(SseEvent frame)
+    internal static (string Text, string Thinking) ExtractResponsesDelta(SseEvent frame)
     {
         try
         {
             using var document = JsonDocument.Parse(frame.Data);
             var root = document.RootElement;
             var eventType = GetText(root, "type");
+
+            // 识别 OpenAI Responses API 的思考链增量事件
+            if (string.Equals(frame.Event, "response.reasoning_text.delta", StringComparison.Ordinal) ||
+                string.Equals(eventType, "response.reasoning_text.delta", StringComparison.Ordinal))
+            {
+                var reasoning = GetTextContent(root, "delta");
+                return (string.Empty, reasoning);
+            }
+
             if (!string.Equals(frame.Event, "response.output_text.delta", StringComparison.Ordinal) &&
                 !string.Equals(eventType, "response.output_text.delta", StringComparison.Ordinal))
             {
                 if (frame.Event is null && string.IsNullOrEmpty(eventType))
                 {
                     var outputText = GetTextContent(root, "output_text");
-                    return outputText.Length > 0 ? outputText : GetTextContent(root, "output");
+                    var text = outputText.Length > 0 ? outputText : GetTextContent(root, "output");
+                    return (text, string.Empty);
                 }
 
-                return string.Empty;
+                return (string.Empty, string.Empty);
             }
 
-            return GetTextContent(root, "delta");
+            return (GetTextContent(root, "delta"), string.Empty);
         }
         catch (JsonException)
         {
-            return string.Empty;
+            return (string.Empty, string.Empty);
         }
     }
 

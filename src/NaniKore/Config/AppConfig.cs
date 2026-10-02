@@ -67,6 +67,9 @@ internal sealed class ProviderProfile
     /// <summary>由用户声明模型是否接受图像，不用内置模型名单猜测。</summary>
     public bool SupportsVision { get; set; }
 
+    /// <summary>是否启用模型思考链（Reasoning / Thinking）；默认关闭以追求快速响应与节省 Token。</summary>
+    public bool EnableThinking { get; set; }
+
     public int TimeoutSeconds { get; set; } = 60;
 
     public static ProviderProfile CreateOpenAiDefault() => new() { Name = "OpenAI 默认" };
@@ -100,6 +103,7 @@ internal sealed class ProviderProfile
         BaseUrl = BaseUrl,
         Model = Model,
         SupportsVision = SupportsVision,
+        EnableThinking = EnableThinking,
         TimeoutSeconds = TimeoutSeconds,
     };
 }

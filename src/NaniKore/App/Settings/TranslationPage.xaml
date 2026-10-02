@@ -71,6 +71,11 @@
                                       Description="vision_oneshot 流程要求当前配置档声明支持图像。">
                     <ToggleButton x:Name="SupportsVisionToggle" Style="{DynamicResource ToggleSwitch}" />
                 </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <controls:SettingsRow Header="启用思考"
+                                      Description="允许具备推理能力的大模型进行深度思考（将在译文区实时展示思考动态）；默认关闭以追求极速响应与节省 Token。无论是否开启，正式正文均会自动隔离思考链。">
+                    <ToggleButton x:Name="EnableThinkingToggle" Style="{DynamicResource ToggleSwitch}" />
+                </controls:SettingsRow>
             </StackPanel>
         </controls:SettingsGroup>
 

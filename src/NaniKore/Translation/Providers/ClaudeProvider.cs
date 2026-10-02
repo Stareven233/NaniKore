@@ -19,31 +19,34 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         var router = request.Kind == UnderstandKind.Translate
             ? new SectionChannelRouter()
             : null;
+        var sanitizer = new ThinkingStreamSanitizer();
         var inputTokens = 0;
         var outputTokens = 0;
 
         await foreach (var frame in SseReader.ReadAsync(stream, cancellationToken).ConfigureAwait(false))
         {
             ExtractClaudeTokens(frame, ref inputTokens, ref outputTokens);
-            var text = ExtractDelta(frame);
+            var (text, thinking) = ExtractDelta(frame);
+
+            if (!string.IsNullOrEmpty(thinking))
+            {
+                yield return new UnderstandDelta(DeltaChannel.Thinking, thinking);
+            }
 
             if (!string.IsNullOrEmpty(text) && request.Session is not null && request.Kind == UnderstandKind.Translate)
             {
                 request.Session.AppendRawAssistantOutput(text);
             }
 
-            foreach (var delta in Route(router, text, request.Kind))
+            foreach (var delta in Route(router, sanitizer, text, request.Kind))
             {
                 yield return delta;
             }
         }
 
-        if (router is not null)
+        foreach (var delta in CompleteStream(router, sanitizer, request.Kind))
         {
-            foreach (var delta in router.Complete())
-            {
-                yield return delta;
-            }
+            yield return delta;
         }
 
         if (inputTokens > 0 || outputTokens > 0)
@@ -74,15 +77,21 @@ internal sealed class ClaudeProvider : TranslationProviderBase
             messages = new[] { new { role = "user", content } };
         }
 
-        var body = new
+        var bodyDict = new Dictionary<string, object?>
         {
-            model = Profile.Model,
-            stream = true,
-            max_tokens = 4096,
-            system,
-            messages,
+            ["model"] = Profile.Model,
+            ["stream"] = true,
+            ["max_tokens"] = 4096,
+            ["system"] = system,
+            ["messages"] = messages,
         };
-        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, "v1/messages"), body);
+
+        if (Profile.EnableThinking)
+        {
+            bodyDict["thinking"] = new { type = "enabled", budget_tokens = 1024 };
+        }
+
+        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, "v1/messages"), bodyDict);
         message.Headers.Add("x-api-key", ApiKey);
         message.Headers.Add("anthropic-version", "2023-06-01");
         return message;
@@ -107,7 +116,7 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         return blocks;
     }
 
-    private static string ExtractDelta(SseEvent frame)
+    internal static (string Text, string Thinking) ExtractDelta(SseEvent frame)
     {
         try
         {
@@ -118,20 +127,33 @@ internal sealed class ClaudeProvider : TranslationProviderBase
                           string.Equals(type, "content_block_delta", StringComparison.Ordinal);
             if (isDelta)
             {
-                return GetTextContent(root, "delta", "text");
+                if (root.TryGetProperty("delta", out var deltaElem) && deltaElem.ValueKind == JsonValueKind.Object)
+                {
+                    var deltaType = GetText(deltaElem, "type");
+                    if (string.Equals(deltaType, "thinking_delta", StringComparison.Ordinal) ||
+                        deltaElem.TryGetProperty("thinking", out _))
+                    {
+                        var thinking = GetTextContent(deltaElem, "thinking");
+                        return (string.Empty, thinking);
+                    }
+
+                    return (GetTextContent(deltaElem, "text"), string.Empty);
+                }
+
+                return (GetTextContent(root, "delta", "text"), string.Empty);
             }
 
             // 兼容视觉端点忽略 stream=true 后返回的 Anthropic message JSON。
             if (frame.Event is null && (string.IsNullOrEmpty(type) || string.Equals(type, "message", StringComparison.Ordinal)))
             {
-                return GetTextContent(root, "content");
+                return (GetTextContent(root, "content"), string.Empty);
             }
 
-            return string.Empty;
+            return (string.Empty, string.Empty);
         }
         catch (JsonException)
         {
-            return string.Empty;
+            return (string.Empty, string.Empty);
         }
     }
 
