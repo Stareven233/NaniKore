@@ -8,11 +8,17 @@ internal sealed class SectionChannelRouter
 {
     private const int MaxSeparatorLength = 32;
 
+    private readonly string? _expectedSourceText;
     private DeltaChannel _channel = DeltaChannel.Translation;
     private string _pending = string.Empty;
     private bool _awaitingFirstSection = true;
     private bool _explanationTruncated = false;
     private readonly HashSet<DeltaChannel> _channelsWithContent = [];
+
+    public SectionChannelRouter(string? expectedSourceText = null)
+    {
+        _expectedSourceText = expectedSourceText;
+    }
 
     public IEnumerable<UnderstandDelta> Push(string text)
     {
@@ -29,8 +35,18 @@ internal sealed class SectionChannelRouter
             {
                 if (_awaitingFirstSection)
                 {
-                    // 原文阶段：通过滑动窗口安全实时输出带注音原文，打破整段阻塞卡顿
                     _pending = StripSourceLeadingTags(_pending);
+
+                    // 快速路径：若识别到当前输出已显式为纯译文（如缺少原文假名/首字符不匹配/译文标签），立即切至译文通道流式输出
+                    if (IsObviousPureTranslation(_pending, _expectedSourceText))
+                    {
+                        _channel = DeltaChannel.Translation;
+                        _awaitingFirstSection = false;
+                        _pending = StripTranslationLeadingTags(_pending);
+                        continue;
+                    }
+
+                    // 原文阶段：通过滑动窗口安全实时输出带注音原文，打破整段阻塞卡顿
                     var flushLength = GetSafeSourceFlushLength(_pending);
                     if (flushLength == 0)
                     {
@@ -426,8 +442,8 @@ internal sealed class SectionChannelRouter
                 return 0;
             }
 
-            // 若无原文特征（假名/注音），且长度尚在滑动窗口预算内，暂缓输出以兼容纯译文 fallback
-            if (!HasSourceSignal(text) && text.Length < MaxSeparatorLength)
+            // 若无原文特征（假名/规范注音），绝不提前作为 SourceText 刷新，等待 sentinel 到达或作为纯译文 fallback
+            if (!HasSourceSignal(text))
             {
                 return 0;
             }
@@ -611,14 +627,153 @@ internal sealed class SectionChannelRouter
 
     private static bool HasSourceSignal(string text)
     {
-        foreach (var c in text)
+        for (var i = 0; i < text.Length; i++)
         {
-            if (c is (>= '\u3040' and <= '\u309F') or (>= '\u30A0' and <= '\u30FF') or '[' or ']')
+            var c = text[i];
+            if (c is (>= '\u3040' and <= '\u309F') or (>= '\u30A0' and <= '\u30FF'))
+            {
+                return true;
+            }
+
+            // 振假名/注音格式必须形如 汉字[注音] 或 Word[ipa]，单个孤立方括号不构成原文特征
+            if (c == '[' && i > 0 && char.IsLetterOrDigit(text[i - 1]))
+            {
+                var closeIdx = text.IndexOf(']', i + 1);
+                if (closeIdx > i + 1)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 判定待处理文本是否显式为纯译文（模型未遵循两段式协议直接输出译文）。
+    /// </summary>
+    private static bool IsObviousPureTranslation(string pending, string? expectedSourceText)
+    {
+        if (string.IsNullOrWhiteSpace(pending))
+        {
+            return false;
+        }
+
+        var trimmed = pending.TrimStart('\r', '\n', ' ');
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        // 若当前处于前导标签未完结前缀（如 "<anno"），等待完整标签到达，绝不提前误判
+        if (IsOpenTagPrefix(trimmed, SourceLeadingTags))
+        {
+            return false;
+        }
+
+        // 1. 显式译文前缀标识（<translation>、[translation]、译文:、translation: 等）
+        foreach (var tag in TranslationLeadingTags)
+        {
+            if (trimmed.StartsWith(tag, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(expectedSourceText))
+        {
+            return false;
+        }
+
+        var trimmedExpected = expectedSourceText.Trim();
+        if (trimmedExpected.Length == 0)
+        {
+            return false;
+        }
+
+        // 2. 原文含有假名（日语），而当前输出积累了一定字符且完全无假名，并出现了汉字或拉丁字母，且首字与原文不一致
+        var expectedHasKana = HasJapaneseKana(trimmedExpected);
+        if (expectedHasKana)
+        {
+            var pendingHasKana = HasJapaneseKana(trimmed);
+            if (!pendingHasKana)
+            {
+                if (trimmed[0] != trimmedExpected[0] && HasHanOrLatin(trimmed))
+                {
+                    return true;
+                }
+            }
+        }
+        else if (HasLatinOnly(trimmedExpected))
+        {
+            // 原文是纯拉丁/英语，当前输出出现中文字符且首字符不匹配
+            if (trimmed[0] != trimmedExpected[0] && HasHan(trimmed))
+            {
+                return true;
+            }
+        }
+        else if (HasHan(trimmedExpected) && !expectedHasKana)
+        {
+            // 原文是中文，当前输出出现假名或纯拉丁且首字不匹配
+            if (trimmed[0] != trimmedExpected[0] && (HasJapaneseKana(trimmed) || HasLatinOnly(trimmed)))
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    private static bool HasJapaneseKana(string str)
+    {
+        foreach (var c in str)
+        {
+            if (c is (>= '\u3040' and <= '\u309F') or (>= '\u30A0' and <= '\u30FF'))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool HasHan(string str)
+    {
+        foreach (var c in str)
+        {
+            if (c is >= '\u4E00' and <= '\u9FFF')
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool HasHanOrLatin(string str)
+    {
+        foreach (var c in str)
+        {
+            if (c is (>= '\u4E00' and <= '\u9FFF') or (>= 'a' and <= 'z') or (>= 'A' and <= 'Z'))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool HasLatinOnly(string str)
+    {
+        var hasLetter = false;
+        foreach (var c in str)
+        {
+            if (c is >= '\u4E00' and <= '\u9FFF' or (>= '\u3040' and <= '\u309F') or (>= '\u30A0' and <= '\u30FF'))
+            {
+                return false;
+            }
+            if (char.IsAsciiLetter(c))
+            {
+                hasLetter = true;
+            }
+        }
+        return hasLetter;
     }
 }

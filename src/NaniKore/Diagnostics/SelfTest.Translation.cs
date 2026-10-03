@@ -896,6 +896,34 @@ internal static partial class SelfTest
             !rogueTrans.Contains("新歓") &&
             rogueTrans == "在迎新活动中变得胆大妄为的故事");
 
+        var longPureTranslationRouter = new SectionChannelRouter();
+        var longPureDeltas = longPureTranslationRouter
+            .Push("这是一段非常长的纯译文，完全没有包含任何原文分段标记，长度肯定超过了三十二个字符的安全窗口预算。")
+            .Concat(longPureTranslationRouter.Complete())
+            .ToList();
+        Check(
+            "section router preserves long pure translation without sentinel as translation channel without premature source flush",
+            string.Concat(longPureDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "这是一段非常长的纯译文，完全没有包含任何原文分段标记，长度肯定超过了三十二个字符的安全窗口预算。" &&
+            !longPureDeltas.Any(delta => delta.Channel == DeltaChannel.SourceText));
+
+        var bracketPureTranslationRouter = new SectionChannelRouter();
+        var bracketPureDeltas = bracketPureTranslationRouter
+            .Push("这是【限量版】[原创]周边商品，制作非常方便。")
+            .Concat(bracketPureTranslationRouter.Complete())
+            .ToList();
+        Check(
+            "section router does not confuse bracketed words in pure translation with ruby annotations",
+            string.Concat(bracketPureDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "这是【限量版】[原创]周边商品，制作非常方便。" &&
+            !bracketPureDeltas.Any(delta => delta.Channel == DeltaChannel.SourceText));
+
+        var expectedSourceRouter = new SectionChannelRouter("オリジナルグッズが簡単につくれるサービスです。");
+        var fastPathDeltas = expectedSourceRouter.Push("这是一款可以轻松制作原创周边的服务。").ToList();
+        Check(
+            "section router immediately recognizes pure translation via expected source mismatch and streams in real time",
+            fastPathDeltas.Count > 0 &&
+            fastPathDeltas.All(delta => delta.Channel == DeltaChannel.Translation) &&
+            string.Concat(fastPathDeltas.Select(delta => delta.Text)) == "这是一款可以轻松制作原创周边的服务。");
+
         var cleanedWithInitial = NaniKore.App.ResultPanelWindow.CleanAnnotatedSourceWithInitial("[annotated_source]亡[な]くなった[/annotated_source]", "亡くなった");
         Check(
             "CleanAnnotatedSourceWithInitial strips square brackets based on initial text comparison",
@@ -1411,6 +1439,24 @@ internal static partial class SelfTest
             "OpenAI compatible provider with EnableThinking=true injects enable_thinking=true and thinking.type=enabled",
             compatOnDoc.RootElement.GetProperty("enable_thinking").GetBoolean() == true &&
             compatOnDoc.RootElement.GetProperty("thinking").GetProperty("type").GetString() == "enabled");
+
+        // 3.1 Homura 模型提示词直译对齐测试
+        var homuraProfile = new ProviderProfile
+        {
+            Id = "homura-test",
+            BaseUrl = "https://index-translate.bilibili.com/v1",
+            Model = "index-homura-9b",
+        };
+        var homuraProvider = new OpenAiProvider(homuraProfile, "key", new PromptConfig());
+        var homuraRequest = new UnderstandRequest(UnderstandKind.Translate, "オリジナルグッズが簡単につくれるサービスです。", null, "中文（简体）");
+        using var homuraMsg = homuraProvider.CreateCompletionsRequest(homuraRequest);
+        using var homuraDoc = JsonDocument.Parse(homuraMsg.Content!.ReadAsStringAsync().Result);
+        var homuraSystemContent = homuraDoc.RootElement.GetProperty("messages")[0].GetProperty("content").GetString();
+        Check(
+            "OpenAI provider with homura model aligns prompt to direct translation",
+            homuraSystemContent != null &&
+            homuraSystemContent.Contains("请将以下日语文本翻译为中文（简体）") &&
+            homuraSystemContent.Contains("直接输出翻译结果"));
 
         // 4. Claude Provider：关闭时严禁下发 thinking，开启时注入 budget_tokens
         var claudeProfileOff = new ProviderProfile

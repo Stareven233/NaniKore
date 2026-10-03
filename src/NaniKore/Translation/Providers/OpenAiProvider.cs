@@ -18,7 +18,7 @@ internal sealed class OpenAiProvider : TranslationProviderBase
         using var response = await SendAsync(message, cancellationToken).ConfigureAwait(false);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var router = request.Kind == UnderstandKind.Translate
-            ? new SectionChannelRouter()
+            ? new SectionChannelRouter(request.SourceText)
             : null;
         var sanitizer = new ThinkingStreamSanitizer();
         TokenUsage? usage = null;
@@ -73,6 +73,17 @@ internal sealed class OpenAiProvider : TranslationProviderBase
     internal HttpRequestMessage CreateCompletionsRequest(UnderstandRequest request)
     {
         var system = PromptTemplates.GetSystemPrompt(request, Prompts);
+        if (request.Kind == UnderstandKind.Translate && Profile.Model.Contains("homura", StringComparison.OrdinalIgnoreCase))
+        {
+            // index-homura 为口型/配音对齐模型，复杂两段式协议会导致其误将第一部分指令当成仅复读原文；切为明确的直译提示词
+            var detection = LanguageDetector.Detect(request.SourceText ?? string.Empty);
+            var sourceLang = detection.HasJapanese ? "日语"
+                : detection.HasEnglish ? "英语"
+                : detection.HasSimplifiedChinese ? "中文"
+                : "日语";
+            system = $"请将以下{sourceLang}文本翻译为{request.TargetLanguage}，直接输出翻译结果，不要进行任何解释。";
+        }
+
         object[] messages;
         if (request.Session is { Messages.Count: > 1 } session)
         {
