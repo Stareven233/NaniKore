@@ -120,9 +120,14 @@ internal static partial class SelfTest
     {
         var ja = AnnotationProfile.Load("ja");
         Check("常用汉字表过滤：日语超高频汉字词不注", ja.IsSkipped("日本語"));
+        Check("常用汉字表过滤：小1-2基础动词不注", ja.IsSkipped("行く"));
+        Check("常用汉字表过滤：小1-2基础名词不注", ja.IsSkipped("先生"));
         Check("策展停用词过滤：出来る不注", ja.IsSkipped("出来る"));
-        Check("叠字符号依附常用字不淘汰：別々不注", ja.IsSkipped("別々"));
         Check("叠字符号依附常用字不淘汰：人々不注", ja.IsSkipped("人々"));
+        Check("小3进阶汉字注音：薬不淘汰", !ja.IsSkipped("薬"));
+        Check("小3进阶汉字注音：投与不淘汰", !ja.IsSkipped("投与"));
+        Check("小3进阶汉字注音：睡眠薬不淘汰", !ja.IsSkipped("睡眠薬"));
+        Check("小3进阶汉字注音：過剰摂取不淘汰", !ja.IsSkipped("過剰摂取"));
         Check("表外汉字注：躊躇不淘汰", !ja.IsSkipped("躊躇"));
         Check("策展助词表：纯假名助词命中策展条目不注", ja.IsSkipped("の"));
         Check("纯假名普通词不经字符表淘汰", !ja.IsSkipped("ふりがな"));
@@ -228,6 +233,16 @@ internal static partial class SelfTest
         var defaultContext = new AnnotationContext(AnnotationProfile.Load("ja"));
         var annotated = Annotated(annotator, "躊躇した", defaultContext);
         Check("日语金样本：纯汉字日语词注振假名", annotated == "躊躇[ちゅうちょ]した", $"expected=躊躇[ちゅうちょ]した, actual={annotated}");
+
+        var userSentence = Annotated(annotator, "薬の過剰摂取で亡くなった被害者。その原因は致死量を超える6錠の睡眠薬。", new AnnotationContext(AnnotationProfile.Load("ja")));
+        Check(
+            "小1-2年级240字基准下难词正常注音",
+            userSentence.Contains("薬[くすり]") &&
+            userSentence.Contains("過剰[かじょう]") &&
+            userSentence.Contains("摂取[せっしゅ]") &&
+            userSentence.Contains("致死[ちし]量[りょう]") &&
+            userSentence.Contains("睡眠薬[すいみんやく]"),
+            $"actual={userSentence}");
 
         var allContext = new AnnotationContext(AnnotationProfile.Load("ja", rareOnly: false));
         Check(

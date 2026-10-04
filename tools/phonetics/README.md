@@ -23,7 +23,7 @@ deps/phonetics/            # 仓库内唯一真实源；ModelScope 仓库 Noetuu
 | zh | CC-CEDICT 汉英词典 | https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz | CC BY-SA 4.0（见 NOTICE） |
 | zh 补字 | Unihan `Unihan_Readings.txt`（kMandarin） | https://www.unicode.org/Public/UCD/latest/Unihan.zip | Unicode 许可（见 NOTICE） |
 
-判据词表（`src/NaniKore/Phonetics/Data/`）不在此管线：常用漢字表 2010（文化庁 2136 字）、
+判据词表（`src/NaniKore/Phonetics/Data/`）不在此管线：学年別漢字配当表第1・2学年（文部科学省 240 字，2026-10-04 起由 2136 字收紧）、
 通用规范汉字表一级字表（3500 字，2026-10-04 起取代此前来源不明的 6489 字混合表）、三语停用/高频策展表
 均为随程序集内嵌的静态资源，单独维护。表内 `#` 注释行只承载来源/许可/口径元信息，
 `EmbeddedData` 装载时按行跳过——切勿把例字写进注释行（曾因此把「龃龉」误收进判据集合）。
@@ -104,8 +104,10 @@ dotnet run --project src/NaniKore -- --self-test         # 全量无 UI 自测�
 - **停用词表 vs 常用字符表的边界**：zh 判据为通用规范汉字表**一级字表 3500 字**（2026-10-04 由一·二级 6500
   收紧——6500 把龃龉、餮、魑这类二级字全罩住，与「仅注难词」的直觉相悖）。一级表下：龃龉、魑魅（魑）、
   饕餮（餮）、俳佪等表外/二级字词正常注音；**尴尬、徘徊仍不注**——尴/尬/徘/徊按国标均在一级字表内，
-  若要覆盖它们需换成语料词频表（AnnotationProfile 方案 B 接口已预留）。ja 侧同理：常用漢字表 2136 字，
-  躊躇、齟齬等表外字注音；官方通用字体为 剝・塡・頰（信息设备常用的 剥・填・頬 不在表内，按表外字注音）。
+  若要覆盖它们需换成语料词频表（AnnotationProfile 方案 B 接口已预留）。ja 侧同理：此前常用漢字表 2136 字把
+  薬、投、与及過剰摂取、致死量等词全罩住导致几乎不注音，现已收紧为**学年別漢字配当表第1・2学年（240 字）**——
+  仅排除最常见简单的基础字（日、本、人、行、来、見、食、先生等），小3及以上的进阶汉字（薬、投、与等）及初高中
+  难词（過剰摂取、致死量、睡眠薬、6錠等）均获得注音；叠字符号（々等）依附前字判定，不单独作为生僻字。
 - **UTF-8 控制台**：诊断 CLI 会切 UTF-8 输出（`Program.UseUtf8Console`）；重定向时失败明细以
   `artifacts/self-test-failures.log`（UTF-8）为准。
 - **en 词典落地用同路径重建**（先删后建），不做“临时文件 + Move”：SQLite 连接释放与 Windows 文件锁
