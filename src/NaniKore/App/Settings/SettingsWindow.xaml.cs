@@ -39,7 +39,8 @@ internal sealed partial class SettingsWindow : Window
         Action<bool>? suspendGlobalHotkey = null,
         Func<IProgress<string>, CancellationToken, Task>? downloadDependencies = null,
         Func<string, IProgress<string>, CancellationToken, Task>? downloadPhoneticDictionary = null,
-        IFavoriteService? favoriteService = null)
+        IFavoriteService? favoriteService = null,
+        SettingsTab initialTab = SettingsTab.General)
     {
         ArgumentNullException.ThrowIfNull(current);
         InitializeComponent();
@@ -74,13 +75,23 @@ internal sealed partial class SettingsWindow : Window
             page.Load(_working);
         }
 
-        NavigationList.SelectedIndex = 0;
+        SelectTab(initialTab);
         // 关闭时记录窗口尺寸（仅在实际改变过尺寸时才写盘）；尺寸走独立副本，不携带尚未保存的页面编辑。
         Closed += (_, _) =>
         {
             _successStatusTimer.Stop();
             SaveWindowSize();
         };
+    }
+
+    /// <summary>按枚举切换当前选中的设置标签页。</summary>
+    public void SelectTab(SettingsTab tab)
+    {
+        var targetIndex = (int)tab;
+        if (targetIndex >= 0 && targetIndex < NavigationList.Items.Count)
+        {
+            NavigationList.SelectedIndex = targetIndex;
+        }
     }
 
     /// <summary>导航项：图标 + 标题，图标用 Segoe Fluent Icons 字形，不引入图片资源。</summary>

@@ -100,17 +100,10 @@
             <StackPanel>
                 <controls:SettingsRow Header="模型与运行库"
                                       Description="下载到当前程序目录的 deps 文件夹；程序不会在后台自动联网。"
-                                      ContentWidth="180">
+                                      ContentWidth="96">
                     <Button x:Name="DownloadDependenciesButton"
                             Style="{DynamicResource Button.Secondary}"
-                            Click="OnDownloadDependenciesClick">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="&#xE896;"
-                                       FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
-                                       Margin="0,0,7,0" />
-                            <TextBlock Text="下载依赖" />
-                        </StackPanel>
-                    </Button>
+                            Click="OnDownloadDependenciesClick" />
                 </controls:SettingsRow>
                 <controls:InfoBar x:Name="DependencyStatus" Margin="12,0,12,12" />
             </StackPanel>

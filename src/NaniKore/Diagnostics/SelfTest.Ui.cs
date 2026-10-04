@@ -41,9 +41,31 @@ internal static partial class SelfTest
         var panel = new ResultPanelWindow();
         Check("result panel window is not topmost", !panel.Topmost);
 
+        SettingsTab? requestedTab = null;
+        panel.SettingsRequested += (_, tab) => requestedTab = tab;
+        var settingsButton = FindDescendants<System.Windows.Controls.Button>(panel)
+            .FirstOrDefault(b => b.Content as string == "设置");
+        settingsButton?.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        Check("result panel settings button requests opening translation tab", requestedTab == SettingsTab.Translation);
+
         var settings = new SettingsWindow(() => new AppConfig(), _ => { }, (_, _) => Task.FromResult("ok"));
         Check("settings window shows in taskbar", settings.ShowInTaskbar);
         Check("settings window is not topmost", !settings.Topmost);
+
+        var settingsTranslation = new SettingsWindow(
+            () => new AppConfig(),
+            _ => { },
+            (_, _) => Task.FromResult("ok"),
+            initialTab: SettingsTab.Translation);
+        var navList = (System.Windows.Controls.ListBox?)settingsTranslation.FindName("NavigationList");
+        var pageTitle = (System.Windows.Controls.TextBlock?)settingsTranslation.FindName("PageTitle");
+        Check(
+            "settings window opens directly to translation tab when requested",
+            navList?.SelectedIndex == (int)SettingsTab.Translation && pageTitle?.Text == "翻译");
+        settingsTranslation.SelectTab(SettingsTab.General);
+        Check(
+            "settings window selects general tab on SelectTab",
+            navList?.SelectedIndex == (int)SettingsTab.General && pageTitle?.Text == "通用");
     }
 
     /// <summary>
@@ -461,6 +483,24 @@ internal static partial class SelfTest
         Check(
             "general page shows local OCR dependencies for local pipeline",
             page.FindName("LocalOcrDependenciesGroup") is System.Windows.Controls.Control { Visibility: System.Windows.Visibility.Visible });
+
+        // OCR 依赖卡片：状态直接映射为按钮文案（下载 / 已就绪），初始不单独显示提示行
+        var ocrButton = (System.Windows.Controls.Button?)page.FindName("DownloadDependenciesButton");
+        var ocrStatus = (InfoBar?)page.FindName("DependencyStatus");
+        var isOcrComplete = NaniKore.Ocr.Models.OcrDependencyManifest.IsComplete();
+        Check(
+            "ocr dependency button mirrors local manifest state and stays disabled without a downloader",
+            ocrButton?.Content as string == GeneralPage.OcrButtonLabel(isOcrComplete) &&
+            ocrButton?.IsEnabled == false);
+        Check(
+            "ocr dependency status bar does not display separate readiness hint on open",
+            ocrStatus?.IsOpen == false);
+
+        var pageWithOcrDownloader = new GeneralPage(downloadDependencies: (_, _) => Task.CompletedTask);
+        var enabledOcrButton = (System.Windows.Controls.Button?)pageWithOcrDownloader.FindName("DownloadDependenciesButton");
+        Check(
+            "ocr dependency button enables once a downloader is injected",
+            enabledOcrButton?.IsEnabled == true);
 
         var autoExplainPage = new GeneralPage();
         var autoExplainConfig = new AppConfig { General = new GeneralConfig { AutoExplain = true } };

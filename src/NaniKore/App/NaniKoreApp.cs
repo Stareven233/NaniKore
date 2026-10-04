@@ -455,7 +455,7 @@ internal sealed class NaniKoreApp : Application
                 _configStore.AtomicWrite(config);
             }
         };
-        panel.SettingsRequested += (_, _) => ShowSettings();
+        panel.SettingsRequested += (_, tab) => ShowSettings(tab);
         panel.Closed += (_, _) =>
         {
             _resultPanel = null;
@@ -479,7 +479,7 @@ internal sealed class NaniKoreApp : Application
         return panel;
     }
 
-    private void ShowSettings()
+    private void ShowSettings(SettingsTab tab = SettingsTab.General)
     {
         if (_settingsWindow is { } existing)
         {
@@ -488,6 +488,7 @@ internal sealed class NaniKoreApp : Application
             {
                 existing.WindowState = WindowState.Normal;
             }
+            existing.SelectTab(tab);
             existing.Show();
             existing.Activate();
             return;
@@ -495,7 +496,15 @@ internal sealed class NaniKoreApp : Application
 
         // 传入实时提供者而不是打开时的快照：设置窗未保存就关闭时的尺寸回写必须以
         // 当前最新配置为基础，否则会覆盖结果卡 AutoExplainChanged 等入口期间的写盘。
-        var window = new SettingsWindow(() => _configStore.Current, ApplySettings, TestConnectionAsync, SuspendCaptureHotkey, DownloadOcrDependenciesAsync, DownloadPhoneticDictionaryAsync, _favoriteService);
+        var window = new SettingsWindow(
+            () => _configStore.Current,
+            ApplySettings,
+            TestConnectionAsync,
+            SuspendCaptureHotkey,
+            DownloadOcrDependenciesAsync,
+            DownloadPhoneticDictionaryAsync,
+            _favoriteService,
+            tab);
         window.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow = window;
         window.Show();

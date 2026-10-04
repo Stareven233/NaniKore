@@ -141,7 +141,7 @@ internal sealed partial class ResultPanelWindow : Window
 
     public event EventHandler<bool>? AutoExplainChanged;
 
-    public event EventHandler? SettingsRequested;
+    public event EventHandler<SettingsTab>? SettingsRequested;
 
     public string SourceText => _isEditingSource
         ? SourceTextBox.Text
@@ -972,7 +972,7 @@ internal sealed partial class ResultPanelWindow : Window
 
     private void OnClearTranslationClick(object sender, RoutedEventArgs e) => ClearTranslation();
 
-    private void OnSettingsClick(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke(this, EventArgs.Empty);
+    private void OnSettingsClick(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke(this, SettingsTab.Translation);
 
     /// <summary>控制底部精讲 Expander 的启用状态（仅在产出有效译文后激活）。</summary>
     public void SetExplanationEnabled(bool enabled)

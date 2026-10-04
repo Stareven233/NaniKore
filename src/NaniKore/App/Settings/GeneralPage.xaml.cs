@@ -23,11 +23,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     {
         InitializeComponent();
         _downloadDependencies = downloadDependencies;
-        DownloadDependenciesButton.IsEnabled = downloadDependencies is not null;
-        var dependenciesReady = OcrDependencyManifest.IsComplete();
-        DependencyStatus.Show(
-            dependenciesReady ? "本地 OCR 依赖已就绪。" : "本地 OCR 依赖尚未下载。",
-            dependenciesReady ? InfoSeverity.Success : InfoSeverity.Warning);
+        RefreshOcrDependencyCard();
 
         // 注音词典卡片：下载入口缺失（自测/托盘预览）时整组按钮禁用，状态文案仍照常刷新。
         _downloadPhoneticDictionary = downloadPhoneticDictionary;
@@ -69,6 +65,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         }
 
         RefreshPhoneticDictionaryCards();
+        RefreshOcrDependencyCard();
         UpdateLocalOcrDependenciesVisibility();
     }
 
@@ -116,7 +113,8 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         try
         {
             await _downloadDependencies(progress, CancellationToken.None);
-            DependencyStatus.Show("本地 OCR 依赖已就绪", InfoSeverity.Success);
+            RefreshOcrDependencyCard();
+            DependencyStatus.Clear();
         }
         catch (Exception exception)
         {
@@ -124,9 +122,22 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         }
         finally
         {
-            DownloadDependenciesButton.IsEnabled = true;
+            RefreshOcrDependencyCard();
         }
     }
+
+    /// <summary>
+    /// 刷新本地 OCR 依赖卡片：本地状态直接映射为按钮文案（下载 / 已就绪），
+    /// 完成后文字改为就绪，不单独显示一行提示，无下载入口时按钮禁用（自测场景）但文案保持可读。
+    /// </summary>
+    private void RefreshOcrDependencyCard()
+    {
+        DownloadDependenciesButton.Content = OcrButtonLabel(OcrDependencyManifest.IsComplete());
+        DownloadDependenciesButton.IsEnabled = _downloadDependencies is not null;
+    }
+
+    /// <summary>本地 OCR 依赖就绪状态 → 按钮文案（页面与自测共用）。</summary>
+    internal static string OcrButtonLabel(bool isComplete) => isComplete ? "已就绪" : "下载";
 
     private static LanguageChoice? FindLanguage(string configuredValue) => LanguageChoices.Find(configuredValue);
 
