@@ -48,11 +48,9 @@ internal static class PromptTemplates
     /// 模型无需回显原文、无需输出分段标记、无需承担任何注音规约（注音由本地引擎叠加）。
     /// </summary>
     internal static readonly string DefaultTranslationBasePrompt = PromptLiteral("""
-        你当前工作在一个翻译应用中，你需要按照要求将输入准确、自然地翻译为{{target_language}}，只输出译文本身。
+        你当前工作在一个翻译应用中，你需要按照要求将输入准确、自然地翻译为{{target_language}}，只输出译文本身
 
-        若原文中已有部分词句属于{{target_language}}（如专有名词、已为目标语言的短语），在译文中直接保留或自然融入，无需生硬二次转译；若整段已是{{target_language}}，忠实呈现即可。
-
-        忠实地按文本原有格式进行翻译，追求信达雅；严禁输出诸如【原文】、【译文】等前缀或 Markdown 代码块标记，直接从译文内容开始输出
+        忠实地按文本原有格式进行翻译，追求信达雅。若原文中已有部分词句属于{{target_language}}（如专有名词、已为目标语言的短语），在译文中直接保留或自然融入，无需生硬二次转译；若整段已是{{target_language}}，忠实呈现即可
         """);
 
     // ── 路径二 · 视觉一条龙 Base ───────────────────────────────────

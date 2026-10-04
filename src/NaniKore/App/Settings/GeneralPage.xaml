@@ -67,7 +67,7 @@
                     点击后经 ModelScope 直链下载并做 SHA-256 校验；已存在且相符的文件自动跳过。
                 -->
                 <controls:SettingsRow Header="日本語词典"
-                                      Description="IPAdic 形态素词典（编译态，约 53 MB）。"
+                                      Description="IPAdic 形态素词典（编译态，约 53 MB）"
                                       ContentWidth="96">
                     <Button x:Name="PhoneticsDownloadJa"
                             Tag="ja"
@@ -76,7 +76,7 @@
                 </controls:SettingsRow>
                 <Border Style="{DynamicResource Divider.Row}" />
                 <controls:SettingsRow Header="English 词典"
-                                      Description="CMUdict 转译 IPA 词典（约 4 MB）。"
+                                      Description="CMUdict 转译 IPA 词典（约 4 MB）"
                                       ContentWidth="96">
                     <Button x:Name="PhoneticsDownloadEn"
                             Tag="en"
@@ -85,7 +85,7 @@
                 </controls:SettingsRow>
                 <Border Style="{DynamicResource Divider.Row}" />
                 <controls:SettingsRow Header="中文（简体）词典"
-                                      Description="CC-CEDICT 转译 MeCab 词典（约 10 MB）。"
+                                      Description="CC-CEDICT 转译 MeCab 词典（约 10 MB）"
                                       ContentWidth="96">
                     <Button x:Name="PhoneticsDownloadZh"
                             Tag="zh"

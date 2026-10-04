@@ -105,6 +105,12 @@ internal sealed class AnnotationProfile
         var hasCjk = false;
         foreach (var ch in surface)
         {
+            // 叠字符号（々、〆、〵）表示前序汉字重叠，其本身不在字符表内，不应作为非常用汉字使整词误判为生僻
+            if (ch is '\u3005' or '\u3006' or '\u303b')
+            {
+                continue;
+            }
+
             if (!RubyTextParser.IsCjkKanji(ch))
             {
                 continue;

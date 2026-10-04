@@ -312,14 +312,8 @@ internal sealed partial class ResultPanelWindow : Window
         ExplanationExpander.IsEnabled = false;
         ExplanationExpander.Header = "📖 精讲与语法解析 (点击展开)";
 
-        // 发起翻译时切回假名阅读态
-        if (_isEditingSource)
-        {
-            _isEditingSource = false;
-            SourceTextBox.Visibility = Visibility.Collapsed;
-            SourceViewerBorder.Visibility = Visibility.Visible;
-            SourceCaptionTextBlock.Text = "双击可编辑";
-        }
+        // 发起翻译时切回假名阅读态；若编辑框有改动，立即提交为当前原文事实源
+        CommitEditingSourceIfActive();
 
         // 保留现有原文（OCR识别文本或用户当前编辑文本），禁止在翻译中原文区瞬间变白或被清空
         if (string.IsNullOrEmpty(_annotatedSource) && !string.IsNullOrEmpty(SourceTextBox.Text))
@@ -896,23 +890,42 @@ internal sealed partial class ResultPanelWindow : Window
         SourceTextBox.SelectionLength = 0; // 严禁全选，防键盘误触丢失整句
     }
 
-    private void ExitEditMode()
+    /// <summary>
+    /// 若当前处于原文编辑态，将编辑框内容提交为原文单一事实源，切出编辑态并更新阅读态底字。
+    /// 无论通过点击翻译/重译按钮、快捷键还是宿主调用 BeginTranslation，均以此收口保证原文不回滚。
+    /// </summary>
+    internal void CommitEditingSourceIfActive()
     {
+        if (!_isEditingSource)
+        {
+            return;
+        }
+
+        var edited = SourceTextBox.Text;
         _isEditingSource = false;
         SourceTextBox.Visibility = Visibility.Collapsed;
         SourceViewerBorder.Visibility = Visibility.Visible;
         SourceCaptionTextBlock.Text = "双击可编辑";
         TranslateButton.Content = "翻译";
 
-        if (!string.Equals(SourceTextBox.Text, _originalEditingText, StringComparison.Ordinal))
+        if (!string.Equals(edited, _originalEditingText, StringComparison.Ordinal))
         {
-            // 编辑过（粘贴文本输入模式）：以新文本刷新注音视图并立刻叠加
-            _annotatedSource = SourceTextBox.Text;
+            _annotatedSource = edited;
             _annotationSourcePlain = string.Empty;
+            _originalEditingText = edited;
+            SourceViewer.Document = RubyDocumentBuilder.Build(edited);
         }
+    }
 
-        SourceViewer.Document = RubyDocumentBuilder.Build(_annotatedSource);
-        _ = AnnotateSourceAsync();
+    private void ExitEditMode()
+    {
+        var wasModified = !string.Equals(SourceTextBox.Text, _originalEditingText, StringComparison.Ordinal);
+        CommitEditingSourceIfActive();
+
+        if (wasModified)
+        {
+            _ = AnnotateSourceAsync();
+        }
     }
 
     private void OnSourceTextBoxPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -949,7 +962,11 @@ internal sealed partial class ResultPanelWindow : Window
         }
     }
 
-    private void OnTranslateClick(object sender, RoutedEventArgs e) => TranslateRequested?.Invoke(this, EventArgs.Empty);
+    private void OnTranslateClick(object sender, RoutedEventArgs e)
+    {
+        CommitEditingSourceIfActive();
+        TranslateRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     private void OnClearTranslationClick(object sender, RoutedEventArgs e) => ClearTranslation();
 

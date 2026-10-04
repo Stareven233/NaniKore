@@ -121,6 +121,8 @@ internal static partial class SelfTest
         var ja = AnnotationProfile.Load("ja");
         Check("常用汉字表过滤：日语超高频汉字词不注", ja.IsSkipped("日本語"));
         Check("策展停用词过滤：出来る不注", ja.IsSkipped("出来る"));
+        Check("叠字符号依附常用字不淘汰：別々不注", ja.IsSkipped("別々"));
+        Check("叠字符号依附常用字不淘汰：人々不注", ja.IsSkipped("人々"));
         Check("表外汉字注：躊躇不淘汰", !ja.IsSkipped("躊躇"));
         Check("策展助词表：纯假名助词命中策展条目不注", ja.IsSkipped("の"));
         Check("纯假名普通词不经字符表淘汰", !ja.IsSkipped("ふりがな"));

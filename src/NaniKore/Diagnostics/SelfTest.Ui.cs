@@ -826,6 +826,22 @@ internal static partial class SelfTest
             "substantively modified text editor triggers 重译 when previous translation exists",
             translateBtn?.Content as string == "重译");
 
+        // 8.1 再次点击翻译/重译或发起翻译时，编辑内容立即提交为单一事实源，绝不跳回初次识别到的原文
+        var translateRequestedRaised = false;
+        panel.TranslateRequested += (_, _) => translateRequestedRaised = true;
+        translateBtn?.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+        Check(
+            "clicking 重译 raises TranslateRequested with modified text intact",
+            translateRequestedRaised &&
+            panel.SourceText == "私は 先生です。" &&
+            viewerBorder?.Visibility == System.Windows.Visibility.Visible &&
+            sourceBox?.Visibility == System.Windows.Visibility.Collapsed);
+
+        panel.BeginTranslation();
+        Check(
+            "begin translation preserves modified source instead of reverting to initial source",
+            panel.SourceText == "私は 先生です。");
+
         // 8.5 验证 SetMetrics 与 ClearMetrics 控制底部指标面板状态
         var metricsBar = (System.Windows.Controls.Border?)panel.FindName("MetricsBar");
         var metricsBlock = (System.Windows.Controls.TextBlock?)panel.FindName("MetricsTextBlock");
