@@ -3,7 +3,7 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
-    <!-- WinForms 与 WPF 同时启用：像素级选区浮层留在 WinForms，面板类 UI 走 WPF。 -->
+    <!-- WinForms 与 WPF 同时启用，图片控件优先托管在 WinForms，界面与文本用 WPF -->
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -18,8 +18,8 @@
   </PropertyGroup>
   <ItemGroup>
     <!--
-      启用 WPF 后 SDK 会从隐式 using 里摘掉 System.IO（避免 System.IO.Path 与
-      System.Windows.Shapes.Path 撞名）。本项目不使用 Shapes.Path，显式补回以保持 OCR 代码不变。
+      避免 WPF 和 SDK 的全局 using 隐式导入 System.IO，导致 System.IO.Path 与
+      System.Windows.Shapes.Path 歧义；项目内统一用 Shapes.Path 的地方需显式全限定，保证 OCR 代码不混淆。
     -->
     <Using Include="System.IO" />
   </ItemGroup>
@@ -28,15 +28,26 @@
   </ItemGroup>
   <ItemGroup>
     <!--
-      根目录配置是无密钥的可审阅模板。运行时按 AppContext.BaseDirectory 读取，
-      所以 Debug 输出与发布目录都必须各自携带副本；实际 API Key 仍由 DPAPI 单独保存。
+      本地计费配置文件，运行时按需覆盖模板；随包发布保证首次启动 AppContext.BaseDirectory 可读取，
+      确保 API Key 落 DPAPI 加密存储而非明文。
     -->
     <None Include="..\..\config.yaml" Link="config.yaml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <!-- 纯托管日语形态素引擎（LibNMeCab 为 GPL-2.0 / LGPL-2.1 双许可，NOTICE 已登记） -->
+    <PackageReference Include="LibNMeCab" Version="0.10.2" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.28.0" />
-    <!-- 阶段 3：YAML 配置解析 -->
+    <!-- 纯托管 3方YAML 配置库 -->
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      注音判据数据：三语停用/高频词表与常用字符表（KB 级策展内容，与词典哈希解耦、随程序集分发）。
+      词典二进制（deps/phonetics/）不在此列，走 ModelScope 按语言下载。
+    -->
+    <EmbeddedResource Include="Phonetics\Data\*.txt">
+      <LogicalName>NaniKore.Phonetics.Data.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 </Project>

@@ -13,6 +13,7 @@ namespace NaniKore.Diagnostics;
 internal static partial class SelfTest
 {
     private static int _failed;
+    private static readonly List<string> Failures = [];
 
     /// <summary>
     /// 执行全量无 UI 自测，返回退出码（0 表示全绿通过，非 0 表示有失败项）。
@@ -24,6 +25,7 @@ internal static partial class SelfTest
         RunOcrTests();
         RunConfigTests();
         RunTranslationTests();
+        RunPhoneticsTests();
         RunExplanationTests();
         RunFavoritesTests();
         RunUiTests();
@@ -31,13 +33,29 @@ internal static partial class SelfTest
         Console.WriteLine(_failed == 0
             ? "All self-tests passed."
             : $"Self-tests failed: {_failed}");
+        if (_failed > 0)
+        {
+            // 失败明细写 UTF-8 文件：控制台在 Windows 默认代码页下中文/IPA 会花屏
+            try
+            {
+                Directory.CreateDirectory("artifacts");
+                File.WriteAllLines(Path.Combine("artifacts", "self-test-failures.log"), Failures, new System.Text.UTF8Encoding(false));
+            }
+            catch (IOException)
+            {
+            }
+        }
+
         return _failed == 0 ? 0 : 1;
     }
 
     /// <summary>
     /// 自测断言器：打印单项测试状态并在失败时递增计数。
     /// </summary>
-    private static void Check(string name, bool condition)
+    private static void Check(string name, bool condition) => Check(name, condition, string.Empty);
+
+    /// <summary>带失败明细的自测断言器：黄金样例不一致时打印期望与实际，便于直接定位。</summary>
+    private static void Check(string name, bool condition, string detail)
     {
         if (condition)
         {
@@ -46,6 +64,7 @@ internal static partial class SelfTest
         }
 
         _failed++;
-        Console.Error.WriteLine($"FAIL: {name}");
+        Failures.Add($"FAIL: {name}{(detail.Length == 0 ? string.Empty : $" [{detail}]")}");
+        Console.WriteLine($"FAIL: {name}{(detail.Length == 0 ? string.Empty : $" [{detail}]")}");
     }
 }

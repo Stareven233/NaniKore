@@ -4,6 +4,7 @@ using NaniKore.App;
 using NaniKore.Config;
 using NaniKore.Diagnostics;
 using NaniKore.Ocr;
+using NaniKore.Phonetics;
 using NaniKore.Translation;
 using System.Windows.Forms;
 
@@ -14,6 +15,9 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // 诊断 CLI（自测/探查/词典生成）统一用 UTF-8 控制台，中文与 IPA 输出都可读
+        UseUtf8Console();
+
         if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase))
         {
             return SelfTest.Run();
@@ -22,6 +26,17 @@ internal static class Program
         if (args.Contains("--inspect-models", StringComparer.OrdinalIgnoreCase))
         {
             return InspectModels();
+        }
+
+        if (args.Contains("--build-phonetics", StringComparer.OrdinalIgnoreCase))
+        {
+            return BuildPhonetics(args);
+        }
+
+        if (args.Contains("--phonetics-probe", StringComparer.OrdinalIgnoreCase))
+        {
+            PhoneticsProbe.Run();
+            return 0;
         }
 
         var ocrFileIndex = FindOption(args, "--ocr-file");
@@ -85,6 +100,64 @@ internal static class Program
             Console.Error.WriteLine(exception);
             return 1;
         }
+    }
+
+    /// <summary>
+    /// 开发期注音词典生成：CMUdict → 英语 SQLite；CC-CEDICT + Unihan → 中文 MeCab 词典（mecab-dict-index）。
+    /// 用法：dotnet run --project src/NaniKore -- --build-phonetics [--dict-index &lt;mecab-dict-index.exe&gt;]
+    /// 详见 tools/phonetics/README.md；产物落盘 deps/phonetics/，控制台打印 SHA-256 供回填清单。
+    /// </summary>
+    private static int BuildPhonetics(string[] args)
+    {
+        try
+        {
+            var repoRoot = LocateRepositoryRoot();
+            if (repoRoot is null)
+            {
+                Console.Error.WriteLine("未找到仓库根目录（含 deps/phonetics/_source 的目录）。");
+                return 1;
+            }
+
+            var dictIndexIndex = FindOption(args, "--dict-index");
+            var dictIndexPath = dictIndexIndex >= 0 && dictIndexIndex + 1 < args.Length ? args[dictIndexIndex + 1] : null;
+            PhoneticDictionaryBuilder.Run(repoRoot, dictIndexPath);
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine($"注音词典生成失败：{exception.Message}");
+            return 1;
+        }
+    }
+
+    /// <summary>把标准输出切成 UTF-8：诊断输出含中文与 IPA，默认 OEM 代码页会花屏。</summary>
+    private static void UseUtf8Console()
+    {
+        try
+        {
+            Console.OutputEncoding = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        }
+        catch (IOException)
+        {
+            // 输出被重定向且不支持切换编码时保持默认，不影响日志流
+        }
+    }
+
+    /// <summary>从输出目录向上找仓库根：以 deps/phonetics/_source 存在为锚。</summary>
+    private static string? LocateRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (Directory.Exists(Path.Combine(directory.FullName, "deps", "phonetics", "_source")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return null;
     }
 
     private static int RunFileOcr(IReadOnlyList<string> args, int optionIndex)

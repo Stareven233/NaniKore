@@ -1,0 +1,48 @@
+# NaniKore 第三方组件与数据许可声明（NOTICE）
+
+NaniKore 分发或使用下列第三方组件与数据。随应用发布的二进制只在 `deps/` 与 NuGet 依赖中；
+按语言下载的词典所有权归其许可方。若你认为此处遗漏或标注有误，请提 issue。
+
+## 1. 程序集依赖（NuGet，随应用发布）
+
+- **LibNMeCab 0.10.2**（包 `LibNMeCab`）
+  - 许可：GPL-2.0 / LGPL-2.1 双许可（使用者可按其一遵守）。
+  - 用途：NaniKore 本地分词注音引擎（日语/简体中文共用的纯托管 MeCab 实现）。
+  - 对于 GPL-2.0 with ClasspathException 语义的 lib 组件分发，本仓库以 LGPL-2.1 口径使用：
+    保留本声明与许可文本，替换 LibNMeCab.dll 后保持其可替换性即可；NaniKore 自身代码不链接 GPL 代码。
+
+## 2. 词典与数据（按语言下载，位于 `deps/phonetics/`，镜像于 ModelScope `Noetuu/nanikore-deps`）
+
+- **IPAdic（日语文档形态素词典，编译态）**
+  - 许可：IPAdic 授权文本（1999-2007 Nara Institute of Science and Technology，
+    原文 `COPYING` 已随 `deps/phonetics/ja/IPAdic-COPYING.txt` 分发）。
+  - 用途：日语振假名标注。
+  - 注意：IPAdic 的原始词库版权属各词条贡献者；本仓库仅原样分发其编译产物，未做内容改动。
+
+- **CMUdict 0.7b（cmusphinx 发音词典）**
+  - 许可：BSD 2-Clause 风格许可（Copyright (C) 1993-2015 Carnegie Mellon University；
+    允许保留版权声明与免责声明的前提下再分发）。
+  - 用途：英语 IPA 注音（ARPAbet → IPA 在生成期转换为单主读音）。
+  - 源地址：https://github.com/cmusphinx/cmudict
+
+- **CC-CEDICT（汉英词典）**
+  - 许可：Creative Commons Attribution-ShareAlike 4.0 International（CC BY-SA 4.0）。
+  - 用途：简体中文拼音注音的词面/读音来源。
+  - 派生要求：基于 CC-CEDICT 生成的词典与再分发需标注「CC-CEDICT, CC BY-SA 4.0」。
+    本声明及 `deps/README.md`、`tools/phonetics/README.md` 即该标注。
+
+- **Unicode Unihan Database（`Unihan_Readings.txt`，kMandarin 字段）**
+  - 许可：Unicode 许可 v3（https://www.unicode.org/license.txt）。
+  - 用途：简体中文未登录单字的默认读音补充。
+
+## 3. 判据数据（随程序集内嵌于 `src/NaniKore/Phonetics/Data/`）
+
+- **常用漢字表（2010，文化庁）**：日本政府公开发布的公共文书规范内容（政府标准，非著作权对象，
+  按公共再利用惯例收录 2136 字清单）。
+- **通用规范汉字表（2013，国务院发布）**：同理收录一·二级 6500 字清单。
+- **三语停用/高频词表**：NaniKore 自策展内容（贡献者按仓库 LICENSE 授权）。
+
+## 4. OCR / ONNX Runtime（既有组件）
+
+见仓库 `deps/README.md` 与各模型目录内的 LICENSE、YAML 说明：PP-OCRv6-small 模型权重与
+ONNX Runtime 的许可归属其上游发布方，未在本文重复张贴。
