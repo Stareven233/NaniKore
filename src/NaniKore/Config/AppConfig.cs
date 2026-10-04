@@ -25,6 +25,9 @@ internal sealed class AppConfig
     public WindowConfig Windows { get; set; } = new();
 
     public PromptConfig Prompts { get; set; } = new();
+
+    /// <summary>本地注音（issue 008）：开关与过滤口径；词典本体走按语言下载，不随配置分发。</summary>
+    public PhoneticsConfig Phonetics { get; set; } = new();
 }
 
 internal sealed class GeneralConfig
@@ -44,6 +47,15 @@ internal sealed class PipelineConfig
     public string Mode { get; set; } = "local_ocr";
 
     public string ActiveProfile { get; set; } = "openai-default";
+}
+
+internal sealed class PhoneticsConfig
+{
+    /// <summary>原文注音总开关；关闭时原文区直接呈现纯文本（翻译不受影响）。</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>仅注难词：开启时叠加常用字符表过滤；关闭时只走停用词表（全文注音）。</summary>
+    public bool RareOnly { get; set; } = true;
 }
 
 internal sealed class ProviderProfile
@@ -181,6 +193,11 @@ internal static class AppConfigCloner
             ChinesePlugin = source.Prompts.ChinesePlugin,
             VisionBase = source.Prompts.VisionBase,
             Explain = source.Prompts.Explain,
+        },
+        Phonetics = new PhoneticsConfig
+        {
+            Enabled = source.Phonetics.Enabled,
+            RareOnly = source.Phonetics.RareOnly,
         },
     };
 }

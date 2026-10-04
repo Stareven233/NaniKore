@@ -74,6 +74,22 @@ internal static class PhoneticDependencyPaths
 /// <summary>注音词典清单条目：相对 deps/phonetics/ 的路径 + SHA-256（大写十六进制）+ ModelScope 直链。</summary>
 internal sealed record PhoneticDictionaryFile(string RelativePath, string Sha256, string ModelScopeUrl);
 
+/// <summary>按语言词典的本地状态（设置页卡片与软降级口径共用）。</summary>
+internal enum PhoneticDictionaryState
+{
+    /// <summary>未装配该语言（如未来的 ko 在初版清单里没有条目）。</summary>
+    Unsupported,
+
+    /// <summary>本地一个文件都没有，需要完整下载。</summary>
+    Missing,
+
+    /// <summary>文件在但哈希不符（旧版产物或损坏），需要更新。</summary>
+    NeedsUpdate,
+
+    /// <summary>全部文件存在且哈希相符，可直接使用。</summary>
+    Ready,
+}
+
 /// <summary>
 /// 按语言组织的注音词典清单：哈希即版本（不符即提示更新，另设版本号）。
 /// 日语 = IPAdic 编译态；简体中文 = CC-CEDICT 转译 MeCab 词典；英语 = CMUdict 基座 IPA 词典。
@@ -124,6 +140,24 @@ internal static class PhoneticDependencyManifest
     {
         var files = GetFiles(languageCode);
         return files.Count > 0 && files.All(file => HashMismatch(file) is null);
+    }
+
+    /// <summary>
+    /// 该语言词典的本地状态：区分「完全缺失」与「哈希不符需更新」——
+    /// 前者引导首次下载，后者提示版本更新，两者都走同一下载器（已存在且相符的文件自动跳过）。
+    /// </summary>
+    public static PhoneticDictionaryState GetState(string languageCode)
+    {
+        var files = GetFiles(languageCode);
+        if (files.Count == 0)
+        {
+            return PhoneticDictionaryState.Unsupported;
+        }
+
+        var anyPresent = files.Any(file => File.Exists(GetApplicationPath(file.RelativePath)));
+        return GetIncompleteFiles(languageCode).Count == 0
+            ? PhoneticDictionaryState.Ready
+            : anyPresent ? PhoneticDictionaryState.NeedsUpdate : PhoneticDictionaryState.Missing;
     }
 
     /// <summary>缺失/不匹配的文件清单（空 = 完整）。</summary>

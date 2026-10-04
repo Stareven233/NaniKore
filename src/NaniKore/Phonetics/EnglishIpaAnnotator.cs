@@ -95,6 +95,9 @@ internal sealed class EnglishIpaAnnotator : ITextAnnotator, IDisposable
 
     public void Dispose() => _dictionary?.Dispose();
 
+    /// <summary>词典下载落地后清闩锁：下一次探测重新打开 SQLite，实现无需重启的热生效。</summary>
+    public void ResetAvailability() => _probed = false;
+
     /// <summary>直查优先，未命中再按规则还原候选逐个回查。</summary>
     private string? Lookup(string word) =>
         _dictionary!.Lookup(word) ?? EnglishLemmatizer.Candidates(word).Select(candidate => _dictionary.Lookup(candidate)).FirstOrDefault(ipa => ipa is not null);

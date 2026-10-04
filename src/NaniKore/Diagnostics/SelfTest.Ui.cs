@@ -6,6 +6,7 @@ using NaniKore.App.Settings;
 using NaniKore.Config;
 using NaniKore.Favorites;
 using NaniKore.Input;
+using NaniKore.Phonetics;
 using NaniKore.Translation;
 
 namespace NaniKore.Diagnostics;
@@ -19,12 +20,70 @@ internal static partial class SelfTest
         TestThemeResourcesResolve();
         TestSettingsPagesUseAdaptiveLayout();
         TestGeneralPagePipelineDependencyVisibility();
+        TestGeneralPagePhoneticsCards();
         TestSharedLanguageChoicesAndDetectionMapping();
         TestTranslationPagePromptEditing();
         TestSettingsCloseSizeMemory();
         TestSettingsCloseSizeWriteBackKeepsExternalUpdates();
         TestRubyDocumentBuilderAndDualMode();
         TestFavoritesSettingsPageFilteringAndEvents();
+    }
+
+    /// <summary>
+    /// 注音词典卡片（issue 008 Phase 2）：三语按钮与本地状态联动（文案即状态），
+    /// 无下载入口时禁用、有入口时启用；注音开关走配置读写闭环。
+    /// </summary>
+    private static void TestGeneralPagePhoneticsCards()
+    {
+        EnsureThemedApplication();
+
+        var page = new GeneralPage();
+        Check(
+            "phonetics group hosts the enabled and rare-only switches",
+            page.FindName("PhoneticsEnabledToggle") is System.Windows.Controls.Primitives.ToggleButton &&
+            page.FindName("PhoneticsRareOnlyToggle") is System.Windows.Controls.Primitives.ToggleButton);
+
+        foreach (var language in PhoneticLanguages.All)
+        {
+            var buttonName = $"PhoneticsDownload{char.ToUpperInvariant(language.Code[0])}{language.Code[1..]}";
+            var button = (System.Windows.Controls.Button?)page.FindName(buttonName);
+            Check(
+                $"{language.Code} dictionary card button exists",
+                button is not null);
+
+            if (button is null)
+            {
+                continue;
+            }
+
+            var state = PhoneticDependencyManifest.GetState(language.Code);
+            Check(
+                $"{language.Code} dictionary card button mirrors the local manifest state and stays disabled without a downloader",
+                button.Content as string == GeneralPage.PhoneticButtonLabel(state) &&
+                !button.IsEnabled);
+        }
+
+        // 注入假下载器后按钮启用（自测不触发真实网络，仅验证接线）
+        var withDownloader = new GeneralPage(downloadPhoneticDictionary: (_, _, _) => Task.CompletedTask);
+        var jaButton = (System.Windows.Controls.Button?)withDownloader.FindName("PhoneticsDownloadJa");
+        Check(
+            "dictionary card button enables once a downloader is injected",
+            jaButton?.IsEnabled == true);
+
+        // 注音开关读写闭环
+        var config = new AppConfig { Phonetics = new PhoneticsConfig { Enabled = false, RareOnly = false } };
+        page.Load(config);
+        var enabledToggle = (System.Windows.Controls.Primitives.ToggleButton?)page.FindName("PhoneticsEnabledToggle");
+        var rareOnlyToggle = (System.Windows.Controls.Primitives.ToggleButton?)page.FindName("PhoneticsRareOnlyToggle");
+        Check(
+            "general page loads phonetics switches accurately",
+            enabledToggle?.IsChecked == false && rareOnlyToggle?.IsChecked == false);
+        enabledToggle!.IsChecked = true;
+        var applied = new AppConfig();
+        page.Apply(applied);
+        Check(
+            "general page applies phonetics switch changes to configuration",
+            applied.Phonetics.Enabled && !applied.Phonetics.RareOnly);
     }
 
     /// <summary>

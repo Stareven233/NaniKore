@@ -12,9 +12,70 @@ internal static partial class SelfTest
         TestEnglishPipeline();
         TestPinyinToneConversion();
         TestRegistryLanguageRouting();
+        TestPhoneticLanguageCatalog();
+        TestPhoneticDictionaryStates();
+        TestRegistryResetAvailability();
         TestJapaneseFuriganaDictionary();
         TestChinesePinyinDictionary();
         TestEnglishIpaDictionary();
+    }
+
+    /// <summary>语言清单是设置页卡片与源语言下拉的共同口径：代码、展示名、顺序必须稳定。</summary>
+    private static void TestPhoneticLanguageCatalog()
+    {
+        Check(
+            "三语清单代码与顺序",
+            PhoneticLanguages.All.Select(language => language.Code).SequenceEqual(["ja", "en", "zh"]));
+        Check(
+            "展示名与源语言下拉口径一致",
+            PhoneticLanguages.DisplayName("ja") == "日本語" &&
+            PhoneticLanguages.DisplayName("en") == "English" &&
+            PhoneticLanguages.DisplayName("zh") == "中文（简体）" &&
+            PhoneticLanguages.DisplayName("ko") is null &&
+            PhoneticLanguages.DisplayName(null) is null);
+    }
+
+    /// <summary>
+    /// 按语言词典状态：Ready 必须与清单完整性判定一致（哈希即版本）；
+    /// 未装配语言（如 ko）返回 Unsupported 而不是崩溃。
+    /// </summary>
+    private static void TestPhoneticDictionaryStates()
+    {
+        foreach (var language in PhoneticLanguages.All)
+        {
+            var state = PhoneticDependencyManifest.GetState(language.Code);
+            Check(
+                $"{language.Code} 词典状态与清单完整性一致",
+                state == PhoneticDictionaryState.Ready == PhoneticDependencyManifest.IsComplete(language.Code) &&
+                state is PhoneticDictionaryState.Ready or PhoneticDictionaryState.Missing or PhoneticDictionaryState.NeedsUpdate);
+        }
+
+        Check(
+            "未装配语言返回 Unsupported",
+            PhoneticDependencyManifest.GetState("ko") == PhoneticDictionaryState.Unsupported &&
+            PhoneticDependencyManifest.GetState("") == PhoneticDictionaryState.Unsupported &&
+            PhoneticDependencyManifest.GetFiles("ko").Count == 0);
+    }
+
+    /// <summary>下载落地后的热生效口径：ResetAvailability 清闩锁后重新探测，注音结果不变。</summary>
+    private static void TestRegistryResetAvailability()
+    {
+        var registry = TextAnnotatorRegistry.CreateDefault();
+        registry.ResetAvailability();
+        registry.ResetAvailability("zh");
+        Check(
+            "重置可用性后英语注音不受影响",
+            registry.Annotate("The ubiquitous government", "en").Count == 1);
+
+        // 清闩锁只影响「是否重新探测词典」，不得改动注音行为本身
+        var annotator = registry.GetAnnotator("en")!;
+        var before = Annotated(annotator, "The ubiquitous government", new AnnotationContext(AnnotationProfile.Load("en")));
+        annotator.ResetAvailability();
+        annotator.ResetAvailability();
+        var after = Annotated(annotator, "The ubiquitous government", new AnnotationContext(AnnotationProfile.Load("en")));
+        Check(
+            "重复重置可用性后注音结果不变",
+            string.Equals(before, after, StringComparison.Ordinal));
     }
 
     private static void TestAnnotationProfileAndDedupe()

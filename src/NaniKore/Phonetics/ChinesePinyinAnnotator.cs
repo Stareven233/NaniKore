@@ -83,6 +83,15 @@ internal sealed class ChinesePinyinAnnotator : ITextAnnotator, IDisposable
         }
     }
 
+    /// <summary>词典下载落地后清闩锁：下一次探测重新创建 Tagger，实现无需重启的热生效。</summary>
+    public void ResetAvailability()
+    {
+        lock (_gate)
+        {
+            _probed = false;
+        }
+    }
+
     /// <summary>
     /// LibNMeCab 的 <see cref="MeCabNode.Feature"/> 是「词面\t素性」整体（实测），拼音取最后一个制表符之后的内容。
     /// </summary>

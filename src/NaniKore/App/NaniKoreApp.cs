@@ -12,6 +12,7 @@ using NaniKore.Input;
 using NaniKore.Ocr;
 using NaniKore.Ocr.Models;
 using NaniKore.Overlay;
+using NaniKore.Phonetics;
 using NaniKore.Translation;
 using Application = System.Windows.Application;
 
@@ -493,7 +494,7 @@ internal sealed class NaniKoreApp : Application
 
         // 传入实时提供者而不是打开时的快照：设置窗未保存就关闭时的尺寸回写必须以
         // 当前最新配置为基础，否则会覆盖结果卡 AutoExplainChanged 等入口期间的写盘。
-        var window = new SettingsWindow(() => _configStore.Current, ApplySettings, TestConnectionAsync, SuspendCaptureHotkey, DownloadOcrDependenciesAsync, _favoriteService);
+        var window = new SettingsWindow(() => _configStore.Current, ApplySettings, TestConnectionAsync, SuspendCaptureHotkey, DownloadOcrDependenciesAsync, DownloadPhoneticDictionaryAsync, _favoriteService);
         // 只有结果卡“设置”按钮打开时才置顶；托盘等入口保持普通窗口，允许被遮挡。
         window.Topmost = topmostFromResult;
         window.Closed += (_, _) => _settingsWindow = null;
@@ -575,6 +576,19 @@ internal sealed class NaniKoreApp : Application
         IProgress<string> progress,
         CancellationToken cancellationToken) =>
         await new OcrDependencyDownloader().DownloadAsync(progress, cancellationToken);
+
+    /// <summary>
+    /// 按语言下载注音词典（issue 008 Phase 2）：入口只负责把语言码转交下载器；
+    /// 标注器的不可用闩锁由全局注册表在下载成功后统一重置，实现无需重启的热生效。
+    /// </summary>
+    private static async Task DownloadPhoneticDictionaryAsync(
+        string languageCode,
+        IProgress<string> progress,
+        CancellationToken cancellationToken)
+    {
+        await new PhoneticDependencyDownloader().DownloadAsync(languageCode, progress, cancellationToken);
+        PhoneticAnnotatorRegistryHolder.ResetAvailability(languageCode);
+    }
 
     private OcrEngine GetOcrEngine() => _ocrEngine ??= OcrEngine.CreateDefault();
 

@@ -50,6 +50,52 @@
             </StackPanel>
         </controls:SettingsGroup>
 
+        <controls:SettingsGroup x:Name="PhoneticsGroup" Header="原文注音">
+            <StackPanel>
+                <controls:SettingsRow Header="原文注音"
+                                      Description="本地引擎给原文标注振假名 / 国际音标 / 拼音，不经过模型；关闭后原文区为纯文本，翻译不受影响。">
+                    <ToggleButton x:Name="PhoneticsEnabledToggle" Style="{DynamicResource ToggleSwitch}" />
+                </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <controls:SettingsRow Header="仅注难词"
+                                      Description="开启时停用词、高频词与常用字（日语常用漢字表 / 简体一级字表）不注；关闭时全文注音。">
+                    <ToggleButton x:Name="PhoneticsRareOnlyToggle" Style="{DynamicResource ToggleSwitch}" />
+                </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <!--
+                    三语词典按语言独立管理：状态即按钮文案（下载 / 更新 / 已就绪），
+                    点击后经 ModelScope 直链下载并做 SHA-256 校验；已存在且相符的文件自动跳过。
+                -->
+                <controls:SettingsRow Header="日本語词典"
+                                      Description="IPAdic 形态素词典（编译态，约 53 MB）。"
+                                      ContentWidth="96">
+                    <Button x:Name="PhoneticsDownloadJa"
+                            Tag="ja"
+                            Style="{DynamicResource Button.Secondary}"
+                            Click="OnDownloadPhoneticsClick" />
+                </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <controls:SettingsRow Header="English 词典"
+                                      Description="CMUdict 转译 IPA 词典（约 4 MB）。"
+                                      ContentWidth="96">
+                    <Button x:Name="PhoneticsDownloadEn"
+                            Tag="en"
+                            Style="{DynamicResource Button.Secondary}"
+                            Click="OnDownloadPhoneticsClick" />
+                </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <controls:SettingsRow Header="中文（简体）词典"
+                                      Description="CC-CEDICT 转译 MeCab 词典（约 10 MB）。"
+                                      ContentWidth="96">
+                    <Button x:Name="PhoneticsDownloadZh"
+                            Tag="zh"
+                            Style="{DynamicResource Button.Secondary}"
+                            Click="OnDownloadPhoneticsClick" />
+                </controls:SettingsRow>
+                <controls:InfoBar x:Name="PhoneticsStatus" Margin="12,0,12,12" />
+            </StackPanel>
+        </controls:SettingsGroup>
+
         <controls:SettingsGroup x:Name="LocalOcrDependenciesGroup" Header="本地 OCR 依赖">
             <StackPanel>
                 <controls:SettingsRow Header="模型与运行库"

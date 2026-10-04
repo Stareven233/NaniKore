@@ -11,9 +11,54 @@ internal static partial class SelfTest
         TestConfigRoundTrip();
         TestEmptyPromptKeysSurviveRewrite();
         TestLegacyVisionOneshotKeyIsIgnored();
+        TestPhoneticsConfigDefaultsAndRoundTrip();
         TestAboutPageDisplaysProductVersion();
         TestApplicationIconResource();
         TestProfileRenameKeepsSecret();
+    }
+
+    /// <summary>
+    /// 注音配置（issue 008 Phase 2）：缺省 phonetics 段的旧配置必须回落「开 + 仅难词」双 true
+    /// （与 AnnotationProfile.Load 默认口径一致）；显示关闭的配置要原样读写，克隆不丢字段。
+    /// </summary>
+    private static void TestPhoneticsConfigDefaultsAndRoundTrip()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"NaniKore-self-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
+                version: 0.2.11
+                """);
+            var defaults = new ConfigStore(directory);
+            Check(
+                "legacy config without phonetics section falls back to enabled + rare-only defaults",
+                defaults.Current.Phonetics.Enabled &&
+                defaults.Current.Phonetics.RareOnly &&
+                defaults.LoadWarning?.Contains("读取 config.yaml 失败", StringComparison.Ordinal) != true);
+
+            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
+                version: 0.2.11
+                phonetics:
+                  enabled: false
+                  rare_only: false
+                """);
+            var disabled = new ConfigStore(directory);
+            Check(
+                "phonetics switches load as written",
+                !disabled.Current.Phonetics.Enabled && !disabled.Current.Phonetics.RareOnly);
+            disabled.Current.Phonetics.Enabled = true;
+            disabled.AtomicWrite(AppConfigCloner.Clone(disabled.Current));
+            var reloaded = new ConfigStore(directory);
+            Check(
+                "phonetics switches survive cloner round-trip",
+                reloaded.Current.Phonetics.Enabled &&
+                !reloaded.Current.Phonetics.RareOnly);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     /// <summary>

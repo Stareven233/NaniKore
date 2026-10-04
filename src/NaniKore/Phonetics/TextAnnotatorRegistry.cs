@@ -39,6 +39,22 @@ internal sealed class TextAnnotatorRegistry
     }
 
     /// <summary>
+    /// 设置页下载/更新词典成功后调用：清掉标注器的不可用闩锁，使其下次访问时重新探测。
+    /// 传 null 或「auto/自动检测」时重置全部已装配标注器（一次安装动作可能同时补全多个语言）。
+    /// </summary>
+    public void ResetAvailability(string? languageCode = null)
+    {
+        var code = NormalizeLanguageCode(languageCode);
+        foreach (var annotator in _annotators.Values)
+        {
+            if (code is null || string.Equals(annotator.LanguageCode, code, StringComparison.OrdinalIgnoreCase))
+            {
+                annotator.ResetAvailability();
+            }
+        }
+    }
+
+    /// <summary>
     /// 统一入口：<paramref name="pinnedLanguageCode"/> 非空（且不是 auto/自动检测）时按手选语言执行，
     /// 否则按探测结果执行。返回合并后的注音区间（按起点排序），缺失词典的语言不产生区间。
     /// </summary>

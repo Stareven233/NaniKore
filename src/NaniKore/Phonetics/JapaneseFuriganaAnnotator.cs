@@ -105,6 +105,15 @@ internal sealed class JapaneseFuriganaAnnotator : ITextAnnotator, IDisposable
         }
     }
 
+    /// <summary>词典下载落地后清闩锁：下一次探测重新创建 Tagger，实现无需重启的热生效。</summary>
+    public void ResetAvailability()
+    {
+        lock (_gate)
+        {
+            _availabilityProbed = false;
+        }
+    }
+
     /// <summary>词典目录存在且 Tagger 可创建才算可用；失败只静默一次（随后维持不可用），绝不影响翻译主链路。</summary>
     private void EnsureAvailability()
     {

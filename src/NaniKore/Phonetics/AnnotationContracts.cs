@@ -22,6 +22,12 @@ internal interface ITextAnnotator
     /// <summary>词典是否就绪（deps/phonetics/&lt;lang&gt;/ 齐备且哈希通过）。</summary>
     bool IsAvailable { get; }
 
+    /// <summary>
+    /// 清除「词典不可用」的探测闩锁：设置页完成该语言词典下载后调用，
+    /// 下一次访问 <see cref="IsAvailable"/> 或 <see cref="Annotate"/> 时重新探测（懒加载热生效，无需重启）。
+    /// </summary>
+    void ResetAvailability();
+
     /// <summary>对纯文本原文产出注音区间；停用过滤与去重统一经 <paramref name="context"/> 裁决。</summary>
     IReadOnlyList<AnnotationSpan> Annotate(string plainText, AnnotationContext context);
 }
