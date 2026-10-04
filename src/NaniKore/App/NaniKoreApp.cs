@@ -455,7 +455,7 @@ internal sealed class NaniKoreApp : Application
                 _configStore.AtomicWrite(config);
             }
         };
-        panel.SettingsRequested += (_, _) => ShowSettings(topmostFromResult: true);
+        panel.SettingsRequested += (_, _) => ShowSettings();
         panel.Closed += (_, _) =>
         {
             _resultPanel = null;
@@ -466,12 +466,6 @@ internal sealed class NaniKoreApp : Application
             else
             {
                 CancelTranslation();
-            }
-
-            if (_settingsWindow is { } settings)
-            {
-                // 结果卡关闭后，其带来的置顶来源也消失；设置恢复普通层级。
-                settings.Topmost = false;
             }
         };
         _resultPanel = panel;
@@ -485,12 +479,15 @@ internal sealed class NaniKoreApp : Application
         return panel;
     }
 
-    private void ShowSettings(bool topmostFromResult = false)
+    private void ShowSettings()
     {
         if (_settingsWindow is { } existing)
         {
-            // 单例设置窗：重复触发时只把已有窗口提到前台，不再叠开第二份编辑副本。
-            existing.Topmost = topmostFromResult;
+            // 单例设置窗：若已最小化先恢复正常窗口状态，再提到前台激活，不重复开窗。
+            if (existing.WindowState == WindowState.Minimized)
+            {
+                existing.WindowState = WindowState.Normal;
+            }
             existing.Show();
             existing.Activate();
             return;
@@ -499,8 +496,6 @@ internal sealed class NaniKoreApp : Application
         // 传入实时提供者而不是打开时的快照：设置窗未保存就关闭时的尺寸回写必须以
         // 当前最新配置为基础，否则会覆盖结果卡 AutoExplainChanged 等入口期间的写盘。
         var window = new SettingsWindow(() => _configStore.Current, ApplySettings, TestConnectionAsync, SuspendCaptureHotkey, DownloadOcrDependenciesAsync, DownloadPhoneticDictionaryAsync, _favoriteService);
-        // 只有结果卡“设置”按钮打开时才置顶；托盘等入口保持普通窗口，允许被遮挡。
-        window.Topmost = topmostFromResult;
         window.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow = window;
         window.Show();

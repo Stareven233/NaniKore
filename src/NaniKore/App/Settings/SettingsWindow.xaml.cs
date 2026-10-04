@@ -45,8 +45,6 @@ internal sealed partial class SettingsWindow : Window
         InitializeComponent();
         Icon = ApplicationIcon.LoadWpf();
         ThemeManager.ApplyWindowChrome(this);
-        // 结果卡本身是置顶窗口；设置从结果卡打开时也必须保持同等层级，避免被已有窗口遮挡。
-        Topmost = true;
 
         // 打开时取一份快照作为编辑副本；实时提供者保留下来，关闭时的尺寸回写
         // 必须以当前最新配置为基础，不能用打开时的快照（见 _currentConfig 注释）。

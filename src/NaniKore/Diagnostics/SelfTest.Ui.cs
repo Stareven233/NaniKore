@@ -28,6 +28,22 @@ internal static partial class SelfTest
         TestSettingsCloseSizeWriteBackKeepsExternalUpdates();
         TestRubyDocumentBuilderAndDualMode();
         TestFavoritesSettingsPageFilteringAndEvents();
+        TestWindowProperties();
+    }
+
+    /// <summary>
+    /// 窗口行为与层级管理：设置窗口显示在任务栏且默认不置顶，最小化时进入任务栏；
+    /// 结果面板恢复为非置顶窗口，避免强占层级遮挡其他程序。
+    /// </summary>
+    private static void TestWindowProperties()
+    {
+        EnsureThemedApplication();
+        var panel = new ResultPanelWindow();
+        Check("result panel window is not topmost", !panel.Topmost);
+
+        var settings = new SettingsWindow(() => new AppConfig(), _ => { }, (_, _) => Task.FromResult("ok"));
+        Check("settings window shows in taskbar", settings.ShowInTaskbar);
+        Check("settings window is not topmost", !settings.Topmost);
     }
 
     /// <summary>

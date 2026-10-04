@@ -8,7 +8,7 @@
         Height="620"
         MinWidth="620"
         MinHeight="460"
-        ShowInTaskbar="False"
+        ShowInTaskbar="True"
         WindowStartupLocation="CenterScreen"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"

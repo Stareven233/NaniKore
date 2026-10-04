@@ -10,7 +10,7 @@
         MinHeight="300"
         ShowInTaskbar="False"
         ShowActivated="False"
-        Topmost="True"
+        Topmost="False"
         WindowStartupLocation="Manual"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"

@@ -24,7 +24,8 @@ namespace NaniKore.App;
 /// <summary>单例普通窗口的结果面板；ShowActivated=false 保证新结果展示不抢焦点，点击交互交给系统原生激活规则。</summary>
 internal sealed partial class ResultPanelWindow : Window
 {
-    private const nint HwndTopmost = -1;
+    private const nint HwndTop = 0;
+    private const nint HwndNoTopmost = -2;
     private const uint SwpNoSize = 0x0001;
     private const uint SwpNoMove = 0x0002;
     private const uint SwpNoActivate = 0x0010;
@@ -357,10 +358,11 @@ internal sealed partial class ResultPanelWindow : Window
 
         y = ClampToWorkArea(y, workArea.Top, workArea.Bottom - windowHeight);
 
-        // SetWindowPos 使用物理像素坐标，能和 WinForms 选区及混合 DPI 的虚拟桌面坐标直接对齐。
+        // SetWindowPos 使用物理像素坐标，能和 WinForms 选区及混合 DPI 的虚拟桌面坐标直接对齐；
+        // 使用 HwndNoTopmost 确保结果卡处于普通窗口顶层，不再强制全局置顶。
         _ = NativeMethods.SetWindowPos(
             _windowHandle,
-            HwndTopmost,
+            HwndNoTopmost,
             x,
             y,
             0,
@@ -368,7 +370,7 @@ internal sealed partial class ResultPanelWindow : Window
             SwpNoSize | SwpNoActivate | SwpShowWindow);
     }
 
-    /// <summary>两个 Topmost 窗口之间系统不保证新窗口在上；新结果必须显式声明一次当前置顶层顶端。</summary>
+    /// <summary>新结果展示时，将普通窗口提升到非置顶层顶端，避免被其他普通窗口完全遮盖，同时不抢焦点也不全局置顶。</summary>
     public void BringToTopmostBand()
     {
         if (!IsVisible || _windowHandle == nint.Zero)
@@ -378,7 +380,7 @@ internal sealed partial class ResultPanelWindow : Window
 
         _ = NativeMethods.SetWindowPos(
             _windowHandle,
-            HwndTopmost,
+            HwndTop,
             0,
             0,
             0,
