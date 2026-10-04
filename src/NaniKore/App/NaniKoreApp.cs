@@ -215,6 +215,8 @@ internal sealed class NaniKoreApp : Application
                     {
                         session.FinalizeStage1Output();
                         panel.SetExplanationEnabled(true);
+                        // 译文落地后单次异步叠加本地注音（issue 008 Phase 3）：视觉链路的转录文本在此刻获得注音视图
+                        _ = panel.AnnotateSourceAsync();
                         if (_configStore.Current.General.AutoExplain)
                         {
                             panel.ExpandExplanation();
@@ -442,6 +444,8 @@ internal sealed class NaniKoreApp : Application
         panel.SetFavoriteService(_favoriteService);
         // 收藏语言的探测兜底口径与提示词展开共用同一份目标语言配置。
         panel.SetTargetLanguage(_configStore.Current.General.TargetLanguage);
+        // 原文注音开关与源语言下拉共用设置页配置（issue 008 Phase 3）。
+        panel.SetPhoneticsOptions(_configStore.Current.Phonetics);
         panel.AutoExplainChanged += (_, autoExplain) =>
         {
             var config = _configStore.Current;
@@ -515,6 +519,8 @@ internal sealed class NaniKoreApp : Application
         _providerFactory = new ProviderFactory(next);
         // 目标语言可能已变：同步刷新结果卡上的收藏语言探测口径（不打断当前展示）。
         _resultPanel?.SetTargetLanguage(next.General.TargetLanguage);
+        // 注音开关可能已变：结果卡按新口径决定是否叠加注音（原文区不强刷，下一轮原文自然生效）。
+        _resultPanel?.SetPhoneticsOptions(next.Phonetics);
     }
 
     /// <summary>热键录制期间临时注销全局热键，避免录制正在生效的组合时反而触发截图。</summary>

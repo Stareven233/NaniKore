@@ -44,6 +44,13 @@
 
             <DockPanel Grid.Row="0" Margin="0,0,0,6">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <!-- 源语言口径：默认按探测，手选任一语言则本地注音引擎按该语言重新叠加 -->
+                    <ComboBox x:Name="SourceLanguageBox"
+                              MinWidth="112"
+                              Margin="0,0,8,0"
+                              VerticalAlignment="Center"
+                              ToolTip="原文注音使用哪种语言：默认按原文自动探测，也可手动指定"
+                              SelectionChanged="OnSourceLanguageChanged" />
                     <Button MinWidth="72" Content="设置" Click="OnSettingsClick" />
                     <Button x:Name="NormalizeSourceButton" MinWidth="72" Margin="8,0,0,0"
                             Content="规范化"

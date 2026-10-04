@@ -284,9 +284,11 @@ internal static class Program
                 imagePng is { Length: > 0 } ? new ReadOnlyMemory<byte>(imagePng) : null,
                 targetLanguage);
             var path = PromptTemplates.ResolvePath(request);
-            var detection = path == PromptPath.Vision
-                ? PromptTemplates.VisionBothLanguages
-                : LanguageDetector.Detect(request.SourceText, request.TargetLanguage);
+            // 探测结果自 issue 008 Phase 3 起仅为报告信息（prompt 组装不再按探测注入语言插件）；
+            // 视觉链路无源文本可扫，按空串探测得到全空特征，如实反映「无从预扫」。
+            var detection = LanguageDetector.Detect(
+                path == PromptPath.Vision ? string.Empty : request.SourceText,
+                request.TargetLanguage);
             var sections = PromptTemplates.DescribeSections(request, prompts);
             var systemPrompt = PromptTemplates.GetSystemPrompt(request, prompts);
 

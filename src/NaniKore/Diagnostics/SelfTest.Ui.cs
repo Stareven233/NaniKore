@@ -21,6 +21,7 @@ internal static partial class SelfTest
         TestSettingsPagesUseAdaptiveLayout();
         TestGeneralPagePipelineDependencyVisibility();
         TestGeneralPagePhoneticsCards();
+        TestResultPanelSourceAnnotation();
         TestSharedLanguageChoicesAndDetectionMapping();
         TestTranslationPagePromptEditing();
         TestSettingsCloseSizeMemory();
@@ -84,6 +85,69 @@ internal static partial class SelfTest
         Check(
             "general page applies phonetics switch changes to configuration",
             applied.Phonetics.Enabled && !applied.Phonetics.RareOnly);
+    }
+
+    /// <summary>
+    /// 结果面板本地注音接线（issue 008 Phase 3）：源语言下拉四选一（自动探测 + 三语），
+    /// Reset 落地即单次异步叠加注音；注音形态只是纯文本原文的派生视图，纯文本始终是单一事实源；
+    /// 开关关闭时软降级为纯文本，手动换语言时按新口径重算。
+    /// </summary>
+    private static void TestResultPanelSourceAnnotation()
+    {
+        EnsureThemedApplication();
+        var panel = new ResultPanelWindow();
+        var languageBox = (System.Windows.Controls.ComboBox?)panel.FindName("SourceLanguageBox");
+        Check(
+            "result panel source language box offers auto detection plus the three annotation languages",
+            languageBox is { Items.Count: 4 });
+
+        panel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = true, RareOnly = true });
+        const string source = "彼は躊躇なく答えた。";
+        panel.Reset(source, "test", autoTranslate: false);
+        // Reset 已触发单次注音；等待其落地后再断言
+        WaitForAnnotation(panel);
+        Check(
+            "local annotation overlays ruby while the plain source stays the single source of truth",
+            panel.AnnotatedSourceText.Length > 0 &&
+            string.Equals(panel.SourceText, source, StringComparison.Ordinal) &&
+            string.Equals(RubyTextParser.ToPlainText(panel.AnnotatedSourceText), source, StringComparison.Ordinal));
+
+        // 手动换语言（索引 3 = 中文（简体））：同一份纯文本按新口径重算，事实源不变
+        languageBox!.SelectedIndex = 3;
+        WaitForAnnotation(panel);
+        Check(
+            "manual language switch re-annotates the same plain source without losing the source of truth",
+            panel.AnnotatedSourceText.Length > 0 &&
+            string.Equals(panel.SourceText, source, StringComparison.Ordinal) &&
+            string.Equals(RubyTextParser.ToPlainText(panel.AnnotatedSourceText), source, StringComparison.Ordinal));
+
+        // 总开关关闭：软降级为纯文本，不再叠加任何注音
+        panel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = false, RareOnly = true });
+        panel.Reset(source, "test", autoTranslate: false);
+        WaitForAnnotation(panel);
+        Check(
+            "disabling annotation degrades the source view back to plain text",
+            string.Equals(panel.AnnotatedSourceText, source, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 等待注音任务落地：面板由当前线程创建，等待期间必须持续抽干其 Dispatcher 队列，
+    /// 否则 Task.Run 续体里的 InvokeAsync 会死等一个被 GetResult 阻塞的面板线程（真实 UI 线程有空转消息泵，不会走到这）。
+    /// </summary>
+    private static void WaitForAnnotation(ResultPanelWindow panel)
+    {
+        var task = panel.PendingAnnotation;
+        if (task is null)
+        {
+            return;
+        }
+
+        while (!task.IsCompleted)
+        {
+            panel.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        task.GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -200,76 +264,32 @@ internal static partial class SelfTest
 
         var localPromptBox = (System.Windows.Controls.TextBox?)page.FindName("PromptBox");
         var visionPromptBox = (System.Windows.Controls.TextBox?)page.FindName("VisionPromptBox");
-        var pluginLanguageBox = (System.Windows.Controls.ComboBox?)page.FindName("PluginLanguageBox");
-        var pluginPromptBox = (System.Windows.Controls.TextBox?)page.FindName("PluginPromptBox");
         var localPromptRow = (SettingsRow?)page.FindName("LocalPromptRow");
         var visionPromptRow = (SettingsRow?)page.FindName("VisionPromptRow");
         var restoreLocalButton = (System.Windows.Controls.Button?)page.FindName("RestorePromptButton");
-        var restorePluginButton = (System.Windows.Controls.Button?)page.FindName("RestorePluginPromptButton");
         var restoreVisionButton = (System.Windows.Controls.Button?)page.FindName("RestoreVisionPromptButton");
 
+        // 语言注音插件编辑器已随插件键退役（issue 008 Phase 3）：页面只剩 Base 与视觉 Base 两行
         Check(
-            "translation settings show built-in Base and vision base prompts for empty config values",
+            "translation settings retire the language plugin editor and keep base and vision rows",
+            page.FindName("PluginLanguageBox") is null &&
+            page.FindName("PluginPromptBox") is null &&
+            page.FindName("RestorePluginPromptButton") is null &&
             localPromptBox?.Text == PromptTemplates.DefaultTranslationBasePrompt &&
             visionPromptBox?.Text == PromptTemplates.DefaultVisionBasePrompt);
 
         Check(
-            "translation settings load Japanese plugin prompt by default with correct language options",
-            pluginLanguageBox?.Items.Count == 3 &&
-            pluginLanguageBox.SelectedIndex == 0 &&
-            pluginPromptBox?.Text == PromptTemplates.JapanesePlugin);
-
-        Check(
             "prompt restore buttons share the title row with concise black labels",
             restoreLocalButton?.Content as string == "恢复默认" &&
-            restorePluginButton?.Content as string == "恢复默认" &&
             restoreVisionButton?.Content as string == "恢复默认" &&
             ReferenceEquals(localPromptRow?.HeaderAction, restoreLocalButton) &&
             ReferenceEquals(visionPromptRow?.HeaderAction, restoreVisionButton) &&
             restoreLocalButton.Foreground is System.Windows.Media.SolidColorBrush { Color: var localColor } &&
             localColor == System.Windows.Media.Colors.Black &&
-            restorePluginButton.Foreground is System.Windows.Media.SolidColorBrush { Color: var pluginColor } &&
-            pluginColor == System.Windows.Media.Colors.Black &&
             restoreVisionButton.Foreground is System.Windows.Media.SolidColorBrush { Color: var visionColor } &&
             visionColor == System.Windows.Media.Colors.Black);
 
-        // 修改日文插件草稿
-        pluginPromptBox!.Text = "Custom Japanese plugin";
-        // 切换到英文插件
-        pluginLanguageBox!.SelectedIndex = 1;
-        Check(
-            "switching plugin language displays default English plugin prompt and preserves Japanese draft",
-            pluginPromptBox.Text == PromptTemplates.EnglishPlugin);
-
-        // 修改英文插件
-        pluginPromptBox.Text = "Custom English plugin";
-        // 测试英文插件一键恢复默认
-        restorePluginButton!.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
-        Check(
-            "plugin prompt restore button resets English plugin to default template",
-            pluginPromptBox.Text == PromptTemplates.EnglishPlugin);
-
-        // 切换回日文插件，确认刚才的草稿被完整保存
-        pluginLanguageBox.SelectedIndex = 0;
-        Check(
-            "switching back to Japanese plugin restores the modified draft",
-            pluginPromptBox.Text == "Custom Japanese plugin");
-
-        // 切换到中文插件：显示内置中文拼音插件默认模板，日文草稿不受影响
-        pluginLanguageBox.SelectedIndex = 2;
-        Check(
-            "switching to the chinese plugin displays the built-in chinese pinyin plugin",
-            pluginPromptBox.Text == PromptTemplates.ChinesePlugin);
-
-        // 修改中文插件草稿后切回日文，确认三份草稿各自独立
-        pluginPromptBox.Text = "Custom Chinese plugin";
-        pluginLanguageBox.SelectedIndex = 0;
-        pluginLanguageBox.SelectedIndex = 2;
-        Check(
-            "chinese plugin draft survives switching away and back",
-            pluginPromptBox.Text == "Custom Chinese plugin");
-        pluginLanguageBox.SelectedIndex = 0;
-
+        // 视觉 Base 一键恢复默认
         visionPromptBox!.Text = "temporary";
         restoreVisionButton!.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
         Check(
@@ -277,15 +297,33 @@ internal static partial class SelfTest
             visionPromptBox.Text == PromptTemplates.DefaultVisionBasePrompt);
 
         localPromptBox!.Text = "Custom base prompt {{target_language}}";
-        visionPromptBox.Text = "Custom vision {{target_language}}\n\n---\n\n<translation>";
+        visionPromptBox.Text = "Custom vision {{target_language}}\n\n---TRANSLATION---\n\n<translation>";
+        var legacyPluginConfig = new AppConfig
+        {
+            Prompts = new PromptConfig
+            {
+                JapanesePlugin = "Legacy ja-JP",
+                EnglishPlugin = "Legacy en-US",
+                ChinesePlugin = "Legacy zh-CN",
+            },
+        };
         page.Apply(config);
         Check(
-            "translation settings save editable base, plugin and vision base prompts into app config",
+            "translation settings save editable base and vision prompts while retired plugin values pass through untouched",
             config.Prompts.Base == "Custom base prompt {{target_language}}" &&
-            config.Prompts.JapanesePlugin == "Custom Japanese plugin" &&
-            config.Prompts.EnglishPlugin == PromptTemplates.EnglishPlugin &&
-            config.Prompts.ChinesePlugin == "Custom Chinese plugin" &&
-            config.Prompts.VisionBase == "Custom vision {{target_language}}\n\n---\n\n<translation>");
+            config.Prompts.VisionBase == "Custom vision {{target_language}}\n\n---TRANSLATION---\n\n<translation>" &&
+            config.Prompts.JapanesePlugin is { Length: 0 } &&
+            config.Prompts.EnglishPlugin is { Length: 0 } &&
+            config.Prompts.ChinesePlugin is { Length: 0 });
+
+        // 旧配置里退役插件键的自定义值不得被设置页清空（数据留存，仅不参与组装）
+        page.Load(legacyPluginConfig);
+        page.Apply(legacyPluginConfig);
+        Check(
+            "retired plugin key values survive the settings page untouched",
+            legacyPluginConfig.Prompts.JapanesePlugin == "Legacy ja-JP" &&
+            legacyPluginConfig.Prompts.EnglishPlugin == "Legacy en-US" &&
+            legacyPluginConfig.Prompts.ChinesePlugin == "Legacy zh-CN");
     }
 
     private static void TestHotkeyGestureNormalization()

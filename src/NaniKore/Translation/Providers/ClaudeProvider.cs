@@ -16,9 +16,7 @@ internal sealed class ClaudeProvider : TranslationProviderBase
         using var message = CreateRequest(request);
         using var response = await SendAsync(message, cancellationToken).ConfigureAwait(false);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        var router = request.Kind == UnderstandKind.Translate
-            ? new SectionChannelRouter(request.SourceText)
-            : null;
+        var router = CreateRouter(request);
         var sanitizer = new ThinkingStreamSanitizer();
         var inputTokens = 0;
         var outputTokens = 0;

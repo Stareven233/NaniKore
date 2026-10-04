@@ -138,19 +138,22 @@ internal sealed class WindowConfig
 
 internal sealed class PromptConfig
 {
-    /// <summary>Base 基础提示词（两阶段协议格式规约）；空字符串时使用内置 Base 模板。</summary>
+    /// <summary>Base 基础提示词（翻译纪律与目标语言约束）；空字符串时使用内置 Base 模板。</summary>
     public string Base { get; set; } = string.Empty;
 
-    /// <summary>日语特化插件提示词（ja-JP，振假名与原形）；空字符串时使用内置日文插件模板。</summary>
+    /// <summary>
+    /// 已退役的日语注音插件（issue 008 Phase 3）：注音职责移交本地注音引擎，本键不再参与 prompt 组装；
+    /// 旧配置中的自定义值原样保留，仅做数据留存，设置页亦不再展示。
+    /// </summary>
     public string JapanesePlugin { get; set; } = string.Empty;
 
-    /// <summary>英语特化插件提示词（en-US，音标与原形）；空字符串时使用内置英文插件模板。</summary>
+    /// <summary>已退役的英语 IPA 注音插件；旧值保留、不再生效，详见 <see cref="JapanesePlugin"/>。</summary>
     public string EnglishPlugin { get; set; } = string.Empty;
 
-    /// <summary>中文特化插件提示词（zh-CN，拼音标注）；空字符串时使用内置中文插件模板。</summary>
+    /// <summary>已退役的中文拼音注音插件；旧值保留、不再生效，详见 <see cref="JapanesePlugin"/>。</summary>
     public string ChinesePlugin { get; set; } = string.Empty;
 
-    /// <summary>视觉一条龙 Base 提示词（与三个语言插件共同组装）；空字符串时使用内置视觉 Base 模板。</summary>
+    /// <summary>视觉链路 Base 提示词（纯转录 + 译文两段式协议）；空字符串时使用内置视觉 Base 模板。</summary>
     public string VisionBase { get; set; } = string.Empty;
 
     /// <summary>空字符串时使用内置精讲模板。</summary>
@@ -188,6 +191,7 @@ internal static class AppConfigCloner
         Prompts = new PromptConfig
         {
             Base = source.Prompts.Base,
+            // 三个语言注音插件键已退役（issue 008 Phase 3）：旧值随克隆保留，保证取消设置时不丢用户数据，但不参与组装
             JapanesePlugin = source.Prompts.JapanesePlugin,
             EnglishPlugin = source.Prompts.EnglishPlugin,
             ChinesePlugin = source.Prompts.ChinesePlugin,

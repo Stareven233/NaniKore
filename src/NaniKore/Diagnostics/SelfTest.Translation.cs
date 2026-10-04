@@ -13,10 +13,8 @@ internal static partial class SelfTest
     {
         TestTranslationPromptTemplates();
         TestPromptLiteralFormatting();
-        TestModularPromptTemplates();
-        TestVisionPromptComposition();
-        TestMixedLanguagePluginGating();
-        TestTargetLanguagePluginMutex();
+        TestTextPromptDecoupling();
+        TestVisionPromptDecoupling();
         TestPromptSectionDescription();
         TestLanguageDetector();
         TestRubyTextParser();
@@ -36,10 +34,15 @@ internal static partial class SelfTest
     {
         var request = new UnderstandRequest(UnderstandKind.Translate, "hello", null, "zh-CN");
         var defaultPrompt = PromptTemplates.GetSystemPrompt(request, new PromptConfig());
+
+        // 文本路径解耦（issue 008 Phase 3）：模型只回译文——无哨兵、无注音规约、无原文回声
         Check(
-            "default translation prompt explicitly requires only the selected target language",
+            "default translation prompt carries no sentinel and no annotation conventions",
             defaultPrompt.Contains("zh-CN", StringComparison.Ordinal) &&
-            defaultPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
+            !defaultPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
+            !defaultPrompt.Contains("振假名", StringComparison.Ordinal) &&
+            !defaultPrompt.Contains("拼音", StringComparison.Ordinal) &&
+            !defaultPrompt.Contains("IPA", StringComparison.Ordinal) &&
             !defaultPrompt.Contains(PromptTemplates.TargetLanguagePlaceholder, StringComparison.Ordinal));
 
         var customPrompt = PromptTemplates.GetSystemPrompt(
@@ -51,10 +54,10 @@ internal static partial class SelfTest
 
         var imageRequest = request with { ImagePng = new byte[] { 1 } };
         var defaultVisionPrompt = PromptTemplates.GetSystemPrompt(imageRequest, new PromptConfig());
-        const string expectedVisionShape = "<annotated_source>\n---TRANSLATION---\n<translation>";
+        const string expectedVisionShape = "<transcribed_text>\n---TRANSLATION---\n<translation>";
         var normalizedVisionPrompt = defaultVisionPrompt.Replace("\r\n", "\n");
         Check(
-            "default vision prompt expands its target language and keeps the two-part protocol",
+            "default vision prompt keeps the transcription-then-translation protocol with the single sentinel",
             normalizedVisionPrompt.Contains("zh-CN", StringComparison.Ordinal) &&
             normalizedVisionPrompt.Contains(expectedVisionShape, StringComparison.Ordinal) &&
             !normalizedVisionPrompt.Contains(PromptTemplates.TargetLanguagePlaceholder, StringComparison.Ordinal));
@@ -63,20 +66,17 @@ internal static partial class SelfTest
             imageRequest,
             new PromptConfig { VisionBase = "OCR\n---TRANSLATION---\nTranslate to {{target_language}}; retain {{unknown_placeholder}}" });
         Check(
-            "custom vision base composes with both language plugins and expands only the target language placeholder",
+            "custom vision base is the only section and expands only the target language placeholder",
             visionPrompt.StartsWith("OCR\n---TRANSLATION---\nTranslate to zh-CN; retain {{unknown_placeholder}}", StringComparison.Ordinal) &&
-            visionPrompt.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
-            visionPrompt.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal) &&
+            !visionPrompt.Contains(PromptTemplates.DefaultVisionBasePrompt, StringComparison.Ordinal) &&
             !visionPrompt.Contains(PromptTemplates.TargetLanguagePlaceholder, StringComparison.Ordinal));
 
-        var pureModularPrompt = PromptTemplates.GetSystemPrompt(
-            request,
-            new PromptConfig());
+        var pureModularPrompt = PromptTemplates.GetSystemPrompt(request, new PromptConfig());
         var expectedBase = PromptTemplates.DefaultTranslationBasePrompt.Replace(
             PromptTemplates.TargetLanguagePlaceholder, request.TargetLanguage, StringComparison.Ordinal);
         Check(
-            "empty prompt config strictly builds modular prompt with sentinel and zero explanation directives",
-            pureModularPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
+            "empty prompt config strictly builds the translation base without sentinel or explanation directives",
+            !pureModularPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
             pureModularPrompt.Contains(expectedBase, StringComparison.Ordinal) &&
             !pureModularPrompt.Contains("### [词汇/短语]", StringComparison.Ordinal) &&
             !pureModularPrompt.Contains("### [语法/句型]", StringComparison.Ordinal));
@@ -90,9 +90,6 @@ internal static partial class SelfTest
             (nameof(PromptTemplates.DefaultTranslationBasePrompt), PromptTemplates.DefaultTranslationBasePrompt),
             (nameof(PromptTemplates.DefaultVisionBasePrompt), PromptTemplates.DefaultVisionBasePrompt),
             (nameof(PromptTemplates.DefaultExplainUserPrompt), PromptTemplates.DefaultExplainUserPrompt),
-            (nameof(PromptTemplates.JapanesePlugin), PromptTemplates.JapanesePlugin),
-            (nameof(PromptTemplates.EnglishPlugin), PromptTemplates.EnglishPlugin),
-            (nameof(PromptTemplates.ChinesePlugin), PromptTemplates.ChinesePlugin),
         };
 
         foreach (var (name, value) in literals)
@@ -127,10 +124,10 @@ internal static partial class SelfTest
                 englishHits.Length == 0);
         }
 
-        // 协议一致性：声明两段式输出的提示词必须且只能使用唯一哨兵，杜绝“提示词说一套、路由层认一套”的漂移
+        // 协议一致性（issue 008 Phase 3）：声明两段式输出的提示词必须且只能使用唯一哨兵；
+        // 而文本 Base 已与哨兵、注音规约彻底解耦，一旦回潮立即失败
         (string Name, string Value)[] twoPartProtocols =
         [
-            (nameof(PromptTemplates.DefaultTranslationBasePrompt), PromptTemplates.DefaultTranslationBasePrompt),
             (nameof(PromptTemplates.DefaultVisionBasePrompt), PromptTemplates.DefaultVisionBasePrompt),
         ];
         foreach (var (name, value) in twoPartProtocols)
@@ -140,6 +137,13 @@ internal static partial class SelfTest
                 value.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
                 !value.Contains("\n---\n", StringComparison.Ordinal));
         }
+
+        Check(
+            "translation base stays decoupled from the sentinel and every annotation convention",
+            !PromptTemplates.DefaultTranslationBasePrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
+            !PromptTemplates.DefaultTranslationBasePrompt.Contains("振假名", StringComparison.Ordinal) &&
+            !PromptTemplates.DefaultTranslationBasePrompt.Contains("拼音", StringComparison.Ordinal) &&
+            !PromptTemplates.DefaultTranslationBasePrompt.Contains("IPA", StringComparison.Ordinal));
 
         // 组装后的 system prompt 同样必须干净：无 CR、首尾无空白
         var assembled = new[]
@@ -159,91 +163,78 @@ internal static partial class SelfTest
         }
     }
 
-    private static void TestModularPromptTemplates()
+    /// <summary>
+    /// 文本路径解耦契约（issue 008 Phase 3）：提示词只负责翻译纪律，注音职责移交本地引擎。
+    /// 因此文本 Base 与源语言彻底无关——日/英/中/混排给出同一句 system prompt，
+    /// 既消除了按探测注入插件的组合爆炸，也让前缀缓存恒定命中。
+    /// </summary>
+    private static void TestTextPromptDecoupling()
     {
-        // 1. 日文输入触发 JapanesePlugin（只注入振假名规约，不注入精讲文法与辞书形）
-        var japaneseReq = new UnderstandRequest(UnderstandKind.Translate, "ここは通れないよ", null, "中文（简体）");
-        var japanesePrompt = PromptTemplates.GetSystemPrompt(japaneseReq, new PromptConfig());
-        Check(
-            "system prompt for Japanese input injects ruby format brackets and excludes explanation grammar terms",
-            japanesePrompt.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
-            !japanesePrompt.Contains(PromptTemplates.DefaultExplainUserPrompt, StringComparison.Ordinal) &&
-            japanesePrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
-            japanesePrompt.Contains("中文（简体）", StringComparison.Ordinal));
-
-        // 2. 纯汉字日文词条触发 JapanesePlugin
-        var pureKanjiReq = new UnderstandRequest(UnderstandKind.Translate, "進入禁止", null, "中文（简体）");
-        var pureKanjiPrompt = PromptTemplates.GetSystemPrompt(pureKanjiReq, new PromptConfig());
-        Check(
-            "system prompt for pure kanji Japanese phrase injects Japanese plugin",
-            pureKanjiPrompt.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
-            pureKanjiPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal));
-
-        // 2.5 纯汉字日文词条在目标语言为英文时依然注入 JapanesePlugin，且不误注入 EnglishPlugin
-        var pureKanjiEnReq = new UnderstandRequest(UnderstandKind.Translate, "進入禁止", null, "English");
-        var pureKanjiEnPrompt = PromptTemplates.GetSystemPrompt(pureKanjiEnReq, new PromptConfig());
-        Check(
-            "system prompt for pure kanji Japanese phrase with target English injects Japanese plugin",
-            pureKanjiEnPrompt.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
-            !pureKanjiEnPrompt.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal) &&
-            pureKanjiEnPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal));
-
-        // 3. 纯简体中文输入不注入 JapanesePlugin
-        var chineseReq = new UnderstandRequest(UnderstandKind.Translate, "今天天气很好，我们去散步", null, "English");
-        var chinesePrompt = PromptTemplates.GetSystemPrompt(chineseReq, new PromptConfig());
-        Check(
-            "system prompt for simplified Chinese excludes Japanese ruby plugin",
-            !chinesePrompt.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
-            chinesePrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
-            chinesePrompt.Contains("English", StringComparison.Ordinal));
-
-        // 4. 纯英文输入触发 EnglishPlugin
-        var englishReq = new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "中文（简体）");
-        var englishPrompt = PromptTemplates.GetSystemPrompt(englishReq, new PromptConfig());
-        Check(
-            "system prompt for English input injects English plugin with IPA and excludes Japanese ruby",
-            englishPrompt.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal) &&
-            !englishPrompt.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal));
-
-        // 5. 独立精讲请求（不带 TranslationSession，只有 CLI / 自测会走到）复用唯一那条精讲提示词；
-        //    应用内的精讲是阶段二追问消息，system 通道已被阶段一的翻译提示词锁定，不再另设精讲 Base。
-        var explainReq = new UnderstandRequest(UnderstandKind.Explain, "通れない", null, "中文（简体）");
-        var explainPrompt = PromptTemplates.GetSystemPrompt(explainReq, new PromptConfig());
-        Check(
-            "explain system prompt reuses the single explain prompt with structured sections and difficulty filter",
-            explainPrompt.Contains(PromptTemplates.DefaultExplainUserPrompt, StringComparison.Ordinal));
-
-        // 6. 用户自定义 Base 提示词与语言特化插件优先级
-        var customPrompts = new PromptConfig
+        var builtin = new PromptConfig();
+        var sourceVariants = new[]
         {
-            Base = "Custom base for {{target_language}}\n---TRANSLATION---",
-            JapanesePlugin = "[Custom ja-JP Plugin]",
-            EnglishPlugin = "[Custom en-US Plugin]",
+            ("japanese", new UnderstandRequest(UnderstandKind.Translate, "ここは通れないよ", null, "中文（简体）")),
+            ("pure-kanji", new UnderstandRequest(UnderstandKind.Translate, "進入禁止", null, "中文（简体）")),
+            ("english", new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "中文（简体）")),
+            ("chinese", new UnderstandRequest(UnderstandKind.Translate, "今天天气很好，我们去散步", null, "中文（简体）")),
+            ("mixed", new UnderstandRequest(UnderstandKind.Translate, "Appleの新しいiPhone発表会", null, "中文（简体）")),
+            ("triple-mixed", new UnderstandRequest(UnderstandKind.Translate, "这是一个iPhoneの新しい発表会", null, "中文（简体）")),
         };
-        var customJaReq = new UnderstandRequest(UnderstandKind.Translate, "ここは通れないよ", null, "zh-CN");
-        var customJaPrompt = PromptTemplates.GetSystemPrompt(customJaReq, customPrompts);
-        Check(
-            "modular prompt assembly respects user custom base prompt and custom Japanese plugin",
-            customJaPrompt.Contains("Custom base for zh-CN", StringComparison.Ordinal) &&
-            customJaPrompt.Contains("[Custom ja-JP Plugin]", StringComparison.Ordinal) &&
-            !customJaPrompt.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal));
 
-        var customEnReq = new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "zh-CN");
-        var customEnPrompt = PromptTemplates.GetSystemPrompt(customEnReq, customPrompts);
+        // 1. 同一目标语言下，任何源语言都汇聚为同一句 system prompt（无插件、无分支）
+        var promptsForChinese = sourceVariants.Select(item => PromptTemplates.GetSystemPrompt(item.Item2, builtin)).ToArray();
         Check(
-            "modular prompt assembly respects user custom English plugin",
-            customEnPrompt.Contains("Custom base for zh-CN", StringComparison.Ordinal) &&
-            customEnPrompt.Contains("[Custom en-US Plugin]", StringComparison.Ordinal) &&
-            !customEnPrompt.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal));
+            "text system prompt is a single source-independent variant with no language plugins",
+            promptsForChinese.Distinct(StringComparer.Ordinal).Count() == 1);
+
+        // 2. 差异只来自目标语言本身：换目标即换目标语言从句，别的分毫不动
+        var englishTarget = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Translate, "ここは通れないよ", null, "English"), builtin);
+        Check(
+            "text system prompt varies only with the target language clause",
+            englishTarget != promptsForChinese[0] &&
+            englishTarget == promptsForChinese[0].Replace("中文（简体）", "English", StringComparison.Ordinal));
+
+        // 3. 三个语言插件键即使留有旧值也绝不参与组装（旧配置迁移保留但已失效）
+        var legacyPluginValues = new PromptConfig
+        {
+            Base = string.Empty,
+            JapanesePlugin = "[Legacy ja-JP Plugin]",
+            EnglishPlugin = "[Legacy en-US Plugin]",
+            ChinesePlugin = "[Legacy zh-CN Plugin]",
+        };
+        var legacyComposed = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Translate, "Appleの新しいiPhone発表会", null, "中文（简体）"), legacyPluginValues);
+        Check(
+            "retired language plugin values never re-enter prompt assembly",
+            legacyComposed == promptsForChinese[0] &&
+            !legacyComposed.Contains("[Legacy", StringComparison.Ordinal));
+
+        // 4. 用户自定义 Base 仍然优先生效（占位符纪律不变）
+        var customBase = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "zh-CN"),
+            new PromptConfig { Base = "Custom base for {{target_language}}" });
+        Check(
+            "custom base prompt still takes priority on the text path",
+            customBase == "Custom base for zh-CN");
+
+        // 5. 精讲路径不受影响：仍复用唯一精讲提示词，且不含任何注音规约（精讲注记禁令里出现的「振假名」字样不算规约）
+        var explainPrompt = PromptTemplates.GetSystemPrompt(
+            new UnderstandRequest(UnderstandKind.Explain, "通れない", null, "中文（简体）"), builtin);
+        Check(
+            "explain path keeps the single explain prompt without annotation conventions",
+            explainPrompt.Contains(PromptTemplates.DefaultExplainUserPrompt, StringComparison.Ordinal) &&
+            !explainPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
+            !explainPrompt.Contains("标注振假名", StringComparison.Ordinal) &&
+            !explainPrompt.Contains("标注拼音", StringComparison.Ordinal) &&
+            !explainPrompt.Contains("标注国际音标", StringComparison.Ordinal));
     }
 
     /// <summary>
-    /// 视觉路径组装契约：视觉 Base + 语言插件恒定同拼（中文目标下拼音插件被互斥剔除，与两个内置插件的旧版等价）。
-    /// 图为唯一输入、语言探测无从做起，而三条插件规则本身是条件式的（「对汉字标注振假名」/
-    /// 「为原文中拉丁字母拼写的单词标注 IPA」/「为少见难读的汉字标注拼音」），宁全勿缺；附带收益是
-    /// 视觉 system prompt 与输入无关、恒定单变体，前缀缓存 100% 命中。
+    /// 视觉链路解耦契约：视觉 Base 单独组装成完整 system prompt（无语言插件），
+    /// 协议形态为「纯转录 + 哨兵 + 译文」；目标语言只改写译文从句，仍是单一缓存友好变体。
     /// </summary>
-    private static void TestVisionPromptComposition()
+    private static void TestVisionPromptDecoupling()
     {
         var imageRequest = new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, "中文（简体）");
         var visionPrompt = PromptTemplates.GetSystemPrompt(imageRequest, new PromptConfig());
@@ -251,17 +242,16 @@ internal static partial class SelfTest
         var expectedVisionBase = PromptTemplates.DefaultVisionBasePrompt.Replace(
             PromptTemplates.TargetLanguagePlaceholder, imageRequest.TargetLanguage, StringComparison.Ordinal);
 
-        // 1. 默认视觉提示词 = 视觉 Base + 两个内置插件，两条注音规约齐备（中文目标下拼音插件被互斥剔除）
+        // 1. 视觉 Base 单独成段：转录协议、哨兵与目标语言齐备，无任何注音规约
         Check(
-            "default vision prompt composes the vision base with both built-in language plugins",
-            visionPrompt.Contains(expectedVisionBase, StringComparison.Ordinal) &&
-            visionPrompt.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
-            visionPrompt.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal) &&
+            "default vision prompt is the vision base alone with transcription protocol and sentinel",
+            visionPrompt == expectedVisionBase &&
             visionPrompt.Contains(PromptTemplates.TranslationSentinel, StringComparison.Ordinal) &&
-            visionPrompt.Contains("中文（简体）", StringComparison.Ordinal) &&
-            !visionPrompt.Contains(PromptTemplates.TargetLanguagePlaceholder, StringComparison.Ordinal));
+            !visionPrompt.Contains("振假名", StringComparison.Ordinal) &&
+            !visionPrompt.Contains("拼音", StringComparison.Ordinal) &&
+            !visionPrompt.Contains("IPA", StringComparison.Ordinal));
 
-        // 2. 视觉 system prompt 与原文无关：空文本 / 英文 / 日文请求给出同一句（恒定单变体）
+        // 2. 视觉 system prompt 与源文本无关：空文本 / 英文 / 日文请求给出同一句（恒定单变体）
         var visionVariants = new[]
         {
             PromptTemplates.GetSystemPrompt(imageRequest, new PromptConfig()),
@@ -276,261 +266,30 @@ internal static partial class SelfTest
             "vision system prompt stays one cache-friendly variant regardless of the source text",
             visionVariants.Distinct(StringComparer.Ordinal).Count() == 1);
 
-        // 3. 自定义视觉 Base 与两个自定义插件在视觉路径优先生效
+        // 3. 退役插件键的旧值不会借视觉路径复活；自定义视觉 Base 优先生效
         var customVision = PromptTemplates.GetSystemPrompt(
             imageRequest,
             new PromptConfig
             {
                 VisionBase = "[Custom vision base]",
-                JapanesePlugin = "[Custom ja-JP Plugin]",
-                EnglishPlugin = "[Custom en-US Plugin]",
+                JapanesePlugin = "[Legacy ja-JP Plugin]",
+                EnglishPlugin = "[Legacy en-US Plugin]",
             });
         Check(
-            "custom vision base and custom plugins take priority in the vision path",
-            customVision.Contains("[Custom vision base]", StringComparison.Ordinal) &&
-            customVision.Contains("[Custom ja-JP Plugin]", StringComparison.Ordinal) &&
-            customVision.Contains("[Custom en-US Plugin]", StringComparison.Ordinal) &&
-            !customVision.Contains(PromptTemplates.DefaultVisionBasePrompt, StringComparison.Ordinal) &&
-            !customVision.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
-            !customVision.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal));
+            "custom vision base takes priority and retired plugin values stay inert on the vision path",
+            customVision == "[Custom vision base]" &&
+            !customVision.Contains("[Legacy", StringComparison.Ordinal));
 
-        // 4. 两个对齐常量已删除，视觉 Base 自行内联目标语言从句，不拼独立对齐段
+        // 4. 目标语言互斥已成历史：各目标下视觉 prompt 仍是唯一变体，只差目标语言从句
+        var targetVariants = new[] { "英语", "日本語", "中文（简体）", "韩语" }
+            .Select(target => PromptTemplates.GetSystemPrompt(
+                new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, target), new PromptConfig()))
+            .Distinct(StringComparer.Ordinal)
+            .Count();
         Check(
-            "vision path appends no standalone alignment section after the alignment constants were removed",
-            !visionPrompt.Contains("[目标语言约束]", StringComparison.Ordinal) &&
-            !visionPrompt.Contains("[精讲语言约束]", StringComparison.Ordinal));
+            "vision prompt has exactly one variant per target language after plugin retirement",
+            targetVariants == 4);
     }
-
-    /// <summary>
-    /// 组装级插件门控契约：探测器只决定「纳入哪些语言的规约」，适用范围交由插件文案限定，
-    /// 故日英混排句同享振仮名与 IPA 两套规约；纯中文/纯日语场景仍守住探测的「排除」价值。
-    /// 该盲区在探测层不可见（特征位本就同时置位），只在组装层显形，必须由本测试钉住。
-    /// </summary>
-    private static void TestMixedLanguagePluginGating()
-    {
-        // 1. 日英混排：两个门控各自独立命中，两条规约同享
-        var mixedTranslate = PromptTemplates.GetSystemPrompt(
-            new UnderstandRequest(UnderstandKind.Translate, "Appleの新しいiPhone発表会", null, "中文（简体）"),
-            new PromptConfig());
-        Check(
-            "mixed Japanese and English translation prompt shares ruby and IPA conventions",
-            mixedTranslate.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
-            mixedTranslate.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal));
-
-        var mixedExplain = PromptTemplates.GetSystemPrompt(
-            new UnderstandRequest(UnderstandKind.Explain, "Appleの新しいiPhone発表会", null, "中文（简体）"),
-            new PromptConfig());
-        Check(
-            "explain prompt focuses purely on structured explanation without ruby or IPA plugins",
-            mixedExplain.Contains(PromptTemplates.DefaultExplainUserPrompt, StringComparison.Ordinal) &&
-            !mixedExplain.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
-            !mixedExplain.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal));
-
-        // 1.5 日英中三混排：三个门控各自独立命中，振仮名、IPA 与拼音三套规约同享
-        // （目标取韩语——闭集内既非中日英的语言，三个互斥谓词均不剪枝）
-        var tripleMixed = PromptTemplates.GetSystemPrompt(
-            new UnderstandRequest(UnderstandKind.Translate, "这是一个iPhoneの新しい発表会", null, "韩语"),
-            new PromptConfig());
-        Check(
-            "triple mixed japanese english and chinese translation prompt shares ruby ipa and pinyin conventions",
-            tripleMixed.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
-            tripleMixed.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal) &&
-            tripleMixed.Contains(PromptTemplates.ChinesePlugin, StringComparison.Ordinal));
-
-        // 2. 少量拉丁混入同样纳入英语规约：规则是条件式的，模型可逐 token 取舍，不误伤
-        var sparseLatin = PromptTemplates.GetSystemPrompt(
-            new UnderstandRequest(UnderstandKind.Translate, "ゲームSTART", null, "中文（简体）"),
-            new PromptConfig());
-        Check(
-            "sparse latin borrowing inside japanese text still receives the IPA convention",
-            sparseLatin.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
-            sparseLatin.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal));
-
-        // 3. 无拉丁字母即不注入英语插件
-        var pureJapanese = PromptTemplates.GetSystemPrompt(
-            new UnderstandRequest(UnderstandKind.Translate, "ラーメンは美味しい", null, "中文（简体）"),
-            new PromptConfig());
-        Check(
-            "pure japanese text without latin letters keeps ruby and gains no IPA convention",
-            pureJapanese.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
-            !pureJapanese.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal));
-
-        var pureChinese = PromptTemplates.GetSystemPrompt(
-            new UnderstandRequest(UnderstandKind.Translate, "今天天气很好，我们去散步", null, "中文（简体）"),
-            new PromptConfig());
-        Check(
-            "pure simplified chinese still receives neither ruby nor IPA convention",
-            !pureChinese.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
-            !pureChinese.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal));
-
-        // 4. 自定义插件覆盖行为不受门控改动影响：混排句照样优先采用用户文案
-        var customMixed = PromptTemplates.GetSystemPrompt(
-            new UnderstandRequest(UnderstandKind.Translate, "Appleの新しいiPhone発表会", null, "中文（简体）"),
-            new PromptConfig
-            {
-                JapanesePlugin = "[Custom ja-JP Plugin]",
-                EnglishPlugin = "[Custom en-US Plugin]",
-            });
-        Check(
-            "custom plugins keep overriding both conventions for mixed japanese and english text",
-            customMixed.Contains("[Custom ja-JP Plugin]", StringComparison.Ordinal) &&
-            customMixed.Contains("[Custom en-US Plugin]", StringComparison.Ordinal) &&
-            !customMixed.Contains(PromptTemplates.JapanesePlugin, StringComparison.Ordinal) &&
-            !customMixed.Contains(PromptTemplates.EnglishPlugin, StringComparison.Ordinal));
-    }
-
-    /// <summary>
-    /// 目标语言互斥门控契约（talk 003 核心决策）：语言特化插件是「为源语言学习者提供生词阅读辅助」，
-    /// 一旦某语言本身就是目标语言，辅助即失效，必须整条剔除。钉住文本与视觉两条路径在目标为日/英语时的
-    /// 剪枝行为、中文目标下维持现状，以及剪枝后视觉 prompt 仍是单一缓存友好变体。
-    /// </summary>
-    private static void TestTargetLanguagePluginMutex()
-    {
-        var ruby = PromptTemplates.JapanesePlugin;
-        var ipa = PromptTemplates.EnglishPlugin;
-        var pinyin = PromptTemplates.ChinesePlugin;
-
-        // 1. 日译英：日英混排、目标为英语 → 剔除英语 IPA 插件（不再给 Nintendo Switch 标 IPA），保留日语振假名。
-        foreach (var target in new[] { "英语", "English", "en" })
-        {
-            var jpToEn = PromptTemplates.GetSystemPrompt(
-                new UnderstandRequest(UnderstandKind.Translate, "Nintendo Switchの最新ゲームをプレイする", null, target),
-                new PromptConfig());
-            Check(
-                $"target english prunes the english plugin but keeps the japanese ruby plugin (target={target})",
-                jpToEn.Contains(ruby, StringComparison.Ordinal) &&
-                !jpToEn.Contains(ipa, StringComparison.Ordinal));
-        }
-
-        // 1.5 纯汉字日文译英：目标为英语 → 纯汉字日文依然识别为日语注入振假名，且剔除英语 IPA 插件
-        foreach (var target in new[] { "英语", "English", "en" })
-        {
-            var pureKanjiToEn = PromptTemplates.GetSystemPrompt(
-                new UnderstandRequest(UnderstandKind.Translate, "進入禁止", null, target),
-                new PromptConfig());
-            Check(
-                $"target english injects japanese ruby plugin for pure kanji source (target={target})",
-                pureKanjiToEn.Contains(ruby, StringComparison.Ordinal) &&
-                !pureKanjiToEn.Contains(ipa, StringComparison.Ordinal) &&
-                !pureKanjiToEn.Contains(pinyin, StringComparison.Ordinal));
-        }
-
-        // 2. 目标为英语、纯英文源 → 两条插件都不注入（英语按目标剔除、源无日语）。
-        var enToEn = PromptTemplates.GetSystemPrompt(
-            new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "英语"),
-            new PromptConfig());
-        Check(
-            "target english with pure english source injects neither ruby nor ipa plugin",
-            !enToEn.Contains(ruby, StringComparison.Ordinal) &&
-            !enToEn.Contains(ipa, StringComparison.Ordinal));
-
-        // 3. 英/中译日：源含引述假名、目标为日语 → 剔除日语振假名插件（不再给假名标振假名）。
-        foreach (var target in new[] { "日语", "日本語", "ja" })
-        {
-            var toJa = PromptTemplates.GetSystemPrompt(
-                new UnderstandRequest(UnderstandKind.Translate, "これは「護美」という名前です", null, target),
-                new PromptConfig());
-            Check(
-                $"target japanese prunes the japanese ruby plugin even when the source quotes kana (target={target})",
-                !toJa.Contains(ruby, StringComparison.Ordinal) &&
-                !toJa.Contains(ipa, StringComparison.Ordinal));
-        }
-
-        // 4. 英译日：日英混排、目标为日语 → 剔除日语插件，英语 IPA 插件保留（源含拉丁、仍需阅读辅助）。
-        var enToJa = PromptTemplates.GetSystemPrompt(
-            new UnderstandRequest(UnderstandKind.Translate, "Nintendo Switchの最新ゲーム", null, "日语"),
-            new PromptConfig());
-        Check(
-            "target japanese prunes the japanese plugin but keeps the english ipa plugin for latin source",
-            !enToJa.Contains(ruby, StringComparison.Ordinal) &&
-            enToJa.Contains(ipa, StringComparison.Ordinal));
-
-        // 5. 目标中文维持现状：日英混排照旧同享两套规约（互斥不应误伤默认场景）。
-        var toZh = PromptTemplates.GetSystemPrompt(
-            new UnderstandRequest(UnderstandKind.Translate, "Appleの新しいiPhone発表会", null, "中文（简体）"),
-            new PromptConfig());
-        Check(
-            "chinese target keeps both plugins so the default mixed-language behaviour is untouched",
-            toZh.Contains(ruby, StringComparison.Ordinal) &&
-            toZh.Contains(ipa, StringComparison.Ordinal));
-
-        // 5.5 中文目标互斥：源命中简体独占字、目标即中文 → 拼音插件整条剔除（给本就属于目标语言的汉字标拼音无价值）。
-        foreach (var target in new[] { "中文（简体）", "中文", "Chinese", "zh-CN" })
-        {
-            var zhToZh = PromptTemplates.GetSystemPrompt(
-                new UnderstandRequest(UnderstandKind.Translate, "今天天气很好，我们去散步", null, target),
-                new PromptConfig());
-            Check(
-                $"target chinese prunes the chinese pinyin plugin (target={target})",
-                !zhToZh.Contains(pinyin, StringComparison.Ordinal) &&
-                !zhToZh.Contains(ruby, StringComparison.Ordinal) &&
-                !zhToZh.Contains(ipa, StringComparison.Ordinal));
-        }
-
-        // 5.6 中译外：源命中简体独占字、目标非中文 → 注入拼音插件；源无假名/拉丁，日英插件不注入。
-        foreach (var target in new[] { "英语", "日本語" })
-        {
-            var zhToForeign = PromptTemplates.GetSystemPrompt(
-                new UnderstandRequest(UnderstandKind.Translate, "今天天气很好，我们去散步", null, target),
-                new PromptConfig());
-            Check(
-                $"non-chinese target injects the chinese pinyin plugin for a simplified source (target={target})",
-                zhToForeign.Contains(pinyin, StringComparison.Ordinal) &&
-                !zhToForeign.Contains(ruby, StringComparison.Ordinal) &&
-                !zhToForeign.Contains(ipa, StringComparison.Ordinal));
-        }
-
-        // 6. 视觉路径同样施加互斥：目标英语只留日语插件，目标日语只留英语插件。
-        var visionToEn = PromptTemplates.GetSystemPrompt(
-            new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, "英语"),
-            new PromptConfig());
-        Check(
-            "vision path prunes the english plugin when the target language is english",
-            visionToEn.Contains(ruby, StringComparison.Ordinal) &&
-            visionToEn.Contains(pinyin, StringComparison.Ordinal) &&
-            !visionToEn.Contains(ipa, StringComparison.Ordinal));
-
-        var visionToJa = PromptTemplates.GetSystemPrompt(
-            new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, "日语"),
-            new PromptConfig());
-        Check(
-            "vision path prunes the japanese plugin when the target language is japanese",
-            !visionToJa.Contains(ruby, StringComparison.Ordinal) &&
-            visionToJa.Contains(ipa, StringComparison.Ordinal) &&
-            visionToJa.Contains(pinyin, StringComparison.Ordinal));
-
-        // 6.5 视觉路径对中文目标剔除拼音插件，日英两者俱全——与旧版「恒定同拼」等价。
-        var visionToZh = PromptTemplates.GetSystemPrompt(
-            new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, "中文（简体）"),
-            new PromptConfig());
-        Check(
-            "vision path prunes the chinese plugin when the target language is chinese",
-            !visionToZh.Contains(pinyin, StringComparison.Ordinal) &&
-            visionToZh.Contains(ruby, StringComparison.Ordinal) &&
-            visionToZh.Contains(ipa, StringComparison.Ordinal));
-
-        // 6.6 视觉路径对非日英中目标（如韩语）常驻全部三个插件（宁全勿缺）
-        var visionToKo = PromptTemplates.GetSystemPrompt(
-            new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, "韩语"),
-            new PromptConfig());
-        Check(
-            "vision path retains all three plugins when target language is other",
-            visionToKo.Contains(ruby, StringComparison.Ordinal) &&
-            visionToKo.Contains(ipa, StringComparison.Ordinal) &&
-            visionToKo.Contains(pinyin, StringComparison.Ordinal));
-
-        // 7. 视觉 prompt 仍是单一变体：目标固定为英语时，不同源文本给出完全相同的 system prompt（缓存友好）。
-        var visionVariantsEn = new[]
-        {
-            PromptTemplates.GetSystemPrompt(new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, "英语"), new PromptConfig()),
-            PromptTemplates.GetSystemPrompt(new UnderstandRequest(UnderstandKind.Translate, "ここは通れないよ", new byte[] { 1 }, "英语"), new PromptConfig()),
-            PromptTemplates.GetSystemPrompt(new UnderstandRequest(UnderstandKind.Translate, "Hello", new byte[] { 1 }, "英语"), new PromptConfig()),
-        };
-        Check(
-            "vision system prompt stays a single cache-friendly variant under an english target",
-            visionVariantsEn.Distinct(StringComparer.Ordinal).Count() == 1);
-    }
-
     /// <summary>
     /// 段描述反漂移闸门：DescribeSections 只是 GetSystemPrompt 的「不拼接版本」，
     /// 是 --dump-prompt 与 prompt-preview 的唯一真值源。两者一旦漂移，预览页与 CLI
@@ -548,9 +307,9 @@ internal static partial class SelfTest
             ("vision", new UnderstandRequest(UnderstandKind.Translate, null, new byte[] { 1 }, "中文（简体）"), builtin),
             ("explain", new UnderstandRequest(UnderstandKind.Explain, "通れない", null, "中文（简体）"), builtin),
             ("text/custom", new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "中文（简体）"),
-                new PromptConfig { Base = "Custom base for {{target_language}}", EnglishPlugin = "[Custom en-US Plugin]" }),
+                new PromptConfig { Base = "Custom base for {{target_language}}" }),
             ("vision/custom", new UnderstandRequest(UnderstandKind.Translate, "text", new byte[] { 1 }, "中文（简体）"),
-                new PromptConfig { VisionBase = "[Custom vision base]", JapanesePlugin = "[Custom ja-JP Plugin]" }),
+                new PromptConfig { VisionBase = "[Custom vision base]" }),
             ("explain/custom", new UnderstandRequest(UnderstandKind.Explain, "通れない", null, "中文（简体）"),
                 new PromptConfig { Explain = "Custom explain for {{target_language}}" }),
         };
@@ -568,17 +327,18 @@ internal static partial class SelfTest
         }
 
         // 来源标注：未定制项回落 Builtin，定制项标 Custom——预览页的徽章全靠这一位。
+        // 注音插件键退役后（issue 008 Phase 3），文本路径只剩 base 一段，来源徽章只在这一段上翻转。
         Check(
             "prompt sections distinguish built-in fallbacks from custom overrides",
             PromptTemplates.DescribeSections(
                     new UnderstandRequest(UnderstandKind.Translate, "ここは通れないよ", null, "中文（简体）"), builtin)
                 .Select(section => (section.Name, section.Source))
-                .SequenceEqual(new[] { ("base", PromptSectionSource.Builtin), ("japanese_plugin", PromptSectionSource.Builtin) }) &&
+                .SequenceEqual(new[] { ("base", PromptSectionSource.Builtin) }) &&
             PromptTemplates.DescribeSections(
                     new UnderstandRequest(UnderstandKind.Translate, "Hello world", null, "中文（简体）"),
-                    new PromptConfig { Base = "Custom base", EnglishPlugin = "[Custom en-US Plugin]" })
+                    new PromptConfig { Base = "Custom base" })
                 .Select(section => (section.Name, section.Source))
-                .SequenceEqual(new[] { ("base", PromptSectionSource.Custom), ("english_plugin", PromptSectionSource.Custom) }));
+                .SequenceEqual(new[] { ("base", PromptSectionSource.Custom) }));
 
         // 多轮会话：系统提示词原样沿用阶段一锁定值，既不分拆也不二次展开占位符。
         var session = new TranslationSession("locked {{target_language}} prompt", "通れない", null);
@@ -745,10 +505,15 @@ internal static partial class SelfTest
             plainJsonFrames.Count == 1 && plainJsonFrames[0].Event is null &&
             plainJsonFrames[0].Data == "{\\\"message\\\":\\\"vision\\\"}");
     }
-
+    /// <summary>
+    /// 分栏路由契约（issue 008 Phase 3）：通道归属由 <see cref="StreamChannelMode"/> 显式给出——
+    /// 两段式（Segmenter）按哨兵拆转录/译文；直通（Passthrough）无原文通道，哨兵字面量也不过界。
+    /// 曾经的「显式纯译文判定 / 首字内容猜测」已退役，不得以任何形式回归。
+    /// </summary>
     private static void TestSentinelRouter()
     {
-        var legacyRuleRouter = new SectionChannelRouter();
+        // ── 两段式：视觉链路协议 ────────────────────────────────
+        var legacyRuleRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
         var legacyRuleDeltas = legacyRuleRouter
             .Push("私[わたし]は\n---\n学生[がくせい]です。")
             .Concat(legacyRuleRouter.Complete())
@@ -758,7 +523,7 @@ internal static partial class SelfTest
             string.Concat(legacyRuleDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "私[わたし]は\n---\n学生[がくせい]です。" &&
             legacyRuleDeltas.All(delta => delta.Channel == DeltaChannel.SourceText));
 
-        var crlfSplitRouter = new SectionChannelRouter();
+        var crlfSplitRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
         var crlfSplitDeltas = crlfSplitRouter
             .Push("原文\r\n---TRANS")
             .Concat(crlfSplitRouter.Push("LATION---\r\n译文"))
@@ -769,7 +534,7 @@ internal static partial class SelfTest
             string.Concat(crlfSplitDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "原文" &&
             string.Concat(crlfSplitDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "译文");
 
-        var paddedSeparatorRouter = new SectionChannelRouter();
+        var paddedSeparatorRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
         var paddedSeparatorDeltas = paddedSeparatorRouter
             .Push("原文\n\n---TRANS")
             .Concat(paddedSeparatorRouter.Push("LATION---\n\n译文"))
@@ -780,27 +545,27 @@ internal static partial class SelfTest
             string.Concat(paddedSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "原文" &&
             string.Concat(paddedSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "译文");
 
-        var fallbackRouter = new SectionChannelRouter();
+        var fallbackRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
         var fallbackDeltas = fallbackRouter.Push("\n\nplain translation").Concat(fallbackRouter.Complete()).ToList();
         Check(
             "section router keeps unseparated vision output as a trimmed translation",
             string.Concat(fallbackDeltas.Select(delta => delta.Text)) == "plain translation" &&
             fallbackDeltas.All(delta => delta.Channel == DeltaChannel.Translation));
 
-        var translationMarkerRouter = new SectionChannelRouter();
+        var translationMarkerRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
         var translationMarkerDeltas = translationMarkerRouter
-            .Push("私[わたし]は\n---TRANS")
+            .Push("原文\n---TRANS")
             .Concat(translationMarkerRouter.Push("LATION---\n我是"))
             .Concat(translationMarkerRouter.Complete())
             .ToList();
         Check(
             "section router handles ---TRANSLATION--- marker split across chunks",
-            string.Concat(translationMarkerDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "私[わたし]は" &&
+            string.Concat(translationMarkerDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "原文" &&
             string.Concat(translationMarkerDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "我是");
 
-        var crlfCaseRouter = new SectionChannelRouter();
+        var crlfCaseRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
         var crlfCaseDeltas = crlfCaseRouter
-            .Push("<annotated_source>\r\nここは通[とお]れないよ\r\n</annotated_source>\r\n---translation---\r\n<translation>\r\n这里过不去哦\r\n</translation>")
+            .Push("<transcribed_text>\r\nここは通[とお]れないよ\r\n</transcribed_text>\r\n---translation---\r\n<translation>\r\n这里过不去哦\r\n</translation>")
             .Concat(crlfCaseRouter.Complete())
             .ToList();
         Check(
@@ -808,13 +573,15 @@ internal static partial class SelfTest
             string.Concat(crlfCaseDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "ここは通[とお]れないよ" &&
             string.Concat(crlfCaseDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "这里过不去哦");
 
-        // 视觉一条龙默认提示词声明的协议形态必须能被路由层无损拆分（防止提示词与路由层协议漂移）
-        var visionProtocolRouter = new SectionChannelRouter();
+        // 现行视觉 Base 提示词声明的协议形态必须能被路由层无损拆分（提示词与路由层不得漂移）
+        var visionProtocolRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
         var visionProtocolDeltas = visionProtocolRouter
             .Push("""
-<annotated_source>
-私[わたし]は 学生[がくせい]です。
+<transcribed_text>
+ここは通れないよ
+</transcribed_text>
 ---TRANSLATION---
+<translation>
 我是学生。
 </translation>
 """)
@@ -822,11 +589,11 @@ internal static partial class SelfTest
             .ToList();
         Check(
             "section router splits the exact two-part shape declared by the default vision prompt",
-            string.Concat(visionProtocolDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "私[わたし]は 学生[がくせい]です。" &&
+            string.Concat(visionProtocolDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "ここは通れないよ" &&
             string.Concat(visionProtocolDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "我是学生。");
 
-        var immediateStreamRouter = new SectionChannelRouter();
-        _ = immediateStreamRouter.Push("私[わたし]は\n---TRANSLATION---\n").ToList();
+        var immediateStreamRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
+        _ = immediateStreamRouter.Push("原文\n---TRANSLATION---\n").ToList();
         var immediateChunk = immediateStreamRouter.Push("短译文").ToList();
         Check(
             "section router flushes translation tokens immediately in real-time without buffering",
@@ -834,13 +601,13 @@ internal static partial class SelfTest
             immediateChunk[0].Channel == DeltaChannel.Translation &&
             immediateChunk[0].Text == "短译文");
 
-        var sourceStreamRouter = new SectionChannelRouter();
-        var earlySourceDeltas = sourceStreamRouter.Push("私[わたし]は学生[がくせい]です。").ToList();
+        var sourceStreamRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
+        var earlySourceDeltas = sourceStreamRouter.Push("ここは通れないよ").ToList();
         Check(
-            "section router flushes annotated source tokens in real-time before sentinel arrives",
+            "section router flushes transcribed tokens in real-time before sentinel arrives",
             earlySourceDeltas.Count > 0 &&
             earlySourceDeltas.All(delta => delta.Channel == DeltaChannel.SourceText) &&
-            string.Concat(earlySourceDeltas.Select(delta => delta.Text)) == "私[わたし]は学生[がくせい]です。");
+            string.Concat(earlySourceDeltas.Select(delta => delta.Text)) == "ここは通れないよ");
 
         var splitSentinelDeltas = sourceStreamRouter.Push("\n---TRANS").ToList();
         Check(
@@ -852,10 +619,10 @@ internal static partial class SelfTest
             "section router completes sentinel match and streams translation seamlessly",
             string.Concat(continuationDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "我是学生。");
 
-        var tagLeakProtectionRouter = new SectionChannelRouter();
+        var tagLeakProtectionRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
         var leakTestDeltas = tagLeakProtectionRouter
-            .Push("<annotated_source>\r\n私[わたし]は学生です。")
-            .Concat(tagLeakProtectionRouter.Push("\r\n</annotated_source>\r\n"))
+            .Push("<transcribed_text>\r\nここは通れないよ。")
+            .Concat(tagLeakProtectionRouter.Push("\r\n</transcribed_text>\r\n"))
             .Concat(tagLeakProtectionRouter.Push("---TRANSLATION---\r\n<translation>\r\n我是学生。\r\n</translation>"))
             .Concat(tagLeakProtectionRouter.Complete())
             .ToList();
@@ -863,30 +630,30 @@ internal static partial class SelfTest
         var leakedTrans = string.Concat(leakTestDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text));
         Check(
             "section router strictly prevents any pseudo XML closing tags from leaking into source channel",
-            !leakedSource.Contains("</annotated_source>") &&
-            !leakedSource.Contains("<annotated_source>") &&
-            leakedSource == "私[わたし]は学生です。" &&
+            !leakedSource.Contains("</transcribed_text>") &&
+            !leakedSource.Contains("<transcribed_text>") &&
+            leakedSource == "ここは通れないよ。" &&
             leakedTrans == "我是学生。");
 
-        var bracketTagAndExplanationLeakRouter = new SectionChannelRouter();
+        var bracketTagAndExplanationLeakRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
         var bracketTestDeltas = bracketTagAndExplanationLeakRouter
-            .Push("[annotated_source]\n亡[な]くなった\n[/annotated_source]\n---TRANSLATION---\n<translation>\n逝去了\n</translation>\n\n### [词汇/短语]\n- 亡くなる：逝世")
+            .Push("[transcribed_text]\n亡なくなった\n[/transcribed_text]\n---TRANSLATION---\n<translation>\n逝去了\n</translation>\n\n### [词汇/短语]\n- 亡くなる：逝世")
             .Concat(bracketTagAndExplanationLeakRouter.Complete())
             .ToList();
         var bracketSource = string.Concat(bracketTestDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text));
         var bracketTrans = string.Concat(bracketTestDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text));
         Check(
             "section router strips square bracket tags, trailing </translation> and truncates rogue explanation markdown",
-            !bracketSource.Contains("[annotated_source]") &&
-            !bracketSource.Contains("[/annotated_source]") &&
-            bracketSource == "亡[な]くなった" &&
+            !bracketSource.Contains("[transcribed_text]") &&
+            !bracketSource.Contains("[/transcribed_text]") &&
+            bracketSource == "亡なくなった" &&
             !bracketTrans.Contains("</translation>") &&
             !bracketTrans.Contains("###") &&
             bracketTrans == "逝去了");
 
-        var rogueHeaderRouter = new SectionChannelRouter();
+        var rogueHeaderRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
         var rogueHeaderDeltas = rogueHeaderRouter
-            .Push("<annotated_source>\n新歓[しんかん]で気[き]が大き[おお]くなってしまう話[はなし]\n</annotated_source>\n---TRANSLATION---\n在迎新活动中变得胆大妄为的故事\n\n## 深度精讲拆解\n- 新歓：迎新活动")
+            .Push("<transcribed_text>\n新歓で気が大きくなってしまう話\n</transcribed_text>\n---TRANSLATION---\n在迎新活动中变得胆大妄为的故事\n\n## 深度精讲拆解\n- 新歓：迎新活动")
             .Concat(rogueHeaderRouter.Complete())
             .ToList();
         var rogueTrans = string.Concat(rogueHeaderDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text));
@@ -896,7 +663,7 @@ internal static partial class SelfTest
             !rogueTrans.Contains("新歓") &&
             rogueTrans == "在迎新活动中变得胆大妄为的故事");
 
-        var longPureTranslationRouter = new SectionChannelRouter();
+        var longPureTranslationRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
         var longPureDeltas = longPureTranslationRouter
             .Push("这是一段非常长的纯译文，完全没有包含任何原文分段标记，长度肯定超过了三十二个字符的安全窗口预算。")
             .Concat(longPureTranslationRouter.Complete())
@@ -906,7 +673,7 @@ internal static partial class SelfTest
             string.Concat(longPureDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "这是一段非常长的纯译文，完全没有包含任何原文分段标记，长度肯定超过了三十二个字符的安全窗口预算。" &&
             !longPureDeltas.Any(delta => delta.Channel == DeltaChannel.SourceText));
 
-        var bracketPureTranslationRouter = new SectionChannelRouter();
+        var bracketPureTranslationRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
         var bracketPureDeltas = bracketPureTranslationRouter
             .Push("这是【限量版】[原创]周边商品，制作非常方便。")
             .Concat(bracketPureTranslationRouter.Complete())
@@ -916,44 +683,65 @@ internal static partial class SelfTest
             string.Concat(bracketPureDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "这是【限量版】[原创]周边商品，制作非常方便。" &&
             !bracketPureDeltas.Any(delta => delta.Channel == DeltaChannel.SourceText));
 
-        var expectedSourceRouter = new SectionChannelRouter("オリジナルグッズが簡単につくれるサービスです。");
-        var fastPathDeltas = expectedSourceRouter.Push("这是一款可以轻松制作原创周边的服务。").ToList();
+        // ── 直通：文本路径只回译文，哨兵也只是译文里的字面量 ────
+        var passthroughRouter = new SectionChannelRouter(StreamChannelMode.Passthrough);
+        var passthroughDeltas = passthroughRouter
+            .Push("私[わたし]は\n---TRANSLATION---\n我是学生。")
+            .Concat(passthroughRouter.Complete())
+            .ToList();
         Check(
-            "section router immediately recognizes pure translation via expected source mismatch and streams in real time",
-            fastPathDeltas.Count > 0 &&
-            fastPathDeltas.All(delta => delta.Channel == DeltaChannel.Translation) &&
-            string.Concat(fastPathDeltas.Select(delta => delta.Text)) == "这是一款可以轻松制作原创周边的服务。");
+            "passthrough router keeps the sentinel as literal translation text without opening a source channel",
+            passthroughDeltas.All(delta => delta.Channel == DeltaChannel.Translation) &&
+            string.Concat(passthroughDeltas.Select(delta => delta.Text)) == "私[わたし]は\n---TRANSLATION---\n我是学生。");
 
-        var cleanedWithInitial = NaniKore.App.ResultPanelWindow.CleanAnnotatedSourceWithInitial("[annotated_source]亡[な]くなった[/annotated_source]", "亡くなった");
+        // 直通路径的实时性：译文增量立即流出，不做任何原文特征的挂起等待
+        var passthroughStreamRouter = new SectionChannelRouter(StreamChannelMode.Passthrough);
+        var passthroughChunks = passthroughStreamRouter.Push("这是一段译文").ToList();
         Check(
-            "CleanAnnotatedSourceWithInitial strips square brackets based on initial text comparison",
-            cleanedWithInitial == "亡[な]くなった");
+            "passthrough router streams translation tokens immediately without source-signal buffering",
+            passthroughChunks.Count > 0 &&
+            passthroughChunks.All(delta => delta.Channel == DeltaChannel.Translation) &&
+            string.Concat(passthroughChunks.Select(delta => delta.Text)) == "这是一段译文");
 
-        var cleanedWithCustomTag = NaniKore.App.ResultPanelWindow.CleanAnnotatedSourceWithInitial("[unknown_tag]亡[な]くなった", "亡くなった");
+        // 直通路径仍守住两道守门：思考链越界截断 + 噪声标签剥离
+        var passthroughGuardRouter = new SectionChannelRouter(StreamChannelMode.Passthrough);
+        var passthroughGuardDeltas = passthroughGuardRouter
+            .Push("【译文】\n这里过不去哦。\n\n### [词汇/短语]\n- 通れない：不能通过")
+            .Concat(passthroughGuardRouter.Complete())
+            .ToList();
         Check(
-            "CleanAnnotatedSourceWithInitial detects and removes unknown prefix tags by aligning with initial source first character",
-            cleanedWithCustomTag == "亡[な]くなった");
+            "passthrough router strips translation noise labels and truncates rogue explanation sections",
+            passthroughGuardDeltas.All(delta => delta.Channel == DeltaChannel.Translation) &&
+            string.Concat(passthroughGuardDeltas.Select(delta => delta.Text)) == "这里过不去哦。");
     }
 
     /// <summary>
-    /// 噪声标签清单校准契约（阶段二遗留项 A）：兜底标签必须与现行两段式协议的产生源一一对应，
-    /// 旧版英文视觉提示词的 &lt;transcription&gt; 占位符系列已随协议废弃，不得回归。
+    /// 噪声标签清单校准契约（阶段二遗留项 A）：兜底标签必须与现行两段式协议的产生源一一对应。
+    /// 现行视觉 Base 声明 &lt;transcribed_text&gt; 占位符，必须全覆盖；
+    /// 旧版英文视觉提示词的 &lt;transcription&gt; 系列与旧注音协议的 annotated_source 外壳不得回归。
     /// </summary>
     private static void TestNoiseTagCalibration()
     {
         // 现行提示词声明的结构占位符必须保留兜底（含方括号与冒号变体）
         Check(
             "noise tag lists keep covering the placeholders declared by the current two-part protocol",
-            SectionChannelRouter.SourceLeadingTags.Contains("<annotated_source>") &&
-            SectionChannelRouter.SourceLeadingTags.Contains("[annotated_source]") &&
-            SectionChannelRouter.SourceLeadingTags.Contains("annotated_source:") &&
-            SectionChannelRouter.SourceCloseTags.Contains("</annotated_source>") &&
-            SectionChannelRouter.SourceCloseTags.Contains("[/annotated_source]") &&
+            SectionChannelRouter.SourceLeadingTags.Contains("<transcribed_text>") &&
+            SectionChannelRouter.SourceLeadingTags.Contains("[transcribed_text]") &&
+            SectionChannelRouter.SourceLeadingTags.Contains("transcribed_text:") &&
+            SectionChannelRouter.SourceCloseTags.Contains("</transcribed_text>") &&
+            SectionChannelRouter.SourceCloseTags.Contains("[/transcribed_text]") &&
             SectionChannelRouter.TranslationLeadingTags.Contains("<translation>") &&
             SectionChannelRouter.TranslationLeadingTags.Contains("[translation]") &&
             SectionChannelRouter.TranslationLeadingTags.Contains("translation:") &&
             SectionChannelRouter.TranslationCloseTags.Contains("</translation>") &&
             SectionChannelRouter.TranslationCloseTags.Contains("[/translation]"));
+
+        // 旧注音协议的外壳标签降级为「模型惯性兜底」：仍收纳，但已无提示词产生源（回归即协议漂移警报）
+        Check(
+            "noise tag lists keep the retired annotated_source shells as model-inertia fallbacks only",
+            SectionChannelRouter.SourceLeadingTags.Contains("<annotated_source>") &&
+            SectionChannelRouter.SourceLeadingTags.Contains("annotated_source:") &&
+            SectionChannelRouter.SourceCloseTags.Contains("</annotated_source>"));
 
         // 模型自发中文标签与代码围栏兜底保留
         Check(
@@ -1345,7 +1133,7 @@ internal static partial class SelfTest
             string.IsNullOrEmpty(scThinking));
 
         // 8. 结合 SectionChannelRouter 验证孤立闭合标签不破坏纯译文 fallback
-        var router = new SectionChannelRouter();
+        var router = new SectionChannelRouter(StreamChannelMode.Passthrough);
         var testSanitizer = new ThinkingStreamSanitizer();
         var d1 = TranslationProviderBase.Route(router, testSanitizer, "</think>", UnderstandKind.Translate);
         var d2 = TranslationProviderBase.Route(router, testSanitizer, "\n\n这是纯译文结果。", UnderstandKind.Translate);

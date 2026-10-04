@@ -105,6 +105,7 @@ internal sealed class ConfigStore
         // 进入设置窗口不做任何修改、仅关闭时的尺寸记忆也会清空 prompts。
         // 收敛后空串仍表示“回落内置默认模板”，语义不变。
         config.Prompts.Base ??= string.Empty;
+        // 三个语言注音插件键已退役（issue 008 Phase 3）：仍收敛空值，保证旧文件回写不丢段、不塌缩
         config.Prompts.JapanesePlugin ??= string.Empty;
         config.Prompts.EnglishPlugin ??= string.Empty;
         config.Prompts.ChinesePlugin ??= string.Empty;

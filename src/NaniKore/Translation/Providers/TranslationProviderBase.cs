@@ -63,6 +63,17 @@ internal abstract class TranslationProviderBase : ITranslationProvider
     }
 
     /// <summary>
+    /// 按请求显式选路由模式（issue 008 Phase 3）：视觉链路（携带图片）走两段式，
+    /// 按哨兵拆纯转录/译文两通道；文本路径译文直通，无原文通道。
+    /// 通道归属由组装路径显式决定，不再靠输出内容猜测。
+    /// </summary>
+    internal static SectionChannelRouter? CreateRouter(UnderstandRequest request) =>
+        request.Kind == UnderstandKind.Translate
+            ? new SectionChannelRouter(
+                request.ImagePng is { Length: > 0 } ? StreamChannelMode.Segmenter : StreamChannelMode.Passthrough)
+            : null;
+
+    /// <summary>
     /// 各厂商共用的增量分派：可选接入 ThinkingStreamSanitizer 进行思考链过滤；
     /// Translate 交给分栏路由器拆原文/译文通道，Explain 直接落到 Explanation 通道。空增量原样短路。
     /// </summary>

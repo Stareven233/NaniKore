@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Drawing;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -10,7 +12,9 @@ using System.Windows.Threading;
 using NaniKore.App.Controls;
 using NaniKore.App.Settings;
 using NaniKore.App.Theme;
+using NaniKore.Config;
 using NaniKore.Interop;
+using NaniKore.Phonetics;
 using NaniKore.Translation;
 using FormsScreen = System.Windows.Forms.Screen;
 using WpfTextBox = System.Windows.Controls.TextBox;
@@ -32,7 +36,6 @@ internal sealed partial class ResultPanelWindow : Window
     private bool _translationHasContent;
     private string _annotatedSource = string.Empty;
     private string _originalEditingText = string.Empty;
-    private string _initialTranslationSource = string.Empty;
     private bool _isEditingSource;
     private bool _receivedAnnotatedSource;
     private string _targetLanguage = "中文（简体）";
@@ -40,6 +43,15 @@ internal sealed partial class ResultPanelWindow : Window
     private long _lastThinkingUpdateTick;
     private bool _isDisplayingThinking;
     private string? _savedTranslationForExplanation;
+
+    // 本地注音（issue 008 Phase 3）：单一事实源是纯文本原文（SourceText 属性），
+    // 注音在翻译流结束后（或换语言/编辑文本时）单次异步叠加，杜绝流式抖动重算。
+    private CancellationTokenSource? _annotationCancellation;
+    private Task? _annotationTask;
+    private string _annotationSourcePlain = string.Empty;
+    private PhoneticsConfig _phonetics = new();
+    private string? _selectedSourceLanguage;
+    private bool _loadingSourceLanguages;
 
     public ResultPanelWindow()
     {
@@ -91,6 +103,9 @@ internal sealed partial class ResultPanelWindow : Window
             UIElement.MouseUpEvent,
             new MouseButtonEventHandler(OnSourceTextBoxMouseUp),
             handledEventsToo: true);
+
+        // 源语言下拉：默认「自动探测」+ 三语（与设置页词典卡片同一份清单）
+        PopulateSourceLanguageBox();
 
         // 点击窗口内其他文字、移动窗口或失焦时立即隐藏收藏气泡
         PreviewMouseDown += OnPanelPreviewMouseDown;
@@ -161,6 +176,33 @@ internal sealed partial class ResultPanelWindow : Window
         }
     }
 
+    /// <summary>同步设置页的注音开关（保存设置后由宿主刷新，不打断当前展示）。</summary>
+    public void SetPhoneticsOptions(PhoneticsConfig options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _phonetics = options;
+    }
+
+    /// <summary>填充源语言下拉：默认「自动探测」+ 三语展示名（与设置页词典卡片同一清单）。</summary>
+    private void PopulateSourceLanguageBox()
+    {
+        _loadingSourceLanguages = true;
+        SourceLanguageBox.Items.Add(new SourceLanguageChoice(null, "自动探测"));
+        foreach (var language in PhoneticLanguages.All)
+        {
+            SourceLanguageBox.Items.Add(new SourceLanguageChoice(language.Code, language.DisplayName));
+        }
+
+        SourceLanguageBox.SelectedIndex = 0;
+        _loadingSourceLanguages = false;
+    }
+
+    /// <summary>源语言下拉项：LanguageCode 为 null 表示按原文自动探测。</summary>
+    private sealed record SourceLanguageChoice(string? LanguageCode, string DisplayName)
+    {
+        public override string ToString() => DisplayName;
+    }
+
     /// <summary>更新并显示本次调用的 Token 消耗与性能指标。</summary>
     public void SetMetrics(TranslationMetrics metrics)
     {
@@ -190,7 +232,6 @@ internal sealed partial class ResultPanelWindow : Window
     public void Reset(string source, string status, bool autoTranslate = false, bool autoExplain = false)
     {
         _annotatedSource = source;
-        _initialTranslationSource = RubyTextParser.ToPlainText(source) is { Length: > 0 } plain ? plain : source;
         SourceTextBox.Text = RubyTextParser.ToPlainText(source);
         _originalEditingText = SourceTextBox.Text;
         _receivedAnnotatedSource = false;
@@ -232,6 +273,11 @@ internal sealed partial class ResultPanelWindow : Window
             SourceCaptionTextBlock.Text = "点击可编辑";
             SourceViewer.Document = RubyDocumentBuilder.Build(source);
         }
+
+        // 新原文落地即单次异步注音（issue 008 Phase 3）：与是否翻译解耦，
+        // 粘贴文本/OCR 文本进入面板后即可看到注音视图。
+        _annotationSourcePlain = string.Empty;
+        _ = AnnotateSourceAsync();
     }
 
     public void SetTranslationInProgress(bool inProgress)
@@ -259,7 +305,6 @@ internal sealed partial class ResultPanelWindow : Window
         _thinkingBuffer.Clear();
         _lastThinkingUpdateTick = 0;
         _savedTranslationForExplanation = null;
-        _initialTranslationSource = RubyTextParser.ToPlainText(_annotatedSource) is { Length: > 0 } plain ? plain : SourceTextBox.Text;
         ClearMetrics();
         TranslateButton.Content = "翻译";
         ExplanationView.Clear();
@@ -347,43 +392,195 @@ internal sealed partial class ResultPanelWindow : Window
             SwpNoMove | SwpNoSize | SwpNoActivate | SwpShowWindow);
     }
 
-    /// <summary>结合初始原文对注音文本进行标签清洗与首部对齐校准，消除模型擅自添加的外壳标签（如 [annotated_source]）。</summary>
-    internal static string CleanAnnotatedSourceWithInitial(string annotated, string initialSource)
+    /// <summary>
+    /// 单次异步注音（issue 008 Phase 3）：对当前纯文本原文跑本地引擎，区间结果经
+    /// 「区间 → 汉字[读音] 文本 → FlowDocument」既有链路叠加。单一事实源始终是纯文本，
+    /// 注音形态只是派生视图；翻译流式过程中绝不重算，只在原文落地/翻译完成/换语言时单次触发。
+    /// </summary>
+    internal Task AnnotateSourceAsync(bool manual = false)
     {
-        if (string.IsNullOrWhiteSpace(annotated)) return annotated;
+        // 保留最近一次注音任务句柄：自测与宿主可等待其落地，避免异步结果竞态
+        _annotationTask = RunAnnotationAsync(manual);
+        return _annotationTask;
+    }
 
-        // 1. 通用正则清理已知标签前缀
-        var cleaned = Regex.Replace(annotated, @"^(\[|<)\s*annotated_source\s*(\]|>)\s*", "", RegexOptions.IgnoreCase);
-        cleaned = Regex.Replace(cleaned, @"^【\s*(原文|注音)\s*】\s*", "");
-        cleaned = Regex.Replace(cleaned, @"^(原文|注音)\s*[:：]\s*", "");
+    internal Task? PendingAnnotation => _annotationTask;
 
-        // 2. 根据初始原文首字符进行差异对比校准
-        if (!string.IsNullOrWhiteSpace(initialSource))
+    /// <summary>当前原文的注音形态（汉字[读音]）；自测与复制菜单读取同一字段。</summary>
+    internal string AnnotatedSourceText => _annotatedSource;
+
+    private async Task RunAnnotationAsync(bool manual)
+    {
+        if (!_phonetics.Enabled)
         {
-            var initialTrimmed = initialSource.Trim();
-            if (initialTrimmed.Length > 0)
+            if (manual)
             {
-                var firstChar = initialTrimmed[0];
-                var currentTrimmed = cleaned.TrimStart();
-                // 如果当前首字符不是初始原文的首字符，并且当前是以标签符号开头的（如 [ 或 < 或 【）
-                if (currentTrimmed.Length > 0 && currentTrimmed[0] != firstChar && (currentTrimmed[0] is '[' or '<' or '【'))
-                {
-                    var closeIdx = currentTrimmed.IndexOfAny([']', '>', '】']);
-                    if (closeIdx > 0 && closeIdx + 1 < currentTrimmed.Length)
-                    {
-                        var afterTag = currentTrimmed[(closeIdx + 1)..].TrimStart();
-                        if (afterTag.StartsWith(firstChar))
-                        {
-                            cleaned = afterTag;
-                        }
-                    }
-                }
+                ShowStatusSafe("原文注音已在设置-通用中关闭。");
             }
+
+            return;
         }
 
-        // 3. 清理尾部可能残留的闭合标签
-        cleaned = Regex.Replace(cleaned, @"(\[|<)\s*/\s*annotated_source\s*(\]|>)\s*$", "", RegexOptions.IgnoreCase);
-        return cleaned;
+        // WPF 控件线程亲和：原文读取同样可能来自任意调用线程，统一走安全入口
+        var plain = SourceTextSafe();
+        if (string.IsNullOrWhiteSpace(plain))
+        {
+            return;
+        }
+
+        // 同一份纯文本已叠加过注音（且非手动重选语言）时跳过，避免重复计算
+        if (!manual && _annotatedSource.Length > 0 && string.Equals(_annotationSourcePlain, plain, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var languageCode = _selectedSourceLanguage ?? DetectSourceLanguageCode(plain);
+        var displayName = PhoneticLanguages.DisplayName(languageCode) ?? languageCode;
+        var annotator = PhoneticAnnotatorRegistryHolder.Default.GetAnnotator(languageCode);
+        if (annotator is null)
+        {
+            if (manual)
+            {
+                ShowStatusSafe($"暂不支持{displayName}注音。");
+            }
+
+            return;
+        }
+
+        if (!annotator.IsAvailable)
+        {
+            // 软降级：保持纯文本展示 + 温和提示，绝不打断翻译流程
+            if (manual)
+            {
+                ShowStatusSafe($"未安装{displayName}词典，请前往设置-通用-原文注音下载；当前以纯文本展示原文。");
+            }
+
+            return;
+        }
+
+        _annotationCancellation?.Cancel();
+        var cancellation = new CancellationTokenSource();
+        _annotationCancellation = cancellation;
+        try
+        {
+            var profile = AnnotationProfile.Load(languageCode, _phonetics.Enabled, _phonetics.RareOnly);
+            var spans = await Task.Run(() => annotator.Annotate(plain, new AnnotationContext(profile)), cancellation.Token);
+
+            // await 续体未必回到面板线程（自测/无同步上下文场景）：整段落地逻辑显式跳回
+            if (!Dispatcher.CheckAccess())
+            {
+                await Dispatcher.InvokeAsync(() => ApplyAnnotationIfCurrent(plain, spans, displayName, manual, cancellation.Token));
+                return;
+            }
+
+            ApplyAnnotationIfCurrent(plain, spans, displayName, manual, cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // 被更新的注音抢占，静默丢弃
+        }
+        catch (Exception exception)
+        {
+            if (manual)
+            {
+                ShowStatusSafe($"原文注音失败：{exception.Message}", isError: true);
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_annotationCancellation, cancellation))
+            {
+                _annotationCancellation = null;
+            }
+        }
+    }
+
+    /// <summary>原文未被取消、也未被并发修改时才落地；只允许在面板线程调用。</summary>
+    private void ApplyAnnotationIfCurrent(
+        string plain,
+        IReadOnlyList<AnnotationSpan> spans,
+        string displayName,
+        bool manual,
+        CancellationToken cancellation)
+    {
+        if (cancellation.IsCancellationRequested || !string.Equals(SourceText, plain, StringComparison.Ordinal))
+        {
+            // 计算期间原文已变化：丢弃过期结果，等下一次单次注音
+            return;
+        }
+
+        ApplyAnnotation(plain, spans, displayName, manual);
+    }
+
+    /// <summary>线程安全读原文（供注音计算前的快照使用）。</summary>
+    private string SourceTextSafe() =>
+        Dispatcher.CheckAccess() ? SourceText : Dispatcher.Invoke(() => SourceText);
+
+    /// <summary>线程安全写状态条：注音回调可能发生在任意线程，绝不允许跨线程触碰 WPF 控件。</summary>
+    private void ShowStatusSafe(string message, bool isError = false)
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            SetStatus(message, isError);
+            return;
+        }
+
+        _ = Dispatcher.BeginInvoke(() => SetStatus(message, isError));
+    }
+
+    /// <summary>把注音区间叠加为注音形态：区间 → 汉字[读音] 文本 → FlowDocument，复用既有 ruby 链路。</summary>
+    private void ApplyAnnotation(string plain, IReadOnlyList<AnnotationSpan> spans, string displayName, bool manual)
+    {
+        var ruby = spans.Count == 0 ? plain : AnnotatedTextFormatter.Compose(plain, spans);
+        _annotatedSource = ruby;
+        _annotationSourcePlain = plain;
+        if (!_isEditingSource)
+        {
+            SourceViewer.Document = RubyDocumentBuilder.Build(ruby);
+        }
+
+        SourceTextBox.Text = plain;
+        _originalEditingText = plain;
+        if (manual)
+        {
+            SetStatus(spans.Count == 0
+                ? $"已按{displayName}重新注音：没有命中难词。"
+                : $"已按{displayName}重新注音（{spans.Count} 词）。");
+        }
+    }
+
+    /// <summary>自动探测口径：假名优先判日语，其次简体中文，再拉丁英语；无声无息的纯汉字兜底按中文拼音。</summary>
+    private string DetectSourceLanguageCode(string plain)
+    {
+        var detection = LanguageDetector.Detect(plain, _targetLanguage);
+        if (detection.NeedsJapaneseRuby || detection.HasJapanese)
+        {
+            return "ja";
+        }
+
+        if (detection.HasSimplifiedChinese)
+        {
+            return "zh";
+        }
+
+        if (detection.NeedsEnglishIpa || detection.HasEnglish)
+        {
+            return "en";
+        }
+
+        return "zh";
+    }
+
+    private void OnSourceLanguageChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingSourceLanguages)
+        {
+            return;
+        }
+
+        _selectedSourceLanguage = (SourceLanguageBox.SelectedItem as SourceLanguageChoice)?.LanguageCode;
+        // 手选语言必须强制重算：即便纯文本未变，也要按新语言重新叠加
+        _ = AnnotateSourceAsync(manual: true);
     }
 
     public void Append(Translation.UnderstandDelta delta)
@@ -416,13 +613,14 @@ internal sealed partial class ResultPanelWindow : Window
         {
             if (!_receivedAnnotatedSource)
             {
-                // 收到模型首个注音片段时平滑替换初始文本，避免直接追加在 OCR 占位文本后面
+                // 视觉链路首个转录片段到达时平滑替换初始占位文本，避免追加在空占位后面
                 _annotatedSource = string.Empty;
                 _receivedAnnotatedSource = true;
             }
 
+            // 转录按纯文本累积（协议已不要求模型注音）；作废注音缓存，迫使流结束后重新叠加
             _annotatedSource += delta.Text;
-            _annotatedSource = CleanAnnotatedSourceWithInitial(_annotatedSource, _initialTranslationSource);
+            _annotationSourcePlain = string.Empty;
             SourceViewer.Document = RubyDocumentBuilder.Build(_annotatedSource);
             SourceTextBox.Text = RubyTextParser.ToPlainText(_annotatedSource);
             _originalEditingText = SourceTextBox.Text;
@@ -593,6 +791,7 @@ internal sealed partial class ResultPanelWindow : Window
         SourceTextBox.Text = normalized;
         SourceTextBox.CaretIndex = Math.Min(caretIndex, normalized.Length);
         _annotatedSource = normalized;
+        _annotationSourcePlain = string.Empty;
         SourceViewer.Document = RubyDocumentBuilder.Build(normalized);
         if (_translationHasContent)
         {
@@ -704,6 +903,16 @@ internal sealed partial class ResultPanelWindow : Window
         SourceViewerBorder.Visibility = Visibility.Visible;
         SourceCaptionTextBlock.Text = "双击可编辑";
         TranslateButton.Content = "翻译";
+
+        if (!string.Equals(SourceTextBox.Text, _originalEditingText, StringComparison.Ordinal))
+        {
+            // 编辑过（粘贴文本输入模式）：以新文本刷新注音视图并立刻叠加
+            _annotatedSource = SourceTextBox.Text;
+            _annotationSourcePlain = string.Empty;
+        }
+
+        SourceViewer.Document = RubyDocumentBuilder.Build(_annotatedSource);
+        _ = AnnotateSourceAsync();
     }
 
     private void OnSourceTextBoxPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)

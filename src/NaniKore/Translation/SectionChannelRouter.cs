@@ -1,23 +1,45 @@
 namespace NaniKore.Translation;
 
 /// <summary>
-/// 流式输出按唯一的分段标记 <c>---TRANSLATION---</c> 拆成原文与译文两个通道；
-/// 标记前后的空白与噪声标签由路由器剥离，无标记时保留完整输出作为译文。
+/// 流式输出的通道路由模式：由上游组装路径显式决定，路由器不再靠内容特征猜通道（issue 008 Phase 3）。
+/// </summary>
+internal enum StreamChannelMode
+{
+    /// <summary>
+    /// 文本路径直通：模型只回译文（提示词已解耦），全部增量归译文通道，
+    /// 仅保留思考链越界截断与噪声标签剥离两道守门；不识别任何原文回声。
+    /// </summary>
+    Passthrough,
+
+    /// <summary>
+    /// 视觉链路两段式：按唯一分段标记 <c>---TRANSLATION---</c> 拆成纯转录与译文两个通道；
+    /// 无标记时保留完整输出作为译文（协议降级兜底）。
+    /// </summary>
+    Segmenter,
+}
+
+/// <summary>
+/// 流式输出分栏路由器：按 <see cref="StreamChannelMode"/> 显式分流。
+///   <see cref="StreamChannelMode.Passthrough"/> 文本路径——译文直通，无原文通道；
+///   <see cref="StreamChannelMode.Segmenter"/>   视觉路径——哨兵前归纯转录通道、哨兵后归译文通道。
+/// 两条路径共用同一套通道发射（首段前导标签剥离、空段抑制、思考链越界截断），
+/// 差别只在「哨兵是否存在」——曾经的「显式纯译文判定 / 首字内容猜测」幽灵逻辑已退役：
+/// 通道归属必须由路由模式显式给出，绝不靠输出内容反推。
 /// </summary>
 internal sealed class SectionChannelRouter
 {
     private const int MaxSeparatorLength = 32;
 
-    private readonly string? _expectedSourceText;
+    private readonly StreamChannelMode _mode;
     private DeltaChannel _channel = DeltaChannel.Translation;
     private string _pending = string.Empty;
     private bool _awaitingFirstSection = true;
     private bool _explanationTruncated = false;
     private readonly HashSet<DeltaChannel> _channelsWithContent = [];
 
-    public SectionChannelRouter(string? expectedSourceText = null)
+    public SectionChannelRouter(StreamChannelMode mode)
     {
-        _expectedSourceText = expectedSourceText;
+        _mode = mode;
     }
 
     public IEnumerable<UnderstandDelta> Push(string text)
@@ -28,6 +50,61 @@ internal sealed class SectionChannelRouter
         }
 
         _pending += text;
+
+        if (_mode == StreamChannelMode.Passthrough)
+        {
+            // 文本路径：无哨兵可拆，译文通道恒定直通
+            foreach (var delta in PushPassthrough())
+            {
+                yield return delta;
+            }
+
+            yield break;
+        }
+
+        foreach (var delta in PushSegmenter())
+        {
+            yield return delta;
+        }
+    }
+
+    /// <summary>直通模式：全部增量归译文通道，只做思考链越界截断与噪声标签剥离。</summary>
+    private IEnumerable<UnderstandDelta> PushPassthrough()
+    {
+        while (_pending.Length > 0)
+        {
+            // 模型若越界开始输出精讲 markdown，立即截断，绝不允许混杂在译文中
+            var expMarkerIdx = FindExplanationPrefixIndex(_pending);
+            if (expMarkerIdx >= 0)
+            {
+                foreach (var delta in Emit(DeltaChannel.Translation, _pending[..expMarkerIdx]))
+                {
+                    yield return delta;
+                }
+
+                _pending = string.Empty;
+                _explanationTruncated = true;
+                yield break;
+            }
+
+            var flushLength = GetSafeTranslationFlushLength(_pending);
+            if (flushLength == 0)
+            {
+                yield break;
+            }
+
+            foreach (var delta in Emit(DeltaChannel.Translation, _pending[..flushLength]))
+            {
+                yield return delta;
+            }
+
+            _pending = _pending[flushLength..];
+        }
+    }
+
+    /// <summary>两段式：哨兵前归纯转录通道（先到的假名/汉字可实时流出），哨兵后归译文通道。</summary>
+    private IEnumerable<UnderstandDelta> PushSegmenter()
+    {
         while (_pending.Length > 0)
         {
             var markerIndex = _pending.IndexOf(PromptTemplates.TranslationSentinel, StringComparison.OrdinalIgnoreCase);
@@ -37,16 +114,7 @@ internal sealed class SectionChannelRouter
                 {
                     _pending = StripSourceLeadingTags(_pending);
 
-                    // 快速路径：若识别到当前输出已显式为纯译文（如缺少原文假名/首字符不匹配/译文标签），立即切至译文通道流式输出
-                    if (IsObviousPureTranslation(_pending, _expectedSourceText))
-                    {
-                        _channel = DeltaChannel.Translation;
-                        _awaitingFirstSection = false;
-                        _pending = StripTranslationLeadingTags(_pending);
-                        continue;
-                    }
-
-                    // 原文阶段：通过滑动窗口安全实时输出带注音原文，打破整段阻塞卡顿
+                    // 原文阶段：通过滑动窗口安全实时输出纯转录，打破整段阻塞卡顿
                     var flushLength = GetSafeSourceFlushLength(_pending);
                     if (flushLength == 0)
                     {
@@ -119,8 +187,9 @@ internal sealed class SectionChannelRouter
         {
             var text = _pending;
 
-            // 若从未发射过 SourceText 且无分隔符，保留完整输出作为译文；若已发射过 SourceText，剩余文本归属当前通道
-            var channel = _awaitingFirstSection
+            // 两段式协议降级兜底：从未收到过哨兵且未发射过转录时，保留完整输出作为译文；
+            // 已发射过转录则剩余文本归属当前通道；直通模式恒为译文通道。
+            var channel = _awaitingFirstSection && _mode == StreamChannelMode.Segmenter
                 ? (_channelsWithContent.Contains(DeltaChannel.SourceText) ? DeltaChannel.SourceText : DeltaChannel.Translation)
                 : _channel;
 
@@ -190,9 +259,11 @@ internal sealed class SectionChannelRouter
     }
 
     /// <summary>
-    /// 噪声标签清单（按现行两段式协议校准）：仅收录在现行协议下仍有真实产生源的兜底条目——
-    /// 1. 提示词显式声明的结构占位符（&lt;annotated_source&gt; / &lt;translation&gt;，含方括号与冒号变体）；
-    /// 2. 模型自发的中文分区标签（提示词将第一部分描述为「完成注音标注的原文」，故 原文/注音/译文 均有产生源）；
+    /// 噪声标签清单（按现行协议校准）：仅收录在现行协议下仍有真实产生源的兜底条目——
+    /// 1. 提示词显式声明的结构占位符（&lt;transcribed_text&gt; / &lt;translation&gt;，含方括号与冒号变体）；
+    /// 2. 模型自发的中文分区标签（提示词将第一部分描述为「转录」，故 原文/译文 均有产生源）；
+    /// 3. 思考链标签（由 Sanitizer 之外的兜底路径产生）。
+    /// </summary>
     private static readonly string[] ThinkingNoiseTags =
     [
         "<think>",
@@ -208,6 +279,9 @@ internal sealed class SectionChannelRouter
     internal static readonly string[] SourceLeadingTags =
     [
         .. ThinkingNoiseTags,
+        "<transcribed_text>",
+        "[transcribed_text]",
+        "transcribed_text:",
         "<annotated_source>",
         "[annotated_source]",
         "annotated_source:",
@@ -237,6 +311,8 @@ internal sealed class SectionChannelRouter
     internal static readonly string[] SourceCloseTags =
     [
         .. ThinkingNoiseTags,
+        "</transcribed_text>",
+        "[/transcribed_text]",
         "</annotated_source>",
         "[/annotated_source]",
         "```markdown",
@@ -316,6 +392,10 @@ internal sealed class SectionChannelRouter
     private static readonly string[] SourceResidualNoise =
     [
         .. ThinkingNoiseTags,
+        "</transcribed_text>",
+        "<transcribed_text>",
+        "[/transcribed_text]",
+        "[transcribed_text>",
         "</annotated_source>",
         "<annotated_source>",
         "[/annotated_source]",
@@ -390,7 +470,7 @@ internal sealed class SectionChannelRouter
 
     /// <summary>
     /// 循环剥离前导噪声标签，首部 CR/LF/空格顺带清掉；两通道共用同一核心循环。
-    /// 原文通道在已产出正文后不再回剥（内容是真实注音），译文通道沿用恒定行为。
+    /// 原文通道在已产出正文后不再回剥（内容是真实转录），译文通道沿用恒定行为。
     /// </summary>
     private static string TrimLeadingTagsCore(string text, string[] tags)
     {
@@ -442,7 +522,7 @@ internal sealed class SectionChannelRouter
                 return 0;
             }
 
-            // 若无原文特征（假名/规范注音），绝不提前作为 SourceText 刷新，等待 sentinel 到达或作为纯译文 fallback
+            // 无假名的转录（如纯汉字图）先挂起，等哨兵到达再整段归位，避免被误当译文提前流出
             if (!HasSourceSignal(text))
             {
                 return 0;
@@ -625,6 +705,7 @@ internal sealed class SectionChannelRouter
         return -1;
     }
 
+    /// <summary>转录通道的实时流出信号：假名（可先行流式）或转录里的方括号内容；无信号的纯汉字转录等哨兵归位。</summary>
     private static bool HasSourceSignal(string text)
     {
         for (var i = 0; i < text.Length; i++)
@@ -635,7 +716,7 @@ internal sealed class SectionChannelRouter
                 return true;
             }
 
-            // 振假名/注音格式必须形如 汉字[注音] 或 Word[ipa]，单个孤立方括号不构成原文特征
+            // 转录文本自身带方括号注释（如原著中的 注[ちゅう]）同样构成可提前流出的信号
             if (c == '[' && i > 0 && char.IsLetterOrDigit(text[i - 1]))
             {
                 var closeIdx = text.IndexOf(']', i + 1);
@@ -647,133 +728,5 @@ internal sealed class SectionChannelRouter
         }
 
         return false;
-    }
-
-    /// <summary>
-    /// 判定待处理文本是否显式为纯译文（模型未遵循两段式协议直接输出译文）。
-    /// </summary>
-    private static bool IsObviousPureTranslation(string pending, string? expectedSourceText)
-    {
-        if (string.IsNullOrWhiteSpace(pending))
-        {
-            return false;
-        }
-
-        var trimmed = pending.TrimStart('\r', '\n', ' ');
-        if (trimmed.Length == 0)
-        {
-            return false;
-        }
-
-        // 若当前处于前导标签未完结前缀（如 "<anno"），等待完整标签到达，绝不提前误判
-        if (IsOpenTagPrefix(trimmed, SourceLeadingTags))
-        {
-            return false;
-        }
-
-        // 1. 显式译文前缀标识（<translation>、[translation]、译文:、translation: 等）
-        foreach (var tag in TranslationLeadingTags)
-        {
-            if (trimmed.StartsWith(tag, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(expectedSourceText))
-        {
-            return false;
-        }
-
-        var trimmedExpected = expectedSourceText.Trim();
-        if (trimmedExpected.Length == 0)
-        {
-            return false;
-        }
-
-        // 2. 原文含有假名（日语），而当前输出积累了一定字符且完全无假名，并出现了汉字或拉丁字母，且首字与原文不一致
-        var expectedHasKana = HasJapaneseKana(trimmedExpected);
-        if (expectedHasKana)
-        {
-            var pendingHasKana = HasJapaneseKana(trimmed);
-            if (!pendingHasKana)
-            {
-                if (trimmed[0] != trimmedExpected[0] && HasHanOrLatin(trimmed))
-                {
-                    return true;
-                }
-            }
-        }
-        else if (HasLatinOnly(trimmedExpected))
-        {
-            // 原文是纯拉丁/英语，当前输出出现中文字符且首字符不匹配
-            if (trimmed[0] != trimmedExpected[0] && HasHan(trimmed))
-            {
-                return true;
-            }
-        }
-        else if (HasHan(trimmedExpected) && !expectedHasKana)
-        {
-            // 原文是中文，当前输出出现假名或纯拉丁且首字不匹配
-            if (trimmed[0] != trimmedExpected[0] && (HasJapaneseKana(trimmed) || HasLatinOnly(trimmed)))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool HasJapaneseKana(string str)
-    {
-        foreach (var c in str)
-        {
-            if (c is (>= '\u3040' and <= '\u309F') or (>= '\u30A0' and <= '\u30FF'))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static bool HasHan(string str)
-    {
-        foreach (var c in str)
-        {
-            if (c is >= '\u4E00' and <= '\u9FFF')
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static bool HasHanOrLatin(string str)
-    {
-        foreach (var c in str)
-        {
-            if (c is (>= '\u4E00' and <= '\u9FFF') or (>= 'a' and <= 'z') or (>= 'A' and <= 'Z'))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static bool HasLatinOnly(string str)
-    {
-        var hasLetter = false;
-        foreach (var c in str)
-        {
-            if (c is >= '\u4E00' and <= '\u9FFF' or (>= '\u3040' and <= '\u309F') or (>= '\u30A0' and <= '\u30FF'))
-            {
-                return false;
-            }
-            if (char.IsAsciiLetter(c))
-            {
-                hasLetter = true;
-            }
-        }
-        return hasLetter;
     }
 }

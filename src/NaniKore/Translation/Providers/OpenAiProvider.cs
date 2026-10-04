@@ -17,9 +17,7 @@ internal sealed class OpenAiProvider : TranslationProviderBase
         using var message = isResponses ? CreateResponsesRequest(request) : CreateCompletionsRequest(request);
         using var response = await SendAsync(message, cancellationToken).ConfigureAwait(false);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        var router = request.Kind == UnderstandKind.Translate
-            ? new SectionChannelRouter(request.SourceText)
-            : null;
+        var router = CreateRouter(request);
         var sanitizer = new ThinkingStreamSanitizer();
         TokenUsage? usage = null;
 
