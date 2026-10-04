@@ -25,11 +25,11 @@ internal static class PhoneticsProbe
         }
 
         Console.WriteLine($"[判据] ja 日本語淘汰={AnnotationProfile.Load("ja").IsSkipped("日本語")}，出来る={AnnotationProfile.Load("ja").IsSkipped("出来る")}，躊躇={AnnotationProfile.Load("ja").IsSkipped("躊躇")}");
-        Console.WriteLine($"[判据] zh 的={AnnotationProfile.Load("zh").IsSkipped("的")}，问题={AnnotationProfile.Load("zh").IsSkipped("问题")}，饕餮={AnnotationProfile.Load("zh").IsSkipped("饕餮")}");
+        Console.WriteLine($"[判据] zh 的={AnnotationProfile.Load("zh").IsSkipped("的")}，问题={AnnotationProfile.Load("zh").IsSkipped("问题")}，龃龉={AnnotationProfile.Load("zh").IsSkipped("龃龉")}，尴尬={AnnotationProfile.Load("zh").IsSkipped("尴尬")}");
         Console.WriteLine($"[判据] en the={AnnotationProfile.Load("en").IsSkipped("the")}，government={AnnotationProfile.Load("en").IsSkipped("government")}，ubiquitous={AnnotationProfile.Load("en").IsSkipped("ubiquitous")}");
         Console.WriteLine("[判据] 停用词条数（计数）："
             + $" ja={CountLines("stopwords-ja")}, zh={CountLines("stopwords-zh")}, en={CountLines("stopwords-en")},"
-            + $" joyo-kanji={CountLines("joyo-kanji")}, common-chars={CountLines("common-chars")}");
+            + $" common-chars-ja={CountLines("common-chars-ja")}, common-chars-zh={CountLines("common-chars-zh")}");
 
         Console.WriteLine($"[arpabet] ubiquitous 码点：{(Dump(ArpabetIpaConverter.Convert("Y UW0 B IH1 K W IH0 T AH0 S")))}");
         Console.WriteLine($"[拼音] ri4={Dump(PinyinToneConverter.ConvertSyllable("ri4"))}, Ri4 Ben3={Dump(PinyinToneConverter.ConvertPhrase("Ri4 Ben3"))}");
@@ -42,6 +42,9 @@ internal static class PhoneticsProbe
             ("ja", "買い出しに行く"),
             ("ja", "行きます"),
             ("ja", "躊躇した"),
+            ("zh", "龃龉的滋味"),
+            ("zh", "尴尬而不失礼貌"),
+            ("zh", "魑魅魍魉横行"),
             ("zh", "饕餮大餐"),
             ("zh", "不行就去银行"),
             ("en", "The ubiquitous government"),
@@ -59,7 +62,7 @@ internal static class PhoneticsProbe
 
         if (registry.GetAnnotator("zh") is ITextAnnotator zhAnnotator)
         {
-            DumpRawTagger(MeCabTagger.Create(PhoneticDependencyPaths.ChineseDictionaryDirectory, null), "饕餮大餐不行就去银行", "zh");
+            DumpRawTagger(MeCabTagger.Create(PhoneticDependencyPaths.ChineseDictionaryDirectory, null), "龃龉不行就去银行", "zh");
             DumpRawTagger(MeCabTagger.Create(PhoneticDependencyPaths.ChineseDictionaryDirectory, null), "你好世界", "zh2");
         }
     }

@@ -27,10 +27,15 @@ internal static partial class SelfTest
         Check("纯假名普通词不经字符表淘汰", !ja.IsSkipped("ふりがな"));
 
         var zh = AnnotationProfile.Load("zh");
-        Check("规范汉字表过滤：中文虚词不注", zh.IsSkipped("的"));
-        Check("规范汉字表过滤：常用字整词不注", zh.IsSkipped("问题"));
-        Check("表外汉字注：俳佪不淘汰（一·二级表之外）", !zh.IsSkipped("俳佪"));
-        Check("规范汉字表过滤：二级表内难词也不注", zh.IsSkipped("饕餮"));
+        Check("一级字表过滤：中文虚词不注", zh.IsSkipped("的"));
+        Check("一级字表过滤：常用字整词不注", zh.IsSkipped("问题"));
+        Check("表外汉字注：俳佪不淘汰（一级字表之外）", !zh.IsSkipped("俳佪"));
+        Check("二级常用难词注：龃龉不淘汰（龃龉均表外）", !zh.IsSkipped("龃龉"));
+        Check("二级常用难词注：饕餮不淘汰（餮为二级字）", !zh.IsSkipped("饕餮"));
+        Check("一级字表边界：魑魅不淘汰（魑为二级字）", !zh.IsSkipped("魑魅"));
+        Check("一级字表边界：尴尬仍不注（尴尬均为一级字，标准口径）", zh.IsSkipped("尴尬"));
+        Check("一级字表边界：徘徊仍不注（徘徊均为一级字，标准口径）", zh.IsSkipped("徘徊"));
+        Check("一级常用整词仍淘汰：日本", zh.IsSkipped("日本"));
 
         var en = AnnotationProfile.Load("en");
         Check("英语停用词过滤", en.IsSkipped("the") && en.IsSkipped("and"));
@@ -162,6 +167,16 @@ internal static partial class SelfTest
             "中文金样本：表外字注拼音，常用字按仅难词过滤",
             annotated == "俳佪[pái huái]",
             $"expected=俳佪[pái huái], actual={annotated}");
+
+        // 二级常用难词：一级字表覆盖不到，仅难词模式下也应注音（含词典查询与过滤联动）
+        Check(
+            "中文金样本：龃龉注拼音",
+            Annotated(annotator, "龃龉", defaultContext) == "龃龉[jǔ yǔ]",
+            $"actual={Annotated(annotator, "龃龉", defaultContext)}");
+        Check(
+            "中文金样本：魑魅魍魉注拼音，一级字后缀不注",
+            Annotated(annotator, "魑魅魍魉横行", defaultContext) == "魑魅魍魉[chī mèi wǎng liǎng]横行",
+            $"actual={Annotated(annotator, "魑魅魍魉横行", defaultContext)}");
 
         var allContext = new AnnotationContext(AnnotationProfile.Load("zh", rareOnly: false));
         var polyphone = Annotated(annotator, "不行就去银行", allContext);

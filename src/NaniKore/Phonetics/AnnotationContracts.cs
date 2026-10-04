@@ -62,8 +62,9 @@ internal sealed class AnnotationProfile
     public static AnnotationProfile Load(string languageCode, bool enabled = true, bool rareOnly = true)
     {
         var stopWords = EmbeddedData.LoadLines($"stopwords-{languageCode}.txt");
+        // ja/zh 各有常用字符表（en 无规范字符表，交停用词表裁决）
         var commonChars = EmbeddedData.LoadChars(
-            languageCode == "ja" ? "joyo-kanji.txt" : languageCode == "zh" ? "common-chars.txt" : null);
+            languageCode == "ja" ? "common-chars-ja.txt" : languageCode == "zh" ? "common-chars-zh.txt" : null);
         return new AnnotationProfile(languageCode, enabled, rareOnly, stopWords, commonChars);
     }
 
@@ -159,25 +160,36 @@ internal sealed class AnnotationContext
 /// <summary>嵌入式判据数据（随程序集分发的小体量策展表）的读取口径。</summary>
 internal static class EmbeddedData
 {
+    /// <summary>按行装载词级停用表：# 注释行与空行忽略；词元统一小写在调用方取键。</summary>
     public static HashSet<string> LoadLines(string fileName) =>
-        new(ReadAllText(fileName)
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        new(ReadAllLines(fileName)
             .Where(line => line.Length > 0 && !line.StartsWith('#')), StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// 按行装载字符表（常用汉字表）：# 注释行整体跳过——表头承载来源/许可/口径等元信息，
+    /// 其中的例字（如「龃龉、尴尬」）绝不能混进判据集合，否则示例字反被判为常用。
+    /// 行内空白字符同样剔除；非 ja/zh 语言（如 en）传 null 时返回空表。
+    /// </summary>
     public static HashSet<char> LoadChars(string? fileName) =>
-        new(ReadAllText(fileName)
-            .Where(ch => !char.IsWhiteSpace(ch) && ch != '#'));
+        new(ReadAllLines(fileName)
+            .Where(line => line.Length > 0 && !line.StartsWith('#'))
+            .SelectMany(static line => line)
+            .Where(static ch => !char.IsWhiteSpace(ch)));
 
-    private static string ReadAllText(string? fileName)
+    /// <summary>读取内嵌资源文本行；资源缺失（如无字符表的语言）时返回空数组。</summary>
+    private static string[] ReadAllLines(string? fileName)
     {
         if (fileName is null)
         {
-            return string.Empty;
+            return [];
         }
 
         var assembly = typeof(AnnotationProfile).Assembly;
         var resourceName = $"NaniKore.Phonetics.Data.{fileName}";
         using var stream = assembly.GetManifestResourceStream(resourceName);
-        return stream is null ? string.Empty : new StreamReader(stream).ReadToEnd();
+        return stream is null
+            ? []
+            : new StreamReader(stream).ReadToEnd()
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 }
