@@ -148,13 +148,23 @@ function New-NaniKoreReleaseArchive {
     }
 
     if ($IncludeFullDependencies) {
+        # 完整包承诺「解压即用」：本地 OCR 权重、ONNX Runtime 与三语注音词典缺一不可（issue 008）
         $requiredDependencies = @(
             'ocr-onnx\pp-ocr-v6-small\det\inference.onnx',
             'ocr-onnx\pp-ocr-v6-small\det\inference.yml',
             'ocr-onnx\pp-ocr-v6-small\rec\inference.onnx',
             'ocr-onnx\pp-ocr-v6-small\rec\inference.yml',
             'onnxruntime\onnxruntime.dll',
-            'onnxruntime\onnxruntime_providers_shared.dll'
+            'onnxruntime\onnxruntime_providers_shared.dll',
+            'phonetics\ja\sys.dic',
+            'phonetics\ja\unk.dic',
+            'phonetics\ja\matrix.bin',
+            'phonetics\ja\char.bin',
+            'phonetics\en\ipa_dict.db',
+            'phonetics\zh\sys.dic',
+            'phonetics\zh\unk.dic',
+            'phonetics\zh\matrix.bin',
+            'phonetics\zh\char.bin'
         )
         $missingDependencies = @(
             $requiredDependencies |
@@ -178,6 +188,15 @@ function New-NaniKoreReleaseArchive {
 
         if ($IncludeFullDependencies) {
             Copy-Item -LiteralPath $DependenciesDirectory -Destination $stagingDirectory -Recurse -Force
+
+            # 注音词典的生成暂存（源码 zip / 解包件 / CSV 中间产物）不随发布包分发：
+            # 完整包只承诺「解压即用」的编译态词典（issue 008），暂存件几十 MB 且仅供 tools/phonetics 再生。
+            foreach ($staleDirectory in @('phonetics\_source', 'phonetics\_build')) {
+                $stalePath = Join-Path $stagingDirectory "deps\$staleDirectory"
+                if (Test-Path -LiteralPath $stalePath) {
+                    Remove-Item -LiteralPath $stalePath -Recurse -Force
+                }
+            }
         }
 
         Remove-NaniKorePackageCacheFiles -Directory $stagingDirectory

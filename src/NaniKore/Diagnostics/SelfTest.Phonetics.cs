@@ -15,6 +15,7 @@ internal static partial class SelfTest
         TestPhoneticLanguageCatalog();
         TestPhoneticDictionaryStates();
         TestRegistryResetAvailability();
+        TestAnnotationPerformanceBudget();
         TestJapaneseFuriganaDictionary();
         TestChinesePinyinDictionary();
         TestEnglishIpaDictionary();
@@ -55,6 +56,43 @@ internal static partial class SelfTest
             PhoneticDependencyManifest.GetState("ko") == PhoneticDictionaryState.Unsupported &&
             PhoneticDependencyManifest.GetState("") == PhoneticDictionaryState.Unsupported &&
             PhoneticDependencyManifest.GetFiles("ko").Count == 0);
+    }
+
+    /// <summary>
+    /// 性能预算（issue 008 Phase 4 验收）：全程 CPU、无网络。词典冷启动发生在首次调用，
+    /// 故先各做一次预热；正式计时的对象是稳态单次注音（结果面板单次叠加的真实成本）。
+    /// 预算放宽到 50ms/次——日常日语句子实测个位数毫秒，留一个数量级余量防抖。
+    /// </summary>
+    private static void TestAnnotationPerformanceBudget()
+    {
+        var registry = TextAnnotatorRegistry.CreateDefault();
+        var warmups = new (string Language, string Text)[]
+        {
+            ("ja", "日本語を勉強する"),
+            ("zh", "不行就去银行"),
+            ("en", "The ubiquitous government"),
+        };
+
+        foreach (var (language, text) in warmups)
+        {
+            registry.ResetAvailability();
+            _ = registry.GetAnnotator(language)?.Annotate(text, new AnnotationContext(AnnotationProfile.Load(language)));
+        }
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        foreach (var (language, text) in warmups)
+        {
+            var profile = AnnotationProfile.Load(language);
+            for (var i = 0; i < 20; i++)
+            {
+                _ = registry.GetAnnotator(language)?.Annotate(text, new AnnotationContext(profile));
+            }
+        }
+
+        stopwatch.Stop();
+        Check(
+            $"three-language steady-state annotation stays within the CPU budget (60 calls in {stopwatch.ElapsedMilliseconds} ms)",
+            stopwatch.ElapsedMilliseconds < 1000);
     }
 
     /// <summary>下载落地后的热生效口径：ResetAvailability 清闩锁后重新探测，注音结果不变。</summary>
