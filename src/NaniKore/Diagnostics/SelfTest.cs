@@ -8,7 +8,9 @@ namespace NaniKore.Diagnostics;
 /// - <see cref="SelfTest"/> (Translation): 提示词模板、多语言字集探测、SSE 读取、分栏路由与 Providers
 /// - <see cref="SelfTest"/> (Explanation): 精讲卡片解析、流式降级与收藏契约字符串匹配
 /// - <see cref="SelfTest"/> (Favorites): SQLite 收藏服务惰性建库、增删查、upsert 与跨实例持久化
-/// - <see cref="SelfTest"/> (Ui): 热键手势解析与录制、主题色板字典、自适应卡片布局与设置页绑定
+/// - <see cref="SelfTest"/> (Ui): 无头 WPF 测试辅助工具、热键手势解析与录制、设置页与结果面板自测调度
+/// - <see cref="SelfTest"/> (Ui.Settings): 主题资源、自适应卡片布局、各设置页绑定契约、尺寸记忆回写、收藏管理页、窗口层级
+/// - <see cref="SelfTest"/> (Ui.ResultPanel): 本地注音、振假名/纯文本双语态与翻译流、指标条、精讲生命周期、划词气泡与振假名文档
 /// </summary>
 internal static partial class SelfTest
 {

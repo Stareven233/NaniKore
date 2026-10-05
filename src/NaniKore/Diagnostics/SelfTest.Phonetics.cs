@@ -183,12 +183,13 @@ internal static partial class SelfTest
             ArpabetIpaConverter.Convert("Y UW0 B IH1 K W IH0 T AH0 S") == "juːbˈɪkwɪtəs",
             $"actual={ArpabetIpaConverter.Convert("Y UW0 B IH1 K W IH0 T AH0 S")}");
 
+        var studiesCandidates = EnglishLemmatizer.Candidates("studies");
         Check(
             "词形还原候选覆盖屈折",
-            EnglishLemmatizer.Candidates("studies").Contains("study") &&
+            studiesCandidates.Contains("study") &&
             EnglishLemmatizer.Candidates("abandoned").Contains("abandon") &&
             EnglishLemmatizer.Candidates("running").Contains("run"),
-            $"studies -> {string.Join(",", EnglishLemmatizer.Candidates("studies"))}");
+            $"studies -> {string.Join(",", studiesCandidates)}");
     }
 
     private static void TestPinyinToneConversion()
@@ -244,28 +245,34 @@ internal static partial class SelfTest
             userSentence.Contains("睡眠薬[すいみんやく]"),
             $"actual={userSentence}");
 
+        // 每个黄金样例只求值一次：cond 与 detail 共用同一局部，避免同一句子注两遍
+        //（AnnotationContext 的去重是单篇状态，重复调用可能悄悄吞掉首现注音）。
         var allContext = new AnnotationContext(AnnotationProfile.Load("ja", rareOnly: false));
+        var tabeta = Annotated(annotator, "食べた", allContext);
         Check(
             "送假名切分：食べた",
-            Annotated(annotator, "食べた", allContext) == "食[た]べた",
-            $"actual={Annotated(annotator, "食べた", new AnnotationContext(AnnotationProfile.Load("ja", rareOnly: false)))}");
+            tabeta == "食[た]べた",
+            $"actual={tabeta}");
+        var kaimonoshi = Annotated(annotator, "買い出しに行く", allContext);
         Check(
             "送假名切分：買い出しに行く",
-            Annotated(annotator, "買い出しに行く", allContext) == "買い出[かいだ]しに行く",
-            $"actual={Annotated(annotator, "買い出しに行く", new AnnotationContext(AnnotationProfile.Load("ja", rareOnly: false)))}");
+            kaimonoshi == "買い出[かいだ]しに行く",
+            $"actual={kaimonoshi}");
+        var ikimasu = Annotated(annotator, "行きます", allContext);
         Check(
             "送假名切分：行きます",
-            Annotated(annotator, "行きます", allContext) == "行[い]きます",
-            $"actual={Annotated(annotator, "行きます", new AnnotationContext(AnnotationProfile.Load("ja", rareOnly: false)))}");
+            ikimasu == "行[い]きます",
+            $"actual={ikimasu}");
+        var repeated = Annotated(annotator, "日本語を勉強する日本語", allContext);
         Check(
             "同篇重复词形只注首现",
-            Annotated(annotator, "日本語を勉強する日本語", allContext) ==
-                "日本語[にほんご]を勉強[べんきょう]する日本語",
-            $"actual={Annotated(annotator, "日本語を勉強する日本語", new AnnotationContext(AnnotationProfile.Load("ja", rareOnly: false)))}");
+            repeated == "日本語[にほんご]を勉強[べんきょう]する日本語",
+            $"actual={repeated}");
+        var mixedLatin = annotator.Annotate("これはiPhoneです", allContext);
         Check(
             "中英混排：拉丁词元不被日语标注器认领",
-            annotator.Annotate("これはiPhoneです", allContext).Count == 0,
-            $"actual={Annotated(annotator, "これはiPhoneです", new AnnotationContext(AnnotationProfile.Load("ja", rareOnly: false)))}");
+            mixedLatin.Count == 0,
+            $"actual={AnnotatedTextFormatter.Compose("これはiPhoneです", mixedLatin)}");
     }
 
     private static void TestChinesePinyinDictionary()

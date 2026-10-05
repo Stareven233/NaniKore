@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using NaniKore.Config;
@@ -28,6 +29,29 @@ internal static partial class SelfTest
         TestThinkingStreamSanitizer();
         TestProviderThinkingParameters();
         TestProviderOutOfBandThinkingExtraction();
+    }
+
+    /// <summary>
+    /// 把流式分片依次灌入分栏路由并收尾，返回（原文通道, 译文通道）的拼接文本。
+    /// 需要按 chunk 断言实时性（即时冲刷、滑动窗口）的场景仍直接操作路由器。
+    /// </summary>
+    private static (string Source, string Translation) RouteChunks(StreamChannelMode mode, params string[] chunks)
+    {
+        var router = new SectionChannelRouter(mode);
+        var deltas = chunks.SelectMany(chunk => router.Push(chunk)).Concat(router.Complete()).ToList();
+        return (
+            string.Concat(deltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)),
+            string.Concat(deltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)));
+    }
+
+    /// <summary>把分片依次推入思考链清洗器并收尾，返回（干净正文, 思考内容）的拼接文本。</summary>
+    private static (string Clean, string Thinking) SanitizeChunks(params string[] chunks)
+    {
+        var sanitizer = new ThinkingStreamSanitizer();
+        var outputs = chunks.SelectMany(chunk => sanitizer.Push(chunk)).Concat(sanitizer.Complete()).ToList();
+        return (
+            string.Concat(outputs.Select(output => output.CleanText)),
+            string.Concat(outputs.Select(output => output.ThinkingText)));
     }
 
     private static void TestTranslationPromptTemplates()
@@ -290,6 +314,7 @@ internal static partial class SelfTest
             "vision prompt has exactly one variant per target language after plugin retirement",
             targetVariants == 4);
     }
+
     /// <summary>
     /// 段描述反漂移闸门：DescribeSections 只是 GetSystemPrompt 的「不拼接版本」，
     /// 是 --dump-prompt 与 prompt-preview 的唯一真值源。两者一旦漂移，预览页与 CLI
@@ -505,6 +530,7 @@ internal static partial class SelfTest
             plainJsonFrames.Count == 1 && plainJsonFrames[0].Event is null &&
             plainJsonFrames[0].Data == "{\\\"message\\\":\\\"vision\\\"}");
     }
+
     /// <summary>
     /// 分栏路由契约（issue 008 Phase 3）：通道归属由 <see cref="StreamChannelMode"/> 显式给出——
     /// 两段式（Segmenter）按哨兵拆转录/译文；直通（Passthrough）无原文通道，哨兵字面量也不过界。
@@ -513,84 +539,51 @@ internal static partial class SelfTest
     private static void TestSentinelRouter()
     {
         // ── 两段式：视觉链路协议 ────────────────────────────────
-        var legacyRuleRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
-        var legacyRuleDeltas = legacyRuleRouter
-            .Push("私[わたし]は\n---\n学生[がくせい]です。")
-            .Concat(legacyRuleRouter.Complete())
-            .ToList();
+        var (legacySource, legacyTranslation) = RouteChunks(StreamChannelMode.Segmenter, "私[わたし]は\n---\n学生[がくせい]です。");
         Check(
             "section router no longer recognizes the legacy bare markdown rule as a separator",
-            string.Concat(legacyRuleDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "私[わたし]は\n---\n学生[がくせい]です。" &&
-            legacyRuleDeltas.All(delta => delta.Channel == DeltaChannel.SourceText));
+            legacySource == "私[わたし]は\n---\n学生[がくせい]です。" && legacyTranslation.Length == 0);
 
-        var crlfSplitRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
-        var crlfSplitDeltas = crlfSplitRouter
-            .Push("原文\r\n---TRANS")
-            .Concat(crlfSplitRouter.Push("LATION---\r\n译文"))
-            .Concat(crlfSplitRouter.Complete())
-            .ToList();
+        var (crlfSource, crlfTranslation) = RouteChunks(StreamChannelMode.Segmenter, "原文\r\n---TRANS", "LATION---\r\n译文");
         Check(
             "section router splits the translation sentinel across frames and absorbs CRLF padding",
-            string.Concat(crlfSplitDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "原文" &&
-            string.Concat(crlfSplitDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "译文");
+            crlfSource == "原文" && crlfTranslation == "译文");
 
-        var paddedSeparatorRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
-        var paddedSeparatorDeltas = paddedSeparatorRouter
-            .Push("原文\n\n---TRANS")
-            .Concat(paddedSeparatorRouter.Push("LATION---\n\n译文"))
-            .Concat(paddedSeparatorRouter.Complete())
-            .ToList();
+        var (paddedSource, paddedTranslation) = RouteChunks(StreamChannelMode.Segmenter, "原文\n\n---TRANS", "LATION---\n\n译文");
         Check(
             "section router consumes the blank lines around the translation sentinel",
-            string.Concat(paddedSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "原文" &&
-            string.Concat(paddedSeparatorDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "译文");
+            paddedSource == "原文" && paddedTranslation == "译文");
 
-        var fallbackRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
-        var fallbackDeltas = fallbackRouter.Push("\n\nplain translation").Concat(fallbackRouter.Complete()).ToList();
+        var (fallbackSource, fallbackTranslation) = RouteChunks(StreamChannelMode.Segmenter, "\n\nplain translation");
         Check(
             "section router keeps unseparated vision output as a trimmed translation",
-            string.Concat(fallbackDeltas.Select(delta => delta.Text)) == "plain translation" &&
-            fallbackDeltas.All(delta => delta.Channel == DeltaChannel.Translation));
+            fallbackSource.Length == 0 && fallbackTranslation == "plain translation");
 
-        var translationMarkerRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
-        var translationMarkerDeltas = translationMarkerRouter
-            .Push("原文\n---TRANS")
-            .Concat(translationMarkerRouter.Push("LATION---\n我是"))
-            .Concat(translationMarkerRouter.Complete())
-            .ToList();
+        var (markerSource, markerTranslation) = RouteChunks(StreamChannelMode.Segmenter, "原文\n---TRANS", "LATION---\n我是");
         Check(
             "section router handles ---TRANSLATION--- marker split across chunks",
-            string.Concat(translationMarkerDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "原文" &&
-            string.Concat(translationMarkerDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "我是");
+            markerSource == "原文" && markerTranslation == "我是");
 
-        var crlfCaseRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
-        var crlfCaseDeltas = crlfCaseRouter
-            .Push("<transcribed_text>\r\nここは通[とお]れないよ\r\n</transcribed_text>\r\n---translation---\r\n<translation>\r\n这里过不去哦\r\n</translation>")
-            .Concat(crlfCaseRouter.Complete())
-            .ToList();
+        var (caseSource, caseTranslation) = RouteChunks(StreamChannelMode.Segmenter, "<transcribed_text>\r\nここは通[とお]れないよ\r\n</transcribed_text>\r\n---translation---\r\n<translation>\r\n这里过不去哦\r\n</translation>");
         Check(
             "section router handles CRLF, case-insensitive sentinel, and strips pseudo XML tags",
-            string.Concat(crlfCaseDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "ここは通[とお]れないよ" &&
-            string.Concat(crlfCaseDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "这里过不去哦");
+            caseSource == "ここは通[とお]れないよ" && caseTranslation == "这里过不去哦");
 
         // 现行视觉 Base 提示词声明的协议形态必须能被路由层无损拆分（提示词与路由层不得漂移）
-        var visionProtocolRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
-        var visionProtocolDeltas = visionProtocolRouter
-            .Push("""
-<transcribed_text>
-ここは通れないよ
-</transcribed_text>
----TRANSLATION---
-<translation>
-我是学生。
-</translation>
-""")
-            .Concat(visionProtocolRouter.Complete())
-            .ToList();
+        var (protocolSource, protocolTranslation) = RouteChunks(
+            StreamChannelMode.Segmenter,
+            """
+            <transcribed_text>
+            ここは通れないよ
+            </transcribed_text>
+            ---TRANSLATION---
+            <translation>
+            我是学生。
+            </translation>
+            """);
         Check(
             "section router splits the exact two-part shape declared by the default vision prompt",
-            string.Concat(visionProtocolDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text)) == "ここは通れないよ" &&
-            string.Concat(visionProtocolDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "我是学生。");
+            protocolSource == "ここは通れないよ" && protocolTranslation == "我是学生。");
 
         var immediateStreamRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
         _ = immediateStreamRouter.Push("原文\n---TRANSLATION---\n").ToList();
@@ -619,80 +612,57 @@ internal static partial class SelfTest
             "section router completes sentinel match and streams translation seamlessly",
             string.Concat(continuationDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "我是学生。");
 
-        var tagLeakProtectionRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
-        var leakTestDeltas = tagLeakProtectionRouter
-            .Push("<transcribed_text>\r\nここは通れないよ。")
-            .Concat(tagLeakProtectionRouter.Push("\r\n</transcribed_text>\r\n"))
-            .Concat(tagLeakProtectionRouter.Push("---TRANSLATION---\r\n<translation>\r\n我是学生。\r\n</translation>"))
-            .Concat(tagLeakProtectionRouter.Complete())
-            .ToList();
-        var leakedSource = string.Concat(leakTestDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text));
-        var leakedTrans = string.Concat(leakTestDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text));
+        var (leakSource, leakTranslation) = RouteChunks(
+            StreamChannelMode.Segmenter,
+            "<transcribed_text>\r\nここは通れないよ。",
+            "\r\n</transcribed_text>\r\n",
+            "---TRANSLATION---\r\n<translation>\r\n我是学生。\r\n</translation>");
         Check(
             "section router strictly prevents any pseudo XML closing tags from leaking into source channel",
-            !leakedSource.Contains("</transcribed_text>") &&
-            !leakedSource.Contains("<transcribed_text>") &&
-            leakedSource == "ここは通れないよ。" &&
-            leakedTrans == "我是学生。");
+            !leakSource.Contains("</transcribed_text>") &&
+            !leakSource.Contains("<transcribed_text>") &&
+            leakSource == "ここは通れないよ。" &&
+            leakTranslation == "我是学生。");
 
-        var bracketTagAndExplanationLeakRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
-        var bracketTestDeltas = bracketTagAndExplanationLeakRouter
-            .Push("[transcribed_text]\n亡なくなった\n[/transcribed_text]\n---TRANSLATION---\n<translation>\n逝去了\n</translation>\n\n### [词汇/短语]\n- 亡くなる：逝世")
-            .Concat(bracketTagAndExplanationLeakRouter.Complete())
-            .ToList();
-        var bracketSource = string.Concat(bracketTestDeltas.Where(delta => delta.Channel == DeltaChannel.SourceText).Select(delta => delta.Text));
-        var bracketTrans = string.Concat(bracketTestDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text));
+        var (bracketSource, bracketTranslation) = RouteChunks(
+            StreamChannelMode.Segmenter,
+            "[transcribed_text]\n亡なくなった\n[/transcribed_text]\n---TRANSLATION---\n<translation>\n逝去了\n</translation>\n\n### [词汇/短语]\n- 亡くなる：逝世");
         Check(
             "section router strips square bracket tags, trailing </translation> and truncates rogue explanation markdown",
             !bracketSource.Contains("[transcribed_text]") &&
             !bracketSource.Contains("[/transcribed_text]") &&
             bracketSource == "亡なくなった" &&
-            !bracketTrans.Contains("</translation>") &&
-            !bracketTrans.Contains("###") &&
-            bracketTrans == "逝去了");
+            !bracketTranslation.Contains("</translation>") &&
+            !bracketTranslation.Contains("###") &&
+            bracketTranslation == "逝去了");
 
-        var rogueHeaderRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
-        var rogueHeaderDeltas = rogueHeaderRouter
-            .Push("<transcribed_text>\n新歓で気が大きくなってしまう話\n</transcribed_text>\n---TRANSLATION---\n在迎新活动中变得胆大妄为的故事\n\n## 深度精讲拆解\n- 新歓：迎新活动")
-            .Concat(rogueHeaderRouter.Complete())
-            .ToList();
-        var rogueTrans = string.Concat(rogueHeaderDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text));
+        var (rogueSource, rogueTranslation) = RouteChunks(
+            StreamChannelMode.Segmenter,
+            "<transcribed_text>\n新歓で気が大きくなってしまう話\n</transcribed_text>\n---TRANSLATION---\n在迎新活动中变得胆大妄为的故事\n\n## 深度精讲拆解\n- 新歓：迎新活动");
         Check(
             "section router truncates ## 深度精讲拆解 and rogue explanation sections from translation channel",
-            !rogueTrans.Contains("## 深度精讲拆解") &&
-            !rogueTrans.Contains("新歓") &&
-            rogueTrans == "在迎新活动中变得胆大妄为的故事");
+            !rogueTranslation.Contains("## 深度精讲拆解") &&
+            !rogueTranslation.Contains("新歓") &&
+            rogueTranslation == "在迎新活动中变得胆大妄为的故事");
 
-        var longPureTranslationRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
-        var longPureDeltas = longPureTranslationRouter
-            .Push("这是一段非常长的纯译文，完全没有包含任何原文分段标记，长度肯定超过了三十二个字符的安全窗口预算。")
-            .Concat(longPureTranslationRouter.Complete())
-            .ToList();
+        var (longSource, longTranslation) = RouteChunks(StreamChannelMode.Segmenter, "这是一段非常长的纯译文，完全没有包含任何原文分段标记，长度肯定超过了三十二个字符的安全窗口预算。");
         Check(
             "section router preserves long pure translation without sentinel as translation channel without premature source flush",
-            string.Concat(longPureDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "这是一段非常长的纯译文，完全没有包含任何原文分段标记，长度肯定超过了三十二个字符的安全窗口预算。" &&
-            !longPureDeltas.Any(delta => delta.Channel == DeltaChannel.SourceText));
+            longSource.Length == 0 &&
+            longTranslation == "这是一段非常长的纯译文，完全没有包含任何原文分段标记，长度肯定超过了三十二个字符的安全窗口预算。");
 
-        var bracketPureTranslationRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
-        var bracketPureDeltas = bracketPureTranslationRouter
-            .Push("这是【限量版】[原创]周边商品，制作非常方便。")
-            .Concat(bracketPureTranslationRouter.Complete())
-            .ToList();
+        var (pureBracketSource, pureBracketTranslation) = RouteChunks(StreamChannelMode.Segmenter, "这是【限量版】[原创]周边商品，制作非常方便。");
         Check(
             "section router does not confuse bracketed words in pure translation with ruby annotations",
-            string.Concat(bracketPureDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "这是【限量版】[原创]周边商品，制作非常方便。" &&
-            !bracketPureDeltas.Any(delta => delta.Channel == DeltaChannel.SourceText));
+            pureBracketSource.Length == 0 &&
+            pureBracketTranslation == "这是【限量版】[原创]周边商品，制作非常方便。");
 
         // ── 直通：文本路径只回译文，哨兵也只是译文里的字面量 ────
-        var passthroughRouter = new SectionChannelRouter(StreamChannelMode.Passthrough);
-        var passthroughDeltas = passthroughRouter
-            .Push("私[わたし]は\n---TRANSLATION---\n我是学生。")
-            .Concat(passthroughRouter.Complete())
-            .ToList();
+        var (passthroughSource, passthroughTranslation) = RouteChunks(StreamChannelMode.Passthrough, "私[わたし]は\n---TRANSLATION---\n我是学生。");
         Check(
             "passthrough router keeps the sentinel as literal translation text without opening a source channel",
-            passthroughDeltas.All(delta => delta.Channel == DeltaChannel.Translation) &&
-            string.Concat(passthroughDeltas.Select(delta => delta.Text)) == "私[わたし]は\n---TRANSLATION---\n我是学生。");
+            passthroughSource.Length == 0 &&
+            passthroughTranslation == "私[わたし]は\n---TRANSLATION---\n我是学生。");
 
         // 直通路径的实时性：译文增量立即流出，不做任何原文特征的挂起等待
         var passthroughStreamRouter = new SectionChannelRouter(StreamChannelMode.Passthrough);
@@ -704,15 +674,11 @@ internal static partial class SelfTest
             string.Concat(passthroughChunks.Select(delta => delta.Text)) == "这是一段译文");
 
         // 直通路径仍守住两道守门：思考链越界截断 + 噪声标签剥离
-        var passthroughGuardRouter = new SectionChannelRouter(StreamChannelMode.Passthrough);
-        var passthroughGuardDeltas = passthroughGuardRouter
-            .Push("【译文】\n这里过不去哦。\n\n### [词汇/短语]\n- 通れない：不能通过")
-            .Concat(passthroughGuardRouter.Complete())
-            .ToList();
+        var (guardSource, guardTranslation) = RouteChunks(StreamChannelMode.Passthrough, "【译文】\n这里过不去哦。\n\n### [词汇/短语]\n- 通れない：不能通过");
         Check(
             "passthrough router strips translation noise labels and truncates rogue explanation sections",
-            passthroughGuardDeltas.All(delta => delta.Channel == DeltaChannel.Translation) &&
-            string.Concat(passthroughGuardDeltas.Select(delta => delta.Text)) == "这里过不去哦。");
+            guardSource.Length == 0 && guardTranslation == "这里过不去哦。");
+
     }
 
     /// <summary>
@@ -1054,83 +1020,53 @@ internal static partial class SelfTest
     private static void TestThinkingStreamSanitizer()
     {
         // 1. 基础隔离：单 chunk 内包含完整 <think> 思考链
-        var sanitizer = new ThinkingStreamSanitizer();
-        var outputs = sanitizer.Push("<think>思考词性与语法</think>私[わたし]は 学生[がくせい]です。").ToList();
-        var clean = string.Concat(outputs.Select(o => o.CleanText));
-        var thinking = string.Concat(outputs.Select(o => o.ThinkingText));
+        var (inlineClean, inlineThinking) = SanitizeChunks("<think>思考词性与语法</think>私[わたし]は 学生[がくせい]です。");
         Check(
             "ThinkingStreamSanitizer separates full inline <think> tags into thinking and clean text",
-            clean == "私[わたし]は 学生[がくせい]です。" &&
-            thinking == "思考词性与语法");
+            inlineClean == "私[わたし]は 学生[がくせい]です。" &&
+            inlineThinking == "思考词性与语法");
 
         // 2. 跨 chunk 标签拆分（<thi + nk> 与 </thi + nk>）
-        var chunkSanitizer = new ThinkingStreamSanitizer();
-        var c1 = chunkSanitizer.Push("<thi").ToList();
-        var c2 = chunkSanitizer.Push("nk>深度思考中").ToList();
-        var c3 = chunkSanitizer.Push("</thi").ToList();
-        var c4 = chunkSanitizer.Push("nk>\n你好世界").ToList();
-        var allChunks = c1.Concat(c2).Concat(c3).Concat(c4).ToList();
-        var chunkClean = string.Concat(allChunks.Select(o => o.CleanText));
-        var chunkThinking = string.Concat(allChunks.Select(o => o.ThinkingText));
+        var (chunkClean, chunkThinking) = SanitizeChunks("<thi", "nk>深度思考中", "</thi", "nk>\n你好世界");
         Check(
             "ThinkingStreamSanitizer buffers cross-chunk open and close tags correctly",
             chunkClean == "你好世界" &&
             chunkThinking == "深度思考中");
 
         // 3. 思考流异常中断未闭合：不向干净正文通道泄漏任何字符
-        var unclosedSanitizer = new ThinkingStreamSanitizer();
-        var u1 = unclosedSanitizer.Push("<think>未完成的思考").ToList();
-        var uComplete = unclosedSanitizer.Complete().ToList();
-        var unclosedClean = string.Concat(u1.Concat(uComplete).Select(o => o.CleanText));
-        var unclosedThinking = string.Concat(u1.Concat(uComplete).Select(o => o.ThinkingText));
+        var (unclosedClean, unclosedThinking) = SanitizeChunks("<think>未完成的思考");
         Check(
             "ThinkingStreamSanitizer preserves unclosed thinking content and never leaks to clean channel",
             string.IsNullOrEmpty(unclosedClean) &&
             unclosedThinking == "未完成的思考");
 
         // 4. 思考内部包含 '<' 符号（如 1 < 2）不被误判为闭标签
-        var mathSanitizer = new ThinkingStreamSanitizer();
-        var m1 = mathSanitizer.Push("<think>比较 1 < 2 与 3 > 2</think>正文").ToList();
-        var mathClean = string.Concat(m1.Select(o => o.CleanText));
-        var mathThinking = string.Concat(m1.Select(o => o.ThinkingText));
+        var (mathClean, mathThinking) = SanitizeChunks("<think>比较 1 < 2 与 3 > 2</think>正文");
         Check(
             "ThinkingStreamSanitizer tolerates less-than signs inside thinking block",
             mathClean == "正文" &&
             mathThinking == "比较 1 < 2 与 3 > 2");
 
         // 5. 非思考标签前缀退回（如 <annotated_source>）原样输出为干净正文
-        var normalSanitizer = new ThinkingStreamSanitizer();
-        var n1 = normalSanitizer.Push("<annotated_source>原文</annotated_source>").ToList();
-        var normalClean = string.Concat(n1.Select(o => o.CleanText));
-        var normalThinking = string.Concat(n1.Select(o => o.ThinkingText));
+        var (normalClean, normalThinking) = SanitizeChunks("<annotated_source>原文</annotated_source>");
         Check(
             "ThinkingStreamSanitizer passes through non-thinking xml tags as clean text",
             normalClean == "<annotated_source>原文</annotated_source>" &&
             string.IsNullOrEmpty(normalThinking));
 
         // 6. 孤立闭合标签（如以 </think> 开头的模型流）静默吞除，且吞掉随后的换行符
-        var isolatedCloseSanitizer = new ThinkingStreamSanitizer();
-        var iso1 = isolatedCloseSanitizer.Push("</think>\n\n你好世界").ToList();
-        var isoClean = string.Concat(iso1.Select(o => o.CleanText));
-        var isoThinking = string.Concat(iso1.Select(o => o.ThinkingText));
+        var (isolatedClean, isolatedThinking) = SanitizeChunks("</think>\n\n你好世界");
         Check(
             "ThinkingStreamSanitizer silently swallows isolated close tag and trailing newlines",
-            isoClean == "你好世界" &&
-            string.IsNullOrEmpty(isoThinking));
+            isolatedClean == "你好世界" &&
+            string.IsNullOrEmpty(isolatedThinking));
 
         // 7. 跨 chunk 切分的孤立闭合标签（如 </thi + nk> + \n\n + 纯译文）
-        var splitCloseSanitizer = new ThinkingStreamSanitizer();
-        var sc1 = splitCloseSanitizer.Push("</thi").ToList();
-        var sc2 = splitCloseSanitizer.Push("nk>\n\n").ToList();
-        var sc3 = splitCloseSanitizer.Push("纯译文内容").ToList();
-        var scComplete = splitCloseSanitizer.Complete().ToList();
-        var scAll = sc1.Concat(sc2).Concat(sc3).Concat(scComplete).ToList();
-        var scClean = string.Concat(scAll.Select(o => o.CleanText));
-        var scThinking = string.Concat(scAll.Select(o => o.ThinkingText));
+        var (splitCloseClean, splitCloseThinking) = SanitizeChunks("</thi", "nk>\n\n", "纯译文内容");
         Check(
             "ThinkingStreamSanitizer handles cross-chunk isolated close tag and newlines cleanly",
-            scClean == "纯译文内容" &&
-            string.IsNullOrEmpty(scThinking));
+            splitCloseClean == "纯译文内容" &&
+            string.IsNullOrEmpty(splitCloseThinking));
 
         // 8. 结合 SectionChannelRouter 验证孤立闭合标签不破坏纯译文 fallback
         var router = new SectionChannelRouter(StreamChannelMode.Passthrough);
@@ -1145,97 +1081,104 @@ internal static partial class SelfTest
             string.Concat(allDeltas.Select(d => d.Text)) == "这是纯译文结果。");
     }
 
+    /// <summary>
+    /// 各 Provider 的思考参数接线：官方端点与第三方兼容端点口径不同（reasoning_effort / enable_thinking / thinking.type），
+    /// Claude 关闭时严禁下发 thinking，Gemini 把 thinkingBudget 收在 generationConfig 内。
+    /// 「构造 Provider → 发请求 → 解析请求体」的重复动作收敛为四个本地函数。
+    /// </summary>
     private static void TestProviderThinkingParameters()
     {
         var request = new UnderstandRequest(UnderstandKind.Translate, "测试", null, "zh-CN");
 
+        JsonDocument ParseBody(HttpRequestMessage message) =>
+            JsonDocument.Parse(message.Content!.ReadAsStringAsync().Result);
+
+        JsonDocument OpenAiCompletions(ProviderProfile profile) =>
+            ParseBody(new OpenAiProvider(profile, "key", new PromptConfig()).CreateCompletionsRequest(request));
+
+        JsonDocument OpenAiResponses(ProviderProfile profile) =>
+            ParseBody(new OpenAiProvider(profile, "key", new PromptConfig()).CreateResponsesRequest(request));
+
+        JsonDocument ClaudeBody(ProviderProfile profile) =>
+            ParseBody(new ClaudeProvider(profile, "key", new PromptConfig()).CreateRequest(request));
+
+        JsonDocument GeminiBody(ProviderProfile profile) =>
+            ParseBody(new GeminiProvider(profile, "key", new PromptConfig()).CreateRequest(request));
+
         // 1. 官方 OpenAI端点：completions 模式
-        var officialProfileOff = new ProviderProfile
+        using var offDoc = OpenAiCompletions(new ProviderProfile
         {
             Id = "openai-official",
             BaseUrl = "https://api.openai.com/v1",
             Model = "gpt-4o",
             EnableThinking = false,
-        };
-        var officialProviderOff = new OpenAiProvider(officialProfileOff, "key", new PromptConfig());
-        using var offMsg = officialProviderOff.CreateCompletionsRequest(request);
-        using var offDoc = JsonDocument.Parse(offMsg.Content!.ReadAsStringAsync().Result);
+        });
         Check(
             "Official OpenAI with EnableThinking=false does not inject enable_thinking or reasoning_effort",
             !offDoc.RootElement.TryGetProperty("enable_thinking", out _) &&
             !offDoc.RootElement.TryGetProperty("reasoning_effort", out _));
 
-        var officialProfileOnO1 = new ProviderProfile
+        using var onO1Doc = OpenAiCompletions(new ProviderProfile
         {
             Id = "openai-o1",
             BaseUrl = "https://api.openai.com/v1",
             Model = "o1-mini",
             EnableThinking = true,
-        };
-        var officialProviderOnO1 = new OpenAiProvider(officialProfileOnO1, "key", new PromptConfig());
-        using var onO1Msg = officialProviderOnO1.CreateCompletionsRequest(request);
-        using var onO1Doc = JsonDocument.Parse(onO1Msg.Content!.ReadAsStringAsync().Result);
+        });
         Check(
             "Official OpenAI with EnableThinking=true and o1 model injects reasoning_effort=low but never enable_thinking",
             !onO1Doc.RootElement.TryGetProperty("enable_thinking", out _) &&
             onO1Doc.RootElement.GetProperty("reasoning_effort").GetString() == "low");
 
         // 2. 官方 OpenAI端点：responses 模式
-        var responsesProfile = new ProviderProfile
+        using var respDoc = OpenAiResponses(new ProviderProfile
         {
             Id = "openai-resp",
             ApiType = "responses",
             BaseUrl = "https://api.openai.com/v1",
             Model = "o3-mini",
             EnableThinking = true,
-        };
-        var responsesProvider = new OpenAiProvider(responsesProfile, "key", new PromptConfig());
-        using var respMsg = responsesProvider.CreateResponsesRequest(request);
-        using var respDoc = JsonDocument.Parse(respMsg.Content!.ReadAsStringAsync().Result);
+        });
         Check(
             "OpenAI Responses API with EnableThinking=true injects reasoning object and never enable_thinking",
             !respDoc.RootElement.TryGetProperty("enable_thinking", out _) &&
             respDoc.RootElement.GetProperty("reasoning").GetProperty("effort").GetString() == "low");
 
         // 3. 第三方兼容端点（如 SiliconFlow / Qwen / DeepSeek）
-        var compatProfileOff = new ProviderProfile
+        using var compatOffDoc = OpenAiCompletions(new ProviderProfile
         {
             Id = "compat-off",
             BaseUrl = "https://api.siliconflow.cn/v1",
             Model = "Qwen/Qwen2.5-7B",
             EnableThinking = false,
-        };
-        var compatProviderOff = new OpenAiProvider(compatProfileOff, "key", new PromptConfig());
-        using var compatOffMsg = compatProviderOff.CreateCompletionsRequest(request);
-        using var compatOffDoc = JsonDocument.Parse(compatOffMsg.Content!.ReadAsStringAsync().Result);
+        });
         Check(
             "OpenAI compatible provider with EnableThinking=false injects enable_thinking=false and thinking.type=disabled",
             compatOffDoc.RootElement.GetProperty("enable_thinking").GetBoolean() == false &&
             compatOffDoc.RootElement.GetProperty("thinking").GetProperty("type").GetString() == "disabled");
 
-        var compatProfileOn = new ProviderProfile
+        using var compatOnDoc = OpenAiCompletions(new ProviderProfile
         {
             Id = "compat-on",
             BaseUrl = "https://api.siliconflow.cn/v1",
             Model = "deepseek-ai/DeepSeek-R1",
             EnableThinking = true,
-        };
-        var compatProviderOn = new OpenAiProvider(compatProfileOn, "key", new PromptConfig());
-        using var compatOnMsg = compatProviderOn.CreateCompletionsRequest(request);
-        using var compatOnDoc = JsonDocument.Parse(compatOnMsg.Content!.ReadAsStringAsync().Result);
+        });
         Check(
             "OpenAI compatible provider with EnableThinking=true injects enable_thinking=true and thinking.type=enabled",
             compatOnDoc.RootElement.GetProperty("enable_thinking").GetBoolean() == true &&
             compatOnDoc.RootElement.GetProperty("thinking").GetProperty("type").GetString() == "enabled");
 
         // 3.1 Homura 模型提示词直译对齐测试
-        var homuraProfile = new ProviderProfile
-        {
-            Id = "homura-test",
-            BaseUrl = "https://index-translate.bilibili.com/v1",
-            Model = "index-homura-9b",
-        };
-        var homuraProvider = new OpenAiProvider(homuraProfile, "key", new PromptConfig());
+        var homuraProvider = new OpenAiProvider(
+            new ProviderProfile
+            {
+                Id = "homura-test",
+                BaseUrl = "https://index-translate.bilibili.com/v1",
+                Model = "index-homura-9b",
+            },
+            "key",
+            new PromptConfig());
         var homuraRequest = new UnderstandRequest(UnderstandKind.Translate, "オリジナルグッズが簡単につくれるサービスです。", null, "中文（简体）");
         using var homuraMsg = homuraProvider.CreateCompletionsRequest(homuraRequest);
         using var homuraDoc = JsonDocument.Parse(homuraMsg.Content!.ReadAsStringAsync().Result);
@@ -1247,60 +1190,48 @@ internal static partial class SelfTest
             homuraSystemContent.Contains("直接输出翻译结果"));
 
         // 4. Claude Provider：关闭时严禁下发 thinking，开启时注入 budget_tokens
-        var claudeProfileOff = new ProviderProfile
+        using var claudeOffDoc = ClaudeBody(new ProviderProfile
         {
             Id = "claude-off",
             BaseUrl = "https://api.anthropic.com",
             Model = "claude-3-5-sonnet-20241022",
             EnableThinking = false,
-        };
-        var claudeProviderOff = new ClaudeProvider(claudeProfileOff, "key", new PromptConfig());
-        using var claudeOffMsg = claudeProviderOff.CreateRequest(request);
-        using var claudeOffDoc = JsonDocument.Parse(claudeOffMsg.Content!.ReadAsStringAsync().Result);
+        });
         Check(
             "Claude provider with EnableThinking=false completely omits thinking parameter to avoid 400 rejection",
             !claudeOffDoc.RootElement.TryGetProperty("thinking", out _));
 
-        var claudeProfileOn = new ProviderProfile
+        using var claudeOnDoc = ClaudeBody(new ProviderProfile
         {
             Id = "claude-on",
             BaseUrl = "https://api.anthropic.com",
             Model = "claude-3-7-sonnet-20250219",
             EnableThinking = true,
-        };
-        var claudeProviderOn = new ClaudeProvider(claudeProfileOn, "key", new PromptConfig());
-        using var claudeOnMsg = claudeProviderOn.CreateRequest(request);
-        using var claudeOnDoc = JsonDocument.Parse(claudeOnMsg.Content!.ReadAsStringAsync().Result);
+        });
         Check(
             "Claude provider with EnableThinking=true injects enabled thinking with budget_tokens 1024",
             claudeOnDoc.RootElement.GetProperty("thinking").GetProperty("type").GetString() == "enabled" &&
             claudeOnDoc.RootElement.GetProperty("thinking").GetProperty("budget_tokens").GetInt32() == 1024);
 
         // 5. Gemini Provider：嵌套在 generationConfig 内
-        var geminiProfileOff = new ProviderProfile
+        using var geminiOffDoc = GeminiBody(new ProviderProfile
         {
             Id = "gemini-off",
             BaseUrl = "https://generativelanguage.googleapis.com/v1beta",
             Model = "gemini-2.0-flash",
             EnableThinking = false,
-        };
-        var geminiProviderOff = new GeminiProvider(geminiProfileOff, "key", new PromptConfig());
-        using var geminiOffMsg = geminiProviderOff.CreateRequest(request);
-        using var geminiOffDoc = JsonDocument.Parse(geminiOffMsg.Content!.ReadAsStringAsync().Result);
+        });
         Check(
             "Gemini provider with EnableThinking=false nests thinkingBudget=0 inside generationConfig",
             geminiOffDoc.RootElement.GetProperty("generationConfig").GetProperty("thinkingConfig").GetProperty("thinkingBudget").GetInt32() == 0);
 
-        var geminiProfileOn = new ProviderProfile
+        using var geminiOnDoc = GeminiBody(new ProviderProfile
         {
             Id = "gemini-on",
             BaseUrl = "https://generativelanguage.googleapis.com/v1beta",
             Model = "gemini-2.0-flash",
             EnableThinking = true,
-        };
-        var geminiProviderOn = new GeminiProvider(geminiProfileOn, "key", new PromptConfig());
-        using var geminiOnMsg = geminiProviderOn.CreateRequest(request);
-        using var geminiOnDoc = JsonDocument.Parse(geminiOnMsg.Content!.ReadAsStringAsync().Result);
+        });
         Check(
             "Gemini provider with EnableThinking=true nests thinkingBudget=-1 inside generationConfig",
             geminiOnDoc.RootElement.GetProperty("generationConfig").GetProperty("thinkingConfig").GetProperty("thinkingBudget").GetInt32() == -1);

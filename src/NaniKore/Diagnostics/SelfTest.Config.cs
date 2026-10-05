@@ -17,15 +17,28 @@ internal static partial class SelfTest
         TestProfileRenameKeepsSecret();
     }
 
+    /// <summary>临时配置目录开箱即用：4 个配置回写用例反复手写 Path.Combine + try/finally，收敛成一个执行体。</summary>
+    private static void WithTempConfigDirectory(Action<string> body)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"NaniKore-self-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            body(directory);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     /// <summary>
     /// 注音配置（issue 008 Phase 2）：缺省 phonetics 段的旧配置必须回落「开 + 仅难词」双 true
     /// （与 AnnotationProfile.Load 默认口径一致）；显示关闭的配置要原样读写，克隆不丢字段。
     /// </summary>
     private static void TestPhoneticsConfigDefaultsAndRoundTrip()
     {
-        var directory = Path.Combine(Path.GetTempPath(), $"NaniKore-self-test-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(directory);
-        try
+        WithTempConfigDirectory(directory =>
         {
             File.WriteAllText(Path.Combine(directory, "config.yaml"), """
                 version: 0.2.11
@@ -54,11 +67,7 @@ internal static partial class SelfTest
                 "phonetics switches survive cloner round-trip",
                 reloaded.Current.Phonetics.Enabled &&
                 !reloaded.Current.Phonetics.RareOnly);
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        });
     }
 
     /// <summary>
@@ -67,9 +76,7 @@ internal static partial class SelfTest
     /// </summary>
     private static void TestEmptyPromptKeysSurviveRewrite()
     {
-        var directory = Path.Combine(Path.GetTempPath(), $"NaniKore-self-test-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(directory);
-        try
+        WithTempConfigDirectory(directory =>
         {
             File.WriteAllText(Path.Combine(directory, "config.yaml"), """
                 version: 0.2.11
@@ -108,11 +115,7 @@ internal static partial class SelfTest
                 rewritten.Contains("  explain: ", StringComparison.Ordinal) &&
                 rewritten.Contains("  translate_clipboard: ", StringComparison.Ordinal) &&
                 !rewritten.Contains("prompts: {}", StringComparison.Ordinal));
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        });
     }
 
     /// <summary>
@@ -122,9 +125,7 @@ internal static partial class SelfTest
     /// </summary>
     private static void TestLegacyVisionOneshotKeyIsIgnored()
     {
-        var directory = Path.Combine(Path.GetTempPath(), $"NaniKore-self-test-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(directory);
-        try
+        WithTempConfigDirectory(directory =>
         {
             File.WriteAllText(Path.Combine(directory, "config.yaml"), """
                 version: 0.2.11
@@ -145,18 +146,12 @@ internal static partial class SelfTest
                 "legacy vision_oneshot key is dropped on rewrite instead of being resurrected as vision_base",
                 !rewritten.Contains("vision_oneshot", StringComparison.Ordinal) &&
                 rewritten.Contains("vision_base", StringComparison.Ordinal));
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        });
     }
 
     private static void TestConfigRoundTrip()
     {
-        var directory = Path.Combine(Path.GetTempPath(), $"NaniKore-self-test-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(directory);
-        try
+        WithTempConfigDirectory(directory =>
         {
             File.WriteAllText(Path.Combine(directory, "config.yaml"), """
                 version: 0.1.1
@@ -266,11 +261,7 @@ internal static partial class SelfTest
                 !unsupported.Current.General.AutoTranslate &&
                 unsupported.Current.General.TargetLanguage == "中文（简体）" &&
                 File.ReadAllText(Path.Combine(directory, "config.yaml")).Contains("translation:", StringComparison.Ordinal));
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        });
     }
 
     private static void TestAboutPageDisplaysProductVersion()

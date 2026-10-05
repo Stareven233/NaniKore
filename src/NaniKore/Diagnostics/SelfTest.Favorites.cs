@@ -7,7 +7,7 @@ using NaniKore.Favorites;
 
 internal static partial class SelfTest
 {
-    public static void RunFavoritesTests()
+    private static void RunFavoritesTests()
     {
         Console.WriteLine("--- Running SQLite Favorites Tests ---");
 
@@ -52,6 +52,20 @@ internal static partial class SelfTest
         }
     }
 
+    /// <summary>以临时库路径执行用例：建库前先清残留、用完即删，省去每个用例重复 try/finally。</summary>
+    private static void WithTempDatabasePath(Action<string> body)
+    {
+        var path = NewTempDatabasePath();
+        try
+        {
+            body(path);
+        }
+        finally
+        {
+            DeleteDatabaseQuietly(path);
+        }
+    }
+
     private static FavoriteItem MakeFavorite(string content, string category = "单词", string? note = null)
     {
         return new FavoriteItem { Category = category, Content = content, Note = note };
@@ -59,8 +73,7 @@ internal static partial class SelfTest
 
     private static void TestSqliteLazyInitialization()
     {
-        var path = NewTempDatabasePath();
-        try
+        WithTempDatabasePath(path =>
         {
             var service = new SqliteFavoriteService(path);
             // 惰性初始化：未发生任何收藏动作前，库文件不得被创建。
@@ -69,17 +82,12 @@ internal static partial class SelfTest
             Check("SqliteFavorites.Lazy.IsFavoritedFalse", !service.IsFavorited("通る"));
             Check("SqliteFavorites.Lazy.RemoveFalse", !service.RemoveFavoriteAsync("通る").Result);
             Check("SqliteFavorites.Lazy.NoFileAfterReads", !File.Exists(path));
-        }
-        finally
-        {
-            DeleteDatabaseQuietly(path);
-        }
+        });
     }
 
     private static void TestSqliteAddGetIsFavorited()
     {
-        var path = NewTempDatabasePath();
-        try
+        WithTempDatabasePath(path =>
         {
             var service = new SqliteFavoriteService(path);
             var added = service.AddFavoriteAsync(MakeFavorite("通る", "单词", "读音: とおる\n释义: 通过、走过。")).Result;
@@ -95,17 +103,12 @@ internal static partial class SelfTest
             Check("SqliteFavorites.Add.CreatedAtRecent", Math.Abs((DateTimeOffset.Now - all[0].CreatedAt).TotalMinutes) < 5);
             Check("SqliteFavorites.Add.IdAssigned", all[0].Id > 0);
             Check("SqliteFavorites.Add.IsFavorited", service.IsFavorited("通る", "单词"));
-        }
-        finally
-        {
-            DeleteDatabaseQuietly(path);
-        }
+        });
     }
 
     private static void TestSqliteCaseAndWhitespaceMatching()
     {
-        var path = NewTempDatabasePath();
-        try
+        WithTempDatabasePath(path =>
         {
             var service = new SqliteFavoriteService(path);
             service.AddFavoriteAsync(MakeFavorite("Apple", "单词")).Wait();
@@ -114,17 +117,12 @@ internal static partial class SelfTest
             Check("SqliteFavorites.Matching.CaseInsensitive", service.IsFavorited("apple"));
             Check("SqliteFavorites.Matching.TrimsInput", service.IsFavorited("  Apple  "));
             Check("SqliteFavorites.Matching.TrimmedStore", service.GetAllFavorites()[0].Content == "Apple");
-        }
-        finally
-        {
-            DeleteDatabaseQuietly(path);
-        }
+        });
     }
 
     private static void TestSqliteCategoryScopedMatching()
     {
-        var path = NewTempDatabasePath();
-        try
+        WithTempDatabasePath(path =>
         {
             var service = new SqliteFavoriteService(path);
             service.AddFavoriteAsync(MakeFavorite("～ない", "语法")).Wait();
@@ -132,17 +130,12 @@ internal static partial class SelfTest
             Check("SqliteFavorites.Category.SameCategoryHit", service.IsFavorited("～ない", "语法"));
             Check("SqliteFavorites.Category.OtherCategoryMiss", !service.IsFavorited("～ない", "单词"));
             Check("SqliteFavorites.Category.UnscopedHit", service.IsFavorited("～ない"));
-        }
-        finally
-        {
-            DeleteDatabaseQuietly(path);
-        }
+        });
     }
 
     private static void TestSqliteEvents()
     {
-        var path = NewTempDatabasePath();
-        try
+        WithTempDatabasePath(path =>
         {
             var service = new SqliteFavoriteService(path);
             var addCount = 0;
@@ -158,17 +151,12 @@ internal static partial class SelfTest
             Check("SqliteFavorites.Events.AddFired", addCount == 1);
             Check("SqliteFavorites.Events.RemoveFired", removeCount == 1);
             Check("SqliteFavorites.Events.BlankIgnored", service.GetAllFavorites().Count == 0);
-        }
-        finally
-        {
-            DeleteDatabaseQuietly(path);
-        }
+        });
     }
 
     private static void TestSqlitePersistenceAcrossInstances()
     {
-        var path = NewTempDatabasePath();
-        try
+        WithTempDatabasePath(path =>
         {
             var writer = new SqliteFavoriteService(path);
             writer.AddFavoriteAsync(MakeFavorite("学生", "单词", "读音: がくせい")).Wait();
@@ -180,17 +168,12 @@ internal static partial class SelfTest
             Check("SqliteFavorites.Persist.Count", all.Count == 2);
             Check("SqliteFavorites.Persist.IsFavorited", reader.IsFavorited("学生", "单词"));
             Check("SqliteFavorites.Persist.NoteRoundtrip", all.Any(x => x.Content == "学生" && x.Note == "读音: がくせい"));
-        }
-        finally
-        {
-            DeleteDatabaseQuietly(path);
-        }
+        });
     }
 
     private static void TestSqliteUpsertSemantics()
     {
-        var path = NewTempDatabasePath();
-        try
+        WithTempDatabasePath(path =>
         {
             var service = new SqliteFavoriteService(path);
             service.AddFavoriteAsync(MakeFavorite("通る", "单词", "读音: とおる")).Wait();
@@ -199,17 +182,12 @@ internal static partial class SelfTest
             var all = service.GetAllFavorites();
             Check("SqliteFavorites.Upsert.SingleRow", all.Count == 1);
             Check("SqliteFavorites.Upsert.NoteUpdated", all[0].Note!.Contains("动词原形"));
-        }
-        finally
-        {
-            DeleteDatabaseQuietly(path);
-        }
+        });
     }
 
     private static void TestSqliteRemove()
     {
-        var path = NewTempDatabasePath();
-        try
+        WithTempDatabasePath(path =>
         {
             var service = new SqliteFavoriteService(path);
             service.AddFavoriteAsync(MakeFavorite(" eat ", "短语")).Wait();
@@ -219,34 +197,24 @@ internal static partial class SelfTest
             Check("SqliteFavorites.Remove.EmptyAfter", service.GetAllFavorites().Count == 0);
             Check("SqliteFavorites.Remove.IsFavoritedFalse", !service.IsFavorited(" eat "));
             Check("SqliteFavorites.Remove.SecondRemoveFalse", !service.RemoveFavoriteAsync("eat").Result);
-        }
-        finally
-        {
-            DeleteDatabaseQuietly(path);
-        }
+        });
     }
 
     private static void TestSqliteRejectsBlankContent()
     {
-        var path = NewTempDatabasePath();
-        try
+        WithTempDatabasePath(path =>
         {
             var service = new SqliteFavoriteService(path);
             var added = service.AddFavoriteAsync(MakeFavorite("")).Result;
 
             Check("SqliteFavorites.Blank.Rejected", !added);
             Check("SqliteFavorites.Blank.NoFile", !File.Exists(path));
-        }
-        finally
-        {
-            DeleteDatabaseQuietly(path);
-        }
+        });
     }
 
     private static void TestSqliteNormalizedMatchingAndStorage()
     {
-        var path = NewTempDatabasePath();
-        try
+        WithTempDatabasePath(path =>
         {
             var service = new SqliteFavoriteService(path);
 
@@ -273,11 +241,7 @@ internal static partial class SelfTest
             Check("SqliteFavorites.Normalize.CategoryScopeStillWorks",
                 service.IsFavorited("～ない", "语法") && !service.IsFavorited("～ない", "单词"));
             Check("SqliteFavorites.Normalize.CategoryScopeNormalizedHit", service.IsFavorited("～ない[ない]", "语法"));
-        }
-        finally
-        {
-            DeleteDatabaseQuietly(path);
-        }
+        });
 
         // 归一化函数直断：IPA、代码下标、行首标签、全角括号汉字一律不得误剥。
         Check("FavoriteNormalizer.IpaUntouched", FavoriteContentNormalizer.Normalize("ubiquitous[juːˈbɪkwɪtəs]") == "ubiquitous[juːˈbɪkwɪtəs]");
@@ -329,8 +293,7 @@ internal static partial class SelfTest
 
     private static void TestSqliteLegacyLanguageColumnMigration()
     {
-        var path = NewTempDatabasePath();
-        try
+        WithTempDatabasePath(path =>
         {
             // 手工构造旧 schema（无 language 列）的库并塞一行历史收藏，模拟主人现网旧库。
             using (var connection = new SqliteConnection($"Data Source={path}"))
@@ -370,17 +333,12 @@ internal static partial class SelfTest
             // 迁移幂等：重新打开不再重复 ALTER，数据不丢。
             var reopened = new SqliteFavoriteService(path);
             Check("SqliteFavorites.Migrate.IdempotentReopen", reopened.GetAllFavorites().Count == 2);
-        }
-        finally
-        {
-            DeleteDatabaseQuietly(path);
-        }
+        });
     }
 
     private static void TestSqliteUpdateFavorite()
     {
-        var path = NewTempDatabasePath();
-        try
+        WithTempDatabasePath(path =>
         {
             var service = new SqliteFavoriteService(path);
             service.AddFavoriteAsync(MakeFavorite("通る", "单词", "读音: とおる")).Wait();
@@ -414,10 +372,6 @@ internal static partial class SelfTest
             Check("SqliteFavorites.Update.BlankRejected", !service.UpdateFavoriteAsync(conflict).Result);
             Check("SqliteFavorites.Update.UnknownIdRejected",
                 !service.UpdateFavoriteAsync(new FavoriteItem { Id = 99999, Content = "x" }).Result);
-        }
-        finally
-        {
-            DeleteDatabaseQuietly(path);
-        }
+        });
     }
 }

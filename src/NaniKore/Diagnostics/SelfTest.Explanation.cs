@@ -1,13 +1,11 @@
-namespace NaniKore.Diagnostics;
-
-using System;
-using System.Threading.Tasks;
 using NaniKore.Favorites;
 using NaniKore.Translation;
 
+namespace NaniKore.Diagnostics;
+
 internal static partial class SelfTest
 {
-    public static void RunExplanationTests()
+    private static void RunExplanationTests()
     {
         Console.WriteLine("--- Running Explanation & Favorites Tests ---");
 
