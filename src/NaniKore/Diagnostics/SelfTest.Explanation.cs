@@ -295,7 +295,7 @@ internal static partial class SelfTest
         Check(
             "Prompt.Explain.ListLineContractWithGeneralizedDifficulty",
             PromptTemplates.DefaultExplainUserPrompt.Contains("- **词汇** |") &&
-            PromptTemplates.DefaultExplainUserPrompt.Contains("- **句型** |") &&
+            PromptTemplates.DefaultExplainUserPrompt.Contains("- 句型 |") &&
             PromptTemplates.DefaultExplainUserPrompt.Contains("严禁输出 Markdown 表格") &&
             PromptTemplates.DefaultExplainUserPrompt.Contains("中高级难度") &&
             !PromptTemplates.DefaultExplainUserPrompt.Contains("CET-6") &&

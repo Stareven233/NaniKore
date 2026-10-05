@@ -1,11 +1,13 @@
-﻿param(
+param(
     [ValidateSet('build', 'run', 'test', 'publish')]
     [string]$Command = 'build',
 
     [ValidateSet('build', 'publish')]
     [string]$Launch,
 
-    [switch]$Full
+    [switch]$Full,
+
+    [switch]$ForceBump
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,6 +46,61 @@ function Get-NaniKoreProductVersion {
     }
 
     return $version
+}
+
+function Test-NaniKoreSourceChanged {
+    param(
+        [Parameter(Mandatory)]
+        [string]$OutputExecutable,
+
+        [Parameter(Mandatory)]
+        [string]$RootDirectory
+    )
+
+    $outputAssembly = Join-Path (Split-Path -Parent $OutputExecutable) 'NaniKore.dll'
+    $targetFile = if (Test-Path -LiteralPath $outputAssembly -PathType Leaf) { $outputAssembly } else { $OutputExecutable }
+    if (-not (Test-Path -LiteralPath $targetFile -PathType Leaf)) {
+        return $true
+    }
+
+    $lastBuildTime = (Get-Item -LiteralPath $targetFile).LastWriteTimeUtc
+
+    # 1. 检查源码与目录是否有修改时间晚于上次构建产物
+    $sourceDir = Join-Path $RootDirectory 'src'
+    $newerItem = Get-ChildItem -LiteralPath $sourceDir -Recurse |
+        Where-Object {
+            $_.FullName -notmatch '[\\/](bin|obj)([\\/]|$)' -and
+            $_.LastWriteTimeUtc -gt $lastBuildTime
+        } |
+        Select-Object -First 1
+
+    if ($null -ne $newerItem) {
+        return $true
+    }
+
+    # 2. 检查工程定义与工具链全局配置
+    foreach ($file in @('NaniKore.slnx', 'global.json', 'NuGet.config')) {
+        $path = Join-Path $RootDirectory $file
+        if ((Test-Path -LiteralPath $path -PathType Leaf) -and ((Get-Item -LiteralPath $path).LastWriteTimeUtc -gt $lastBuildTime)) {
+            return $true
+        }
+    }
+
+    # 3. 检查 HEAD 最近提交是否有晚于构建产物的提交（覆盖 pull/rebase 场景）
+    try {
+        $ct = & git log -1 --format=%ct HEAD -- src/ 2>$null
+        if ($LASTEXITCODE -eq 0 -and $ct) {
+            $commitTime = [DateTimeOffset]::FromUnixTimeSeconds([int64]$ct).UtcDateTime
+            if ($commitTime -gt $lastBuildTime) {
+                return $true
+            }
+        }
+    }
+    catch {
+        # Git 探测失败时不阻塞，以文件系统时间戳为准
+    }
+
+    return $false
 }
 
 function Set-NaniKoreOnnxRuntimeLinks {
@@ -268,10 +325,15 @@ Push-Location -LiteralPath $root
 try {
     switch ($Command) {
         'build' {
-            # 构建前自动递增 build 版本号；发布流程不触发该更新，避免改变发行包版本。
-            & python (Join-Path $root 'scripts\update_version.py') --bump build
-            if ($LASTEXITCODE -ne 0) {
-                throw "Failed to update the product version."
+            # 仅在源码发生变动或显式指定 -ForceBump 时递增 build 版本号，避免重复构建无谓更新配置
+            if ($ForceBump -or (Test-NaniKoreSourceChanged -OutputExecutable $debugExecutable -RootDirectory $root)) {
+                & python (Join-Path $root 'scripts\update_version.py') --bump build
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Failed to update the product version."
+                }
+            }
+            else {
+                Write-Host 'Code unchanged; skipping product version bump.'
             }
 
             & $dotnet build $solution --configuration Debug -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
