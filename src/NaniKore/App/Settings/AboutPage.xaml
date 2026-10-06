@@ -20,13 +20,15 @@
                 <TextBlock x:Name="DescriptionText"
                            Style="{DynamicResource Text.Caption}"
                            Margin="0,14,0,0" />
+                <!-- 版本差提示（issue 017 C 期）：仅提示，没有按钮、没有自动动作。 -->
+                <controls:InfoBar x:Name="VersionMismatchBar" Margin="0,10,0,0" />
             </StackPanel>
         </controls:SettingsGroup>
 
         <controls:SettingsGroup Header="隐私">
             <StackPanel Margin="12,10">
                 <TextBlock Style="{DynamicResource Text.Caption}"
-                           Text="API Key 仅以当前 Windows 用户的 DPAPI 密文保存在本机，不会写入 config.yaml，也不会随配置模板提交。" />
+                           Text="API Key 仅以当前 Windows 用户的 DPAPI 密文保存在本机 .data\keys.bin，不会写入 config.yaml，也不会随配置模板提交。" />
                 <TextBlock Style="{DynamicResource Text.Caption}"
                            Margin="0,6,0,0"
                            Text="local_ocr 流程下选区图像只在内存中传给本地模型；vision_oneshot 流程会把选区图像上传给所选服务商。" />

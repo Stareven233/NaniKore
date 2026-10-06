@@ -95,6 +95,19 @@
                         <Button x:Name="TestButton" Margin="8,0,0,0" Content="测试连接" MinWidth="92" />
                     </StackPanel>
                 </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <!--
+                    数据目录（issue 017）：配置、密钥与收藏库全部收拢在程序目录 .data 下，位置唯一不可改。
+                    这里只做只读展示 + 一键定位 + 单档密钥清除，不再提供任何目录重定向。
+                -->
+                <controls:SettingsRow Header="数据目录"
+                                      Description="配置、密钥与收藏库都保存在程序目录的 .data 下；备份整个软件只需复制该目录。">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBox x:Name="DataDirectoryBox" Width="280" IsReadOnly="True" />
+                        <Button x:Name="OpenDataDirectoryButton" Margin="8,0,0,0" Content="打开目录" MinWidth="80" />
+                        <Button x:Name="ClearSecretButton" Margin="8,0,0,0" Content="清除当前配置档密钥" />
+                    </StackPanel>
+                </controls:SettingsRow>
                 <StackPanel Margin="12,0,12,10">
                     <controls:InfoBar x:Name="TestStatus" />
                 </StackPanel>

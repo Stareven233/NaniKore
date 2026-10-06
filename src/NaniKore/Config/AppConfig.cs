@@ -46,7 +46,8 @@ internal sealed class PipelineConfig
     /// <summary>local_ocr 或 vision_oneshot。</summary>
     public string Mode { get; set; } = "local_ocr";
 
-    public string ActiveProfile { get; set; } = "openai-default";
+    /// <summary>激活配置档的 name（档名是唯一身份，issue 017：旧 id 索引已废除）。</summary>
+    public string ActiveProfile { get; set; } = ProviderProfileDefaults.DefaultActiveProfileName;
 }
 
 internal sealed class PhoneticsConfig
@@ -58,57 +59,67 @@ internal sealed class PhoneticsConfig
     public bool RareOnly { get; set; } = true;
 }
 
+/// <summary>
+/// 配置档缺省口径的唯一真相（issue 017）：运行期 <see cref="ProviderProfile"/> 的属性初值、
+/// 落盘省略判定与读盘兜底都引用这里，杜绝三处默认值各自漂移。
+/// </summary>
+internal static class ProviderProfileDefaults
+{
+    public const string Kind = "openai";
+    public const string ApiType = "completions";
+    public const bool SupportsVision = true;
+    public const bool EnableThinking = false;
+
+    /// <summary>没人愿意为一次翻译等 10 秒：统一 30 秒，官方默认档也不再显式写 60。</summary>
+    public const int TimeoutSeconds = 30;
+
+    /// <summary>三个官方默认档中第一个档的档名，同时是新配置激活档的缺省。</summary>
+    public const string DefaultActiveProfileName = "OpenAI 默认";
+}
+
 internal sealed class ProviderProfile
 {
-    /// <summary>稳定内部索引；用于活动配置档和 DPAPI 密钥文件名，用户不可编辑。</summary>
-    public string Id { get; set; } = "openai-default";
-
-    /// <summary>面向用户的可编辑显示名称。</summary>
+    /// <summary>面向用户的显示名称，同时是配置档的唯一身份：活动档、下拉、报错与密钥索引全部用它。</summary>
     public string Name { get; set; } = string.Empty;
 
     /// <summary>openai、claude 或 gemini。</summary>
-    public string Kind { get; set; } = "openai";
+    public string Kind { get; set; } = ProviderProfileDefaults.Kind;
 
     /// <summary>仅 OpenAI 使用：completions 或 responses。</summary>
-    public string ApiType { get; set; } = "completions";
+    public string ApiType { get; set; } = ProviderProfileDefaults.ApiType;
 
     public string BaseUrl { get; set; } = "https://api.openai.com/v1";
 
     public string Model { get; set; } = "gpt-4o-mini";
 
     /// <summary>由用户声明模型是否接受图像，不用内置模型名单猜测。</summary>
-    public bool SupportsVision { get; set; }
+    public bool SupportsVision { get; set; } = ProviderProfileDefaults.SupportsVision;
 
     /// <summary>是否启用模型思考链（Reasoning / Thinking）；默认关闭以追求快速响应与节省 Token。</summary>
-    public bool EnableThinking { get; set; }
+    public bool EnableThinking { get; set; } = ProviderProfileDefaults.EnableThinking;
 
-    public int TimeoutSeconds { get; set; } = 60;
+    public int TimeoutSeconds { get; set; } = ProviderProfileDefaults.TimeoutSeconds;
 
-    public static ProviderProfile CreateOpenAiDefault() => new() { Name = "OpenAI 默认" };
+    public static ProviderProfile CreateOpenAiDefault() => new() { Name = ProviderProfileDefaults.DefaultActiveProfileName };
 
     public static ProviderProfile CreateClaudeDefault() => new()
     {
-        Id = "claude-default",
         Name = "Claude 默认",
         Kind = "claude",
         BaseUrl = "https://api.anthropic.com",
         Model = "claude-haiku-4-5",
-        SupportsVision = true,
     };
 
     public static ProviderProfile CreateGeminiDefault() => new()
     {
-        Id = "gemini-default",
         Name = "Gemini 默认",
         Kind = "gemini",
         BaseUrl = "https://generativelanguage.googleapis.com/v1beta",
         Model = "gemini-2.0-flash",
-        SupportsVision = true,
     };
 
     public ProviderProfile Clone() => new()
     {
-        Id = Id,
         Name = Name,
         Kind = Kind,
         ApiType = ApiType,

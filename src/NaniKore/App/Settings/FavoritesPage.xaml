@@ -182,7 +182,7 @@
                        Foreground="{DynamicResource Brush.Text.Secondary}"
                        TextTrimming="CharacterEllipsis"
                        VerticalAlignment="Center"
-                       ToolTip="收藏保存在应用根目录的 nanikore.db：绿色便携，覆盖升级不丢数据；删除该文件后自动回到空态。点击右侧按钮可复制该路径。" />
+                       ToolTip="收藏保存在数据目录 .data 下的 collections.db：绿色便携，覆盖升级不丢数据；删除该文件后自动回到空态。点击右侧按钮可复制该路径。" />
             <Button x:Name="CopyPathButton"
                     Style="{DynamicResource Button.Icon}"
                     Width="26"

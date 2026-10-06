@@ -28,10 +28,10 @@
   </ItemGroup>
   <ItemGroup>
     <!--
-      本地计费配置文件，运行时按需覆盖模板；随包发布保证首次启动 AppContext.BaseDirectory 可读取，
-      确保 API Key 落 DPAPI 加密存储而非明文。
+      配置模板（issue 017）：随包发布，运行期只读；首启按字节原样复制到 程序目录\.data\config.yaml。
+      程序永不写本文件，用户配置与密钥全部落在 .data 下，解压覆盖碰不到它们。
     -->
-    <None Include="..\..\config.yaml" Link="config.yaml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\config.template.yaml" Link="config.template.yaml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />

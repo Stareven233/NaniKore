@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.RegularExpressions;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -7,27 +6,29 @@ namespace NaniKore.Config;
 
 /// <summary>
 /// 配置加载、默认值生成和原子写盘。运行期间内存配置是唯一真相，只有保存操作会写回磁盘。
+/// 面向数据目录（issue 017）：读 <c>.data/config.yaml</c>，缺失时从程序目录 <c>config.template.yaml</c>
+/// 按字节原样复制生成一份再读；已有时原样不动。模板目录可注入，未注入时用程序自己所在的文件夹。
 /// </summary>
 internal sealed class ConfigStore
 {
+    private static readonly IDeserializer Deserializer = new DeserializerBuilder()
+        .IgnoreUnmatchedProperties()
+        .WithNamingConvention(UnderscoredNamingConvention.Instance)
+        .Build();
+    private static readonly ISerializer Serializer = new SerializerBuilder()
+        .WithNamingConvention(UnderscoredNamingConvention.Instance)
+        .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
+        .Build();
     private readonly string _configPath;
-    private readonly IDeserializer _deserializer;
-    private readonly ISerializer _serializer;
-    private static readonly Regex ProfileIdPattern = new("^[A-Za-z0-9_-]+$", RegexOptions.CultureInvariant);
+    private readonly string _templatePath;
 
-    public ConfigStore(string configDir)
+    public ConfigStore(string dataDirectory, string? templateDirectory = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(configDir);
-        Directory.CreateDirectory(configDir);
-        _configPath = Path.Combine(configDir, "config.yaml");
-        _deserializer = new DeserializerBuilder()
-            .IgnoreUnmatchedProperties()
-            .WithNamingConvention(UnderscoredNamingConvention.Instance)
-            .Build();
-        _serializer = new SerializerBuilder()
-            .WithNamingConvention(UnderscoredNamingConvention.Instance)
-            .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
-            .Build();
+        ArgumentException.ThrowIfNullOrWhiteSpace(dataDirectory);
+        // 程序目录/.data 不可创建或不可写时明确失败（DataDirectoryUnavailableException），不回落别处。
+        AppPaths.EnsureWritableDataDirectory(dataDirectory);
+        _configPath = Path.Combine(dataDirectory, AppPaths.ConfigFileName);
+        _templatePath = Path.Combine(templateDirectory ?? AppContext.BaseDirectory, AppPaths.TemplateFileName);
         Current = Load();
     }
 
@@ -40,12 +41,13 @@ internal sealed class ConfigStore
 
     public ProviderProfile GetActiveProfile() => GetProfile(Current.Pipeline.ActiveProfile);
 
-    public ProviderProfile GetProfile(string id)
+    /// <summary>按档名查找；档名是配置档唯一身份（issue 017）。</summary>
+    public ProviderProfile GetProfile(string name)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
         return Current.Profiles.FirstOrDefault(profile =>
-                   string.Equals(profile.Id, id, StringComparison.OrdinalIgnoreCase))
-               ?? throw new InvalidOperationException($"找不到配置档“{id}”。");
+                   string.Equals(profile.Name, name, StringComparison.OrdinalIgnoreCase))
+               ?? throw new InvalidOperationException($"找不到配置档“{name}”。");
     }
 
     /// <summary>临时文件写完后再替换，避免崩溃留下半份 YAML。</summary>
@@ -53,26 +55,62 @@ internal sealed class ConfigStore
     {
         ArgumentNullException.ThrowIfNull(config);
         Normalize(config, reportWarnings: false);
-        var yaml = _serializer.Serialize(config);
+        // 写盘只走磁盘契约：缺省字段在此折叠成 null 并被序列器省略（4 行形态的唯一来源）。
+        var yaml = Serializer.Serialize(AppConfigDocument.ToDocument(config));
         var temporaryPath = _configPath + ".tmp";
         File.WriteAllText(temporaryPath, yaml, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         File.Move(temporaryPath, _configPath, overwrite: true);
         Current = config;
     }
 
+    /// <summary>
+    /// 单独读模板版本号（「关于」页的 A 段 = 最新版本）；模板缺失或不可解析返回 null，调用方按「不判定」处理。
+    /// </summary>
+    public static string? ReadTemplateVersion(string? templateDirectory = null)
+    {
+        var templatePath = Path.Combine(templateDirectory ?? AppContext.BaseDirectory, AppPaths.TemplateFileName);
+        try
+        {
+            if (!File.Exists(templatePath))
+            {
+                return null;
+            }
+
+            return Deserializer.Deserialize<AppConfigDocument>(File.ReadAllText(templatePath))?.Version;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or YamlDotNet.Core.YamlException)
+        {
+            // 模板不可读只影响版本差提示这类展示性功能，绝不阻断启动。
+            return null;
+        }
+    }
+
     private AppConfig Load()
     {
-        if (!File.Exists(_configPath))
+        if (File.Exists(_configPath))
         {
-            var defaults = new AppConfig();
-            AtomicWrite(defaults);
-            return defaults;
+            return ReadConfig();
         }
 
+        // 首启：模板按字节原样复制（File.Copy 不做文本编解码，注释与排版原样保留），之后再读这份副本。
+        if (TrySeedFromTemplate())
+        {
+            return ReadConfig();
+        }
+
+        // 模板也缺失（开发期异常）：写一份内置默认配置。
+        var defaults = new AppConfig();
+        AtomicWrite(defaults);
+        return defaults;
+    }
+
+    private AppConfig ReadConfig()
+    {
         try
         {
             var yaml = File.ReadAllText(_configPath);
-            var config = _deserializer.Deserialize<AppConfig>(yaml) ?? new AppConfig();
+            var document = Deserializer.Deserialize<AppConfigDocument>(yaml) ?? new AppConfigDocument();
+            var config = document.ToRuntime();
             Normalize(config, reportWarnings: true);
             return config;
         }
@@ -80,6 +118,26 @@ internal sealed class ConfigStore
         {
             LoadWarning = $"读取 config.yaml 失败，已使用默认配置：{exception.Message}";
             return new AppConfig();
+        }
+    }
+
+    /// <returns>true 表示已从模板生成 config.yaml；模板缺失或复制失败返回 false。</returns>
+    private bool TrySeedFromTemplate()
+    {
+        try
+        {
+            if (!File.Exists(_templatePath))
+            {
+                return false;
+            }
+
+            File.Copy(_templatePath, _configPath);
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            LoadWarning = $"从配置模板生成 config.yaml 失败，已使用默认配置：{exception.Message}";
+            return false;
         }
     }
 
@@ -132,21 +190,12 @@ internal sealed class ConfigStore
             normalized = true;
         }
 
-        var usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // 档名是唯一身份：缺名按位置生成占位名，重名追加 " (2)"（issue 017 起不再有 id 索引）。
         var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var profile in config.Profiles)
+        for (var index = 0; index < config.Profiles.Count; index++)
         {
-            profile.Id = profile.Id?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(profile.Id) || !ProfileIdPattern.IsMatch(profile.Id) || !usedIds.Add(profile.Id))
-            {
-                profile.Id = $"profile-{usedIds.Count + 1}";
-                usedIds.Add(profile.Id);
-                normalized = true;
-            }
-
-            // 旧配置缺少 name 时以原有 ID 作为显示名；重命名只改 Name，DPAPI 索引不受影响。
-            var originalName = profile.Name;
-            var baseName = string.IsNullOrWhiteSpace(profile.Name) ? profile.Id : profile.Name.Trim();
+            var profile = config.Profiles[index];
+            var baseName = string.IsNullOrWhiteSpace(profile.Name) ? $"配置档 {index + 1}" : profile.Name.Trim();
             var normalizedName = baseName;
             var suffix = 2;
             while (!usedNames.Add(normalizedName))
@@ -154,23 +203,23 @@ internal sealed class ConfigStore
                 normalizedName = $"{baseName} ({suffix++})";
             }
 
-            if (!string.Equals(originalName, normalizedName, StringComparison.Ordinal))
+            if (!string.Equals(profile.Name, normalizedName, StringComparison.Ordinal))
             {
                 profile.Name = normalizedName;
                 normalized = true;
             }
 
-            profile.Kind = profile.Kind?.Trim().ToLowerInvariant() ?? "openai";
+            profile.Kind = profile.Kind?.Trim().ToLowerInvariant() ?? ProviderProfileDefaults.Kind;
             if (profile.Kind is not ("openai" or "claude" or "gemini"))
             {
-                profile.Kind = "openai";
+                profile.Kind = ProviderProfileDefaults.Kind;
                 normalized = true;
             }
 
-            profile.ApiType = profile.ApiType?.Trim().ToLowerInvariant() ?? "completions";
+            profile.ApiType = profile.ApiType?.Trim().ToLowerInvariant() ?? ProviderProfileDefaults.ApiType;
             if (profile.ApiType is not ("completions" or "responses"))
             {
-                profile.ApiType = "completions";
+                profile.ApiType = ProviderProfileDefaults.ApiType;
                 normalized = true;
             }
 
@@ -193,14 +242,15 @@ internal sealed class ConfigStore
 
             if (profile.TimeoutSeconds is < 1 or > 600)
             {
-                profile.TimeoutSeconds = 60;
+                profile.TimeoutSeconds = ProviderProfileDefaults.TimeoutSeconds;
                 normalized = true;
             }
         }
 
-        if (!config.Profiles.Any(profile => string.Equals(profile.Id, config.Pipeline.ActiveProfile, StringComparison.OrdinalIgnoreCase)))
+        // active_profile 只按 name 匹配，不中则回落第一个档（既有不变量，不为旧 id 开特例）。
+        if (!config.Profiles.Any(profile => string.Equals(profile.Name, config.Pipeline.ActiveProfile, StringComparison.OrdinalIgnoreCase)))
         {
-            config.Pipeline.ActiveProfile = config.Profiles[0].Id;
+            config.Pipeline.ActiveProfile = config.Profiles[0].Name;
             normalized = true;
         }
 

@@ -1,6 +1,9 @@
+using System.Text;
 using NaniKore.App;
+using NaniKore.App.Controls;
 using NaniKore.App.Settings;
 using NaniKore.Config;
+using NaniKore.Favorites;
 
 namespace NaniKore.Diagnostics;
 
@@ -12,13 +15,42 @@ internal static partial class SelfTest
         TestEmptyPromptKeysSurviveRewrite();
         TestLegacyVisionOneshotKeyIsIgnored();
         TestPhoneticsConfigDefaultsAndRoundTrip();
-        TestAboutPageDisplaysProductVersion();
+        TestProfileDocumentOmitsDefaults();
+        TestProfileWithOnlyNameGetsDefaults();
+        TestConfigSeedsFromTemplateByteForByte();
+        TestDataDirectoryWritabilityRefusal();
+        TestSecretStoreKeysBinEnvelope();
+        TestSecretStoreIgnoresLegacyLayout();
+        TestSecretRenameMovesProfileKey();
+        TestConfigVersionComparator();
+        TestAboutPageDisplaysTemplateAndConfigVersions();
+        TestFavoritesDefaultDatabasePath();
         TestApplicationIconResource();
-        TestProfileRenameKeepsSecret();
     }
 
-    /// <summary>临时配置目录开箱即用：4 个配置回写用例反复手写 Path.Combine + try/finally，收敛成一个执行体。</summary>
-    private static void WithTempConfigDirectory(Action<string> body)
+    /// <summary>
+    /// 临时「数据目录 + 模板目录」开箱即用（issue 017）：配置用例必须能指定模板从哪个文件夹来，
+    /// 否则会顺手读到真程序目录里的 config.template.yaml，测出错误结果。
+    /// </summary>
+    private static void WithTempConfigDirectory(Action<string, string> body)
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"NaniKore-self-test-{Guid.NewGuid():N}");
+        var dataDirectory = Path.Combine(root, "data");
+        var templateDirectory = Path.Combine(root, "template");
+        Directory.CreateDirectory(dataDirectory);
+        Directory.CreateDirectory(templateDirectory);
+        try
+        {
+            body(dataDirectory, templateDirectory);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>临时密钥目录：自测一律注入临时目录，不再触碰真实 .data 与 %APPDATA%。</summary>
+    private static void WithTempSecretDirectory(Action<string> body)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"NaniKore-self-test-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -38,31 +70,31 @@ internal static partial class SelfTest
     /// </summary>
     private static void TestPhoneticsConfigDefaultsAndRoundTrip()
     {
-        WithTempConfigDirectory(directory =>
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
         {
-            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
                 version: 0.2.11
                 """);
-            var defaults = new ConfigStore(directory);
+            var defaults = new ConfigStore(dataDirectory, templateDirectory);
             Check(
                 "legacy config without phonetics section falls back to enabled + rare-only defaults",
                 defaults.Current.Phonetics.Enabled &&
                 defaults.Current.Phonetics.RareOnly &&
                 defaults.LoadWarning?.Contains("读取 config.yaml 失败", StringComparison.Ordinal) != true);
 
-            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
                 version: 0.2.11
                 phonetics:
                   enabled: false
                   rare_only: false
                 """);
-            var disabled = new ConfigStore(directory);
+            var disabled = new ConfigStore(dataDirectory, templateDirectory);
             Check(
                 "phonetics switches load as written",
                 !disabled.Current.Phonetics.Enabled && !disabled.Current.Phonetics.RareOnly);
             disabled.Current.Phonetics.Enabled = true;
             disabled.AtomicWrite(AppConfigCloner.Clone(disabled.Current));
-            var reloaded = new ConfigStore(directory);
+            var reloaded = new ConfigStore(dataDirectory, templateDirectory);
             Check(
                 "phonetics switches survive cloner round-trip",
                 reloaded.Current.Phonetics.Enabled &&
@@ -76,9 +108,9 @@ internal static partial class SelfTest
     /// </summary>
     private static void TestEmptyPromptKeysSurviveRewrite()
     {
-        WithTempConfigDirectory(directory =>
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
         {
-            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
                 version: 0.2.11
                 hotkeys:
                   capture: Ctrl+Shift+A
@@ -91,7 +123,7 @@ internal static partial class SelfTest
                   vision_base: ~
                   explain: ~
                 """);
-            var store = new ConfigStore(directory);
+            var store = new ConfigStore(dataDirectory, templateDirectory);
             Check(
                 "YAML null (~) prompt keys normalize to empty strings instead of staying null",
                 store.Current.Prompts.Base is { Length: 0 } &&
@@ -104,7 +136,7 @@ internal static partial class SelfTest
 
             // 模拟设置窗口未保存直接关闭：克隆打开时的快照后原样写盘（尺寸记忆路径）。
             store.AtomicWrite(AppConfigCloner.Clone(store.Current));
-            var rewritten = File.ReadAllText(Path.Combine(directory, "config.yaml"));
+            var rewritten = File.ReadAllText(Path.Combine(dataDirectory, "config.yaml"));
             Check(
                 "settings-close rewrite keeps every prompts sub-key instead of collapsing to {}",
                 rewritten.Contains("  base: ", StringComparison.Ordinal) &&
@@ -125,15 +157,15 @@ internal static partial class SelfTest
     /// </summary>
     private static void TestLegacyVisionOneshotKeyIsIgnored()
     {
-        WithTempConfigDirectory(directory =>
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
         {
-            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
                 version: 0.2.11
                 prompts:
                   vision_oneshot: '旧键：整段覆盖视觉提示词'
                   explain: ~
                 """);
-            var store = new ConfigStore(directory);
+            var store = new ConfigStore(dataDirectory, templateDirectory);
             Check(
                 "legacy vision_oneshot prompt key is ignored and falls back to the built-in vision base",
                 store.Current.Prompts.VisionBase is { Length: 0 } &&
@@ -141,7 +173,7 @@ internal static partial class SelfTest
                 store.LoadWarning?.Contains("读取 config.yaml 失败", StringComparison.Ordinal) != true);
 
             store.AtomicWrite(store.Current);
-            var rewritten = File.ReadAllText(Path.Combine(directory, "config.yaml"));
+            var rewritten = File.ReadAllText(Path.Combine(dataDirectory, "config.yaml"));
             Check(
                 "legacy vision_oneshot key is dropped on rewrite instead of being resurrected as vision_base",
                 !rewritten.Contains("vision_oneshot", StringComparison.Ordinal) &&
@@ -149,11 +181,336 @@ internal static partial class SelfTest
         });
     }
 
+    /// <summary>
+    /// 配置档 4 行形态（issue 017）：name / kind / base_url / model 恒落行，api_type /
+    /// supports_vision / timeout_seconds / enable_thinking 等于缺省即省略；显式非缺省值原样保留；
+    /// 保存一次后不会反弹成 8 行，写盘形态也不含已废弃的 id 键。
+    /// </summary>
+    private static void TestProfileDocumentOmitsDefaults()
+    {
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
+        {
+            var store = new ConfigStore(dataDirectory, templateDirectory);
+            store.AtomicWrite(store.Current);
+            var yaml = File.ReadAllText(Path.Combine(dataDirectory, "config.yaml"));
+            var profilesSection = ExtractSection(yaml, "profiles");
+            var profileLines = profilesSection
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Count(line => !line.StartsWith("profiles:", StringComparison.Ordinal));
+            Check(
+                "default profiles persist as exactly four lines each",
+                profileLines == 12 &&
+                !profilesSection.Contains("api_type", StringComparison.Ordinal) &&
+                !profilesSection.Contains("supports_vision", StringComparison.Ordinal) &&
+                !profilesSection.Contains("timeout_seconds", StringComparison.Ordinal) &&
+                !profilesSection.Contains("enable_thinking", StringComparison.Ordinal));
+            Check(
+                "persisted profiles carry no id key",
+                !yaml.Contains("id:", StringComparison.Ordinal));
+
+            // 显式非缺省值必须原样落行
+            var customized = store.Current;
+            customized.Profiles[0].ApiType = "responses";
+            customized.Profiles[0].SupportsVision = false;
+            customized.Profiles[0].TimeoutSeconds = 60;
+            customized.Profiles[0].EnableThinking = true;
+            store.AtomicWrite(customized);
+            var rewritten = File.ReadAllText(Path.Combine(dataDirectory, "config.yaml"));
+            Check(
+                "explicit non-default profile values are persisted verbatim",
+                rewritten.Contains("api_type: responses", StringComparison.Ordinal) &&
+                rewritten.Contains("supports_vision: false", StringComparison.Ordinal) &&
+                rewritten.Contains("timeout_seconds: 60", StringComparison.Ordinal) &&
+                rewritten.Contains("enable_thinking: true", StringComparison.Ordinal));
+
+            // 读回后再写一次：其余两个档的缺省字段重新省略，不会反弹成 8 行
+            var reloaded = new ConfigStore(dataDirectory, templateDirectory);
+            reloaded.AtomicWrite(reloaded.Current);
+            var secondPass = File.ReadAllText(Path.Combine(dataDirectory, "config.yaml"));
+            var secondProfiles = ExtractSection(secondPass, "profiles");
+            Check(
+                "resaving a loaded config does not bounce back to eight lines per profile",
+                secondProfiles
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Count(line => !line.StartsWith("profiles:", StringComparison.Ordinal)) == 16 &&
+                !secondProfiles.Contains("api_type: completions", StringComparison.Ordinal) &&
+                !secondProfiles.Contains("supports_vision: true", StringComparison.Ordinal) &&
+                !secondProfiles.Contains("timeout_seconds: 30", StringComparison.Ordinal) &&
+                !secondProfiles.Contains("enable_thinking: false", StringComparison.Ordinal) &&
+                secondProfiles.Contains("api_type: responses", StringComparison.Ordinal) &&
+                secondProfiles.Contains("timeout_seconds: 60", StringComparison.Ordinal));
+        });
+    }
+
+    /// <summary>只有 name 的配置档：读盘时按缺省口径补齐 kind/api_type/supports_vision/timeout。</summary>
+    private static void TestProfileWithOnlyNameGetsDefaults()
+    {
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
+        {
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
+                version: 0.2.11
+                profiles:
+                - name: 只有名字
+                """);
+            var store = new ConfigStore(dataDirectory, templateDirectory);
+            var profile = store.Current.Profiles.Single();
+            Check(
+                "a profile with only a name resolves the documented defaults",
+                profile.Name == "只有名字" &&
+                profile.Kind == "openai" &&
+                profile.ApiType == "completions" &&
+                profile.SupportsVision &&
+                !profile.EnableThinking &&
+                profile.TimeoutSeconds == 30 &&
+                profile.BaseUrl == "https://api.openai.com/v1" &&
+                profile.Model == "gpt-4o-mini");
+        });
+    }
+
+    /// <summary>
+    /// 首启从模板字节级复制（issue 017）：注释与排版原样保留；已存在 config.yaml 时绝不被覆盖；
+    /// 模板缺失时回落内置默认配置。
+    /// </summary>
+    private static void TestConfigSeedsFromTemplateByteForByte()
+    {
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
+        {
+            const string template = """
+                # 模板注释：首启复制后必须原样保留
+                version: 9.9.9
+                profiles:
+                - name: 模板档
+                  kind: claude
+                  base_url: https://template.example/v1
+                  model: template-model
+                """;
+            File.WriteAllText(Path.Combine(templateDirectory, "config.template.yaml"), template);
+
+            var store = new ConfigStore(dataDirectory, templateDirectory);
+            var seeded = File.ReadAllText(Path.Combine(dataDirectory, "config.yaml"));
+            Check(
+                "first launch copies the template byte for byte and keeps its comments",
+                seeded == template);
+            Check(
+                "the seeded config parses the template profiles",
+                store.Current.Profiles.Single().Name == "模板档" &&
+                store.Current.Profiles.Single().Kind == "claude" &&
+                store.Current.Version == "9.9.9");
+
+            // 已有配置：原样不动
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), "version: 1.2.3\n");
+            var reloaded = new ConfigStore(dataDirectory, templateDirectory);
+            Check(
+                "an existing config is never overwritten by the template",
+                reloaded.Current.Version == "1.2.3" &&
+                File.ReadAllText(Path.Combine(dataDirectory, "config.yaml")).Contains("1.2.3", StringComparison.Ordinal));
+        });
+
+        // 模板也缺失：写内置默认
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
+        {
+            var store = new ConfigStore(dataDirectory, templateDirectory);
+            Check(
+                "a missing template falls back to the built-in default config",
+                store.Current.Profiles.Count == 3 &&
+                store.Current.Pipeline.ActiveProfile == "OpenAI 默认" &&
+                File.Exists(Path.Combine(dataDirectory, "config.yaml")));
+        });
+    }
+
+    /// <summary>
+    /// 可写性拒绝路径（issue 017 决策 8）：数据目录不可创建/不可写时明确失败，不回落别处；
+    /// 探测文件不残留。
+    /// </summary>
+    private static void TestDataDirectoryWritabilityRefusal()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"NaniKore-self-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            // 用同名文件占住数据目录的位置：既建不了目录，也写不进文件。
+            var blocked = Path.Combine(root, AppPaths.DataDirectoryName);
+            File.WriteAllText(blocked, "not a directory");
+            Check(
+                "an unusable data directory refuses instead of falling back",
+                ThrowsDataDirectoryUnavailable(() => AppPaths.EnsureWritableDataDirectory(blocked)) &&
+                ThrowsDataDirectoryUnavailable(() => new ConfigStore(blocked)));
+
+            var usable = Path.Combine(root, "data");
+            AppPaths.EnsureWritableDataDirectory(usable);
+            Check(
+                "the write probe leaves nothing behind",
+                Directory.GetFiles(usable).Length == 0);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static bool ThrowsDataDirectoryUnavailable(Action action)
+    {
+        try
+        {
+            action();
+            return false;
+        }
+        catch (DataDirectoryUnavailableException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// keys.bin 信封（issue 017）：整块 DPAPI 密文、无明文；按档名 Save/Load 往返一致；
+    /// 整文件损坏时按「未配置」处理不抛；删除只掉对应键。
+    /// </summary>
+    private static void TestSecretStoreKeysBinEnvelope()
+    {
+        WithTempSecretDirectory(directory =>
+        {
+            var secrets = new SecretStore(directory);
+            secrets.Save("档 A", "key-alpha");
+            secrets.Save("档 B", "key-beta");
+            var bytes = File.ReadAllBytes(Path.Combine(directory, "keys.bin"));
+            var text = Encoding.UTF8.GetString(bytes);
+            Check(
+                "keys.bin stores only ciphertext without plaintext keys or profile names",
+                !text.Contains("key-alpha", StringComparison.Ordinal) &&
+                !text.Contains("key-beta", StringComparison.Ordinal) &&
+                !text.Contains("档 A", StringComparison.Ordinal) &&
+                !text.Contains("档 B", StringComparison.Ordinal));
+            Check(
+                "secrets round-trip per profile name",
+                secrets.Load("档 A") == "key-alpha" &&
+                secrets.Load("档 B") == "key-beta" &&
+                secrets.Exists("档 A") &&
+                !secrets.Exists("不存在的档"));
+
+            // 整文件损坏：整体按未配置处理，绝不泄露密文内容
+            File.WriteAllBytes(Path.Combine(directory, "keys.bin"), [1, 2, 3]);
+            Check(
+                "a corrupted keys.bin degrades to no secrets without throwing",
+                secrets.Load("档 A") is null && !secrets.Exists("档 A"));
+
+            secrets.Save("档 A", "key-alpha");
+            secrets.Save("档 B", "key-beta");
+            secrets.Delete("档 A");
+            Check(
+                "delete removes only the named entry",
+                secrets.Load("档 A") is null && secrets.Load("档 B") == "key-beta");
+        });
+    }
+
+    /// <summary>反向断言（零兼容）：旧布局 secrets\{id}.bin 一律不读，应用只认注入目录下的 keys.bin。</summary>
+    private static void TestSecretStoreIgnoresLegacyLayout()
+    {
+        WithTempSecretDirectory(directory =>
+        {
+            var legacyDirectory = Path.Combine(directory, "secrets");
+            Directory.CreateDirectory(legacyDirectory);
+            File.WriteAllBytes(Path.Combine(legacyDirectory, "openai-default.bin"), [9, 9, 9]);
+            var secrets = new SecretStore(directory);
+            Check(
+                "legacy per-profile secret files are never read",
+                secrets.Load("openai-default") is null && !secrets.Exists("openai-default"));
+        });
+    }
+
+    /// <summary>重命名配置档必须把密钥键名搬到新档名下，否则一改名 Key 就丢。</summary>
+    private static void TestSecretRenameMovesProfileKey()
+    {
+        WithTempSecretDirectory(directory =>
+        {
+            var secrets = new SecretStore(directory);
+            secrets.Save("旧档名", "secret-value");
+            secrets.Rename("旧档名", "新档名");
+            Check(
+                "rename moves the secret to the new profile name",
+                secrets.Load("新档名") == "secret-value" && secrets.Load("旧档名") is null);
+
+            secrets.Rename("不存在的档", "另一个档");
+            Check(
+                "renaming an unknown profile is a no-op",
+                secrets.Load("新档名") == "secret-value");
+        });
+    }
+
+    /// <summary>版本差判定（issue 017 C 期）：major/minor 不同才判落后；仅 build 段不同不判；任一侧不可解析不判。</summary>
+    private static void TestConfigVersionComparator()
+    {
+        Check(
+            "major or minor drift marks the config as behind the template",
+            ConfigVersionComparator.IsBehind("0.4.0", "0.3.9") &&
+            ConfigVersionComparator.IsBehind("1.0.0", "0.9.9") &&
+            ConfigVersionComparator.IsBehind("0.6.1", "0.5.2"));
+        Check(
+            "build-only drift never marks the config as behind",
+            !ConfigVersionComparator.IsBehind("0.4.0+7", "0.4.0+3") &&
+            !ConfigVersionComparator.IsBehind("0.4.0", "0.4.0") &&
+            !ConfigVersionComparator.IsBehind("0.4.0+build.12", "0.4.0"));
+        Check(
+            "unparseable versions are not judged",
+            !ConfigVersionComparator.IsBehind(null, "0.4.0") &&
+            !ConfigVersionComparator.IsBehind("0.4.0", null) &&
+            !ConfigVersionComparator.IsBehind("dev", "0.4.0") &&
+            !ConfigVersionComparator.IsBehind("0.4.0", "nightly"));
+    }
+
+    /// <summary>
+    /// 「关于」页版本号：宿主注入模板版本时显示 v{A}({B})（A=模板/最新，B=配置），
+    /// 缺注入只显示 B；版本差给常驻一行提示，版本一致或任一侧不可解析时不显示。
+    /// </summary>
+    private static void TestAboutPageDisplaysTemplateAndConfigVersions()
+    {
+        const string productVersion = "0.1.3+test.1";
+        var withoutTemplate = new AboutPage();
+        withoutTemplate.Load(new AppConfig { Version = productVersion });
+        Check(
+            "about page without a template provider shows only the config version",
+            withoutTemplate.DisplayText.Contains($"v{productVersion}", StringComparison.Ordinal) &&
+            !withoutTemplate.DisplayText.Contains('(') &&
+            (withoutTemplate.FindName("VersionMismatchBar") as InfoBar) is { IsOpen: false });
+
+        var behind = new AboutPage { TemplateVersionProvider = () => "0.4.0" };
+        behind.Load(new AppConfig { Version = "0.3.3" });
+        Check(
+            "about page shows template version (a) with config version (b)",
+            behind.DisplayText.Contains("v0.4.0(0.3.3)", StringComparison.Ordinal));
+        Check(
+            "about page keeps a persistent hint row when the config is behind",
+            behind.FindName("VersionMismatchBar") is InfoBar { IsOpen: true } mismatchBar &&
+            mismatchBar.Severity == InfoSeverity.Warning &&
+            mismatchBar.Message.Length > 0);
+
+        var current = new AboutPage { TemplateVersionProvider = () => "0.4.0" };
+        current.Load(new AppConfig { Version = "0.4.0" });
+        Check(
+            "about page hides the hint row when versions agree",
+            (current.FindName("VersionMismatchBar") as InfoBar) is { IsOpen: false });
+
+        var buildDrift = new AboutPage { TemplateVersionProvider = () => "0.4.0+9" };
+        buildDrift.Load(new AppConfig { Version = "0.4.0+2" });
+        Check(
+            "about page hides the hint row when only the build segment differs",
+            (buildDrift.FindName("VersionMismatchBar") as InfoBar) is { IsOpen: false });
+    }
+
+    /// <summary>收藏库改名搬家（issue 017）：nanikore.db → 数据目录下的 collections.db。</summary>
+    private static void TestFavoritesDefaultDatabasePath()
+    {
+        Check(
+            "collections database lives under the data directory",
+            SqliteFavoriteService.DatabaseFileName == "collections.db" &&
+            SqliteFavoriteService.DefaultDatabasePath ==
+            Path.Combine(AppContext.BaseDirectory, AppPaths.DataDirectoryName, "collections.db"));
+    }
+
     private static void TestConfigRoundTrip()
     {
-        WithTempConfigDirectory(directory =>
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
         {
-            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
                 version: 0.1.1
                 general:
                   auto_translate: true
@@ -163,7 +520,7 @@ internal static partial class SelfTest
                   mode: invalid-mode
                   active_profile: test
                 profiles:
-                  - id: test
+                  - name: test
                     kind: openai
                     api_type: completions
                     base_url: https://example.test/v1
@@ -181,7 +538,7 @@ internal static partial class SelfTest
                   vision_base: "Transcribe\n\n---\n\nTranslate into {{target_language}}."
                 unknown_field: ignored
                 """);
-            var store = new ConfigStore(directory);
+            var store = new ConfigStore(dataDirectory, templateDirectory);
             Check(
                 "YAML round-trip retains the manually maintained product version",
                 store.Current.Version == "0.1.1" &&
@@ -194,6 +551,7 @@ internal static partial class SelfTest
                 store.Current.General.AutoExplain &&
                 store.Current.General.TargetLanguage == "ja" &&
                 store.Current.Pipeline.Mode == "local_ocr" &&
+                store.Current.Pipeline.ActiveProfile == "test" &&
                 store.Current.Profiles.Single().TimeoutSeconds == 20 &&
                 store.Current.Profiles.Single().Name == "test" &&
                 store.Current.Prompts.Base == "Custom Base {{target_language}}" &&
@@ -202,9 +560,9 @@ internal static partial class SelfTest
                 store.Current.Prompts.ChinesePlugin == "Custom zh-CN" &&
                 store.Current.Prompts.VisionBase == "Transcribe\n\n---\n\nTranslate into {{target_language}}.");
             store.AtomicWrite(store.Current);
-            var reloaded = new ConfigStore(directory);
+            var reloaded = new ConfigStore(dataDirectory, templateDirectory);
             Check(
-                "YAML reload preserves generated display names and modular prompt fields",
+                "YAML reload preserves display names and modular prompt fields",
                 reloaded.Current.Profiles.Single().Model == "model-a" &&
                 reloaded.Current.Profiles.Single().Name == "test" &&
                 reloaded.Current.Prompts.Base == "Custom Base {{target_language}}" &&
@@ -219,30 +577,43 @@ internal static partial class SelfTest
                 AppConfigCloner.Clone(reloaded.Current).Prompts.JapanesePlugin == "Custom ja-JP" &&
                 AppConfigCloner.Clone(reloaded.Current).Prompts.VisionBase == "Transcribe\n\n---\n\nTranslate into {{target_language}}.");
 
-            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
+            // 档名唯一化：重名追加 " (2)"，活动档按 name 匹配
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
                 version: 1
                 pipeline:
-                  active_profile: work
+                  active_profile: 工作
                 profiles:
-                  - id: work
-                    name: 工作
+                  - name: 工作
                     kind: openai
                     base_url: https://work.example/v1
                     model: work-model
-                  - id: personal
-                    name: 工作
+                  - name: 工作
                     kind: gemini
                     base_url: https://personal.example/v1
                     model: personal-model
                 """);
-            var named = new ConfigStore(directory);
+            var named = new ConfigStore(dataDirectory, templateDirectory);
             Check(
-                "duplicate profile names normalize without changing stable IDs or active profile",
-                named.Current.Pipeline.ActiveProfile == "work" &&
-                named.Current.Profiles.Select(profile => profile.Id).SequenceEqual(["work", "personal"]) &&
+                "duplicate profile names normalize with a numeric suffix while the active profile stays by name",
+                named.Current.Pipeline.ActiveProfile == "工作" &&
                 named.Current.Profiles.Select(profile => profile.Name).SequenceEqual(["工作", "工作 (2)"]));
 
-            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
+            // 活动档不中任何档名：回落第一个档
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
+                version: 1
+                pipeline:
+                  active_profile: 旧 id 索引
+                profiles:
+                - name: 第一个
+                  base_url: https://first.example/v1
+                  model: first-model
+                """);
+            var missingActive = new ConfigStore(dataDirectory, templateDirectory);
+            Check(
+                "an unmatched active profile falls back to the first profile by name",
+                missingActive.Current.Pipeline.ActiveProfile == "第一个");
+
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
                 version: 0.1.3
                 translation:
                   active_profile: legacy
@@ -252,30 +623,38 @@ internal static partial class SelfTest
                       base_url: https://legacy.example/v1
                       model: legacy-model
                 """);
-            var unsupported = new ConfigStore(directory);
+            var unsupported = new ConfigStore(dataDirectory, templateDirectory);
             Check(
                 "unsupported early config format falls back without migration",
-                unsupported.Current.Pipeline.ActiveProfile == "openai-default" &&
+                unsupported.Current.Pipeline.ActiveProfile == "OpenAI 默认" &&
                 unsupported.Current.Profiles.Count == 3 &&
-                unsupported.Current.Profiles.All(profile => profile.Id != "legacy") &&
                 !unsupported.Current.General.AutoTranslate &&
                 unsupported.Current.General.TargetLanguage == "中文（简体）" &&
-                File.ReadAllText(Path.Combine(directory, "config.yaml")).Contains("translation:", StringComparison.Ordinal));
+                File.ReadAllText(Path.Combine(dataDirectory, "config.yaml")).Contains("translation:", StringComparison.Ordinal));
         });
     }
 
-    private static void TestAboutPageDisplaysProductVersion()
+    /// <summary>截取 YAML 顶层小节文本（从 「key:」 到下一个顶层键），供形态断言使用。</summary>
+    private static string ExtractSection(string yaml, string sectionName)
     {
-        const string productVersion = "0.1.3+test.1";
-        var page = new AboutPage();
-        page.Load(new AppConfig { Version = productVersion });
+        var lines = yaml.Split('\n');
+        var start = Array.FindIndex(lines, line => line.StartsWith($"{sectionName}:", StringComparison.Ordinal));
+        if (start < 0)
+        {
+            return string.Empty;
+        }
 
-        var description = page.DisplayText;
-        Check(
-            "about page displays the configured product version without a schema version",
-            description.Contains($"v{productVersion}", StringComparison.Ordinal) &&
-            !description.Contains("Schema", StringComparison.OrdinalIgnoreCase));
+        // 顶层键顶格且以字母开头；序列项（- name:）与缩进内容都属于当前小节。
+        var end = start + 1;
+        while (end < lines.Length && !IsTopLevelKey(lines[end]))
+        {
+            end++;
+        }
+
+        return string.Join('\n', lines[start..end]);
     }
+
+    private static bool IsTopLevelKey(string line) => line.Length > 0 && char.IsLetter(line[0]);
 
     private static void TestApplicationIconResource()
     {
@@ -284,24 +663,4 @@ internal static partial class SelfTest
             "application icon is loaded from the bundled NaniKore asset",
             icon.Width > 0 && icon.Height > 0);
     }
-
-    private static void TestProfileRenameKeepsSecret()
-    {
-        var profileId = $"self-test-{Guid.NewGuid():N}";
-        const string secret = "self-test-secret";
-        try
-        {
-            SecretStore.Save(profileId, secret);
-            var profile = new ProviderProfile { Id = profileId, Name = "原名称" };
-            profile.Name = "重命名后";
-            Check(
-                "profile rename keeps the stable DPAPI secret index",
-                profile.Id == profileId && SecretStore.Load(profile.Id) == secret);
-        }
-        finally
-        {
-            SecretStore.Delete(profileId);
-        }
-    }
 }
-

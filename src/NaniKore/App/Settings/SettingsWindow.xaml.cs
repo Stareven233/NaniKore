@@ -40,6 +40,7 @@ internal sealed partial class SettingsWindow : Window
         Func<IProgress<string>, CancellationToken, Task>? downloadDependencies = null,
         Func<string, IProgress<string>, CancellationToken, Task>? downloadPhoneticDictionary = null,
         IFavoriteService? favoriteService = null,
+        Func<string?>? templateVersion = null,
         SettingsTab initialTab = SettingsTab.General)
     {
         ArgumentNullException.ThrowIfNull(current);
@@ -64,7 +65,7 @@ internal sealed partial class SettingsWindow : Window
         var hotkeys = new HotkeyPage();
         // 录制期间必须临时注销已生效的全局热键，否则系统会把按键交给 NaniKore 自己的截图流程。
         hotkeys.RecordingChanged += (_, recording) => suspendGlobalHotkey?.Invoke(recording);
-        var about = new AboutPage();
+        var about = new AboutPage { TemplateVersionProvider = templateVersion };
         // 收藏页读应用级收藏服务（SQLite 持久化），不参与 AppConfig 编辑副本。
         var favorites = new FavoritesPage(favoriteService);
         _pages = [general, _translationPage, hotkeys, favorites, about];
@@ -148,7 +149,7 @@ internal sealed partial class SettingsWindow : Window
             page.Apply(_working);
         }
 
-        var active = _working.Profiles.First(profile => string.Equals(profile.Id, _working.Pipeline.ActiveProfile, StringComparison.OrdinalIgnoreCase));
+        var active = _working.Profiles.First(profile => string.Equals(profile.Name, _working.Pipeline.ActiveProfile, StringComparison.OrdinalIgnoreCase));
         if (string.Equals(_working.Pipeline.Mode, "vision_oneshot", StringComparison.OrdinalIgnoreCase) && !active.SupportsVision)
         {
             SelectPage(_translationPage);

@@ -5,35 +5,40 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.Data.Sqlite;
+using NaniKore.Config;
 
 /// <summary>
 /// 基于 SQLite 的持久化收藏服务（切片 5）。
-/// 数据库文件固定落在应用当前根目录的 <c>nanikore.db</c>，绿色便携、覆盖升级不丢数据；
-/// 采用惰性初始化：未发生任何收藏前不创建库文件，删除库文件后按空态继续工作。
+/// 数据库文件固定落在数据目录 <c>程序目录\.data\collections.db</c>（issue 017：本机数据全部收拢进 .data），
+/// 绿色便携、覆盖升级不丢数据；采用惰性初始化：未发生任何收藏前不创建库文件，删除库文件后按空态继续工作。
 /// 与 <see cref="InMemoryFavoriteService"/> 保持完全一致的操作语义（同内容大小写不敏感 upsert），
 /// 保证切片 4 的星标同步逻辑无需任何改动即可切换到持久化实现。
 /// SQLite 本地读写为毫秒级同步操作，接口的 Task 返回以已完成任务透出，避免无谓的线程切换。
 /// </summary>
 public sealed class SqliteFavoriteService : IFavoriteService
 {
-    /// <summary>数据库文件名：与 exe 同目录，随应用整体拷贝/备份。</summary>
-    public const string DatabaseFileName = "nanikore.db";
+    /// <summary>数据库文件名：与 exe 的 .data 数据目录同级，随应用整体拷贝/备份。</summary>
+    public const string DatabaseFileName = "collections.db";
 
     private readonly string _databasePath;
     private readonly string _connectionString;
 
     public SqliteFavoriteService(string? databasePath = null)
     {
-        // 默认路径取应用当前根目录；测试可注入临时路径以获得确定性隔离。
-        _databasePath = databasePath ?? Path.Combine(AppContext.BaseDirectory, DatabaseFileName);
+        // 默认路径取数据目录（.data）；测试可注入临时路径以获得确定性隔离。
+        _databasePath = databasePath ?? DefaultDatabasePath;
         // 显式关闭连接池：桌面单用户场景没有复用收益，而池化句柄会在连接释放后继续持有
-        // 库文件锁，导致用户手动替换/删除 nanikore.db 与测试清理时报“文件正被另一进程占用”。
+        // 库文件锁，导致用户手动替换/删除 collections.db 与测试清理时报“文件正被另一进程占用”。
         _connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = _databasePath,
             Pooling = false,
         }.ToString();
     }
+
+    /// <summary>收藏库的缺省绝对路径：数据目录下的 collections.db。</summary>
+    public static string DefaultDatabasePath =>
+        Path.Combine(AppContext.BaseDirectory, AppPaths.DataDirectoryName, DatabaseFileName);
 
     /// <summary>当前数据库文件的绝对路径（管理界面展示用）。</summary>
     public string DatabasePath => _databasePath;

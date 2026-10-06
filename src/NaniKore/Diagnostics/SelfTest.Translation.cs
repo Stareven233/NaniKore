@@ -960,7 +960,7 @@ internal static partial class SelfTest
             prompt == "system_test_prompt");
 
         // 3. 验证 OpenAI Provider 生成多轮 messages 数组，且首轮输入输出与首轮完全对齐
-        var openAiProfile = new ProviderProfile { Id = "openai", ApiType = "chat_completions", BaseUrl = "https://api.openai.com/v1", Model = "gpt-4o" };
+        var openAiProfile = new ProviderProfile { ApiType = "chat_completions", BaseUrl = "https://api.openai.com/v1", Model = "gpt-4o" };
         var openAiProvider = new OpenAiProvider(openAiProfile, "test_key", new PromptConfig());
         using var openAiCompletionsMsg = openAiProvider.CreateCompletionsRequest(stage2Request);
         using var openAiDoc = JsonDocument.Parse(openAiCompletionsMsg.Content!.ReadAsStringAsync().Result);
@@ -989,7 +989,7 @@ internal static partial class SelfTest
             openAiInputs[3].GetProperty("role").GetString() == "user");
 
         // 4. 验证 Claude Provider 生成多轮 messages（user / assistant / user）
-        var claudeProfile = new ProviderProfile { Id = "claude", ApiType = "messages", BaseUrl = "https://api.anthropic.com", Model = "claude-3-5-sonnet-20241022" };
+        var claudeProfile = new ProviderProfile { ApiType = "messages", BaseUrl = "https://api.anthropic.com", Model = "claude-3-5-sonnet-20241022" };
         var claudeProvider = new ClaudeProvider(claudeProfile, "test_key", new PromptConfig());
         using var claudeMsg = claudeProvider.CreateRequest(stage2Request);
         using var claudeDoc = JsonDocument.Parse(claudeMsg.Content!.ReadAsStringAsync().Result);
@@ -1003,7 +1003,7 @@ internal static partial class SelfTest
             claudeDoc.RootElement.GetProperty("messages")[2].GetProperty("role").GetString() == "user");
 
         // 5. 验证 Gemini Provider 生成 contents（user / model / user）
-        var geminiProfile = new ProviderProfile { Id = "gemini", ApiType = "gemini", BaseUrl = "https://generativelanguage.googleapis.com", Model = "gemini-1.5-pro" };
+        var geminiProfile = new ProviderProfile { ApiType = "gemini", BaseUrl = "https://generativelanguage.googleapis.com", Model = "gemini-1.5-pro" };
         var geminiProvider = new GeminiProvider(geminiProfile, "test_key", new PromptConfig());
         using var geminiMsg = geminiProvider.CreateRequest(stage2Request);
         using var geminiDoc = JsonDocument.Parse(geminiMsg.Content!.ReadAsStringAsync().Result);
@@ -1108,7 +1108,6 @@ internal static partial class SelfTest
         // 1. 官方 OpenAI端点：completions 模式
         using var offDoc = OpenAiCompletions(new ProviderProfile
         {
-            Id = "openai-official",
             BaseUrl = "https://api.openai.com/v1",
             Model = "gpt-4o",
             EnableThinking = false,
@@ -1120,7 +1119,6 @@ internal static partial class SelfTest
 
         using var onO1Doc = OpenAiCompletions(new ProviderProfile
         {
-            Id = "openai-o1",
             BaseUrl = "https://api.openai.com/v1",
             Model = "o1-mini",
             EnableThinking = true,
@@ -1133,7 +1131,6 @@ internal static partial class SelfTest
         // 2. 官方 OpenAI端点：responses 模式
         using var respDoc = OpenAiResponses(new ProviderProfile
         {
-            Id = "openai-resp",
             ApiType = "responses",
             BaseUrl = "https://api.openai.com/v1",
             Model = "o3-mini",
@@ -1147,7 +1144,6 @@ internal static partial class SelfTest
         // 3. 第三方兼容端点（如 SiliconFlow / Qwen / DeepSeek）
         using var compatOffDoc = OpenAiCompletions(new ProviderProfile
         {
-            Id = "compat-off",
             BaseUrl = "https://api.siliconflow.cn/v1",
             Model = "Qwen/Qwen2.5-7B",
             EnableThinking = false,
@@ -1159,7 +1155,6 @@ internal static partial class SelfTest
 
         using var compatOnDoc = OpenAiCompletions(new ProviderProfile
         {
-            Id = "compat-on",
             BaseUrl = "https://api.siliconflow.cn/v1",
             Model = "deepseek-ai/DeepSeek-R1",
             EnableThinking = true,
@@ -1173,7 +1168,6 @@ internal static partial class SelfTest
         var homuraProvider = new OpenAiProvider(
             new ProviderProfile
             {
-                Id = "homura-test",
                 BaseUrl = "https://index-translate.bilibili.com/v1",
                 Model = "index-homura-9b",
             },
@@ -1192,7 +1186,6 @@ internal static partial class SelfTest
         // 4. Claude Provider：关闭时严禁下发 thinking，开启时注入 budget_tokens
         using var claudeOffDoc = ClaudeBody(new ProviderProfile
         {
-            Id = "claude-off",
             BaseUrl = "https://api.anthropic.com",
             Model = "claude-3-5-sonnet-20241022",
             EnableThinking = false,
@@ -1203,7 +1196,6 @@ internal static partial class SelfTest
 
         using var claudeOnDoc = ClaudeBody(new ProviderProfile
         {
-            Id = "claude-on",
             BaseUrl = "https://api.anthropic.com",
             Model = "claude-3-7-sonnet-20250219",
             EnableThinking = true,
@@ -1216,7 +1208,6 @@ internal static partial class SelfTest
         // 5. Gemini Provider：嵌套在 generationConfig 内
         using var geminiOffDoc = GeminiBody(new ProviderProfile
         {
-            Id = "gemini-off",
             BaseUrl = "https://generativelanguage.googleapis.com/v1beta",
             Model = "gemini-2.0-flash",
             EnableThinking = false,
@@ -1227,7 +1218,6 @@ internal static partial class SelfTest
 
         using var geminiOnDoc = GeminiBody(new ProviderProfile
         {
-            Id = "gemini-on",
             BaseUrl = "https://generativelanguage.googleapis.com/v1beta",
             Model = "gemini-2.0-flash",
             EnableThinking = true,

@@ -7,36 +7,40 @@ namespace NaniKore.Translation;
 internal sealed class ProviderFactory : IDisposable
 {
     private readonly AppConfig _config;
+    private readonly SecretStore _secrets;
     private readonly Dictionary<string, ITranslationProvider> _providers = new(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
 
-    public ProviderFactory(AppConfig config)
+    /// <param name="secrets">密钥来源；缺省为数据目录下的 keys.bin，自测可注入临时目录。</param>
+    public ProviderFactory(AppConfig config, SecretStore? secrets = null)
     {
         _config = config;
+        _secrets = secrets ?? new SecretStore();
     }
 
-    public ITranslationProvider GetProvider(string profileId, UnderstandRequest request)
+    public ITranslationProvider GetProvider(string profileName, UnderstandRequest request)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        // 档名是配置档唯一身份（issue 017）：查找、缓存与密钥索引全部用它。
         var profile = _config.Profiles.FirstOrDefault(item =>
-            string.Equals(item.Id, profileId, StringComparison.OrdinalIgnoreCase))
-            ?? throw new ProviderConfigurationException($"找不到配置档“{profileId}”。");
+            string.Equals(item.Name, profileName, StringComparison.OrdinalIgnoreCase))
+            ?? throw new ProviderConfigurationException($"找不到配置档“{profileName}”。");
 
         var capabilities = GetCapabilities(profile);
         ValidateCapabilities(request, capabilities);
-        if (_providers.TryGetValue(profile.Id, out var existing))
+        if (_providers.TryGetValue(profile.Name, out var existing))
         {
             return existing;
         }
 
-        var apiKey = SecretStore.Load(profile.Id);
+        var apiKey = _secrets.Load(profile.Name);
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            throw new ProviderConfigurationException($"配置档“{profile.Id}”尚未设置可用的 API Key，请先打开设置保存密钥。");
+            throw new ProviderConfigurationException($"配置档“{profile.Name}”尚未设置可用的 API Key，请先打开设置保存密钥。");
         }
 
         var provider = CreateProvider(profile, apiKey, _config.Prompts);
-        _providers.Add(profile.Id, provider);
+        _providers.Add(profile.Name, provider);
         return provider;
     }
 

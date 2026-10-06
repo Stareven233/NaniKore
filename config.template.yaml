@@ -1,0 +1,49 @@
+# NaniKore 配置模板：程序永不写本文件。首次启动时把它按字节原样复制到「程序目录/.data/config.yaml」作为用户配置，
+# 之后只读写 .data 里的副本；已有 .data/config.yaml 时本文件怎么改都不影响运行。发布包同样只带本模板。
+# 每个配置档只需 name / kind / base_url / model 四行；api_type / supports_vision / timeout_seconds /
+# enable_thinking 只在偏离缺省（completions / true / 30 / false）时才需要写，保存一次设置也不会反弹成更多行
+# API Key 不写在这里：以当前 Windows 用户的 DPAPI 密文整体保存在 .data/keys.bin（内部是 {配置档名: API Key} 的 JSON）。
+version: 0.4.0
+general:
+  auto_translate: false
+  auto_explain: false
+  target_language: 中文（简体）
+pipeline:
+  mode: local_ocr
+  # mode: vision_oneshot
+  active_profile: OpenAI 默认
+profiles:
+  - name: OpenAI 默认
+    kind: openai
+    base_url: https://api.openai.com/v1
+    model: gpt-4o-mini
+    # api_type: completions
+    # supports_vision: false
+    # timeout_seconds: 30
+  - name: Claude 默认
+    kind: claude
+    base_url: https://api.anthropic.com
+    model: claude-haiku-4-5
+  - name: Gemini 默认
+    kind: gemini
+    base_url: https://generativelanguage.googleapis.com/v1beta
+    model: gemini-2.0-flash
+hotkeys:
+  capture: Ctrl+Shift+A
+  translate_clipboard: ''
+# 本地注音（词典本体不随配置分发，按语言在设置页下载到 deps/phonetics/）。
+phonetics:
+  enabled: true
+  rare_only: true
+windows:
+  settings_width: 1024
+  settings_height: 700
+prompts:
+  # 提示词键一律留空即回落内置默认模板，填入非空内容时以本文件为准。可用占位符 {{target_language}} 会展开为目标语言。
+  base: ~
+  japanese_plugin: ~
+  english_plugin: ~
+  chinese_plugin: ~
+  # 视觉 Base：单独组装成视觉链路的完整 system prompt。
+  vision_base: ~
+  explain: ~

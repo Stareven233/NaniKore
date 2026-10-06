@@ -11,8 +11,9 @@
 - 通过 ONNX Runtime 直接运行 PP-OCRv6-small，不依赖 Python、OpenCV 或外部 OCR 服务。
 - 支持 OpenAI、Claude、Gemini 协议的流式翻译配置，以及 `local_ocr`、`vision_oneshot` 两条输入管线。
 - 结果自动复制到剪贴板；设置、热键和 API Key 可在应用内管理。
-- 结果卡精讲与正文划词均可一键收藏进本地生词本：SQLite 持久化（`nanikore.db`），支持类别/语言/关键词筛选与就地编辑。
-- API Key 仅使用当前 Windows 用户的 DPAPI 保存，不会写入仓库或 `config.yaml`。
+- 结果卡精讲与正文划词均可一键收藏进本地生词本：SQLite 持久化（`.data/collections.db`），支持类别/语言/关键词筛选与就地编辑。
+- API Key 仅使用当前 Windows 用户的 DPAPI 保存，不会写入仓库、配置模板或 `.data/config.yaml`。
+- 程序目录根只放交付物（exe、`deps/`、`config.template.yaml`）；配置、密钥与收藏库全部收拢在 `程序目录\.data\`，解压覆盖升级碰不到它们。
 
 ## 系统要求
 
@@ -50,7 +51,7 @@
 
 ## 发布包
 
-发布文件保存在 `artifacts/`。版本号读取自根目录 `config.yaml` 的 `version` 字段：
+发布文件保存在 `artifacts/`。版本号读取自根目录 `config.template.yaml` 的 `version` 字段：
 
 - `./scripts/dev.ps1 publish`：`NaniKore-v{版本号}-win_amd64.zip`
 - `./scripts/dev.ps1 publish -full`：`NaniKore-v{版本号}-win_amd64-full.zip`
@@ -59,7 +60,7 @@
 
 ```text
 NaniKore.exe
-config.yaml
+config.template.yaml
 deps/
 ├─ ocr-onnx/pp-ocr-v6-small/
 │  ├─ det/inference.onnx
@@ -71,17 +72,23 @@ deps/
    └─ onnxruntime_providers_shared.dll
 ```
 
+发布包不含 `.data/`：首次启动时程序把 `config.template.yaml` 按字节原样复制到 `程序目录\.data\config.yaml` 作为用户配置，密钥落在 `.data/keys.bin`（整块 DPAPI 密文），收藏库是 `.data/collections.db`。因此解压覆盖升级不会冲掉任何本机数据；备份整个软件只需复制 `.data/`。
+
 轻量包需要用户在设置页确认下载依赖后才能进行本地 OCR；完整包解压后无需额外下载。
 
 ## 配置与翻译服务
 
-根目录 `config.yaml` 是不含密钥、可审阅的默认模板。构建和发布时会复制到各自运行目录，因此应用设置页保存的配置不会回写仓库模板。要修改新实例的默认配置，请编辑根目录模板后重新构建或发布。
+根目录 `config.template.yaml` 是不含密钥、可审阅的配置模板，随包发布且程序永不写它。首次启动时它被字节级复制到 `程序目录\.data\config.yaml`（模板注释原样保留），之后只读写 `.data` 里的副本——已有配置时模板怎么改都不影响运行。
 
-翻译服务、模型、目标语言和快捷键均可通过设置页调整。请只在自己信任的服务商端点中填写 API Key。
+每个配置档只需 `name` / `kind` / `base_url` / `model` 四行；`api_type` / `supports_vision` / `timeout_seconds` / `enable_thinking` 只在偏离缺省（`completions` / `true` / `30` 秒 / `false`）时才需要写。配置档的唯一身份是 `name`：`pipeline.active_profile`、翻译页下拉、错误提示与密钥索引全部用它。
+
+翻译服务、模型、目标语言和快捷键均可通过设置页调整。请只在自己信任的服务商端点中填写 API Key。翻译页「凭据」组可以一键打开 `.data` 目录、清除当前配置档的密钥。
+
+「关于」页版本号形如 `v{A}({B})`：A 是模板版本（最新），B 是当前配置版本；两者 major/minor 不一致时启动后托盘会提示一次，关于页给一行常驻说明（仅提示，没有自动动作）。
 
 ## 收藏与生词本
 
-收藏保存在可执行文件同目录的 `nanikore.db`（SQLite 表 `favorites`，列为 `category`、`content`、`note`、`created_at`、`language`;绿色便携、覆盖升级不丢数据，删除该文件即回到空态。设置页「收藏」可按类别、语言、关键词组合筛选，支持复制全部、单条删除与失焦即保存的就地编辑。
+收藏保存在数据目录 `程序目录\.data\collections.db`（SQLite 表 `favorites`，列为 `category`、`content`、`note`、`created_at`、`language`；绿色便携、覆盖升级不丢数据，删除该文件即回到空态。设置页「收藏」可按类别、语言、关键词组合筛选，支持复制全部、单条删除与失焦即保存的就地编辑。
 
 ## OCR 诊断
 
@@ -99,6 +106,7 @@ dotnet run --project src\NaniKore\NaniKore.csproj -- --ocr-file path\to\image.pn
 src/NaniKore/  应用、OCR、翻译与桌面 UI
 scripts/        工具链、模型准备和开发/发布命令
 deps/           唯一的本地 OCR 与 ONNX Runtime 依赖源
+.data/          本机运行期数据：配置、密钥密文、收藏库（Git 忽略）
 artifacts/      发布产物（Git 忽略）
 ```
 

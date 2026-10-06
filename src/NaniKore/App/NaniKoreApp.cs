@@ -21,8 +21,10 @@ namespace NaniKore.App;
 /// <summary>应用宿主统一管理热键、托盘、配置、面板和可抢占的翻译流。</summary>
 internal sealed class NaniKoreApp : Application
 {
-    private readonly ConfigStore _configStore = new(AppContext.BaseDirectory);
+    /// <summary>密钥单文件（.data/keys.bin）与应用同生命周期；目录不可写时启动已被拒绝，不会走到这里。</summary>
+    private readonly SecretStore _secretStore = new();
     private readonly IFavoriteService _favoriteService = new SqliteFavoriteService();
+    private ConfigStore _configStore = null!;
     private GlobalHotkeyWindow? _hotkeyWindow;
     private OcrEngine? _ocrEngine;
     private ProviderFactory? _providerFactory;
@@ -41,10 +43,22 @@ internal sealed class NaniKoreApp : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        ShutdownMode = ShutdownMode.OnExplicitShutdown;
-        // 主题资源必须先于任何窗口创建就位，否则首个窗口会以系统默认样式闪现一帧。
+        // 主题资源必须先于任何窗口创建就位，否则首个窗口会以系统默认样式闪现一帧
+        // （拒绝启动的报错对话框同样要走主题）。
         ThemeManager.Initialize(this);
-        _providerFactory = new ProviderFactory(_configStore.Current);
+        // 显式关闭语义必须先设好：拒绝启动路径下关闭对话框不能顺带结束应用，
+        // 否则拿不到退出码 1（OnLastWindowClose 会在对话框关闭时直接收摊）。
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        // 数据目录（.data）不可创建或不可写时明确拒绝启动：宁可失败，也不要两份真相（issue 017 决策 8）。
+        if (!TryEnsureDataDirectory())
+        {
+            Environment.ExitCode = 1;
+            Shutdown(1);
+            return;
+        }
+
+        _configStore = new ConfigStore(AppPaths.DataDirectory);
+        _providerFactory = new ProviderFactory(_configStore.Current, _secretStore);
         _hotkeyWindow = new GlobalHotkeyWindow(_configStore.Current.Hotkeys.Capture, OnCaptureHotkeyPressed);
         _trayIcon = new TrayIconHost(() => _ = CaptureSelectAndTranslateAsync(), () => ShowSettings(), Shutdown);
 
@@ -53,9 +67,35 @@ internal sealed class NaniKoreApp : Application
             _trayIcon.ShowWarning(_configStore.LoadWarning);
         }
 
+        // 版本差只提示不动作（issue 017 C 期）：托盘气泡一次，设置-关于页给常驻一行。
+        if (IsConfigVersionBehindTemplate())
+        {
+            _trayIcon.ShowWarning("检测到配置版本与模板版本不一致，详见 设置-关于");
+        }
+
         Console.WriteLine("NaniKore translation pipeline is ready.");
         Console.WriteLine($"Press {_configStore.Current.Hotkeys.Capture} to capture and translate a region.");
     }
+
+    /// <summary>可写性前置检查失败时弹错并回报 false；调用方据此拒绝启动。</summary>
+    private bool TryEnsureDataDirectory()
+    {
+        try
+        {
+            AppPaths.EnsureWritableDataDirectory();
+            return true;
+        }
+        catch (DataDirectoryUnavailableException exception)
+        {
+            MessageDialog.Show(null, "无法使用数据目录", exception.Message, InfoSeverity.Error);
+            return false;
+        }
+    }
+
+    /// <summary>模板与配置的 major/minor 不一致即视为配置落后；任一侧取不到版本号则不判定。</summary>
+    private bool IsConfigVersionBehindTemplate() => ConfigVersionComparator.IsBehind(
+        ConfigStore.ReadTemplateVersion(),
+        _configStore.Current.Version);
 
     /// <summary>截图热键先抢占旧结果，再立即进入新一轮选区翻译；正在框选时保持忽略新触发。</summary>
     private void OnCaptureHotkeyPressed()
@@ -240,7 +280,7 @@ internal sealed class NaniKoreApp : Application
         catch (Exception exception)
         {
             var profile = _configStore.GetActiveProfile();
-            var summary = ProviderErrorMapper.ToUserMessage(exception, profile.Id, profile.Model, profile.BaseUrl);
+            var summary = ProviderErrorMapper.ToUserMessage(exception, profile.Name, profile.Model, profile.BaseUrl);
             var details = exception is ProviderHttpException { ServerMessage: { } serverMessage }
                 ? serverMessage
                 : exception.Message;
@@ -363,7 +403,7 @@ internal sealed class NaniKoreApp : Application
         {
             await Dispatcher.InvokeAsync(() => panel.CompleteExplanation(false));
             var profile = _configStore.GetActiveProfile();
-            var summary = ProviderErrorMapper.ToUserMessage(exception, profile.Id, profile.Model, profile.BaseUrl);
+            var summary = ProviderErrorMapper.ToUserMessage(exception, profile.Name, profile.Model, profile.BaseUrl);
             var details = exception is ProviderHttpException { ServerMessage: { } serverMessage }
                 ? serverMessage
                 : exception.Message;
@@ -504,6 +544,8 @@ internal sealed class NaniKoreApp : Application
             DownloadOcrDependenciesAsync,
             DownloadPhoneticDictionaryAsync,
             _favoriteService,
+            // 「关于」页版本号的 A 段取程序目录模板版本（最新）；缺注入时只显示配置版本（自测/预览走这条）。
+            () => ConfigStore.ReadTemplateVersion(),
             tab);
         window.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow = window;
@@ -520,7 +562,7 @@ internal sealed class NaniKoreApp : Application
 
         _configStore.AtomicWrite(next);
         _providerFactory?.Dispose();
-        _providerFactory = new ProviderFactory(next);
+        _providerFactory = new ProviderFactory(next, _secretStore);
         // 目标语言可能已变：同步刷新结果卡上的收藏语言探测口径（不打断当前展示）。
         _resultPanel?.SetTargetLanguage(next.General.TargetLanguage);
         // 注音开关可能已变：结果卡按新口径决定是否叠加注音（原文区不强刷，下一轮原文自然生效）。
@@ -571,14 +613,14 @@ internal sealed class NaniKoreApp : Application
     {
         try
         {
-            var apiKey = string.IsNullOrWhiteSpace(pendingApiKey) ? SecretStore.Load(profile.Id) : pendingApiKey;
+            var apiKey = string.IsNullOrWhiteSpace(pendingApiKey) ? _secretStore.Load(profile.Name) : pendingApiKey;
             using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(profile.TimeoutSeconds));
             await ProviderFactory.TestConnectionAsync(profile, apiKey ?? string.Empty, cancellation.Token);
             return "连接成功：服务已返回流式内容。";
         }
         catch (Exception exception)
         {
-            return ProviderErrorMapper.ToUserMessage(exception, profile.Id, profile.Model, profile.BaseUrl);
+            return ProviderErrorMapper.ToUserMessage(exception, profile.Name, profile.Model, profile.BaseUrl);
         }
     }
 

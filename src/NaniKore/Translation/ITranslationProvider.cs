@@ -2,7 +2,8 @@
 
 internal interface ITranslationProvider : IDisposable
 {
-    string Id { get; }
+    /// <summary>提供者所属配置档的档名（配置档唯一身份）。</summary>
+    string Name { get; }
 
     ProviderCapabilities Capabilities { get; }
 

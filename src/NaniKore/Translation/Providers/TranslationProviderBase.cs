@@ -25,7 +25,7 @@ internal abstract class TranslationProviderBase : ITranslationProvider
         };
     }
 
-    public string Id => Profile.Id;
+    public string Name => Profile.Name;
 
     public ProviderCapabilities Capabilities => ProviderFactory.GetCapabilities(Profile);
 

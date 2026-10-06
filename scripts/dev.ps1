@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet('build', 'run', 'test', 'publish')]
     [string]$Command = 'build',
 
@@ -240,7 +240,11 @@ function New-NaniKoreReleaseArchive {
         New-Item -ItemType Directory -Path $stagingDirectory | Out-Null
 
         # 发布目录内容直接置于 ZIP 根目录；完整包额外携带 deps/，解压后即可使用本地 OCR。
+        # .data 是本机运行期数据（配置、密钥密文、收藏库）：从 artifacts\win-x64 跑过一次应用就会生成它，
+        # 一个排除项全挡住，杜绝把用户数据打进发布包（issue 017）。nanikore.db 是 .data 之前的旧收藏库名，
+        # dotnet publish 不清输出目录，旧版运行留下的残留同样不能进交付物。
         Get-ChildItem -LiteralPath $PublishOutput -Force |
+            Where-Object { $_.Name -ne '.data' -and $_.Name -ne 'nanikore.db' } |
             Copy-Item -Destination $stagingDirectory -Recurse -Force
 
         if ($IncludeFullDependencies) {
@@ -344,6 +348,10 @@ try {
             }
             $depsLink = Join-Path $PSScriptRoot "..\src\NaniKore\bin\Debug\net10.0-windows10.0.19041.0\deps"
             if (-not (Test-Path $depsLink)) { New-Item -ItemType Junction -Path $depsLink -Target (Join-Path $PSScriptRoot "..\deps") }
+            $depsLink = Join-Path $PSScriptRoot "..\src\NaniKore\bin\Debug\net10.0-windows10.0.19041.0\.data"
+            if (-not (Test-Path $depsLink)) { New-Item -ItemType Junction -Path $depsLink -Target (Join-Path $PSScriptRoot "..\.data") }
+            $depsLink = Join-Path $PSScriptRoot "..\artifacts\win-x64\.data"
+            if (-not (Test-Path $depsLink)) { New-Item -ItemType Junction -Path $depsLink -Target (Join-Path $PSScriptRoot "..\.data") }
         }
         'run' {
             & $dotnet run --project $project -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
@@ -368,12 +376,13 @@ try {
             Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $buildOutputDirectory
             # 默认发布包不携带固定的 ONNX Runtime DLL；完整包从 deps/ 原样打包。
             Remove-Item -LiteralPath (Join-Path $publishOutput 'deps'), (Join-Path $publishOutput 'onnxruntime.dll'), (Join-Path $publishOutput 'onnxruntime_providers_shared.dll') -Recurse -Force -ErrorAction SilentlyContinue
+            # 配置模板是交付物：显式同步到发布输出。PreserveNewest 在中间产物较新时会整段跳过复制，
+            # 不能只靠 csproj 的复制项；同时清掉旧链路可能残留的运行期 config.yaml（issue 017）。
+            Remove-Item -LiteralPath (Join-Path $publishOutput 'config.yaml') -Force -ErrorAction SilentlyContinue
+            Copy-Item -LiteralPath (Join-Path $root 'config.template.yaml') -Destination $publishOutput -Force
             Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $publishOutput
-            # 发布时同步根目录配置模板到发布输出，确保运行时配置与构建版本一致，喵
-            $rootConfig = Join-Path $root "config.yaml"
-            $publishConfig = Join-Path $publishOutput "config.yaml"
-            Copy-Item -LiteralPath $rootConfig -Destination $publishConfig -Force
-            $productVersion = Get-NaniKoreProductVersion -ConfigPath $rootConfig
+            # 运行期数据（.data/config.yaml、keys.bin、collections.db）不再进交付物；发布只带配置模板。
+            $productVersion = Get-NaniKoreProductVersion -ConfigPath (Join-Path $root 'config.template.yaml')
             $archivePath = New-NaniKoreReleaseArchive `
                 -PublishOutput $publishOutput `
                 -ArtifactsDirectory $artifactsDirectory `

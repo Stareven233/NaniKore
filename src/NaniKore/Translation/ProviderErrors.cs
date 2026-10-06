@@ -48,7 +48,7 @@ internal sealed class ProviderHttpException : Exception
 /// <summary>将服务端状态映射为用户可行动的中文提示，避免把原始协议异常直接扔给面板。</summary>
 internal static class ProviderErrorMapper
 {
-    public static string ToUserMessage(Exception exception, string? profileId = null, string? model = null, string? baseUrl = null)
+    public static string ToUserMessage(Exception exception, string? profileName = null, string? model = null, string? baseUrl = null)
     {
         if (exception is ProviderCapabilityException or ProviderConfigurationException)
         {
@@ -61,7 +61,7 @@ internal static class ProviderErrorMapper
             return http.StatusCode switch
             {
                 HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => "API Key 无效或没有访问权限，请在设置中检查该配置档的密钥。",
-                HttpStatusCode.NotFound => $"找不到服务或模型。请检查配置档“{profileId ?? "当前"}”的模型“{model ?? ""}”与 Base URL“{baseUrl ?? ""}”。",
+                HttpStatusCode.NotFound => $"找不到服务或模型。请检查配置档“{profileName ?? "当前"}”的模型“{model ?? ""}”与 Base URL“{baseUrl ?? ""}”。",
                 (HttpStatusCode)429 => "请求受到限流，请稍后重试或切换配置档。",
                 HttpStatusCode.BadRequest or HttpStatusCode.InternalServerError when ContainsVisionHint(detail) =>
                     "当前路由的模型未启用图像输入（多模态）。请在上游启用 multimodal processing，或切换支持视觉的模型。",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 更新 config.yaml 根级 version 字段；只替换版本值，保持其余配置与格式不变。
+# 更新 config.template.yaml 根级 version 字段；只替换版本值，保持其余配置与格式不变。
 from __future__ import annotations
 
 import argparse
@@ -83,7 +83,7 @@ def update_config(config_path: Path, new_version: str) -> str:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description='Update the root version field in config.yaml.')
+    parser = argparse.ArgumentParser(description='Update the root version field in the config template.')
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         '--bump',
@@ -97,8 +97,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--config',
         type=Path,
-        default=Path(__file__).resolve().parents[1] / 'config.yaml',
-        help='Path to config.yaml (default: repository root config.yaml).',
+        default=Path(__file__).resolve().parents[1] / 'config.template.yaml',
+        help='Path to the config template (default: repository root config.template.yaml).',
     )
     return parser.parse_args()
 

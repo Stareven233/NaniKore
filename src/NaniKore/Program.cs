@@ -75,16 +75,39 @@ internal static class Program
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        return new NaniKoreApp().Run();
+        var application = new NaniKoreApp();
+        var exitCode = application.Run();
+        // 数据目录不可写等拒绝启动路径经 Application.Shutdown(1) 结束：Run 的返回值不带该退出码，以 Environment.ExitCode 兜底。
+        return exitCode == 0 ? Environment.ExitCode : exitCode;
     }
 
     private static int PreviewSettings()
     {
         var app = new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnLastWindowClose };
         NaniKore.App.Theme.ThemeManager.Initialize(app);
-        var store = new ConfigStore(AppContext.BaseDirectory);
+        if (!TryCreateConfigStore(out var store))
+        {
+            return 1;
+        }
+
         var window = new NaniKore.App.Settings.SettingsWindow(() => store.Current, _ => { }, (_, _) => Task.FromResult("ok"));
         return app.Run(window);
+    }
+
+    /// <summary>CLI 统一建库入口：数据目录不可写时走 Console.Error 并回报失败，由调用方按退出码 1 结束。</summary>
+    private static bool TryCreateConfigStore(out ConfigStore store)
+    {
+        try
+        {
+            store = new ConfigStore(AppPaths.DataDirectory);
+            return true;
+        }
+        catch (DataDirectoryUnavailableException exception)
+        {
+            Console.Error.WriteLine(exception.Message);
+            store = null!;
+            return false;
+        }
     }
 
     private static int InspectModels()
@@ -192,7 +215,11 @@ internal static class Program
     {
         try
         {
-            var store = new ConfigStore(AppContext.BaseDirectory);
+            if (!TryCreateConfigStore(out var store))
+            {
+                return 1;
+            }
+
             var config = store.Current;
             Console.WriteLine($"Config version: {config.Version}");
             Console.WriteLine($"Config source: {store.ConfigPath}");
@@ -200,15 +227,16 @@ internal static class Program
             Console.WriteLine($"Pipeline mode: {config.Pipeline.Mode}");
             Console.WriteLine($"Auto translate: {config.General.AutoTranslate}");
             Console.WriteLine();
+            var secrets = new SecretStore();
             foreach (var profile in config.Profiles)
             {
-                Console.WriteLine($"  [{profile.Id}]");
+                Console.WriteLine($"  [{profile.Name}]");
                 Console.WriteLine($"    kind:            {profile.Kind}");
                 Console.WriteLine($"    api_type:        {profile.ApiType}");
                 Console.WriteLine($"    model:           {profile.Model}");
                 Console.WriteLine($"    base_url:        {profile.BaseUrl}");
                 Console.WriteLine($"    supports_vision: {profile.SupportsVision}");
-                Console.WriteLine($"    api_key:         {(SecretStore.Exists(profile.Id) ? "present" : "missing")}");
+                Console.WriteLine($"    api_key:         {(secrets.Exists(profile.Name) ? "present" : "missing")}");
             }
 
             if (!string.IsNullOrWhiteSpace(store.LoadWarning))
@@ -266,7 +294,11 @@ internal static class Program
 
         try
         {
-            var store = new ConfigStore(AppContext.BaseDirectory);
+            if (!TryCreateConfigStore(out var store))
+            {
+                return 1;
+            }
+
             var prompts = store.Current.Prompts;
             var targetLanguage = string.IsNullOrWhiteSpace(targetOverride)
                 ? store.Current.General.TargetLanguage
@@ -475,7 +507,7 @@ internal static class Program
     {
         if (optionIndex + 1 >= args.Count)
         {
-            Console.Error.WriteLine("Usage: NaniKore --translate-text <text> [--profile <profile-id>]");
+            Console.Error.WriteLine("Usage: NaniKore --translate-text <text> [--profile <profile-name>]");
             return 2;
         }
 
@@ -486,7 +518,7 @@ internal static class Program
     {
         if (optionIndex + 1 >= args.Count)
         {
-            Console.Error.WriteLine("Usage: NaniKore --translate-image <image-path> [--profile <profile-id>]");
+            Console.Error.WriteLine("Usage: NaniKore --translate-image <image-path> [--profile <profile-name>]");
             return 2;
         }
 
@@ -506,11 +538,15 @@ internal static class Program
 
     private static async Task<int> RunTranslationAsync(IReadOnlyList<string> args, string sourceText, byte[]? imagePng)
     {
-        var store = new ConfigStore(AppContext.BaseDirectory);
-        var profileId = GetOptionValue(args, "--profile") ?? store.Current.Pipeline.ActiveProfile;
+        if (!TryCreateConfigStore(out var store))
+        {
+            return 1;
+        }
+
+        var profileName = GetOptionValue(args, "--profile") ?? store.Current.Pipeline.ActiveProfile;
         try
         {
-            var profile = store.GetProfile(profileId);
+            var profile = store.GetProfile(profileName);
             using var factory = new ProviderFactory(store.Current);
             ReadOnlyMemory<byte>? imagePayload = null;
             if (imagePng is not null)
@@ -519,7 +555,7 @@ internal static class Program
             }
 
             var request = new UnderstandRequest(UnderstandKind.Translate, sourceText, imagePayload, store.Current.General.TargetLanguage);
-            var provider = factory.GetProvider(profileId, request);
+            var provider = factory.GetProvider(profileName, request);
             await foreach (var delta in provider.StreamAsync(request, CancellationToken.None).ConfigureAwait(false))
             {
                 if (delta.Channel == DeltaChannel.Translation)
@@ -533,8 +569,8 @@ internal static class Program
         }
         catch (Exception exception)
         {
-            var profile = store.Current.Profiles.FirstOrDefault(item => string.Equals(item.Id, profileId, StringComparison.OrdinalIgnoreCase));
-            Console.Error.WriteLine(ProviderErrorMapper.ToUserMessage(exception, profileId, profile?.Model, profile?.BaseUrl));
+            var profile = store.Current.Profiles.FirstOrDefault(item => string.Equals(item.Name, profileName, StringComparison.OrdinalIgnoreCase));
+            Console.Error.WriteLine(ProviderErrorMapper.ToUserMessage(exception, profileName, profile?.Model, profile?.BaseUrl));
             return 1;
         }
     }
