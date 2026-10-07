@@ -132,7 +132,7 @@ internal static class PinyinToneConverter
 /// 词典生成管线（开发期 CLI：--build-phonetics）：把公开数据源编译为 deps/phonetics/ 下的运行期产物。
 ///   英语：CMUdict（ARPAbet）→ ipa_dict.db（SQLite，word 小写主键 + IPA）；
 ///   中文：CC-CEDICT + Unihan kMandarin → MeCab CSV → mecab-dict-index → sys.dic 等二进制；
-///   日语：直接采用 IPAdic 编译态二进制（无需编译，见 tools/phonetics/README.md）。
+///   日语：直接采用 IPAdic 编译态二进制（无需编译，见 codestable/notes/phonetics-pipeline.md）。
 /// 生成后按控制台输出的 SHA-256 回填 PhoneticDependencyManifest（哈希即版本）。
 /// </summary>
 internal static class PhoneticDictionaryBuilder
@@ -262,7 +262,7 @@ internal static class PhoneticDictionaryBuilder
         Guard(File.Exists(cedictPath), $"缺少 {cedictPath}");
         Guard(File.Exists(unihanPath), $"缺少 {unihanPath}");
         var dictIndex = ResolveDictIndex(dictIndexPath);
-        Guard(dictIndex is not null, "找不到 mecab-dict-index（--dict-index 指定或加入 PATH），见 tools/phonetics/README.md");
+        Guard(dictIndex is not null, "找不到 mecab-dict-index（--dict-index 指定或加入 PATH），见 codestable/notes/phonetics-pipeline.md");
 
         var buildDirectory = Path.Combine(repoRoot, "deps", "phonetics", "_build", "zh");
         if (Directory.Exists(buildDirectory))

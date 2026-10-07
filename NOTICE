@@ -29,7 +29,7 @@ NaniKore 分发或使用下列第三方组件与数据。随应用发布的二�
   - 许可：Creative Commons Attribution-ShareAlike 4.0 International（CC BY-SA 4.0）。
   - 用途：简体中文拼音注音的词面/读音来源。
   - 派生要求：基于 CC-CEDICT 生成的词典与再分发需标注「CC-CEDICT, CC BY-SA 4.0」。
-    本声明及 `deps/README.md`、`tools/phonetics/README.md` 即该标注。
+    本声明及 `deps/README.md`、`codestable/notes/phonetics-pipeline.md` 即该标注。
 
 - **Unicode Unihan Database（`Unihan_Readings.txt`，kMandarin 字段）**
   - 许可：Unicode 许可 v3（https://www.unicode.org/license.txt）。

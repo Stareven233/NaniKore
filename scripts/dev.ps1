@@ -251,7 +251,7 @@ function New-NaniKoreReleaseArchive {
             Copy-Item -LiteralPath $DependenciesDirectory -Destination $stagingDirectory -Recurse -Force
 
             # 注音词典的生成暂存（源码 zip / 解包件 / CSV 中间产物）不随发布包分发：
-            # 完整包只承诺「解压即用」的编译态词典（issue 008），暂存件几十 MB 且仅供 tools/phonetics 再生。
+            # 完整包只承诺「解压即用」的编译态词典（issue 008），暂存件几十 MB 且仅供 codestable/notes/phonetics-pipeline.md 再生。
             foreach ($staleDirectory in @('phonetics\_source', 'phonetics\_build')) {
                 $stalePath = Join-Path $stagingDirectory "deps\$staleDirectory"
                 if (Test-Path -LiteralPath $stalePath) {

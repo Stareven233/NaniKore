@@ -128,7 +128,7 @@ internal static class Program
     /// <summary>
     /// 开发期注音词典生成：CMUdict → 英语 SQLite；CC-CEDICT + Unihan → 中文 MeCab 词典（mecab-dict-index）。
     /// 用法：dotnet run --project src/NaniKore -- --build-phonetics [--dict-index &lt;mecab-dict-index.exe&gt;]
-    /// 详见 tools/phonetics/README.md；产物落盘 deps/phonetics/，控制台打印 SHA-256 供回填清单。
+    /// 详见 codestable/notes/phonetics-pipeline.md；产物落盘 deps/phonetics/，控制台打印 SHA-256 供回填清单。
     /// </summary>
     private static int BuildPhonetics(string[] args)
     {
