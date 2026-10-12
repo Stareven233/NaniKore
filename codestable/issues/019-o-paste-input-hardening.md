@@ -75,9 +75,7 @@ updated: 2026-10-12
 
 ## 待主人裁决（grilling，未定不动手）
 
-1. **前台程序响应 Ctrl+C 复制的是「图像」时**：轮询只读文本 → 超时 → 还原快照会把刚复制的图像冲掉，最终拿旧剪贴板图像。是否扩展为「感知任意剪贴板变化（`GetClipboardSequenceNumber`）+ 支持选区图像」？（偏离 018 既定流程）
-2. **paste 图像分流口径**：现按 `supports_vision`（能力驱动，018 规定），与截图链路的 `pipeline.mode`（偏好驱动）不对称。是否统一为「mode 优先 + 能力兜底」？
-3. **选区文本与剪贴板文本完全相同时**被判为 `ClipboardText`（状态栏显示「已读取剪贴板文本」）。保持现状还是中性文案？
+（本轮两条均已裁决并落地，见第三轮执行记录；暂无未决项。）
 
 ## 执行记录
 
@@ -101,6 +99,43 @@ updated: 2026-10-12
 - **审查中两项「问题」核实后不成立**（详见上节）：`DataObject` 无 `IDisposable`；真实剪贴板 `GetData` 对位图返回同一缓存实例，不存在双重解码。
 
 **验证：** `dev.ps1 build` 0 警告；`dev.ps1 test` 新增 3 条用例全过，总失败数与整改前一致（2 条英语注音，与本事项无关）。代际守卫属低概率竞态、无法稳定构造，未加单测，靠代码推理 + 既有面板复用自测覆盖；建议真机按 issue「验证」节手测一遍。
+
+## 第二轮执行记录（2026-10-12，Q2/Q3 裁决落地）
+
+**裁决：** Q2 改为「mode 优先 + 能力不符弹提醒，不静默回落」；Q3 保持现状（同文本时显示「已读取剪贴板文本」，仅文案差异、下发结果一致）。
+
+**实现：**
+
+1. 新增 `Input/ClipboardImageRoute.cs`：`ClipboardImageRoute` 三态枚举（`DirectFeed` / `LocalOcr` / `UnsupportedVision`）+ `ClipboardImageRouteResolver.Resolve(pipelineMode, supportsVision)`。口径：`vision_oneshot` + 支持视觉 → 直喂；`vision_oneshot` + 不支持视觉 → 弹提醒；其余（含未知管线值）→ 本地 OCR（保守，与截图链路一致）。
+2. `PasteInputRequest` 的 `bool SupportsVision` 换成 `ClipboardImageRoute ImageRoute`；`PasteInputAcquirer` 图像分支三分支；新增 `PasteInputKind.VisionUnsupported`。
+3. `NaniKoreApp.PasteTranslateAsync`：路由经 resolver 解析；`VisionUnsupported` 时弹 `MessageDialog`（当前配置档吃不下图像 + 两条出路：换配置档 / 改 local_ocr），叠加还原失败异状时一并带上；不触碰面板与 `_lastImagePng`。
+4. 自测：新增路由矩阵用例（含大小写与未知值）与「能力不符回报宿主」用例（OCR 委托直接抛异常证明不被调用）。
+
+**未做（等裁决）：** 无。
+
+## 第三轮执行记录（2026-10-12，Q1/Q2 裁决落地）
+
+**裁决：**
+
+1. **Q1（是）**：轮询基准从「只读文本」改为「剪贴板序列号」，并支持选区图像。前台程序响应 Ctrl+C 复制的是图时，不再误判「没选中」，也不再被还原操作冲掉。
+2. **Q2（口径按来路分流）**：OCR 写回不再一律替换——**程序自己 Ctrl+C 复制的图**（选区图像）识别后原文直接替换；**主人手动复制的图**（剪贴板图像）原图必须保住，原文以「图像 + 文本」附加写回。
+
+**探针实测（全部本机验证，探针已删）：**
+
+- 序列号对任何写入都 +1：文本（含与现有内容一模一样的文本）、图像、文件引用、空文本、清空；只读不 +1。
+- 读序列号不打开剪贴板：另一线程狂写 200 次期间连读零异常（对比读文本/读图在并发时会抛 `ExternalException`）。
+- 各回应形态：文本 `[UnicodeText,System.String,Text]`；图像 `[Bitmap,System.Drawing.Bitmap]`；文本+图 `[UnicodeText,Bitmap,…]`；原生空文本 `[UnicodeText,Locale,Text,OEMText]` 值为 `""`；文件引用 `[FileDrop,FileNameW,FileName]`；私有格式 `[SomePrivateFormat]`。
+- `Clipboard.SetText("")` 在 .NET 10 直接抛 `ArgumentNullException`，空串场景只能原生写入（自测仍按网关层模拟）。
+
+**实现：**
+
+1. `IClipboardGateway` 新增 `ReadSequenceNumber()` 与 `SetDataObject(object, bool)`；移除已无调用方的 `ReadCurrentText()`（状态机改看序列号 + 快照，轮询循环里的快照读取自带 `ExternalException` 重试）。
+2. `PasteInputAcquirer.Acquire`：快照后读序列号基准；`TakeResponse()` 统一取「前台对 Ctrl+C 的回应」——非空文本 → 选区文本（与原有文本相同也判定为新复制，Q3 文案歧义自然消失）；有图像 → 选区图像走 `TranslateImage`；两者皆无 → 按「空文本/空剪贴板还原兜底，文件引用/私有格式原样保留并提示」收尾（`LeftClipboardEmpty` 按格式名集合判定，文本类格式表来自实测）。**收工前再抓一次回应**：复制可能正好落在最后一次轮询的睡眠里，漏抓就会被还原冲掉。
+3. 图像处理上收为 `TranslateImage(image, source, notice, sequenceAtRead, programOwnCopy)`：选区图像与剪贴板图像共用同一路由；OCR 写回前用 `sequenceAtRead` 校验剪贴板未被用户动过（OCR 要跑几百毫秒，绝不覆盖期间新复制的内容）；写回口径按来路分流（替换 / 追加）。
+4. 新增 `PasteInputKind.SelectionImage`；宿主状态文案按选区/剪贴板分别措辞。
+5. 自测新增 9 条：相同文本仍判选区、选区图像×三条去向、追加写回保住原图、OCR 期间剪贴板变化的写回拦截、文件引用原样保留、复制落在最后一次轮询睡眠里仍被抓到。
+
+**验证：** 构建 0 警告；自测全绿（既有 2 条英语注音失败不变）。真机需按「Office/浏览器选中图像按 Ctrl+Shift+S」实测一次。
 
 ## 关闭时
 

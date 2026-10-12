@@ -157,13 +157,16 @@ internal sealed class NaniKoreApp : Application
         try
         {
             var config = _configStore.Current;
-            var supportsVision = _configStore.GetActiveProfile().SupportsVision;
+            // 图像去向按「管线偏好优先、能力不足明确停下」解析（issue 019 裁决）：与截图链路同一把尺。
+            var imageRoute = ClipboardImageRouteResolver.Resolve(
+                config.Pipeline.Mode,
+                _configStore.GetActiveProfile().SupportsVision);
             // 锚点在发起输入获取的瞬间就定下：输入获取最长要等 600ms 轮询预算，
             // 面板位置应当反映「按热键时鼠标在哪」，而不是等待结束时的落点。
             var anchor = CursorAnchor();
             // 剪贴板读写与轮询全部落在专用 STA 线程；OCR 也在该线程跑完，面板更新回到主线程。
             var outcome = await Task.Run(() => ClipboardInputSource.Acquire(
-                supportsVision,
+                imageRoute,
                 bitmap => GetOcrEngine().Recognize(bitmap)));
 
             if (outcome.Kind == PasteInputKind.Empty)
@@ -173,13 +176,24 @@ internal sealed class NaniKoreApp : Application
                 return;
             }
 
+            if (outcome.Kind == PasteInputKind.VisionUnsupported)
+            {
+                // 能力不符时明确停下并说清两条出路，绝不静默改道成 OCR（issue 019 裁决）。
+                ShowVisionUnsupportedReminder(outcome.Notice);
+                return;
+            }
+
             var autoExplain = config.General.AutoExplain;
             if (outcome.ImagePng is { Length: > 0 } imagePng)
             {
                 // 视觉直喂：原文区留空，PNG 原图进 provider；剪贴板保持不动。
                 _lastImagePng = imagePng;
                 var visionPanel = EnsureResultPanel(anchor);
-                visionPanel.Reset(string.Empty, "正在识别并翻译剪贴板图像…", autoTranslate: true, autoExplain: autoExplain);
+                visionPanel.Reset(
+                    string.Empty,
+                    outcome.Kind == PasteInputKind.SelectionImage ? "正在识别并翻译选区图像…" : "正在识别并翻译剪贴板图像…",
+                    autoTranslate: true,
+                    autoExplain: autoExplain);
                 _ = StartTranslationAsync(string.Empty, imagePng, outcome.Notice);
                 return;
             }
@@ -188,8 +202,9 @@ internal sealed class NaniKoreApp : Application
             _lastImagePng = null;
             var status = outcome.Kind switch
             {
-                PasteInputKind.ClipboardImage => $"OCR 完成：{outcome.OcrLineCount} 行 · {outcome.OcrElapsed.TotalMilliseconds:N0} ms",
+                PasteInputKind.ClipboardImage or PasteInputKind.SelectionImage => $"OCR 完成：{outcome.OcrLineCount} 行 · {outcome.OcrElapsed.TotalMilliseconds:N0} ms",
                 PasteInputKind.SelectionText => "已读取选区文本。",
+                PasteInputKind.ClipboardText => "已读取剪贴板文本。",
                 _ => "已读取剪贴板文本。",
             };
             var panel = EnsureResultPanel(anchor);
@@ -218,6 +233,24 @@ internal sealed class NaniKoreApp : Application
         }
     }
 
+    /// <summary>
+    /// 视觉一条龙遇不支持视觉的配置档的统一提醒（issue 019 裁决）：说清现状与两条出路，
+    /// 截图与选取两把热键共用同一句人话，绝不静默改道。<paramref name="extraNotice"/>
+    /// 承载选取链路可能叠加的剪贴板还原失败异状（原图可能没保住，必须一并告知）。
+    /// </summary>
+    private void ShowVisionUnsupportedReminder(string? extraNotice = null)
+    {
+        var profile = _configStore.GetActiveProfile();
+        var body = $"配置档「{profile.Name}」未开启 supports_vision，无法把图像直接交给 {profile.Model}。" +
+            "请切换到支持视觉的配置档，或在 设置-翻译 把输入管线改为 local_ocr（改用本地 OCR 识别图像）。";
+        if (extraNotice is { Length: > 0 } notice)
+        {
+            body += $"{Environment.NewLine}{Environment.NewLine}{notice}";
+        }
+
+        MessageDialog.Show(_resultPanel, "当前配置档不支持视觉输入", body, InfoSeverity.Neutral);
+    }
+
     /// <summary>无选区路径的锚点：以当前鼠标光标位置为准，交由面板沿用「下方优先、不够翻上方」策略。</summary>
     private static System.Drawing.Rectangle CursorAnchor()
     {
@@ -236,6 +269,17 @@ internal sealed class NaniKoreApp : Application
         _selecting = true;
         try
         {
+            // 图像去向按「管线优先 + 能力不符明确停下」解析（issue 019 裁决）：与选取链路同一把尺。
+            var imageRoute = ClipboardImageRouteResolver.Resolve(
+                _configStore.Current.Pipeline.Mode,
+                _configStore.GetActiveProfile().SupportsVision);
+            if (imageRoute == ClipboardImageRoute.UnsupportedVision)
+            {
+                // 视觉一条龙遇不吃视觉的配置档：在动手截图之前就说清，不让主人白选一场。
+                ShowVisionUnsupportedReminder();
+                return;
+            }
+
             using var frame = DesktopCapturer.CaptureVirtualScreen();
             using var overlay = new SelectionForm(frame.Image, frame.VirtualBounds);
             if (overlay.ShowDialog() != System.Windows.Forms.DialogResult.OK || overlay.Selection is not { } selection)
@@ -249,7 +293,7 @@ internal sealed class NaniKoreApp : Application
                 frame.VirtualBounds.Y + selection.Y,
                 selection.Width,
                 selection.Height);
-            if (string.Equals(_configStore.Current.Pipeline.Mode, "vision_oneshot", StringComparison.OrdinalIgnoreCase))
+            if (imageRoute == ClipboardImageRoute.DirectFeed)
             {
                 var image = PngEncoder.Encode(cropped);
                 _lastImagePng = image;

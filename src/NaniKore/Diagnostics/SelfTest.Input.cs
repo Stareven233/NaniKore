@@ -21,6 +21,7 @@ internal static partial class SelfTest
         TestHotkeyGestureNormalization();
         TestHotkeyGestureSingleFunctionKeys();
         TestSendInputLayoutGuard();
+        TestClipboardImageRouteResolution();
         TestPasteInputFallbackChain();
         TestClipboardSnapshotRoundTrip();
     }
@@ -110,8 +111,26 @@ internal static partial class SelfTest
     }
 
     /// <summary>
-    /// 输入源判定状态机（issue 018）：选区文本 / 剪贴板文本 / 剪贴板图像×视觉两档 / 全空，
-    /// 各自走向与剪贴板终态；另覆盖「Ctrl+C 写空串清空用户剪贴板」与「还原失败」两条兜底。
+    /// 图像去向解析（issue 019 裁决）：管线偏好优先；vision_oneshot 遇不支持视觉的配置档明确停下；
+    /// 未知管线值按 local_ocr 保守处理，与截图链路口径一致。
+    /// </summary>
+    private static void TestClipboardImageRouteResolution()
+    {
+        Check(
+            "image route follows the pipeline mode and stops when the profile cannot take images",
+            ClipboardImageRouteResolver.Resolve("vision_oneshot", true) == ClipboardImageRoute.DirectFeed &&
+            ClipboardImageRouteResolver.Resolve("vision_oneshot", false) == ClipboardImageRoute.UnsupportedVision &&
+            ClipboardImageRouteResolver.Resolve("local_ocr", true) == ClipboardImageRoute.LocalOcr &&
+            ClipboardImageRouteResolver.Resolve("local_ocr", false) == ClipboardImageRoute.LocalOcr &&
+            ClipboardImageRouteResolver.Resolve("Vision_OneShot", true) == ClipboardImageRoute.DirectFeed &&
+            ClipboardImageRouteResolver.Resolve("whatever", true) == ClipboardImageRoute.LocalOcr &&
+            ClipboardImageRouteResolver.Resolve(null, false) == ClipboardImageRoute.LocalOcr);
+    }
+
+    /// <summary>
+    /// 输入源判定状态机（issue 018 + 019）：选区文本 / 剪贴板文本 / 剪贴板图像×三条去向 / 全空，
+    /// 各自走向与剪贴板终态；另覆盖选区图像×三条去向、相同文本、OCR 写回口径与竞态、
+    /// 「Ctrl+C 写空串清空用户剪贴板」「前台复制文件引用」与「还原失败」两条兜底。
     /// </summary>
     private static void TestPasteInputFallbackChain()
     {
@@ -122,7 +141,7 @@ internal static partial class SelfTest
         // 1) 选区文本：Ctrl+C 后剪贴板出现新文本 → 直接采用，剪贴板不做任何还原。
         var selection = new FakeClipboardGateway { Current = TextDataObject("旧文本") };
         selection.CopyReplacesClipboardWith("选区原文");
-        var selectionOutcome = PasteInputAcquirer.Acquire(Request(selection, supportsVision: false, FakeOcr));
+        var selectionOutcome = PasteInputAcquirer.Acquire(Request(selection, ClipboardImageRoute.LocalOcr, FakeOcr));
         Check(
             "a fresh selection wins over the clipboard and leaves the clipboard untouched",
             selectionOutcome.Kind == PasteInputKind.SelectionText &&
@@ -130,9 +149,20 @@ internal static partial class SelfTest
             selection.RestoreCount == 0 &&
             selection.WrittenText is null);
 
+        // 1b) 前台复制了与剪贴板里一模一样的文本：序列号一动就是真的复制过了，判为选区而非剪贴板文本。
+        var identical = new FakeClipboardGateway { Current = TextDataObject("同一段文本") };
+        identical.CopyReplacesClipboardWith("同一段文本");
+        var identicalOutcome = PasteInputAcquirer.Acquire(Request(identical, ClipboardImageRoute.LocalOcr, FakeOcr));
+        Check(
+            "a copy of identical text still counts as a fresh selection",
+            identicalOutcome.Kind == PasteInputKind.SelectionText &&
+            identicalOutcome.Text == "同一段文本" &&
+            identical.RestoreCount == 0 &&
+            identical.WrittenText is null);
+
         // 2) 剪贴板文本：Ctrl+C 无变化 → 还原快照后原样采用，读写幂等。
         var clipboardText = new FakeClipboardGateway { Current = TextDataObject("剪贴板原文") };
-        var clipboardTextOutcome = PasteInputAcquirer.Acquire(Request(clipboardText, supportsVision: false, FakeOcr));
+        var clipboardTextOutcome = PasteInputAcquirer.Acquire(Request(clipboardText, ClipboardImageRoute.LocalOcr, FakeOcr));
         Check(
             "existing clipboard text is restored and reused without rewriting it",
             clipboardTextOutcome.Kind == PasteInputKind.ClipboardText &&
@@ -145,7 +175,7 @@ internal static partial class SelfTest
 
         // 3) 剪贴板图像 × 视觉能力：PNG 直喂，剪贴板不动。
         var visionClipboard = new FakeClipboardGateway { Current = ImageDataObject() };
-        var visionOutcome = PasteInputAcquirer.Acquire(Request(visionClipboard, supportsVision: true, FakeOcr));
+        var visionOutcome = PasteInputAcquirer.Acquire(Request(visionClipboard, ClipboardImageRoute.DirectFeed, FakeOcr));
         Check(
             "a clipboard image feeds the provider directly when the profile supports vision",
             visionOutcome.Kind == PasteInputKind.ClipboardImage &&
@@ -156,27 +186,74 @@ internal static partial class SelfTest
             visionClipboard.RestoreCount == 1 &&
             visionClipboard.WrittenText is null);
 
-        // 4) 剪贴板图像 × 无视觉能力：本地 OCR 成文本，原文写回剪贴板（替换图像）。
-        var ocrClipboard = new FakeClipboardGateway { Current = ImageDataObject() };
-        var ocrOutcome = PasteInputAcquirer.Acquire(Request(ocrClipboard, supportsVision: false, FakeOcr));
+        // 3b) 选区图像 × 视觉直喂：前台响应 Ctrl+C 复制来的是图，PNG 直喂，剪贴板保持原样。
+        var selectionVision = new FakeClipboardGateway { Current = TextDataObject("旧文本") };
+        selectionVision.CopyReplacesClipboardWithImage();
+        var selectionVisionOutcome = PasteInputAcquirer.Acquire(Request(selectionVision, ClipboardImageRoute.DirectFeed, FakeOcr));
         Check(
-            "a clipboard image is recognized locally and the text is written back",
+            "an image copied by the foreground app feeds the provider directly",
+            selectionVisionOutcome.Kind == PasteInputKind.SelectionImage &&
+            selectionVisionOutcome.ImagePng is { Length: > 0 } selectionPng &&
+            selectionPng.Take(4).SequenceEqual(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G' }) &&
+            selectionVisionOutcome.Text.Length == 0 &&
+            selectionVision.RestoreCount == 0 &&
+            selectionVision.WrittenText is null &&
+            selectionVision.WrittenData is null &&
+            selectionVision.Current is { } selectionImageData &&
+            ClipboardPayloads.ReadImage(selectionImageData) is not null);
+
+        // 3c) 选区图像 × local_ocr：图是程序自己 Ctrl+C 复制的，OCR 原文直接替换，剪贴板不留图。
+        var selectionOcr = new FakeClipboardGateway { Current = TextDataObject("旧文本") };
+        selectionOcr.CopyReplacesClipboardWithImage();
+        var selectionOcrOutcome = PasteInputAcquirer.Acquire(Request(selectionOcr, ClipboardImageRoute.LocalOcr, FakeOcr));
+        Check(
+            "a selection image is recognized locally and the text replaces the program's own copy",
+            selectionOcrOutcome.Kind == PasteInputKind.SelectionImage &&
+            selectionOcrOutcome.ImagePng is null &&
+            selectionOcrOutcome.Text == "识别行一" + Environment.NewLine + "识别行二" &&
+            selectionOcrOutcome.OcrLineCount == 2 &&
+            selectionOcr.WrittenText == selectionOcrOutcome.Text &&
+            selectionOcr.WrittenData is null &&
+            selectionOcr.Current is { } selectionReplaced &&
+            ClipboardPayloads.ReadImage(selectionReplaced) is null);
+
+        // 3d) 选区图像但配置档不支持视觉：回报宿主弹提醒，OCR 绝不启动，剪贴板保持原样。
+        var selectionUnsupported = new FakeClipboardGateway { Current = TextDataObject("旧文本") };
+        selectionUnsupported.CopyReplacesClipboardWithImage();
+        var selectionUnsupportedOutcome = PasteInputAcquirer.Acquire(Request(selectionUnsupported, ClipboardImageRoute.UnsupportedVision, _ =>
+            throw new InvalidOperationException("能力不符时绝不应启动 OCR。")));
+        Check(
+            "a selection image with no vision support reports back for a user-facing reminder",
+            selectionUnsupportedOutcome.Kind == PasteInputKind.VisionUnsupported &&
+            selectionUnsupportedOutcome.ImagePng is null &&
+            selectionUnsupported.RestoreCount == 0 &&
+            selectionUnsupported.WrittenText is null &&
+            selectionUnsupported.Current is { } selectionKept &&
+            ClipboardPayloads.ReadImage(selectionKept) is not null);
+
+        // 4) 剪贴板图像 × 无视觉能力：本地 OCR 成文本；主人手动复制的图必须保住，原文以附加格式写回。
+        var ocrClipboard = new FakeClipboardGateway { Current = ImageDataObject() };
+        var ocrOutcome = PasteInputAcquirer.Acquire(Request(ocrClipboard, ClipboardImageRoute.LocalOcr, FakeOcr));
+        Check(
+            "a clipboard image is recognized locally and the text is appended, keeping the image",
             ocrOutcome.Kind == PasteInputKind.ClipboardImage &&
             ocrOutcome.ImagePng is null &&
             ocrOutcome.Text == "识别行一" + Environment.NewLine + "识别行二" &&
             ocrOutcome.OcrLineCount == 2 &&
             ocrOutcome.OcrElapsed == TimeSpan.FromMilliseconds(120) &&
             ocrClipboard.RestoreCount == 1 &&
-            ocrClipboard.WrittenText == ocrOutcome.Text &&
-            ocrClipboard.Current is { } replaced &&
-            ClipboardPayloads.ReadImage(replaced) is null);
+            ocrClipboard.WrittenText is null &&
+            ocrClipboard.WrittenData is not null &&
+            ocrClipboard.Current is { } appended &&
+            ClipboardPayloads.ReadText(appended) == ocrOutcome.Text &&
+            ClipboardPayloads.ReadImage(appended) is not null);
 
         // 4b) OCR 之前透明区域已铺白：喂进去的必须是 24bpp 不透明位图。
         // 铺白产物在 Acquire 返回前即释放（issue 019），断言只能在识别回调内完成：只取事实，不留引用。
         PixelFormat? ocrPixelFormat = null;
         int? ocrCorner = null;
         var flattenClipboard = new FakeClipboardGateway { Current = ImageDataObject() };
-        _ = PasteInputAcquirer.Acquire(Request(flattenClipboard, supportsVision: false, bitmap =>
+        _ = PasteInputAcquirer.Acquire(Request(flattenClipboard, ClipboardImageRoute.LocalOcr, bitmap =>
         {
             ocrPixelFormat = bitmap.PixelFormat;
             // Color 的 == 连内部 state/knownColor 一起比，GetPixel 取到的值永远不等于 Color.White，只能比 ARGB。
@@ -191,7 +268,7 @@ internal static partial class SelfTest
 
         // 4c) 剪贴板同时含文本与图像：文本优先，图像既不喂 OCR 也不写回剪贴板。
         var mixed = new FakeClipboardGateway { Current = TextAndImageDataObject("混合原文") };
-        var mixedOutcome = PasteInputAcquirer.Acquire(Request(mixed, supportsVision: false, _ =>
+        var mixedOutcome = PasteInputAcquirer.Acquire(Request(mixed, ClipboardImageRoute.LocalOcr, _ =>
             throw new InvalidOperationException("文本优先时绝不应启动 OCR。")));
         Check(
             "clipboard text wins over a coexisting image without ever starting ocr",
@@ -200,9 +277,38 @@ internal static partial class SelfTest
             mixedOutcome.ImagePng is null &&
             mixed.WrittenText is null);
 
+        // 4d) vision_oneshot 但配置档不支持视觉：不直喂也不偷偷 OCR，回报宿主弹提醒；剪贴板原样还原。
+        var unsupported = new FakeClipboardGateway { Current = ImageDataObject() };
+        var unsupportedOutcome = PasteInputAcquirer.Acquire(Request(unsupported, ClipboardImageRoute.UnsupportedVision, _ =>
+            throw new InvalidOperationException("能力不符时绝不应启动 OCR。")));
+        Check(
+            "an image with no vision support reports back for a user-facing reminder",
+            unsupportedOutcome.Kind == PasteInputKind.VisionUnsupported &&
+            unsupportedOutcome.ImagePng is null &&
+            unsupportedOutcome.Text.Length == 0 &&
+            unsupportedOutcome.Notice is null &&
+            unsupported.RestoreCount == 1 &&
+            unsupported.WrittenText is null);
+
+        // 4e) OCR 期间用户复制了新内容：写回前校验序列号，绝不覆盖用户的新剪贴板。
+        var racing = new FakeClipboardGateway { Current = ImageDataObject() };
+        var racingOutcome = PasteInputAcquirer.Acquire(Request(racing, ClipboardImageRoute.LocalOcr, _ =>
+        {
+            racing.CopyReplacesClipboardWith("用户在 OCR 期间复制的新内容");
+            racing.ApplyCopy();
+            return FakeOcr(new Bitmap(1, 1));
+        }));
+        Check(
+            "a clipboard change during ocr blocks the write-back and keeps the user's new content",
+            racingOutcome.Kind == PasteInputKind.ClipboardImage &&
+            racingOutcome.Text == "识别行一" + Environment.NewLine + "识别行二" &&
+            racing.WrittenText is null &&
+            racing.WrittenData is null &&
+            ClipboardPayloads.ReadText(racing.Current!) == "用户在 OCR 期间复制的新内容");
+
         // 5) 全空：只给托盘提示的结论，不写剪贴板。
         var empty = new FakeClipboardGateway { Current = null };
-        var emptyOutcome = PasteInputAcquirer.Acquire(Request(empty, supportsVision: true, FakeOcr));
+        var emptyOutcome = PasteInputAcquirer.Acquire(Request(empty, ClipboardImageRoute.DirectFeed, FakeOcr));
         Check(
             "nothing anywhere reports empty without touching the clipboard",
             emptyOutcome.Kind == PasteInputKind.Empty &&
@@ -213,7 +319,7 @@ internal static partial class SelfTest
         // 6) Ctrl+C 写空串（唯一会清空用户剪贴板的场景）：超时后靠还原兜底。
         var cleared = new FakeClipboardGateway { Current = TextDataObject("用户原文") };
         cleared.CopyReplacesClipboardWith(string.Empty);
-        var clearedOutcome = PasteInputAcquirer.Acquire(Request(cleared, supportsVision: false, FakeOcr));
+        var clearedOutcome = PasteInputAcquirer.Acquire(Request(cleared, ClipboardImageRoute.LocalOcr, FakeOcr));
         Check(
             "an app that copies an empty string still recovers the user's clipboard text",
             clearedOutcome.Kind == PasteInputKind.ClipboardText &&
@@ -222,13 +328,49 @@ internal static partial class SelfTest
 
         // 7) 还原失败：内容照取，面板状态栏拿到可展示的说明。
         var failing = new FailingRestoreClipboardGateway { Current = TextDataObject("剪贴板原文") };
-        var failingOutcome = PasteInputAcquirer.Acquire(Request(failing, supportsVision: false, FakeOcr));
+        var failingOutcome = PasteInputAcquirer.Acquire(Request(failing, ClipboardImageRoute.LocalOcr, FakeOcr));
         Check(
             "a failed restore still yields content plus a status-bar notice",
             failingOutcome.Kind == PasteInputKind.ClipboardText &&
             failingOutcome.Text == "剪贴板原文" &&
             failingOutcome.Notice is { Length: > 0 } notice &&
             notice.Contains("还原失败", StringComparison.Ordinal));
+
+        // 8) 前台回应了文件引用（如资源管理器里选中文件按 Ctrl+C）：读不了的内容原样保留，绝不还原冲掉。
+        var fileDrop = new FakeClipboardGateway { Current = TextDataObject("用户原有文本") };
+        fileDrop.CopyReplacesClipboardWith(new[] { @"D:\Code\projects\README.md" });
+        var fileDropOutcome = PasteInputAcquirer.Acquire(Request(fileDrop, ClipboardImageRoute.DirectFeed, FakeOcr));
+        Check(
+            "an unusable copy is left alone and reported instead of being restored away",
+            fileDropOutcome.Kind == PasteInputKind.Empty &&
+            fileDropOutcome.Notice is { Length: > 0 } fileNotice &&
+            fileNotice.Contains("无法翻译", StringComparison.Ordinal) &&
+            fileDrop.RestoreCount == 0 &&
+            fileDrop.WrittenText is null &&
+            fileDrop.Current is { } fileData &&
+            fileData.GetFormats(false).Contains("FileDrop"));
+
+        // 9) 复制正好落在最后一次轮询的睡眠里：收工前必须再抓一次，否则还原会把刚复制的图冲掉。
+        var lateImage = new FakeClipboardGateway { Current = TextDataObject("旧文本") };
+        lateImage.CopyReplacesClipboardWithImage();
+        var lateOutcome = PasteInputAcquirer.Acquire(new PasteInputRequest(
+            ClipboardImageRoute.DirectFeed,
+            FakeOcr,
+            lateImage,
+            () => { },
+            // 模拟「Ctrl+C 的响应比轮询预算慢一步」：直到预算耗尽前一刻才落到剪贴板。
+            _ =>
+            {
+                lateImage.ApplyCopy();
+                return false;
+            }));
+        Check(
+            "a copy landing in the last poll sleep is still picked up instead of being restored away",
+            lateOutcome.Kind == PasteInputKind.SelectionImage &&
+            lateOutcome.ImagePng is { Length: > 0 } &&
+            lateImage.RestoreCount == 0 &&
+            lateImage.Current is { } lateData &&
+            ClipboardPayloads.ReadImage(lateData) is not null);
     }
 
     /// <summary>真实剪贴板快照→还原 round-trip（多格式 DataObject）；无剪贴板访问权时宽容跳过。</summary>
@@ -303,9 +445,9 @@ internal static partial class SelfTest
     /// <summary>构造一份「轮询一次即超时」的请求：假剪贴板不会变，等价于前台程序没响应 Ctrl+C。</summary>
     private static PasteInputRequest Request(
         FakeClipboardGateway clipboard,
-        bool supportsVision,
+        ClipboardImageRoute imageRoute,
         Func<Bitmap, OcrResult> recognize) =>
-        new(supportsVision, recognize, clipboard, clipboard.ApplyCopy, _ => false);
+        new(imageRoute, recognize, clipboard, clipboard.ApplyCopy, _ => false);
 
     private static FormsDataObject TextDataObject(string text)
     {
@@ -376,6 +518,12 @@ internal static partial class SelfTest
         /// <summary>最近一次写回的文本。</summary>
         public string? WrittenText { get; private set; }
 
+        /// <summary>最近一次整体写上的数据对象（OCR 原文追加写回时用于断言剪贴板终态）。</summary>
+        public object? WrittenData { get; private set; }
+
+        /// <summary>剪贴板序列号：任何写入都 +1（与真实剪贴板同构），状态机据此感知「前台是否回应了 Ctrl+C」。</summary>
+        public uint SequenceNumber { get; private set; }
+
         /// <summary>设定「Ctrl+C 会复制到的新内容」；空串模拟「程序按 Ctrl+C 写空串清掉剪贴板」。</summary>
         public void CopyReplacesClipboardWith(string text)
         {
@@ -385,7 +533,25 @@ internal static partial class SelfTest
             CopyResult = data;
         }
 
-        public void ApplyCopy() => Current = CopyResult;
+        /// <summary>设定「Ctrl+C 会复制到的新内容」为文件引用（如资源管理器里选中文件按 Ctrl+C）。</summary>
+        public void CopyReplacesClipboardWith(string[] files)
+        {
+            var data = new FormsDataObject();
+            data.SetData("FileDrop", false, files);
+            CopyResult = data;
+        }
+
+        /// <summary>设定「Ctrl+C 会复制到的新内容」为图像（前台程序响应复制的是图，不是文字）。</summary>
+        public void CopyReplacesClipboardWithImage()
+        {
+            CopyResult = ImageDataObject();
+        }
+
+        public void ApplyCopy()
+        {
+            Current = CopyResult;
+            SequenceNumber++;
+        }
 
         public ClipboardSnapshot? Snapshot() =>
             Current is null ? null : ClipboardSnapshot.Capture(Current);
@@ -396,15 +562,24 @@ internal static partial class SelfTest
             var data = new FormsDataObject();
             snapshot.WriteTo(data);
             Current = data;
+            SequenceNumber++;
         }
 
         public void SetText(string text)
         {
             WrittenText = text;
             Current = TextDataObject(text);
+            SequenceNumber++;
         }
 
-        public string? ReadCurrentText() => Current is null ? null : ClipboardPayloads.ReadText(Current);
+        public void SetDataObject(object data, bool copy)
+        {
+            WrittenData = data;
+            Current = (IDataObject)data;
+            SequenceNumber++;
+        }
+
+        public uint ReadSequenceNumber() => SequenceNumber;
     }
 
     /// <summary>还原必失败的假剪贴板：验证还原失败只产生提示，不影响内容采用。</summary>

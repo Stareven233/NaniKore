@@ -8,7 +8,6 @@ using FormsDataObject = System.Windows.Forms.DataObject;
 using FormsDataFormats = System.Windows.Forms.DataFormats;
 using IDataObject = System.Windows.Forms.IDataObject;
 using NativeInput = NaniKore.Interop.NativeMethods.NativeInput;
-using TextDataFormat = System.Windows.Forms.TextDataFormat;
 
 namespace NaniKore.Input;
 
@@ -21,8 +20,14 @@ internal enum PasteInputKind
     /// <summary>剪贴板里现成的文本；还原快照后原样奉还，读写幂等。</summary>
     ClipboardText,
 
-    /// <summary>剪贴板图像：配置档声明支持视觉时 PNG 直喂，否则本地 OCR 成文本。</summary>
+    /// <summary>剪贴板图像（主人手动复制的）：视觉直喂或本地 OCR，剪贴板终态见 <see cref="PasteInputAcquirer"/>。</summary>
     ClipboardImage,
+
+    /// <summary>程序自己 Ctrl+C 复制到的选区图像：与 <see cref="ClipboardImage"/> 同路由，剪贴板保持原样。</summary>
+    SelectionImage,
+
+    /// <summary>vision_oneshot 管线但配置档不支持视觉：宿主据此弹提醒，不静默改道。</summary>
+    VisionUnsupported,
 
     /// <summary>选区、剪贴板文本、剪贴板图像三者皆空。</summary>
     Empty,
@@ -53,9 +58,10 @@ internal sealed record PasteInputOutcome
 /// 一次输入获取的全部外部依赖。自测注入内存实现即可完整驱动状态机：
 /// 不碰真实剪贴板、不合成真实按键，也不启动 ONNX 引擎（OCR 用假委托）。
 /// </summary>
+/// <param name="ImageRoute">剪贴板图像的去向；<see cref="ClipboardImageRoute.UnsupportedVision"/> 时不调用 Recognize，直接回报宿主弹提醒。</param>
 /// <param name="Recognize">本地 OCR 委托：传入的位图仅在调用期间有效（铺白产物在状态机返回前释放），不得在调用外持有。</param>
 internal sealed record PasteInputRequest(
-    bool SupportsVision,
+    ClipboardImageRoute ImageRoute,
     Func<Bitmap, OcrResult> Recognize,
     IClipboardGateway Clipboard,
     Action SendCopy,
@@ -81,8 +87,14 @@ internal interface IClipboardGateway
     /// <summary>用文本整体替换剪贴板内容。</summary>
     void SetText(string text);
 
-    /// <summary>读取当前剪贴板文本（轮询用）；没有文本返回 null。</summary>
-    string? ReadCurrentText();
+    /// <summary>
+    /// 读系统剪贴板序列号：任何写入（文本/图像/文件引用/空串）都会让它 +1，只读不改变它，
+    /// 且不打开剪贴板——并发写入下读取也零异常（实测），是「前台是否回应了 Ctrl+C」最可靠的信号。
+    /// </summary>
+    uint ReadSequenceNumber();
+
+    /// <summary>把数据对象整体写上剪贴板（OCR 原文追加：原图与识别文本一起进剪贴板）。</summary>
+    void SetDataObject(object data, bool copy);
 }
 
 /// <summary>单个剪贴板格式的自持副本。</summary>
@@ -201,10 +213,11 @@ internal static class ClipboardPayloads
 }
 
 /// <summary>
-/// 选取/剪贴板翻译的输入获取状态机（issue 018）。优先级：
-/// 1. 模拟 Ctrl+C 读到的选区文本；2. 剪贴板里现成的文本；3. 剪贴板图像（视觉直喂 / 本地 OCR）；4. 都没有。
-/// 剪贴板终态规则：只有「模拟 Ctrl+C 自己复制到的」与「本地 OCR 识别出的」两种原文会留在剪贴板里，
-/// 其余情况一律把快照原样还原。
+/// 选取/剪贴板翻译的输入获取状态机（issue 018 + 019）。优先级：
+/// 1. 模拟 Ctrl+C 读到的选区内容（文本，或前台程序复制来的图像）；2. 剪贴板里现成的文本；
+/// 3. 剪贴板图像（视觉直喂 / 本地 OCR）；4. 都没有。
+/// 剪贴板终态规则：程序自己 Ctrl+C 复制到的内容原样留着；主人手动复制的图像经本地 OCR 后，
+/// 原文以附加格式写回、原图必须保住；其余情况一律把快照原样还原。
 /// </summary>
 internal static class PasteInputAcquirer
 {
@@ -214,24 +227,68 @@ internal static class PasteInputAcquirer
     /// <summary>轮询总预算：超过即认为前台窗口没有响应复制，转而采用剪贴板现有内容。</summary>
     internal static readonly TimeSpan PollTimeout = TimeSpan.FromMilliseconds(600);
 
+    /// <summary>只算「文本类」格式：前台回应只剩空文本时，剪贴板等同于被清空（实测原生空文本的格式名集合）。</summary>
+    private static readonly HashSet<string> TextFormats =
+        [FormsDataFormats.UnicodeText, FormsDataFormats.Text, FormsDataFormats.OemText, "System.String", "Locale"];
+
     public static PasteInputOutcome Acquire(PasteInputRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // 先全量快照再读基准文本：Ctrl+C 可能写空串清掉用户剪贴板，快照是唯一的兜底来源。
+        // 先全量快照再读序列号基准：Ctrl+C 可能写空串清掉用户剪贴板，快照是唯一的兜底来源。
         var snapshot = request.Clipboard.Snapshot();
-        var baseline = snapshot?.Text;
+        // 轮询基准用剪贴板序列号而不是文本：任何写入都会让它 +1（实测：文本——含与原文一模一样的文本、
+        // 图像、文件引用、空串），读它不打开剪贴板、并发写入下也零异常。只读文本的探测器对图像彻底瞎眼：
+        // 前台复制图像时会误判「没选中」，超时后的还原又把刚复制到的图像冲掉，最后翻的是旧剪贴板图像。
+        var baselineSequence = request.Clipboard.ReadSequenceNumber();
+        var sawResponse = false;
+
+        // 取「前台对 Ctrl+C 的回应」：序列号一动就说明剪贴板被写过，把内容搬进自持内存再判定。
+        // 返回 null 表示这一轮没有可用回应（没回应，或回应是读不了的内容），交给轮询继续。
+        PasteInputOutcome? TakeResponse()
+        {
+            if (request.Clipboard.ReadSequenceNumber() == baselineSequence)
+            {
+                return null;
+            }
+
+            sawResponse = true;
+            ClipboardSnapshot? response = null;
+            try
+            {
+                // COM 代理活不过下一次写入，判定必须在自持内存上进行。
+                response = request.Clipboard.Snapshot();
+            }
+            catch (ExternalException)
+            {
+                // 剪贴板被别的程序短暂占用：这一轮读不到，下一轮序列号仍显示有回应，会再试。
+            }
+
+            if (response?.Text is { Length: > 0 } selection)
+            {
+                // 序列号一动就说明前台真的写了东西，与原有文本相同也同样是新复制到的选区。
+                // 同时释放自持图像副本：文本优先，这份克隆没人会再用，不能拖到 GC 终结。
+                response.DetachImage()?.Dispose();
+                return new PasteInputOutcome { Kind = PasteInputKind.SelectionText, Text = selection };
+            }
+
+            if (response?.DetachImage() is { } selectionImage)
+            {
+                // 选区图像：程序自己 Ctrl+C 复制的，剪贴板保持原样（018 终态规则）。
+                var sequenceAtRead = request.Clipboard.ReadSequenceNumber();
+                return TranslateImage(selectionImage, request, response, notice: null, sequenceAtRead, programOwnCopy: true);
+            }
+
+            return null;
+        }
 
         request.SendCopy();
 
         for (var attempt = 1; ; attempt++)
         {
-            var current = request.Clipboard.ReadCurrentText();
-            // 与基准不同才算「新复制到的内容」：前台程序没响应 Ctrl+C 时剪贴板仍是旧文本，
-            // 此时旧文本会在超时后经快照还原路径原样采用，不会被误记成选区。
-            if (current is { Length: > 0 } copied && !string.Equals(copied, baseline, StringComparison.Ordinal))
+            if (TakeResponse() is { } outcome)
             {
-                return new PasteInputOutcome { Kind = PasteInputKind.SelectionText, Text = copied };
+                return outcome;
             }
 
             if (!request.Tick(attempt))
@@ -240,7 +297,23 @@ internal static class PasteInputAcquirer
             }
         }
 
-        // 超时：还原快照，之后只从快照（进程自持内存）取内容，不再依赖剪贴板当前状态。
+        // 收工前再抓一次：复制可能正好落在最后一次轮询的睡眠里，漏掉它就会被还原冲掉。
+        if (TakeResponse() is { } lastOutcome)
+        {
+            return lastOutcome;
+        }
+
+        // 前台回应了但给的是读不了的内容（文件引用、私有格式）：原样保留，绝不还原冲掉用户刚复制的东西。
+        if (sawResponse && !LeftClipboardEmpty(request.Clipboard))
+        {
+            return new PasteInputOutcome
+            {
+                Kind = PasteInputKind.Empty,
+                Notice = "前台程序复制了无法翻译的内容（如文件引用），已原样保留你的剪贴板。",
+            };
+        }
+
+        // 超时（或前台只回了空文本/空剪贴板）：还原快照，之后只从快照（进程自持内存）取内容。
         var notice = RestoreSnapshot(request.Clipboard, snapshot);
         if (snapshot is null)
         {
@@ -250,7 +323,6 @@ internal static class PasteInputAcquirer
         if (snapshot.Text is { Length: > 0 } text)
         {
             // 剪贴板文本：还原即回到原内容，读写幂等，不做任何额外写入。
-            // 同时释放自持图像副本：文本优先于图像，这份克隆没人会再用，不能拖到 GC 终结。
             snapshot.DetachImage()?.Dispose();
             return new PasteInputOutcome { Kind = PasteInputKind.ClipboardText, Text = text, Notice = notice };
         }
@@ -260,20 +332,67 @@ internal static class PasteInputAcquirer
             return new PasteInputOutcome { Kind = PasteInputKind.Empty, Notice = notice };
         }
 
+        // 还原本身就是一次写入：写回防覆盖校验的基准必须取还原之后的序列号。
+        var sequenceAfterRestore = request.Clipboard.ReadSequenceNumber();
+        return TranslateImage(image, request, snapshot, notice, sequenceAfterRestore, programOwnCopy: false);
+    }
+
+    /// <summary>
+    /// 前台回应了却只留下空文本/空剪贴板时为 true——那等于毁了用户旧内容却没给回任何东西，
+    /// 走还原兜底；文件引用、私有格式等真实内容为 false，必须原样保留（用户刚复制的东西不能被我们冲掉）。
+    /// </summary>
+    private static bool LeftClipboardEmpty(IClipboardGateway clipboard)
+    {
+        try
+        {
+            var current = clipboard.Snapshot();
+            return current is null || current.FormatNames.All(static format => TextFormats.Contains(format));
+        }
+        catch (ExternalException)
+        {
+            // 读不动时按空处理：还原兜底，与旧行为一致。
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// 图像输入的去向（issue 019 裁决）：管线优先，能力不符明确停下，绝不静默改道。
+    /// </summary>
+    /// <param name="image">取自持快照的图像副本，所有权已转移给本方法，用毕即释。</param>
+    /// <param name="source">图像所在的快照：追加写回时按它的自持内容重建剪贴板，不再回头读剪贴板。</param>
+    /// <param name="notice">剪贴板还原失败等异状，随结论透传给面板状态栏。</param>
+    /// <param name="sequenceAtRead">读到这份图像时的剪贴板序列号。OCR 要跑几百毫秒，写回前用它确认
+    /// 剪贴板没被用户动过，绝不覆盖期间新复制的内容。</param>
+    /// <param name="programOwnCopy">true＝程序自己 Ctrl+C 复制的（选区图像）→ OCR 原文直接替换；
+    /// false＝主人手动复制的（剪贴板图像）→ 原文以「图像 + 文本」附加写回，原图必须保住。</param>
+    private static PasteInputOutcome TranslateImage(
+        Bitmap image,
+        PasteInputRequest request,
+        ClipboardSnapshot source,
+        string? notice,
+        uint sequenceAtRead,
+        bool programOwnCopy)
+    {
         using (image)
         {
-            if (request.SupportsVision)
+            if (request.ImageRoute == ClipboardImageRoute.UnsupportedVision)
+            {
+                // 能力不符时明确停下：不直喂（provider 只会报错），也不偷偷 OCR（用户会困惑两把热键为何行为不同）。
+                return new PasteInputOutcome { Kind = PasteInputKind.VisionUnsupported, Notice = notice };
+            }
+
+            if (request.ImageRoute == ClipboardImageRoute.DirectFeed)
             {
                 // 视觉直喂：PNG 原样编码后交给 provider，剪贴板保持不动。
                 return new PasteInputOutcome
                 {
-                    Kind = PasteInputKind.ClipboardImage,
+                    Kind = programOwnCopy ? PasteInputKind.SelectionImage : PasteInputKind.ClipboardImage,
                     ImagePng = PngEncoder.Encode(image),
                     Notice = notice,
                 };
             }
 
-            // 无视觉能力：本地 OCR 识别成文本，原文写回剪贴板（替换图像）。
+            // local_ocr：本地 OCR 识别成文本。
             // 铺白产物是本次调用的临时位图，用毕即释，不拖到 GC 终结。
             using var flattened = FlattenTransparency(image);
             var result = request.Recognize(flattened);
@@ -282,14 +401,31 @@ internal static class PasteInputAcquirer
                 return new PasteInputOutcome
                 {
                     Kind = PasteInputKind.Empty,
-                    Notice = notice ?? "剪贴板图像中没有识别到文本。",
+                    Notice = notice ?? "图像中没有识别到文本。",
                 };
             }
 
-            request.Clipboard.SetText(result.Text);
+            if (request.Clipboard.ReadSequenceNumber() == sequenceAtRead)
+            {
+                // OCR 写回口径（issue 019 第二轮裁决）：按图像的来路分流。
+                if (programOwnCopy)
+                {
+                    // 选区图像是程序自己 Ctrl+C 复制的：识别原文直接替换，没人要那张图。
+                    request.Clipboard.SetText(result.Text);
+                }
+                else
+                {
+                    // 剪贴板图像是主人手动复制的：原图必须保住，原文以附加格式写回。
+                    var appended = new FormsDataObject();
+                    source.WriteTo(appended);
+                    appended.SetText(result.Text);
+                    request.Clipboard.SetDataObject(appended, copy: true);
+                }
+            }
+
             return new PasteInputOutcome
             {
-                Kind = PasteInputKind.ClipboardImage,
+                Kind = programOwnCopy ? PasteInputKind.SelectionImage : PasteInputKind.ClipboardImage,
                 Text = result.Text,
                 OcrLineCount = result.Lines.Count,
                 OcrElapsed = result.Elapsed,
@@ -338,6 +474,9 @@ internal static class PasteInputAcquirer
 /// <summary>WinForms 真实剪贴板网关：必须运行在 STA 线程上（见 <see cref="ClipboardInputSource"/>）。</summary>
 internal sealed class WinFormsClipboardGateway : IClipboardGateway
 {
+    [DllImport("user32.dll")]
+    static extern uint GetClipboardSequenceNumber();
+
     public ClipboardSnapshot? Snapshot()
     {
         var data = System.Windows.Forms.Clipboard.GetDataObject();
@@ -354,20 +493,9 @@ internal sealed class WinFormsClipboardGateway : IClipboardGateway
 
     public void SetText(string text) => System.Windows.Forms.Clipboard.SetText(text);
 
-    public string? ReadCurrentText()
-    {
-        try
-        {
-            return System.Windows.Forms.Clipboard.ContainsText(TextDataFormat.UnicodeText)
-                ? System.Windows.Forms.Clipboard.GetText(TextDataFormat.UnicodeText)
-                : null;
-        }
-        catch (ExternalException)
-        {
-            // 剪贴板被其他程序短暂占用：本轮读不到，交给下一次轮询。
-            return null;
-        }
-    }
+    public uint ReadSequenceNumber() => GetClipboardSequenceNumber();
+
+    public void SetDataObject(object data, bool copy) => System.Windows.Forms.Clipboard.SetDataObject(data, copy);
 }
 
 /// <summary>用 SendInput 向前台窗口合成一次 Ctrl+C；只有前台程序响应复制时剪贴板才会变。</summary>
@@ -424,7 +552,7 @@ internal sealed class SendInputCopySimulator
 /// </summary>
 internal static class ClipboardInputSource
 {
-    public static PasteInputOutcome Acquire(bool supportsVision, Func<Bitmap, OcrResult> recognize)
+    public static PasteInputOutcome Acquire(ClipboardImageRoute imageRoute, Func<Bitmap, OcrResult> recognize)
     {
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         // 运行期节拍器：每 100ms 轮询一次剪贴板，累计达到 600ms 预算即告知状态机收工。
@@ -440,7 +568,7 @@ internal static class ClipboardInputSource
         }
 
         var request = new PasteInputRequest(
-            supportsVision,
+            imageRoute,
             recognize,
             new WinFormsClipboardGateway(),
             SendInputCopySimulator.Default.SendCopy,
