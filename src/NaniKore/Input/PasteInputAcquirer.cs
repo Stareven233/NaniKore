@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
+using NaniKore.Imaging;
 using NaniKore.Ocr;
 using FormsDataObject = System.Windows.Forms.DataObject;
 using FormsDataFormats = System.Windows.Forms.DataFormats;
@@ -52,6 +53,7 @@ internal sealed record PasteInputOutcome
 /// 一次输入获取的全部外部依赖。自测注入内存实现即可完整驱动状态机：
 /// 不碰真实剪贴板、不合成真实按键，也不启动 ONNX 引擎（OCR 用假委托）。
 /// </summary>
+/// <param name="Recognize">本地 OCR 委托：传入的位图仅在调用期间有效（铺白产物在状态机返回前释放），不得在调用外持有。</param>
 internal sealed record PasteInputRequest(
     bool SupportsVision,
     Func<Bitmap, OcrResult> Recognize,
@@ -248,6 +250,8 @@ internal static class PasteInputAcquirer
         if (snapshot.Text is { Length: > 0 } text)
         {
             // 剪贴板文本：还原即回到原内容，读写幂等，不做任何额外写入。
+            // 同时释放自持图像副本：文本优先于图像，这份克隆没人会再用，不能拖到 GC 终结。
+            snapshot.DetachImage()?.Dispose();
             return new PasteInputOutcome { Kind = PasteInputKind.ClipboardText, Text = text, Notice = notice };
         }
 
@@ -264,13 +268,15 @@ internal static class PasteInputAcquirer
                 return new PasteInputOutcome
                 {
                     Kind = PasteInputKind.ClipboardImage,
-                    ImagePng = EncodePng(image),
+                    ImagePng = PngEncoder.Encode(image),
                     Notice = notice,
                 };
             }
 
             // 无视觉能力：本地 OCR 识别成文本，原文写回剪贴板（替换图像）。
-            var result = request.Recognize(FlattenTransparency(image));
+            // 铺白产物是本次调用的临时位图，用毕即释，不拖到 GC 终结。
+            using var flattened = FlattenTransparency(image);
+            var result = request.Recognize(flattened);
             if (result.Lines.Count == 0)
             {
                 return new PasteInputOutcome
@@ -310,14 +316,6 @@ internal static class PasteInputAcquirer
             // 剪贴板被其他程序持有（CLIPBRD_E_CANT_OPEN）时还原失败：内容仍从快照采用。
             return $"剪贴板还原失败：{exception.Message}";
         }
-    }
-
-    /// <summary>PNG 编码：与截图链路同一形态，provider 拿到的是无损原图字节。</summary>
-    private static byte[] EncodePng(Bitmap image)
-    {
-        using var stream = new MemoryStream();
-        image.Save(stream, ImageFormat.Png);
-        return stream.ToArray();
     }
 
     /// <summary>
@@ -379,6 +377,18 @@ internal sealed class SendInputCopySimulator
 
     private const ushort VirtualKeyControl = 0x11;
     private const ushort VirtualKeyC = 0x43;
+
+    /// <summary>
+    /// x64 对齐下 Win32 INPUT 为 40 字节、联合体自偏移 8 起（type 4 + 填充 4 + 联合 32）。
+    /// 架构一旦变化，SendInput 不会报错，只会把按键静默发成垃圾——宁可在此早失败，也不放行。
+    /// </summary>
+    static SendInputCopySimulator()
+    {
+        if (Marshal.SizeOf<NativeInput>() != 40 || Marshal.OffsetOf<NativeInput>(nameof(NativeInput.Keyboard)).ToInt64() != 8)
+        {
+            throw new NotSupportedException("当前架构不受支持：INPUT 结构布局与 x64 假设不符。");
+        }
+    }
 
     public void SendCopy()
     {

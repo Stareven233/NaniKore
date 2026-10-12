@@ -8,7 +8,7 @@ namespace NaniKore.App.Settings;
 
 internal sealed partial class HotkeyPage : UserControl, ISettingsPage
 {
-    private const string IdleHint = "点击当前热键即可开始录制；需要至少一个修饰键与一个字母、数字或 F1–F24 按键。";
+    private const string IdleHint = "点击方框开始录制；可配 Ctrl/Shift/Alt/Win 加字母、数字或 F1–F24，F1–F12 也可单独绑定。";
 
     public HotkeyPage()
     {

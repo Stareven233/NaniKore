@@ -125,7 +125,10 @@ internal sealed class HotkeyRecorderBox : Control
         }
 
         RecordingChanged?.Invoke(this, true);
-        StatusChanged?.Invoke(this, "正在录制：按下修饰键加一个普通键，Esc 取消。");
+        // 状态文案按槽位分流：允许解绑的框（选取翻译）告诉用户 Esc 是解绑而不是取消。
+        StatusChanged?.Invoke(this, AllowUnbind
+            ? "正在录制：按下新组合，或按 Esc 解除绑定。"
+            : "正在录制：按下修饰键加一个普通键，Esc 取消。");
     }
 
     /// <summary>取消录制并恢复进入录制前的组合，绝不留下空热键。</summary>

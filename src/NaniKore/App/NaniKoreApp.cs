@@ -8,6 +8,7 @@ using NaniKore.App.Theme;
 using NaniKore.Capture;
 using NaniKore.Config;
 using NaniKore.Favorites;
+using NaniKore.Imaging;
 using NaniKore.Input;
 using NaniKore.Ocr;
 using NaniKore.Ocr.Models;
@@ -40,6 +41,12 @@ internal sealed class NaniKoreApp : Application
     private byte[]? _lastImagePng;
     private bool _selecting;
     private bool _acquiringPasteInput;
+    /// <summary>
+    /// 翻译/精讲流的代际号：每放弃一轮（抢占、关闭面板）就递增。旧流在派发回调和
+    /// 完成块里比对代数，代数不符即静默舍弃——覆盖「Reset 早于 CancelTranslation」
+    /// 调用顺序下，已过取消检查却尚未派发的缓冲片段，杜绝其混进复用面板的新内容。
+    /// </summary>
+    private long _translationGeneration;
     private double? _lastPanelWidth;
     private double? _lastPanelHeight;
 
@@ -244,7 +251,7 @@ internal sealed class NaniKoreApp : Application
                 selection.Height);
             if (string.Equals(_configStore.Current.Pipeline.Mode, "vision_oneshot", StringComparison.OrdinalIgnoreCase))
             {
-                var image = EncodePng(cropped);
+                var image = PngEncoder.Encode(cropped);
                 _lastImagePng = image;
                 var visionPanel = EnsureResultPanel(selectionOnDesktop);
                 visionPanel.Reset(string.Empty, "正在识别并翻译图像…", autoTranslate: true, autoExplain: _configStore.Current.General.AutoExplain);
@@ -305,17 +312,14 @@ internal sealed class NaniKoreApp : Application
     private async Task StartTranslationAsync(string source, ReadOnlyMemory<byte>? imagePng, string? notice = null)
     {
         CancelTranslation();
+        // 代际在取消之后捕获：此后任何新一轮都会推高代数，使本流的迟到派发自行作废。
+        var generation = Volatile.Read(ref _translationGeneration);
         var cancellation = new CancellationTokenSource();
         _translationCancellation = cancellation;
         var panel = EnsureResultPanel();
         panel.BeginTranslation();
-        panel.SetStatus("正在连接翻译服务…");
-        if (notice is { Length: > 0 } pendingNotice)
-        {
-            // 剪贴板还原失败等异状在状态栏告知：放在连接提示之后，直到首个片段到达才被替换。
-            panel.SetStatus(pendingNotice);
-        }
-
+        // 剪贴板还原失败等异状在状态栏告知：与连接提示二选一，直到首个片段到达才被替换。
+        panel.SetStatus(notice is { Length: > 0 } pendingNotice ? pendingNotice : "正在连接翻译服务…");
         panel.SetTranslationInProgress(true);
         var receivedOutput = false;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -334,9 +338,9 @@ internal sealed class NaniKoreApp : Application
             var provider = (_providerFactory ?? throw new InvalidOperationException("翻译服务尚未初始化。")).GetProvider(config.Pipeline.ActiveProfile, request);
             await foreach (var delta in provider.StreamAsync(request, cancellation.Token))
             {
-                if (cancellation.IsCancellationRequested)
+                // 面板被新一轮翻译复用（代际推高）或本轮已取消：取消前已缓冲的片段绝不插进新内容的开头。
+                if (cancellation.IsCancellationRequested || Volatile.Read(ref _translationGeneration) != generation)
                 {
-                    // 面板被新一轮翻译复用：取消前已缓冲的片段绝不插进新内容的开头。
                     break;
                 }
 
@@ -350,19 +354,32 @@ internal sealed class NaniKoreApp : Application
                     if (!ttftMs.HasValue)
                     {
                         ttftMs = stopwatch.ElapsedMilliseconds;
-                        await Dispatcher.InvokeAsync(() => panel.SetStatus($"首字响应 TTFT: {ttftMs.Value}ms · 正在流式接收…"));
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            if (Volatile.Read(ref _translationGeneration) == generation)
+                            {
+                                panel.SetStatus($"首字响应 TTFT: {ttftMs.Value}ms · 正在流式接收…");
+                            }
+                        });
                     }
 
                     receivedOutput = true;
                 }
 
-                await Dispatcher.InvokeAsync(() => panel.Append(delta));
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    // 迟到派发自我否决：面板此刻展示的可能是新一轮内容，旧片段写进去就是污染。
+                    if (Volatile.Read(ref _translationGeneration) == generation)
+                    {
+                        panel.Append(delta);
+                    }
+                });
             }
 
             stopwatch.Stop();
             var totalDurationMs = stopwatch.ElapsedMilliseconds;
 
-            if (!cancellation.IsCancellationRequested)
+            if (!cancellation.IsCancellationRequested && Volatile.Read(ref _translationGeneration) == generation)
             {
                 // 服务正常结束但没有任何可识别文本时不能伪装成成功，便于定位 provider 响应格式问题。
                 await Dispatcher.InvokeAsync(() =>
@@ -434,6 +451,8 @@ internal sealed class NaniKoreApp : Application
 
         var cancellation = new CancellationTokenSource();
         _explanationCancellation = cancellation;
+        // 与翻译流同一把代际尺：新一轮翻译开启时，旧精讲流的迟到派发同样自行作废。
+        var generation = Volatile.Read(ref _translationGeneration);
         var panel = EnsureResultPanel();
         panel.BeginExplanation();
         panel.SetStatus("正在生成精讲与语法解析…");
@@ -466,7 +485,7 @@ internal sealed class NaniKoreApp : Application
 
             await foreach (var delta in provider.StreamAsync(request, cancellation.Token))
             {
-                if (cancellation.IsCancellationRequested)
+                if (cancellation.IsCancellationRequested || Volatile.Read(ref _translationGeneration) != generation)
                 {
                     // 同上：复用面板开启新一轮时，旧精讲流的缓冲片段不能混进新内容。
                     break;
@@ -482,20 +501,33 @@ internal sealed class NaniKoreApp : Application
                     if (!ttftMs.HasValue)
                     {
                         ttftMs = stopwatch.ElapsedMilliseconds;
-                        await Dispatcher.InvokeAsync(() => panel.SetStatus($"精讲首字响应 TTFT: {ttftMs.Value}ms · 正在流式接收…"));
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            if (Volatile.Read(ref _translationGeneration) == generation)
+                            {
+                                panel.SetStatus($"精讲首字响应 TTFT: {ttftMs.Value}ms · 正在流式接收…");
+                            }
+                        });
                     }
 
                     receivedOutput = true;
                     fullExplanation.Append(delta.Text);
                 }
 
-                await Dispatcher.InvokeAsync(() => panel.Append(delta));
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    // 迟到派发自我否决：面板此刻展示的可能是新一轮内容。
+                    if (Volatile.Read(ref _translationGeneration) == generation)
+                    {
+                        panel.Append(delta);
+                    }
+                });
             }
 
             stopwatch.Stop();
             var totalDurationMs = stopwatch.ElapsedMilliseconds;
 
-            if (!cancellation.IsCancellationRequested)
+            if (!cancellation.IsCancellationRequested && Volatile.Read(ref _translationGeneration) == generation)
             {
                 await Dispatcher.InvokeAsync(() =>
                 {
@@ -830,6 +862,8 @@ internal sealed class NaniKoreApp : Application
 
     private void CancelTranslation()
     {
+        // 先推代际再取消：旧流可能还有已读出的片段排在派发队列里，代际不符即自行作废。
+        _ = Interlocked.Increment(ref _translationGeneration);
         if (_translationCancellation is { } cancellation)
         {
             _translationCancellation = null;
@@ -841,13 +875,6 @@ internal sealed class NaniKoreApp : Application
             _explanationCancellation = null;
             explainCancel.Cancel();
         }
-    }
-
-    private static byte[] EncodePng(Bitmap image)
-    {
-        using var stream = new MemoryStream();
-        image.Save(stream, ImageFormat.Png);
-        return stream.ToArray();
     }
 
     private static void TryCopyToClipboard(string text)

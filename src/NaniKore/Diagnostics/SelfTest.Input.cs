@@ -20,6 +20,7 @@ internal static partial class SelfTest
     {
         TestHotkeyGestureNormalization();
         TestHotkeyGestureSingleFunctionKeys();
+        TestSendInputLayoutGuard();
         TestPasteInputFallbackChain();
         TestClipboardSnapshotRoundTrip();
     }
@@ -98,6 +99,17 @@ internal static partial class SelfTest
     }
 
     /// <summary>
+    /// SendInput 的 INPUT 布局守护（issue 019）：静态构造里的 x64 假设（40 字节、联合体偏移 8）
+    /// 在本机必须成立；访问 Default 即触发校验，架构不符会在这里炸开而不是静默发错键。
+    /// </summary>
+    private static void TestSendInputLayoutGuard()
+    {
+        Check(
+            "the x64 INPUT layout guard holds on this machine",
+            SendInputCopySimulator.Default is not null);
+    }
+
+    /// <summary>
     /// 输入源判定状态机（issue 018）：选区文本 / 剪贴板文本 / 剪贴板图像×视觉两档 / 全空，
     /// 各自走向与剪贴板终态；另覆盖「Ctrl+C 写空串清空用户剪贴板」与「还原失败」两条兜底。
     /// </summary>
@@ -160,19 +172,33 @@ internal static partial class SelfTest
             ClipboardPayloads.ReadImage(replaced) is null);
 
         // 4b) OCR 之前透明区域已铺白：喂进去的必须是 24bpp 不透明位图。
-        Bitmap? ocrInput = null;
+        // 铺白产物在 Acquire 返回前即释放（issue 019），断言只能在识别回调内完成：只取事实，不留引用。
+        PixelFormat? ocrPixelFormat = null;
+        int? ocrCorner = null;
         var flattenClipboard = new FakeClipboardGateway { Current = ImageDataObject() };
         _ = PasteInputAcquirer.Acquire(Request(flattenClipboard, supportsVision: false, bitmap =>
         {
-            ocrInput = bitmap;
+            ocrPixelFormat = bitmap.PixelFormat;
+            // Color 的 == 连内部 state/knownColor 一起比，GetPixel 取到的值永远不等于 Color.White，只能比 ARGB。
+            ocrCorner = bitmap.GetPixel(0, 0).ToArgb();
             return FakeOcr(bitmap);
         }));
         Check(
             "transparency is flattened to white before local ocr",
-            ocrInput is { PixelFormat: PixelFormat.Format24bppRgb } &&
-            // Color 的 == 连内部 state/knownColor 一起比，GetPixel 取到的值永远不等于 Color.White，只能比 ARGB。
-            ocrInput.GetPixel(0, 0).ToArgb() == Color.White.ToArgb(),
-            $"format={ocrInput?.PixelFormat} pixel={ocrInput?.GetPixel(0, 0).ToArgb():X8}");
+            ocrPixelFormat is PixelFormat.Format24bppRgb &&
+            ocrCorner == Color.White.ToArgb(),
+            $"format={ocrPixelFormat} pixel={ocrCorner:X8}");
+
+        // 4c) 剪贴板同时含文本与图像：文本优先，图像既不喂 OCR 也不写回剪贴板。
+        var mixed = new FakeClipboardGateway { Current = TextAndImageDataObject("混合原文") };
+        var mixedOutcome = PasteInputAcquirer.Acquire(Request(mixed, supportsVision: false, _ =>
+            throw new InvalidOperationException("文本优先时绝不应启动 OCR。")));
+        Check(
+            "clipboard text wins over a coexisting image without ever starting ocr",
+            mixedOutcome.Kind == PasteInputKind.ClipboardText &&
+            mixedOutcome.Text == "混合原文" &&
+            mixedOutcome.ImagePng is null &&
+            mixed.WrittenText is null);
 
         // 5) 全空：只给托盘提示的结论，不写剪贴板。
         var empty = new FakeClipboardGateway { Current = null };
@@ -293,6 +319,16 @@ internal static partial class SelfTest
         // 带 alpha 的位图：状态机必须先铺白再喂 OCR。
         var image = new Bitmap(8, 6, PixelFormat.Format32bppArgb);
         var data = new FormsDataObject();
+        data.SetImage(image);
+        return data;
+    }
+
+    /// <summary>文本与图像共存的剪贴板（如从网页复制富文本）：用于验证文本优先。</summary>
+    private static FormsDataObject TextAndImageDataObject(string text)
+    {
+        var image = new Bitmap(8, 6, PixelFormat.Format32bppArgb);
+        var data = new FormsDataObject();
+        data.SetText(text);
         data.SetImage(image);
         return data;
     }
