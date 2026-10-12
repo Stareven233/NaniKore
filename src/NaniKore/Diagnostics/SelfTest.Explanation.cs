@@ -294,7 +294,7 @@ internal static partial class SelfTest
         // 且精讲提示词不得限制具体语言（语言在第一阶段已约束），仅按中高级难度过滤。
         Check(
             "Prompt.Explain.ListLineContractWithGeneralizedDifficulty",
-            PromptTemplates.DefaultExplainUserPrompt.Contains("- **词汇** |") &&
+            PromptTemplates.DefaultExplainUserPrompt.Contains("- 词汇 |") &&
             PromptTemplates.DefaultExplainUserPrompt.Contains("- 句型 |") &&
             PromptTemplates.DefaultExplainUserPrompt.Contains("严禁输出 Markdown 表格") &&
             PromptTemplates.DefaultExplainUserPrompt.Contains("中高级难度") &&
