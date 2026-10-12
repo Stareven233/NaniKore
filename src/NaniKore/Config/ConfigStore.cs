@@ -157,7 +157,7 @@ internal sealed class ConfigStore
         config.Prompts ??= new PromptConfig();
         config.Profiles ??= [];
 
-        // YAML 的 ~ 是显式空值，反序列化得到的是 null 而不是空串。提示词与预留热键
+        // YAML 的 ~ 是显式空值，反序列化得到的是 null 而不是空串。提示词与选取热键
         // 必须在此收敛为空串：序列化器配置了 OmitNull，null 属性会被整体省略，
         // 回写时把 prompts 段塌缩成 {}，全部子键丢失。表现为：模板用 ~ 置空后，
         // 进入设置窗口不做任何修改、仅关闭时的尺寸记忆也会清空 prompts。
@@ -169,7 +169,8 @@ internal sealed class ConfigStore
         config.Prompts.ChinesePlugin ??= string.Empty;
         config.Prompts.VisionBase ??= string.Empty;
         config.Prompts.Explain ??= string.Empty;
-        config.Hotkeys.TranslateClipboard ??= string.Empty;
+        // 选取热键的 ~ 同样收敛为空串：空串＝关闭该热键，归一化绝不替用户改成默认组合。
+        config.Hotkeys.Paste ??= string.Empty;
 
         if (string.IsNullOrWhiteSpace(config.General.TargetLanguage))
         {
@@ -259,6 +260,9 @@ internal sealed class ConfigStore
             config.Hotkeys.Capture = "Ctrl+Shift+A";
             normalized = true;
         }
+
+        // Paste 刻意不做空值兜底：空串就是「关闭该热键」的显式表达；配置段缺失时
+        // 反序列化会保留 HotkeyConfig 的代码默认（Ctrl+Shift+S），无需在这里补写。
 
         // 防止手工配置、损坏文件或异常 DPI 数据把设置窗口恢复成不可用的尺寸。
         if (double.IsNaN(config.Windows.SettingsWidth) || double.IsInfinity(config.Windows.SettingsWidth) ||

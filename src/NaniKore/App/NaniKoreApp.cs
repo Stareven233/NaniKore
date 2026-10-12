@@ -24,8 +24,11 @@ internal sealed class NaniKoreApp : Application
     /// <summary>密钥单文件（.data/keys.bin）与应用同生命周期；目录不可写时启动已被拒绝，不会走到这里。</summary>
     private readonly SecretStore _secretStore = new();
     private readonly IFavoriteService _favoriteService = new SqliteFavoriteService();
+    /// <summary>本地 OCR 引擎惰性创建的互斥闩：截图链路与剪贴板图像链路可能并发触发识别。</summary>
+    private readonly object _ocrEngineGate = new();
     private ConfigStore _configStore = null!;
-    private GlobalHotkeyWindow? _hotkeyWindow;
+    private GlobalHotkeyWindow? _captureHotkey;
+    private GlobalHotkeyWindow? _pasteHotkey;
     private OcrEngine? _ocrEngine;
     private ProviderFactory? _providerFactory;
     private TrayIconHost? _trayIcon;
@@ -36,9 +39,13 @@ internal sealed class NaniKoreApp : Application
     private TranslationSession? _currentSession;
     private byte[]? _lastImagePng;
     private bool _selecting;
-    private bool _isReplacingResultPanel;
+    private bool _acquiringPasteInput;
     private double? _lastPanelWidth;
     private double? _lastPanelHeight;
+
+    /// <summary>WM_HOTKEY 的实例 id：同进程两个全局热键必须用不同 id，否则系统回调无法区分来源。</summary>
+    private const int CaptureHotkeyId = 1;
+    private const int PasteHotkeyId = 2;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -59,8 +66,12 @@ internal sealed class NaniKoreApp : Application
 
         _configStore = new ConfigStore(AppPaths.DataDirectory);
         _providerFactory = new ProviderFactory(_configStore.Current, _secretStore);
-        _hotkeyWindow = new GlobalHotkeyWindow(_configStore.Current.Hotkeys.Capture, OnCaptureHotkeyPressed);
-        _trayIcon = new TrayIconHost(() => _ = CaptureSelectAndTranslateAsync(), () => ShowSettings(), Shutdown);
+        // 托盘必须先于热键注册就位：任一热键注册失败都要靠托盘气泡降级提示，不能改成弹窗或静默。
+        _trayIcon = new TrayIconHost(
+            () => _ = CaptureSelectAndTranslateAsync(),
+            () => _ = PasteTranslateAsync(),
+            () => ShowSettings(),
+            Shutdown);
 
         if (!string.IsNullOrWhiteSpace(_configStore.LoadWarning))
         {
@@ -73,8 +84,16 @@ internal sealed class NaniKoreApp : Application
             _trayIcon.ShowWarning("检测到配置版本与模板版本不一致，详见 设置-关于");
         }
 
+        // 两个热键各自独立注册：一个失败只气泡提示，另一个与托盘菜单照常可用。
+        TryRegisterHotkey(HotkeySlot.Capture);
+        TryRegisterHotkey(HotkeySlot.Paste);
+
         Console.WriteLine("NaniKore translation pipeline is ready.");
         Console.WriteLine($"Press {_configStore.Current.Hotkeys.Capture} to capture and translate a region.");
+        if (HotkeyGesture.IsEnabled(_configStore.Current.Hotkeys.Paste))
+        {
+            Console.WriteLine($"Press {_configStore.Current.Hotkeys.Paste} to translate the selection or clipboard content.");
+        }
     }
 
     /// <summary>可写性前置检查失败时弹错并回报 false；调用方据此拒绝启动。</summary>
@@ -97,19 +116,108 @@ internal sealed class NaniKoreApp : Application
         ConfigStore.ReadTemplateVersion(),
         _configStore.Current.Version);
 
-    /// <summary>截图热键先抢占旧结果，再立即进入新一轮选区翻译；正在框选时保持忽略新触发。</summary>
+    /// <summary>截图热键：正在框选时保持忽略新触发；旧结果面板直接 Reset 复用，不关闭。</summary>
     private void OnCaptureHotkeyPressed()
     {
-        if (_resultPanel is { IsVisible: true } panel)
-        {
-            // 关闭事件会同时取消仍在进行的翻译请求，避免结果面板关闭后继续更新旧内容。
-            // 热键替换属于例外：Close 的 Closed 通知可能晚于新流程启动，不能误杀刚创建的翻译流。
-            _isReplacingResultPanel = true;
-            panel.Close();
-        }
-
         _ = CaptureSelectAndTranslateAsync();
     }
+
+    /// <summary>选取/剪贴板翻译热键：输入获取期间（含 600ms 轮询窗口）连按只跑一轮；框选模态期间直接丢弃。</summary>
+    private void OnPasteHotkeyPressed()
+    {
+        if (_selecting)
+        {
+            // 框选浮层是模态的：此刻按 paste 说明用户仍在截图表链路里，本次触发丢弃。
+            return;
+        }
+
+        _ = PasteTranslateAsync();
+    }
+
+    /// <summary>
+    /// 选取/剪贴板翻译（issue 018）：输入获取与截图链路完全同构——同一个 provider、同一套提示词、
+    /// 同一个单实例结果面板。区别只在输入来源与锚点：没有选区矩形，面板以当前鼠标光标为锚点。
+    /// 本路径忽略 <c>auto_translate</c>（热键本身就是「立即翻译」的意图），<c>auto_explain</c> 跟随配置。
+    /// </summary>
+    private async Task PasteTranslateAsync()
+    {
+        if (_acquiringPasteInput || _selecting)
+        {
+            return;
+        }
+
+        _acquiringPasteInput = true;
+        try
+        {
+            var config = _configStore.Current;
+            var supportsVision = _configStore.GetActiveProfile().SupportsVision;
+            // 锚点在发起输入获取的瞬间就定下：输入获取最长要等 600ms 轮询预算，
+            // 面板位置应当反映「按热键时鼠标在哪」，而不是等待结束时的落点。
+            var anchor = CursorAnchor();
+            // 剪贴板读写与轮询全部落在专用 STA 线程；OCR 也在该线程跑完，面板更新回到主线程。
+            var outcome = await Task.Run(() => ClipboardInputSource.Acquire(
+                supportsVision,
+                bitmap => GetOcrEngine().Recognize(bitmap)));
+
+            if (outcome.Kind == PasteInputKind.Empty)
+            {
+                // 选区、剪贴板文本、剪贴板图像都没有：只提示，不弹出空面板。
+                _trayIcon?.ShowWarning(outcome.Notice ?? "没有读取到选区文本或可用的剪贴板内容。");
+                return;
+            }
+
+            var autoExplain = config.General.AutoExplain;
+            if (outcome.ImagePng is { Length: > 0 } imagePng)
+            {
+                // 视觉直喂：原文区留空，PNG 原图进 provider；剪贴板保持不动。
+                _lastImagePng = imagePng;
+                var visionPanel = EnsureResultPanel(anchor);
+                visionPanel.Reset(string.Empty, "正在识别并翻译剪贴板图像…", autoTranslate: true, autoExplain: autoExplain);
+                _ = StartTranslationAsync(string.Empty, imagePng, outcome.Notice);
+                return;
+            }
+
+            // 文本路径（选区文本 / 剪贴板文本 / 图像 OCR）：原文已落地，面板「翻译」按钮可用。
+            _lastImagePng = null;
+            var status = outcome.Kind switch
+            {
+                PasteInputKind.ClipboardImage => $"OCR 完成：{outcome.OcrLineCount} 行 · {outcome.OcrElapsed.TotalMilliseconds:N0} ms",
+                PasteInputKind.SelectionText => "已读取选区文本。",
+                _ => "已读取剪贴板文本。",
+            };
+            var panel = EnsureResultPanel(anchor);
+            panel.Reset(outcome.Text, status, autoTranslate: true, autoExplain: autoExplain);
+            _ = StartTranslationAsync(outcome.Text, null, outcome.Notice);
+        }
+        catch (DirectoryNotFoundException exception)
+        {
+            ShowFailure("本地 OCR 依赖缺失，请打开设置-通用-本地ocr依赖进行下载", exception);
+        }
+        catch (Win32Exception exception)
+        {
+            ShowFailure("读取选区或剪贴板失败。", exception);
+        }
+        catch (ExternalException exception)
+        {
+            ShowFailure("图像或剪贴板操作失败。", exception);
+        }
+        catch (Exception exception)
+        {
+            ShowFailure("读取选区或剪贴板失败。", exception);
+        }
+        finally
+        {
+            _acquiringPasteInput = false;
+        }
+    }
+
+    /// <summary>无选区路径的锚点：以当前鼠标光标位置为准，交由面板沿用「下方优先、不够翻上方」策略。</summary>
+    private static System.Drawing.Rectangle CursorAnchor()
+    {
+        var position = WinForms.Cursor.Position;
+        return new System.Drawing.Rectangle(position.X, position.Y, 1, 1);
+    }
+
 
     private async Task CaptureSelectAndTranslateAsync()
     {
@@ -194,7 +302,7 @@ internal sealed class NaniKoreApp : Application
         }
     }
 
-    private async Task StartTranslationAsync(string source, ReadOnlyMemory<byte>? imagePng)
+    private async Task StartTranslationAsync(string source, ReadOnlyMemory<byte>? imagePng, string? notice = null)
     {
         CancelTranslation();
         var cancellation = new CancellationTokenSource();
@@ -202,6 +310,12 @@ internal sealed class NaniKoreApp : Application
         var panel = EnsureResultPanel();
         panel.BeginTranslation();
         panel.SetStatus("正在连接翻译服务…");
+        if (notice is { Length: > 0 } pendingNotice)
+        {
+            // 剪贴板还原失败等异状在状态栏告知：放在连接提示之后，直到首个片段到达才被替换。
+            panel.SetStatus(pendingNotice);
+        }
+
         panel.SetTranslationInProgress(true);
         var receivedOutput = false;
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -220,6 +334,12 @@ internal sealed class NaniKoreApp : Application
             var provider = (_providerFactory ?? throw new InvalidOperationException("翻译服务尚未初始化。")).GetProvider(config.Pipeline.ActiveProfile, request);
             await foreach (var delta in provider.StreamAsync(request, cancellation.Token))
             {
+                if (cancellation.IsCancellationRequested)
+                {
+                    // 面板被新一轮翻译复用：取消前已缓冲的片段绝不插进新内容的开头。
+                    break;
+                }
+
                 if (delta.Usage.HasValue)
                 {
                     reportedUsage = delta.Usage.Value;
@@ -346,6 +466,12 @@ internal sealed class NaniKoreApp : Application
 
             await foreach (var delta in provider.StreamAsync(request, cancellation.Token))
             {
+                if (cancellation.IsCancellationRequested)
+                {
+                    // 同上：复用面板开启新一轮时，旧精讲流的缓冲片段不能混进新内容。
+                    break;
+                }
+
                 if (delta.Usage.HasValue)
                 {
                     reportedUsage = delta.Usage.Value;
@@ -444,7 +570,7 @@ internal sealed class NaniKoreApp : Application
             IsEstimated: usage.IsEstimated);
     }
 
-    private ResultPanelWindow EnsureResultPanel(System.Drawing.Rectangle? selectionOnDesktop = null)
+    private ResultPanelWindow EnsureResultPanel(System.Drawing.Rectangle? anchorOnDesktop = null)
     {
         if (_resultPanel is not null)
         {
@@ -453,7 +579,7 @@ internal sealed class NaniKoreApp : Application
                 _resultPanel.Show();
             }
 
-            if (selectionOnDesktop is { } selectedBounds)
+            if (anchorOnDesktop is { } selectedBounds)
             {
                 _resultPanel.PositionNearSelection(selectedBounds);
             }
@@ -499,19 +625,13 @@ internal sealed class NaniKoreApp : Application
         panel.Closed += (_, _) =>
         {
             _resultPanel = null;
-            if (_isReplacingResultPanel)
-            {
-                _isReplacingResultPanel = false;
-            }
-            else
-            {
-                CancelTranslation();
-            }
+            // 关闭即放弃本轮结果：翻译与精讲两条流都要取消，避免面板关闭后继续更新旧内容。
+            CancelTranslation();
         };
         _resultPanel = panel;
         panel.Show();
         panel.BringToTopmostBand();
-        if (selectionOnDesktop is { } newPanelBounds)
+        if (anchorOnDesktop is { } newPanelBounds)
         {
             panel.PositionNearSelection(newPanelBounds);
         }
@@ -540,7 +660,7 @@ internal sealed class NaniKoreApp : Application
             () => _configStore.Current,
             ApplySettings,
             TestConnectionAsync,
-            SuspendCaptureHotkey,
+            SuspendHotkey,
             DownloadOcrDependenciesAsync,
             DownloadPhoneticDictionaryAsync,
             _favoriteService,
@@ -555,57 +675,114 @@ internal sealed class NaniKoreApp : Application
     private void ApplySettings(AppConfig next)
     {
         var oldConfig = _configStore.Current;
-        if (!string.Equals(oldConfig.Hotkeys.Capture, next.Hotkeys.Capture, StringComparison.OrdinalIgnoreCase))
-        {
-            ReplaceHotkey(next.Hotkeys.Capture, oldConfig.Hotkeys.Capture);
-        }
-
+        // 业务配置先落盘，再按新手势重注册：注册读的是 Current，反过来的话注册到的是旧组合。
         _configStore.AtomicWrite(next);
         _providerFactory?.Dispose();
         _providerFactory = new ProviderFactory(next, _secretStore);
+
+        // 两个热键各自比对、各自重注册：单个失败只气泡提示，不回退旧键、不 rethrow，其余设置照常生效。
+        if (!string.Equals(oldConfig.Hotkeys.Capture, next.Hotkeys.Capture, StringComparison.OrdinalIgnoreCase))
+        {
+            TryRegisterHotkey(HotkeySlot.Capture);
+        }
+
+        if (!string.Equals(oldConfig.Hotkeys.Paste, next.Hotkeys.Paste, StringComparison.OrdinalIgnoreCase))
+        {
+            TryRegisterHotkey(HotkeySlot.Paste);
+        }
+
         // 目标语言可能已变：同步刷新结果卡上的收藏语言探测口径（不打断当前展示）。
         _resultPanel?.SetTargetLanguage(next.General.TargetLanguage);
         // 注音开关可能已变：结果卡按新口径决定是否叠加注音（原文区不强刷，下一轮原文自然生效）。
         _resultPanel?.SetPhoneticsOptions(next.Phonetics);
     }
 
-    /// <summary>热键录制期间临时注销全局热键，避免录制正在生效的组合时反而触发截图。</summary>
-    private void SuspendCaptureHotkey(bool suspend)
+    /// <summary>按槽位取当前配置里的手势文本。</summary>
+    private string CurrentGesture(HotkeySlot slot) => slot switch
     {
-        if (suspend)
-        {
-            _hotkeyWindow?.Dispose();
-            _hotkeyWindow = null;
-            return;
-        }
+        HotkeySlot.Paste => _configStore.Current.Hotkeys.Paste,
+        _ => _configStore.Current.Hotkeys.Capture,
+    };
 
-        if (_hotkeyWindow is not null)
-        {
-            return;
-        }
+    private GlobalHotkeyWindow? HotkeyWindow(HotkeySlot slot) =>
+        slot == HotkeySlot.Paste ? _pasteHotkey : _captureHotkey;
 
-        try
+    private void SetHotkeyWindow(HotkeySlot slot, GlobalHotkeyWindow? window)
+    {
+        if (slot == HotkeySlot.Paste)
         {
-            _hotkeyWindow = new GlobalHotkeyWindow(_configStore.Current.Hotkeys.Capture, OnCaptureHotkeyPressed);
+            _pasteHotkey = window;
         }
-        catch (Exception exception)
+        else
         {
-            // 恢复失败不能打断设置窗；托盘提示后仍可用托盘菜单截图。
-            _trayIcon?.ShowWarning($"恢复截图热键失败：{exception.Message}");
+            _captureHotkey = window;
         }
     }
 
-    private void ReplaceHotkey(string nextGesture, string previousGesture)
+    private Action HotkeyHandler(HotkeySlot slot) =>
+        slot == HotkeySlot.Paste ? OnPasteHotkeyPressed : OnCaptureHotkeyPressed;
+
+    private static int HotkeyId(HotkeySlot slot) =>
+        slot == HotkeySlot.Paste ? PasteHotkeyId : CaptureHotkeyId;
+
+    /// <summary>报错与气泡里区分两个热键的展示名。</summary>
+    private static string DescribeHotkey(HotkeySlot slot) =>
+        slot == HotkeySlot.Paste ? "选取翻译" : "截图翻译";
+
+    /// <summary>注册单个热键；空串＝关闭该热键（顺手摘掉旧注册，不留下幽灵热键）。</summary>
+    private void RegisterHotkey(HotkeySlot slot)
     {
-        _hotkeyWindow?.Dispose();
+        var gesture = CurrentGesture(slot);
+        ReleaseHotkey(slot);
+        if (!HotkeyGesture.IsEnabled(gesture))
+        {
+            return;
+        }
+
+        SetHotkeyWindow(slot, new GlobalHotkeyWindow(gesture, HotkeyHandler(slot), HotkeyId(slot)));
+    }
+
+    private void ReleaseHotkey(HotkeySlot slot)
+    {
+        HotkeyWindow(slot)?.Dispose();
+        SetHotkeyWindow(slot, null);
+    }
+
+    /// <summary>启动与设置保存路径：单个热键注册失败只降级为托盘气泡，互不牵连。</summary>
+    private void TryRegisterHotkey(HotkeySlot slot)
+    {
         try
         {
-            _hotkeyWindow = new GlobalHotkeyWindow(nextGesture, OnCaptureHotkeyPressed);
+            RegisterHotkey(slot);
         }
-        catch
+        catch (Exception exception)
         {
-            _hotkeyWindow = new GlobalHotkeyWindow(previousGesture, OnCaptureHotkeyPressed);
-            throw;
+            _trayIcon?.ShowWarning($"注册{DescribeHotkey(slot)}热键失败：{exception.Message}");
+        }
+    }
+
+    /// <summary>热键录制期间临时注销「正在录制的那个」实例，避免录制正在生效的组合时反而触发翻译。</summary>
+    private void SuspendHotkey(HotkeyRecordingState state)
+    {
+        if (state.Recording)
+        {
+            ReleaseHotkey(state.Slot);
+            return;
+        }
+
+        if (HotkeyWindow(state.Slot) is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            RegisterHotkey(state.Slot);
+        }
+        catch (Exception exception)
+        {
+            // 恢复失败不能打断设置窗；托盘提示后仍可用托盘菜单触发同一条链路。
+            _trayIcon?.ShowWarning($"恢复{DescribeHotkey(state.Slot)}热键失败：{exception.Message}");
         }
     }
 
@@ -642,7 +819,14 @@ internal sealed class NaniKoreApp : Application
         PhoneticAnnotatorRegistryHolder.ResetAvailability(languageCode);
     }
 
-    private OcrEngine GetOcrEngine() => _ocrEngine ??= OcrEngine.CreateDefault();
+    private OcrEngine GetOcrEngine()
+    {
+        // 截图链路与剪贴板图像链路可能并发识别：惰性创建走互斥闩，绝不重复建会话。
+        lock (_ocrEngineGate)
+        {
+            return _ocrEngine ??= OcrEngine.CreateDefault();
+        }
+    }
 
     private void CancelTranslation()
     {
@@ -692,7 +876,8 @@ internal sealed class NaniKoreApp : Application
         _trayIcon?.Dispose();
         _providerFactory?.Dispose();
         _ocrEngine?.Dispose();
-        _hotkeyWindow?.Dispose();
+        _captureHotkey?.Dispose();
+        _pasteHotkey?.Dispose();
         ThemeManager.Shutdown();
         base.OnExit(e);
     }

@@ -7,6 +7,8 @@
 ## 功能
 
 - 全局快捷键 `Ctrl+Shift+A`，支持拖选、Esc 或右键取消。
+- 第二把全局快捷键 `Ctrl+Shift+S`（选取/剪贴板翻译）：模拟 Ctrl+C 抓选区文本，取不到时依次退回剪贴板文本、剪贴板图像，复用截图流程的同一套翻译服务、提示词与结果面板，面板锚在鼠标所在显示器。
+- 热键可留空即停用；截图与选取两把热键各自独立注册、录制与冲突提示（录制时支持 F1–F12 单键，Esc 可解除绑定）。
 - 基于 GDI 的虚拟桌面截图与 Per-Monitor V2 物理像素坐标处理。
 - 通过 ONNX Runtime 直接运行 PP-OCRv6-small，不依赖 Python、OpenCV 或外部 OCR 服务。
 - 支持 OpenAI、Claude、Gemini 协议的流式翻译配置，以及 `local_ocr`、`vision_oneshot` 两条输入管线。
@@ -83,6 +85,8 @@ deps/
 每个配置档只需 `name` / `kind` / `base_url` / `model` 四行；`api_type` / `supports_vision` / `timeout_seconds` / `enable_thinking` 只在偏离缺省（`completions` / `true` / `30` 秒 / `false`）时才需要写。配置档的唯一身份是 `name`：`pipeline.active_profile`、翻译页下拉、错误提示与密钥索引全部用它。
 
 翻译服务、模型、目标语言和快捷键均可通过设置页调整。请只在自己信任的服务商端点中填写 API Key。翻译页「凭据」组可以一键打开 `.data` 目录、清除当前配置档的密钥。
+
+「热键」页分别录制两把全局快捷键：`hotkeys.capture`（截图 OCR，默认 `Ctrl+Shift+A`）与 `hotkeys.paste`（选取/剪贴板翻译，默认 `Ctrl+Shift+S`）。任一把留空即不注册该热键；录制框按 Esc 可解除绑定。选取翻译的输入优先级是「选区文本（模拟 Ctrl+C）→ 剪贴板文本 → 剪贴板图像」：图像按当前配置档走视觉直喂，`vision_oneshot` 管线或缺少多模态能力时改用本地 PP-OCRv6 识别。程序只在「前台程序响应了 Ctrl+C」与「本地 OCR 识别成功」两种情况下改写剪贴板，其余情况（含前台程序按 Ctrl+C 写空串）都会在轮询超时后把快照原样还原；还原失败时结果面板状态栏会给出说明。
 
 「关于」页版本号形如 `v{A}({B})`：A 是模板版本（最新），B 是当前配置版本；两者 major/minor 不一致时启动后托盘会提示一次，关于页给一行常驻说明（仅提示，没有自动动作）。
 

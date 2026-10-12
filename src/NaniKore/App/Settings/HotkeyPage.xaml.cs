@@ -13,9 +13,15 @@ internal sealed partial class HotkeyPage : UserControl, ISettingsPage
     public HotkeyPage()
     {
         InitializeComponent();
-        RecorderStatus.Text = IdleHint;
-        Recorder.StatusChanged += (_, message) => RecorderStatus.Text = message;
-        Recorder.RecordingChanged += (_, recording) => RecordingChanged?.Invoke(this, recording);
+        CaptureRecorderStatus.Text = IdleHint;
+        PasteRecorderStatus.Text = IdleHint;
+        CaptureRecorder.StatusChanged += (_, message) => CaptureRecorderStatus.Text = message;
+        PasteRecorder.StatusChanged += (_, message) => PasteRecorderStatus.Text = message;
+        // 哪个框在录制就临时注销哪个实例，另一个全局热键保持可用。
+        CaptureRecorder.RecordingChanged += (_, recording) =>
+            RecordingChanged?.Invoke(this, new HotkeyRecordingState(recording, HotkeySlot.Capture));
+        PasteRecorder.RecordingChanged += (_, recording) =>
+            RecordingChanged?.Invoke(this, new HotkeyRecordingState(recording, HotkeySlot.Paste));
     }
 
     public string Title => "热键";
@@ -24,38 +30,61 @@ internal sealed partial class HotkeyPage : UserControl, ISettingsPage
 
     public FrameworkElement View => this;
 
-    /// <summary>录制开始/结束时通知宿主临时注销、恢复全局热键。</summary>
-    public event EventHandler<bool>? RecordingChanged;
+    /// <summary>录制开始/结束时通知宿主临时注销、恢复对应的全局热键。</summary>
+    public event EventHandler<HotkeyRecordingState>? RecordingChanged;
 
     public void Load(AppConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
         // 旧配置可能是 control+shift+a 等写法，读入时统一成展示用组合；非法值保持原样交给校验提示。
-        Recorder.Gesture = TryNormalize(config.Hotkeys.Capture);
+        CaptureRecorder.Gesture = TryNormalize(config.Hotkeys.Capture);
+        PasteRecorder.Gesture = TryNormalize(config.Hotkeys.Paste);
     }
 
     public string? Validate()
     {
-        if (Recorder.IsRecording)
+        if (CaptureRecorder.IsRecording)
         {
-            return "热键仍在录制中：请按下组合键或按 Esc 取消。";
+            return "截图热键仍在录制中：请按下组合键或按 Esc 取消。";
         }
 
-        try
+        if (PasteRecorder.IsRecording)
         {
-            GlobalHotkeyWindow.ValidateGesture(Recorder.Gesture);
-            return null;
+            return "选取热键仍在录制中：请按下组合键，或按 Esc 解除绑定。";
         }
-        catch (ArgumentException exception)
+
+        // 截图热键必须恒有值；选取热键允许留空（空串＝关闭）。
+        if (ValidateGesture("截图翻译热键", CaptureRecorder.Gesture, allowEmpty: false) is { } captureError)
         {
-            return exception.Message;
+            return captureError;
         }
+
+        return ValidateGesture("选取翻译热键", PasteRecorder.Gesture, allowEmpty: true);
     }
 
     public void Apply(AppConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        config.Hotkeys.Capture = Recorder.Gesture;
+        config.Hotkeys.Capture = CaptureRecorder.Gesture;
+        config.Hotkeys.Paste = PasteRecorder.Gesture;
+    }
+
+    private static string? ValidateGesture(string label, string gesture, bool allowEmpty)
+    {
+        if (allowEmpty && string.IsNullOrWhiteSpace(gesture))
+        {
+            return null;
+        }
+
+        try
+        {
+            GlobalHotkeyWindow.ValidateGesture(gesture);
+            return null;
+        }
+        catch (ArgumentException exception)
+        {
+            return $"{label}：{exception.Message}";
+        }
     }
 
     private static string TryNormalize(string gesture)

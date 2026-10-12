@@ -73,6 +73,15 @@ internal static partial class SelfTest
         Check(
             "general page attaches descriptions to the rows they explain",
             describedRows > 0);
+
+        // 热键页（issue 018）：两个录制框分别绑定 Capture / Paste，各自一条状态行。
+        var hotkeys = new HotkeyPage();
+        hotkeys.Load(new AppConfig { Hotkeys = new HotkeyConfig { Capture = "ctrl+shift+a", Paste = "f1" } });
+        Check(
+            "hotkey page hosts two independent recorder boxes bound to capture and paste",
+            FindDescendants<HotkeyRecorderBox>(hotkeys.View).Count() == 2 &&
+            Find<HotkeyRecorderBox>(hotkeys, "CaptureRecorder") is { Gesture: "Ctrl+Shift+A", AllowUnbind: false } &&
+            Find<HotkeyRecorderBox>(hotkeys, "PasteRecorder") is { Gesture: "F1", AllowUnbind: true });
     }
 
     /// <summary>

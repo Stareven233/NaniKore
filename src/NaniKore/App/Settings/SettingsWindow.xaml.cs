@@ -5,6 +5,7 @@ using NaniKore.App.Controls;
 using NaniKore.App.Theme;
 using NaniKore.Config;
 using NaniKore.Favorites;
+using NaniKore.Input;
 using FontFamily = System.Windows.Media.FontFamily;
 using Orientation = System.Windows.Controls.Orientation;
 
@@ -36,7 +37,7 @@ internal sealed partial class SettingsWindow : Window
         Func<AppConfig> current,
         Action<AppConfig> save,
         Func<ProviderProfile, string?, Task<string>> testConnection,
-        Action<bool>? suspendGlobalHotkey = null,
+        Action<HotkeyRecordingState>? suspendGlobalHotkey = null,
         Func<IProgress<string>, CancellationToken, Task>? downloadDependencies = null,
         Func<string, IProgress<string>, CancellationToken, Task>? downloadPhoneticDictionary = null,
         IFavoriteService? favoriteService = null,
@@ -63,8 +64,8 @@ internal sealed partial class SettingsWindow : Window
         var general = new GeneralPage(downloadDependencies, downloadPhoneticDictionary);
         _translationPage = new TranslationPage { TestConnection = testConnection };
         var hotkeys = new HotkeyPage();
-        // 录制期间必须临时注销已生效的全局热键，否则系统会把按键交给 NaniKore 自己的截图流程。
-        hotkeys.RecordingChanged += (_, recording) => suspendGlobalHotkey?.Invoke(recording);
+        // 录制期间必须临时注销正在录制的那个全局热键，否则系统会把按键交给 NaniKore 自己的翻译流程。
+        hotkeys.RecordingChanged += (_, state) => suspendGlobalHotkey?.Invoke(state);
         var about = new AboutPage { TemplateVersionProvider = templateVersion };
         // 收藏页读应用级收藏服务（SQLite 持久化），不参与 AppConfig 编辑副本。
         var favorites = new FavoritesPage(favoriteService);

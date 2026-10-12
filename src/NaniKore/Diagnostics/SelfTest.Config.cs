@@ -4,6 +4,7 @@ using NaniKore.App.Controls;
 using NaniKore.App.Settings;
 using NaniKore.Config;
 using NaniKore.Favorites;
+using NaniKore.Input;
 
 namespace NaniKore.Diagnostics;
 
@@ -13,6 +14,7 @@ internal static partial class SelfTest
     {
         TestConfigRoundTrip();
         TestEmptyPromptKeysSurviveRewrite();
+        TestPasteHotkeyNormalization();
         TestLegacyVisionOneshotKeyIsIgnored();
         TestPhoneticsConfigDefaultsAndRoundTrip();
         TestProfileDocumentOmitsDefaults();
@@ -114,7 +116,7 @@ internal static partial class SelfTest
                 version: 0.2.11
                 hotkeys:
                   capture: Ctrl+Shift+A
-                  translate_clipboard: ~
+                  paste: ~
                 prompts:
                   base: ~
                   japanese_plugin: ~
@@ -132,7 +134,7 @@ internal static partial class SelfTest
                 store.Current.Prompts.ChinesePlugin is { Length: 0 } &&
                 store.Current.Prompts.VisionBase is { Length: 0 } &&
                 store.Current.Prompts.Explain is { Length: 0 } &&
-                store.Current.Hotkeys.TranslateClipboard is { Length: 0 });
+                store.Current.Hotkeys.Paste is { Length: 0 });
 
             // 模拟设置窗口未保存直接关闭：克隆打开时的快照后原样写盘（尺寸记忆路径）。
             store.AtomicWrite(AppConfigCloner.Clone(store.Current));
@@ -145,8 +147,60 @@ internal static partial class SelfTest
                 rewritten.Contains("  chinese_plugin: ", StringComparison.Ordinal) &&
                 rewritten.Contains("  vision_base: ", StringComparison.Ordinal) &&
                 rewritten.Contains("  explain: ", StringComparison.Ordinal) &&
-                rewritten.Contains("  translate_clipboard: ", StringComparison.Ordinal) &&
+                rewritten.Contains("  paste: ", StringComparison.Ordinal) &&
                 !rewritten.Contains("prompts: {}", StringComparison.Ordinal));
+        });
+    }
+
+    /// <summary>
+    /// 选取热键（issue 018）三段口径：<c>paste: ~</c> 归一化成空串（不弹默认值），
+    /// 配置段整个缺失时取代码默认 <c>Ctrl+Shift+S</c>，显式空串表示关闭且不触达注册路径。
+    /// </summary>
+    private static void TestPasteHotkeyNormalization()
+    {
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
+        {
+            // 显式 ~：收敛为空串，绝不替用户改回默认组合。
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
+                version: 0.2.11
+                hotkeys:
+                  capture: Ctrl+Shift+A
+                  paste: ~
+                """);
+            var explicitNull = new ConfigStore(dataDirectory, templateDirectory);
+            Check(
+                "explicit paste null normalizes to an empty string instead of the default",
+                explicitNull.Current.Hotkeys.Paste is { Length: 0 });
+
+            // 段内缺失 paste 键：反序列化保留 HotkeyConfig 的代码默认。
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
+                version: 0.2.11
+                hotkeys:
+                  capture: Ctrl+Shift+A
+                """);
+            var missingKey = new ConfigStore(dataDirectory, templateDirectory);
+            Check(
+                "a missing paste key falls back to the code default",
+                missingKey.Current.Hotkeys.Paste == "Ctrl+Shift+S");
+
+            // 显式空串：原样保留，且注册路径据此整体跳过。
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
+                version: 0.2.11
+                hotkeys:
+                  capture: Ctrl+Shift+A
+                  paste: ''
+                """);
+            var disabled = new ConfigStore(dataDirectory, templateDirectory);
+            disabled.AtomicWrite(AppConfigCloner.Clone(disabled.Current));
+            var reloaded = new ConfigStore(dataDirectory, templateDirectory);
+            Check(
+                "an explicitly empty paste gesture stays empty across a rewrite",
+                reloaded.Current.Hotkeys.Paste is { Length: 0 } &&
+                File.ReadAllText(Path.Combine(dataDirectory, "config.yaml")).Contains("  paste: ''", StringComparison.Ordinal));
+            Check(
+                "an empty paste gesture never reaches hotkey registration",
+                !HotkeyGesture.IsEnabled(reloaded.Current.Hotkeys.Paste) &&
+                HotkeyGesture.IsEnabled(reloaded.Current.Hotkeys.Capture));
         });
     }
 

@@ -31,7 +31,7 @@ internal sealed class TrayIconHost : IDisposable
     private readonly ContextMenuStrip _menu;
     private bool _disposed;
 
-    public TrayIconHost(Action capture, Action settings, Action exit)
+    public TrayIconHost(Action capture, Action paste, Action settings, Action exit)
     {
         _menu = new ContextMenuStrip
         {
@@ -45,6 +45,7 @@ internal sealed class TrayIconHost : IDisposable
             Padding = new Padding(6, 6, 6, 6),
         };
         _menu.Items.Add("截图翻译", null, (_, _) => capture());
+        _menu.Items.Add("选取翻译", null, (_, _) => paste());
         _menu.Items.Add("设置", null, (_, _) => settings());
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add("退出", null, (_, _) => exit());
@@ -75,7 +76,14 @@ internal sealed class TrayIconHost : IDisposable
             ContextMenuStrip = _menu,
             Visible = true,
         };
-        _icon.DoubleClick += (_, _) => settings();
+        // 左键单击直达设置（替掉双击）：托盘是常驻入口，少一次点击就少一分打断。
+        _icon.MouseClick += (_, args) =>
+        {
+            if (args.Button == MouseButtons.Left)
+            {
+                settings();
+            }
+        };
     }
 
     public void ShowWarning(string text) => _icon.ShowBalloonTip(4_000, "NaniKore", text, ToolTipIcon.Warning);

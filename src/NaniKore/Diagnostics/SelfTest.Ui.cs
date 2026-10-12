@@ -6,11 +6,12 @@ using NaniKore.Input;
 namespace NaniKore.Diagnostics;
 
 /// <summary>
-/// 无 UI 自测（UI 套件）的总调度与共享 WPF 无头测试基座，外加热键手势解析/录制自测。
-/// 按关注点拆分为三个 partial 文件：
-/// - <see cref="SelfTest"/> (Ui): 调度、WPF 无头测试辅助工具、热键手势解析与录制
+/// 无 UI 自测（UI 套件）的总调度与共享 WPF 无头测试基座。
+/// 按关注点拆分为四个 partial 文件：
+/// - <see cref="SelfTest"/> (Ui): 调度、WPF 无头测试辅助工具、热键录制盒交互
 /// - <see cref="SelfTest"/> (Ui.Settings): 主题资源、自适应布局契约、各设置页绑定与尺寸记忆
 /// - <see cref="SelfTest"/> (Ui.ResultPanel): 结果面板的注音、双语态、翻译流、精讲与划词气泡
+/// - <see cref="SelfTest"/> (Input): 热键手势解析、F1–F12 单键与选取/剪贴板输入获取状态机
 /// </summary>
 /// <remarks>
 /// WPF 与 WinForms 类型名撞车，本项目统一经 GlobalUsings.cs 的 Wpf* / WinForms 别名引用，
@@ -20,9 +21,9 @@ internal static partial class SelfTest
 {
     private static void RunUiTests()
     {
-        // 热键手势与录制
-        TestHotkeyGestureNormalization();
+        // 热键录制盒（手势解析与 F1–F12 单键规则在 SelfTest.Input）
         TestHotkeyRecorderInteraction();
+        TestPasteRecorderUnbind();
 
         // 设置页：主题资源、布局契约、页面绑定、尺寸记忆、收藏管理页、窗口层级
         TestThemeResourcesResolve();
@@ -90,37 +91,6 @@ internal static partial class SelfTest
     private static WpfInput.MouseButtonEventArgs LeftButton(Wpf.RoutedEvent routedEvent, Wpf.IInputElement source) =>
         new(WpfInput.Mouse.PrimaryDevice, 0, WpfInput.MouseButton.Left) { RoutedEvent = routedEvent, Source = source };
 
-    /// <summary>热键手势规范化：修饰键别名与大小写归一，拒绝空串 / 纯修饰键 / 不支持的按键。</summary>
-    private static void TestHotkeyGestureNormalization()
-    {
-        Check(
-            "gesture parsing normalizes modifier aliases and casing",
-            HotkeyGesture.Normalize("control+shift+q") == "Ctrl+Shift+Q" &&
-            HotkeyGesture.Normalize("windows + alt + f9") == "Alt+Win+F9");
-
-        Check(
-            "gesture parsing rejects empty, modifier-only and unsupported keys",
-            RejectsGesture(string.Empty) && RejectsGesture("Ctrl") && RejectsGesture("Ctrl+Shift+PrintScreen"));
-
-        Check(
-            "captured combinations reuse the registration parser",
-            HotkeyGesture.TryCapture(HotkeyGesture.ModControl | HotkeyGesture.ModShift, WinForms.Keys.Q, out var captured, out _) &&
-            captured == "Ctrl+Shift+Q" &&
-            HotkeyGesture.Parse(captured) == (HotkeyGesture.ModControl | HotkeyGesture.ModShift, (uint)WinForms.Keys.Q));
-
-        Check(
-            "modifier-only and unmodified keys are refused with a readable reason",
-            !HotkeyGesture.TryCapture(HotkeyGesture.ModControl, WinForms.Keys.ControlKey, out _, out var modifierOnly) &&
-            modifierOnly.Length > 0 &&
-            !HotkeyGesture.TryCapture(0, WinForms.Keys.Q, out _, out var missingModifier) &&
-            missingModifier.Length > 0);
-
-        Check(
-            "held modifiers echo a partial combination while recording",
-            HotkeyGesture.FormatPreview(HotkeyGesture.ModControl | HotkeyGesture.ModShift) == "Ctrl+Shift+…" &&
-            HotkeyGesture.FormatPreview(0).Length == 0);
-    }
-
     /// <summary>录制盒交互：按住修饰键回显半组合、Backspace 保持状态、Esc 还原录制前手势。</summary>
     private static void TestHotkeyRecorderInteraction()
     {
@@ -154,25 +124,41 @@ internal static partial class SelfTest
             !recorder.IsRecording && recorder.Gesture == "Ctrl+Shift+Q");
 
         var page = new HotkeyPage();
-        page.Load(new AppConfig { Hotkeys = new HotkeyConfig { Capture = "alt+f9" } });
+        page.Load(new AppConfig { Hotkeys = new HotkeyConfig { Capture = "alt+f9", Paste = "f1" } });
         var config = new AppConfig();
         page.Apply(config);
         Check(
             "hotkey page normalizes stored gestures and validates before applying",
-            page.Validate() is null && config.Hotkeys.Capture == "Alt+F9");
+            page.Validate() is null && config.Hotkeys.Capture == "Alt+F9" && config.Hotkeys.Paste == "F1");
     }
 
-    /// <summary>非法手势必须抛 ArgumentException（录制盒与注册表共享同一解析器，拒绝口径一致）。</summary>
-    private static bool RejectsGesture(string gesture)
+    /// <summary>选取翻译录制框（issue 018）：Esc 解除绑定落空串，空手势显示占位提示。</summary>
+    private static void TestPasteRecorderUnbind()
     {
-        try
-        {
-            HotkeyGesture.Parse(gesture);
-            return false;
-        }
-        catch (ArgumentException)
-        {
-            return true;
-        }
+        var unbind = new HotkeyRecorderBox { Gesture = "Ctrl+Shift+S", AllowUnbind = true, EmptyHint = "未绑定（Esc 解绑）" };
+        Check(
+            "a bound recorder echoes the configured gesture before recording",
+            !unbind.IsRecording && unbind.DisplayText == "Ctrl+Shift+S");
+
+        unbind.BeginRecording();
+        unbind.ProcessRecordingKey(WinForms.Keys.Escape, 0);
+        Check(
+            "escape unbinds the paste gesture instead of restoring the previous one",
+            !unbind.IsRecording && unbind.Gesture.Length == 0 && unbind.DisplayText == "未绑定（Esc 解绑）");
+
+        // 解绑后仍可重新录制：空手势不锁死录制框。
+        unbind.BeginRecording();
+        unbind.ProcessRecordingKey(WinForms.Keys.F5, 0);
+        Check(
+            "an unbound paste recorder accepts a new single function key",
+            !unbind.IsRecording && unbind.Gesture == "F5" && unbind.DisplayText == "F5");
+
+        // 截图录制框保持原语义：Esc 只是取消并还原。
+        var keep = new HotkeyRecorderBox { Gesture = "Ctrl+Shift+A" };
+        keep.BeginRecording();
+        keep.ProcessRecordingKey(WinForms.Keys.Escape, 0);
+        Check(
+            "the capture recorder still cancels and restores on escape",
+            !keep.IsRecording && keep.Gesture == "Ctrl+Shift+A");
     }
 }

@@ -21,12 +21,15 @@ internal static class HotkeyGesture
     private const int VirtualKeyRightWindows = 0x5C;
     private const uint VirtualKeyF1 = 0x70;
 
+    /// <summary>允许零修饰键单独绑定的功能键上限（F1–F12）；F13–F24 与字母数字一样必须搭配修饰键。</summary>
+    private const uint BareFunctionKeyLimit = VirtualKeyF1 + 11;
+
     /// <summary>解析配置里的文本组合；非法输入抛出可直接展示给用户的说明。</summary>
     internal static (uint Modifiers, uint Key) Parse(string gesture)
     {
         if (string.IsNullOrWhiteSpace(gesture))
         {
-            throw new ArgumentException("截图热键不能为空。", nameof(gesture));
+            throw new ArgumentException("热键不能为空。", nameof(gesture));
         }
 
         uint modifiers = 0;
@@ -44,7 +47,7 @@ internal static class HotkeyGesture
                 default:
                     if (key is not null || !TryParseKey(part, out var parsed))
                     {
-                        throw new ArgumentException("热键格式应类似 Ctrl+Shift+A 或 Alt+F9。", nameof(gesture));
+                        throw new ArgumentException("热键格式应类似 Ctrl+Shift+A、Alt+F9 或 F5。", nameof(gesture));
                     }
 
                     key = parsed;
@@ -52,9 +55,16 @@ internal static class HotkeyGesture
             }
         }
 
-        if (modifiers == 0 || key is null)
+        if (key is null)
         {
-            throw new ArgumentException("热键必须包含至少一个修饰键和一个普通按键。", nameof(gesture));
+            throw new ArgumentException("热键必须包含一个普通按键，格式应类似 Ctrl+Shift+A、Alt+F9 或 F5。", nameof(gesture));
+        }
+
+        // F1–F12 允许零修饰键单键绑定（issue 018：可录制成 F1–F12 单键）；
+        // 其余普通键仍必须搭配至少一个修饰键，否则会大面积误触系统与浏览器快捷键。
+        if (modifiers == 0 && !IsBareFunctionKey(key.Value))
+        {
+            throw new ArgumentException("除 F1–F12 可单独绑定外，热键必须包含至少一个修饰键。", nameof(gesture));
         }
 
         return (modifiers, key.Value);
@@ -108,15 +118,16 @@ internal static class HotkeyGesture
             return false;
         }
 
-        if (modifiers == 0)
-        {
-            message = "热键必须包含至少一个修饰键，例如 Ctrl、Alt、Shift 或 Win。";
-            return false;
-        }
-
         if (!TryMapKeyCode(keyCode, out var virtualKey))
         {
             message = "当前只支持字母、数字和 F1–F24 作为普通键。";
+            return false;
+        }
+
+        // 与 Parse 同一口径：只有 F1–F12 能零修饰键收下，裸字母/数字与 F13–F24 仍要求修饰键。
+        if (modifiers == 0 && !IsBareFunctionKey(virtualKey))
+        {
+            message = "除 F1–F12 可单独绑定外，热键必须包含至少一个修饰键，例如 Ctrl、Alt、Shift 或 Win。";
             return false;
         }
 
@@ -186,6 +197,15 @@ internal static class HotkeyGesture
 
         return modifiers;
     }
+
+    /// <summary>
+    /// 空串＝关闭该热键：注册路径据此整体跳过，绝不把空手势喂给 RegisterHotKey。
+    /// 截图热键另有归一化兜底（恒有值），这里对两个槽位一视同仁。
+    /// </summary>
+    internal static bool IsEnabled(string? gesture) => !string.IsNullOrWhiteSpace(gesture);
+
+    /// <summary>F1–F12 才允许裸键绑定；F13–F24 与字母数字一样必须带修饰键。</summary>
+    private static bool IsBareFunctionKey(uint key) => key is >= VirtualKeyF1 and <= BareFunctionKeyLimit;
 
     private static bool IsKeyDown(int virtualKey) => (Interop.NativeMethods.GetKeyState(virtualKey) & 0x8000) != 0;
 

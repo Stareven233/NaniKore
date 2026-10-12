@@ -9,11 +9,23 @@
                 <controls:SettingsRow Header="截图翻译"
                                       Description="点击右侧方框开始录制；需要至少一个修饰键与一个字母、数字或 F1–F24 按键。"
                                       ContentWidth="190">
-                    <controls:HotkeyRecorderBox x:Name="Recorder" />
+                    <controls:HotkeyRecorderBox x:Name="CaptureRecorder" />
                 </controls:SettingsRow>
                 <Border Style="{DynamicResource Divider.Row}" />
                 <!-- 录制状态仅用于说明，使用普通文本以便窄窗口下自然换行。 -->
-                <TextBlock x:Name="RecorderStatus"
+                <TextBlock x:Name="CaptureRecorderStatus"
+                           Style="{DynamicResource Text.Caption}"
+                           Margin="12,10"
+                           TextWrapping="Wrap" />
+                <controls:SettingsRow Header="选取翻译"
+                                      Description="按优先级取选区文本、剪贴板文本或剪贴板图像；按 Esc 可解除绑定（留空即关闭）。"
+                                      ContentWidth="190">
+                    <controls:HotkeyRecorderBox x:Name="PasteRecorder"
+                                                AllowUnbind="True"
+                                                EmptyHint="未绑定（Esc 解绑）" />
+                </controls:SettingsRow>
+                <Border Style="{DynamicResource Divider.Row}" />
+                <TextBlock x:Name="PasteRecorderStatus"
                            Style="{DynamicResource Text.Caption}"
                            Margin="12,10"
                            TextWrapping="Wrap" />
@@ -21,6 +33,6 @@
         </controls:SettingsGroup>
 
         <TextBlock Style="{DynamicResource Text.Caption}" Margin="4,0,0,0"
-                   Text="录制期间全局热键会临时注销，因此可以安全地重新录制当前正在生效的组合。" />
+                   Text="录制期间全局热键会临时注销，因此可以安全地重新录制当前正在生效的组合。F1–F12 可单独绑定为单键热键，它会全局接管该键，请谨慎选择。" />
     </StackPanel>
 </UserControl>

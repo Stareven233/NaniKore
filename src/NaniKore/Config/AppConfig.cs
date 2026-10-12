@@ -133,10 +133,14 @@ internal sealed class ProviderProfile
 
 internal sealed class HotkeyConfig
 {
+    /// <summary>截图翻译热键；空串由 <see cref="ConfigStore"/> 归一化兜底成 Ctrl+Shift+A。</summary>
     public string Capture { get; set; } = "Ctrl+Shift+A";
 
-    /// <summary>为后续剪贴板翻译预留，当前不注册。</summary>
-    public string TranslateClipboard { get; set; } = string.Empty;
+    /// <summary>
+    /// 选取/剪贴板翻译热键（issue 018）：按下后按优先级取选区文本 → 剪贴板文本 → 剪贴板图像。
+    /// 空串表示关闭该热键，不做空值兜底；配置缺失时由这里的代码默认 Ctrl+Shift+S 提供。
+    /// </summary>
+    public string Paste { get; set; } = "Ctrl+Shift+S";
 }
 
 internal sealed class WindowConfig
@@ -192,7 +196,7 @@ internal static class AppConfigCloner
         Hotkeys = new HotkeyConfig
         {
             Capture = source.Hotkeys.Capture,
-            TranslateClipboard = source.Hotkeys.TranslateClipboard,
+            Paste = source.Hotkeys.Paste,
         },
         Windows = new WindowConfig
         {

@@ -11,7 +11,8 @@ namespace NaniKore.App.Controls;
 /// <summary>
 /// WPF 版热键录制框：点击或按 Enter/空格进入录制，按键期间实时回显规范化组合。
 /// 录制规则完全复用 <see cref="HotkeyGesture"/>，避免「能录进去但注册不了」的分叉；
-/// 非法组合与仅修饰键会保留录制状态并给出提示，不会写出空热键。
+/// 非法组合与仅修饰键会保留录制状态并给出提示，默认不会写出空热键。
+/// <see cref="AllowUnbind"/> 为 true 的槽位（选取翻译）额外支持 Esc 解除绑定，空串＝关闭该热键。
 /// </summary>
 internal sealed class HotkeyRecorderBox : Control
 {
@@ -24,7 +25,7 @@ internal sealed class HotkeyRecorderBox : Control
         typeof(HotkeyRecorderBox),
         new FrameworkPropertyMetadata(string.Empty, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnGestureChanged, CoerceGesture));
 
-    /// <summary>录制中的实时回显文本；非录制状态等于 <see cref="Gesture"/>。</summary>
+    /// <summary>录制中的实时回显文本；非录制状态等于 <see cref="Gesture"/>，手势为空时回落 <see cref="EmptyHint"/>。</summary>
     private static readonly DependencyPropertyKey DisplayTextPropertyKey = DependencyProperty.RegisterReadOnly(
         nameof(DisplayText),
         typeof(string),
@@ -41,6 +42,23 @@ internal sealed class HotkeyRecorderBox : Control
         new PropertyMetadata(false));
 
     public static readonly DependencyProperty IsRecordingProperty = IsRecordingPropertyKey.DependencyProperty;
+
+    /// <summary>
+    /// 为 true 时 Esc 解除绑定（手势置空串，空串＝关闭该热键）；
+    /// 为 false 时 Esc 只是取消录制并保留进入录制前的组合（截图热键必须恒有值）。
+    /// </summary>
+    public static readonly DependencyProperty AllowUnbindProperty = DependencyProperty.Register(
+        nameof(AllowUnbind),
+        typeof(bool),
+        typeof(HotkeyRecorderBox),
+        new PropertyMetadata(false));
+
+    /// <summary>手势为空时方框里的占位提示；留空则显示空串。</summary>
+    public static readonly DependencyProperty EmptyHintProperty = DependencyProperty.Register(
+        nameof(EmptyHint),
+        typeof(string),
+        typeof(HotkeyRecorderBox),
+        new PropertyMetadata(string.Empty, OnEmptyHintChanged));
 
     private string _gestureBeforeRecording = string.Empty;
 
@@ -74,6 +92,20 @@ internal sealed class HotkeyRecorderBox : Control
     {
         get => (bool)GetValue(IsRecordingProperty);
         private set => SetValue(IsRecordingPropertyKey, value);
+    }
+
+    /// <summary>见 <see cref="AllowUnbindProperty"/>。</summary>
+    public bool AllowUnbind
+    {
+        get => (bool)GetValue(AllowUnbindProperty);
+        set => SetValue(AllowUnbindProperty, value);
+    }
+
+    /// <summary>见 <see cref="EmptyHintProperty"/>。</summary>
+    public string EmptyHint
+    {
+        get => (string)GetValue(EmptyHintProperty);
+        set => SetValue(EmptyHintProperty, value);
     }
 
     /// <summary>进入录制状态；点击显示框或聚焦后按 Enter/空格都走这里。</summary>
@@ -119,14 +151,24 @@ internal sealed class HotkeyRecorderBox : Control
         keyCode &= FormsKeys.KeyCode;
         if (keyCode == FormsKeys.Escape)
         {
+            if (AllowUnbind)
+            {
+                // 允许留空的槽位（选取翻译）：Esc 直接解除绑定，保存后该热键关闭。
+                EndRecording(string.Empty);
+                StatusChanged?.Invoke(this, "已解除绑定：保存后该热键关闭。");
+                return;
+            }
+
             CancelRecording();
             return;
         }
 
         if (keyCode is FormsKeys.Back or FormsKeys.Delete)
         {
-            // Backspace 不能清空热键：应用始终需要一个可注册的组合。
-            StatusChanged?.Invoke(this, "热键不能为空；请直接录制新的组合或按 Esc 取消。");
+            // Backspace 不能清空热键：截图翻译必须有一个可注册的组合；选取翻译用 Esc 解绑。
+            StatusChanged?.Invoke(this, AllowUnbind
+                ? "请直接录制新的组合，或按 Esc 解除绑定。"
+                : "热键不能为空；请直接录制新的组合或按 Esc 取消。");
             return;
         }
 
@@ -204,9 +246,12 @@ internal sealed class HotkeyRecorderBox : Control
     {
         IsRecording = false;
         Gesture = gesture;
-        DisplayText = gesture;
+        DisplayText = ResolveDisplayText();
         RecordingChanged?.Invoke(this, false);
     }
+
+    /// <summary>非录制态的展示文本：空手势回落占位提示，避免方框里什么都不显示。</summary>
+    private string ResolveDisplayText() => Gesture is { Length: > 0 } gesture ? gesture : EmptyHint;
 
     private static object CoerceGesture(DependencyObject sender, object baseValue) =>
         baseValue as string is { Length: > 0 } value && !string.IsNullOrWhiteSpace(value) ? value : string.Empty;
@@ -216,7 +261,16 @@ internal sealed class HotkeyRecorderBox : Control
         var box = (HotkeyRecorderBox)sender;
         if (!box.IsRecording)
         {
-            box.DisplayText = (string)e.NewValue;
+            box.DisplayText = box.ResolveDisplayText();
+        }
+    }
+
+    private static void OnEmptyHintChanged(DependencyObject sender, DependencyPropertyChangedEventArgs e)
+    {
+        var box = (HotkeyRecorderBox)sender;
+        if (!box.IsRecording)
+        {
+            box.DisplayText = box.ResolveDisplayText();
         }
     }
 
