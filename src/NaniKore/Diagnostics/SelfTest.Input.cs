@@ -388,7 +388,8 @@ internal static partial class SelfTest
                 source.SetText("剪贴板原文");
                 source.SetImage(image);
                 source.SetData("NaniKore.SelfTest", "自定义格式");
-                WinForms.Clipboard.SetDataObject(source, copy: true);
+                // 写也走网关：写入同样可能被别的程序抢剪贴板而静默丢格式，网关负责核对重试（issue 021）。
+                gateway.SetDataObject(source, copy: true);
 
                 var snapshot = gateway.Snapshot();
                 Check(
@@ -410,6 +411,16 @@ internal static partial class SelfTest
                     restored.DetachImage() is not null &&
                     restored.FormatNames.Contains("NaniKore.SelfTest"),
                     $"formats=[{string.Join(", ", restored?.FormatNames ?? [])}]");
+
+                // 还原后的系统剪贴板必须留着标准格式：别的程序（画图、浏览器、Word）只认 CF_BITMAP/CF_UNICODETEXT，
+                // 只剩 .NET 私有格式名 System.Drawing.Bitmap 的话图就粘不出来（issue 021：还原写回曾一律
+                // autoConvert: false，别名不上报，剪贴板上只剩私有格式）。WinForms 的折叠视图会掩盖这一点，故直接点名。
+                var systemFormats = WinForms.Clipboard.GetDataObject()?.GetFormats(autoConvert: false) ?? [];
+                Check(
+                    "a restored clipboard keeps the standard formats other apps can paste",
+                    systemFormats.Contains("Bitmap", StringComparer.OrdinalIgnoreCase) &&
+                    systemFormats.Contains("UnicodeText", StringComparer.OrdinalIgnoreCase),
+                    $"formats=[{string.Join(", ", systemFormats)}]");
             }
         }
         catch (ExternalException)

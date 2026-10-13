@@ -137,6 +137,8 @@ updated: 2026-10-12
 
 **验证：** 构建 0 警告；自测全绿（既有 2 条英语注音失败不变）。真机需按「Office/浏览器选中图像按 Ctrl+Shift+S」实测一次。
 
+> **排查提示（2026-10-12 补）**：自测套件存在一条既有 flake——真实剪贴板 round-trip 偶发失败（形态 `formats=[UnicodeText, System.Drawing.Bitmap, NaniKore.SelfTest]`），与本事项无关，已立项 `codestable/issues/021-o-clipboard-roundtrip-flake.md`。红跑时先对照是否为该形态，别误判成本事项回归。
+
 ## 关闭时
 
 - 回写到 project spec 的候选：若三项裁决改动行为，在「翻译、结果与配置」补选取/剪贴板热键的行为口径；否则无 spec 变化（纯卫生整改）。

@@ -101,16 +101,24 @@ internal static partial class SelfTest
         var registry = TextAnnotatorRegistry.CreateDefault();
         registry.ResetAvailability();
         registry.ResetAvailability("zh");
+
+        var english = registry.GetAnnotator("en");
+        if (english is null || !english.IsAvailable)
+        {
+            // 注音词典是按需下载的可选依赖：没就绪时跳过，不报假失败（与金样本测试同一口径）。
+            Skip("en 词典未就绪（deps/phonetics/en），跳过后半段英语断言");
+            return;
+        }
+
         Check(
             "重置可用性后英语注音不受影响",
             registry.Annotate("The ubiquitous government", "en").Count == 1);
 
         // 清闩锁只影响「是否重新探测词典」，不得改动注音行为本身
-        var annotator = registry.GetAnnotator("en")!;
-        var before = Annotated(annotator, "The ubiquitous government", new AnnotationContext(AnnotationProfile.Load("en")));
-        annotator.ResetAvailability();
-        annotator.ResetAvailability();
-        var after = Annotated(annotator, "The ubiquitous government", new AnnotationContext(AnnotationProfile.Load("en")));
+        var before = Annotated(english, "The ubiquitous government", new AnnotationContext(AnnotationProfile.Load("en")));
+        english.ResetAvailability();
+        english.ResetAvailability();
+        var after = Annotated(english, "The ubiquitous government", new AnnotationContext(AnnotationProfile.Load("en")));
         Check(
             "重复重置可用性后注音结果不变",
             string.Equals(before, after, StringComparison.Ordinal));
@@ -215,11 +223,21 @@ internal static partial class SelfTest
             registry.Annotate(unsupported).Count == 0,
             $"actual={string.Join("|", registry.Annotate(unsupported))}");
 
-        var pinned = registry.Annotate("The ubiquitous government", "en");
-        Check(
-            "手选英语：拉丁词元按英语注音",
-            pinned.Count == 1,
-            $"actual={AnnotatedTextFormatter.Compose("The ubiquitous government", pinned)}");
+        var pinnedLanguage = "en";
+        var english = registry.GetAnnotator(pinnedLanguage);
+        if (english is null || !english.IsAvailable)
+        {
+            // 注音词典是按需下载的可选依赖：没就绪时跳过，不报假失败（与金样本测试同一口径）。
+            Skip("en 词典未就绪（deps/phonetics/en），跳过英语路由金样本");
+        }
+        else
+        {
+            var pinned = registry.Annotate("The ubiquitous government", pinnedLanguage);
+            Check(
+                "手选英语：拉丁词元按英语注音",
+                pinned.Count == 1,
+                $"actual={AnnotatedTextFormatter.Compose("The ubiquitous government", pinned)}");
+        }
     }
 
     private static void TestJapaneseFuriganaDictionary()
