@@ -24,6 +24,7 @@ internal static partial class SelfTest
         TestClipboardImageRouteResolution();
         TestPasteInputFallbackChain();
         TestClipboardSnapshotRoundTrip();
+        TestForeignImageClipboardRoundTrip();
     }
 
     /// <summary>热键手势规范化：修饰键别名与大小写归一，拒绝空串 / 纯修饰键 / 不支持的按键。</summary>
@@ -426,6 +427,65 @@ internal static partial class SelfTest
         catch (ExternalException)
         {
             // 远程会话/服务会话等拿不到剪贴板访问权：宽容跳过，不影响其余自测。
+            // 但必须明示 SKIP 而不是静默吞掉：本机剪贴板会被别的进程（剪贴板同步类工具）
+            // 持续占用，静默跳过会让「全绿」掩盖「这条用例根本没跑过」——issue 021 补跑量化时
+            // 就因为分不清这两者，几十轮「全绿」里没有一轮真正触过真实剪贴板。
+            Skip("真实剪贴板不可访问（被其他进程持续占用或会话无剪贴板权限），round-trip 用例未执行");
+        }
+        finally
+        {
+            TryRestoreOriginalClipboard(original);
+        }
+    }
+
+    /// <summary>
+    /// 外来图像剪贴板的 round-trip：用户从浏览器/截图工具复制的图只有标准 CF_BITMAP（TYMED_GDI），
+    /// WinForms 按格式读不出值——issue 021 实测快照曾因此留不下图像条目，而还原只写条目不写自持位图，
+    /// 还原后图整个消失（探针 10/10 复现，019「绝不冲掉用户内容」在最常见真实场景上破防）。
+    /// 这里用 Win32 直写一个「纯外来」剪贴板（EmptyClipboard 后只放 CF_BITMAP+CF_UNICODETEXT，
+    /// 不带 .NET 私有格式），锁定修复：快照必须拿到图，还原后系统剪贴板上必须有 CF_BITMAP。
+    /// </summary>
+    private static void TestForeignImageClipboardRoundTrip()
+    {
+        IDataObject? original = null;
+        try
+        {
+            original = WinForms.Clipboard.GetDataObject();
+            var gateway = new WinFormsClipboardGateway();
+
+            using var image = new Bitmap(8, 6);
+            var hBitmap = image.GetHbitmap();
+            var textHandle = Marshal.StringToHGlobalUni("外来剪贴板文本");
+            if (!Win32TestClipboard.SetForeignImage(hBitmap, textHandle))
+            {
+                // SetClipboardData 全失败时句柄没交出去，自行清理；任一成功即归系统所有，不能再释放。
+                Win32TestClipboard.ReleaseFailedHandles(hBitmap, textHandle);
+                Skip("写不了外来剪贴板（被其他进程持续占用），外来图像 round-trip 用例未执行");
+                return;
+            }
+
+            var snapshot = gateway.Snapshot();
+            Check(
+                "foreign image clipboard snapshot keeps the image",
+                snapshot is not null && snapshot.HasImage && snapshot.Text == "外来剪贴板文本",
+                $"formats=[{string.Join(", ", snapshot?.FormatNames ?? [])}]");
+
+            // 破坏剪贴板后再还原：图必须按标准格式整个回来。
+            WinForms.Clipboard.Clear();
+            gateway.Restore(snapshot!);
+
+            var systemFormats = Win32TestClipboard.EnumerateStandardFormats();
+            Check(
+                "restored foreign image keeps CF_BITMAP other apps can paste",
+                systemFormats.Contains(Win32TestClipboard.FormatBitmap) &&
+                ClipboardPayloads.ReadImage(WinForms.Clipboard.GetDataObject()!) is not null &&
+                ClipboardPayloads.ReadText(WinForms.Clipboard.GetDataObject()!) == "外来剪贴板文本",
+                $"win32=[{string.Join(", ", systemFormats)}]");
+        }
+        catch (ExternalException)
+        {
+            // 与 round-trip 用例同一口径：剪贴板被别的程序持续占用时明示 SKIP，不静默吞掉。
+            Skip("真实剪贴板不可访问（被其他进程持续占用或会话无剪贴板权限），外来图像 round-trip 用例未执行");
         }
         finally
         {
