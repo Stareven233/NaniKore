@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using NaniKore.Config;
@@ -6,7 +7,14 @@ namespace NaniKore.Translation.Providers;
 
 internal sealed class OpenAiProvider : TranslationProviderBase
 {
-    public OpenAiProvider(ProviderProfile profile, string apiKey, PromptConfig prompts) : base(profile, apiKey, prompts) { }
+    /// <summary>
+    /// 端点已拒绝非标思考参数的一次性记忆（issue 022）：NVIDIA 等严格校验端点只认自家 schema，
+    /// 收到 <c>enable_thinking</c> / <c>thinking</c> 直接整单 400。撞见一次后本实例后续请求一律省略。
+    /// </summary>
+    private volatile bool _thinkingParametersRejected;
+
+    public OpenAiProvider(ProviderProfile profile, string apiKey, PromptConfig prompts, HttpMessageHandler? transport = null)
+        : base(profile, apiKey, prompts, transport) { }
 
     public override async IAsyncEnumerable<UnderstandDelta> StreamAsync(
         UnderstandRequest request,
@@ -14,8 +22,11 @@ internal sealed class OpenAiProvider : TranslationProviderBase
     {
         ProviderFactory.ValidateCapabilities(request, Capabilities);
         var isResponses = string.Equals(Profile.ApiType, "responses", StringComparison.OrdinalIgnoreCase);
-        using var message = isResponses ? CreateResponsesRequest(request) : CreateCompletionsRequest(request);
-        using var response = await SendAsync(message, cancellationToken).ConfigureAwait(false);
+        using var message = isResponses
+            ? CreateResponsesRequest(request)
+            : CreateCompletionsRequest(request, skipThinkingParameters: _thinkingParametersRejected);
+        using var response = await SendWithThinkingParameterFallbackAsync(message, request, isResponses, cancellationToken)
+            .ConfigureAwait(false);
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var router = CreateRouter(request);
         var sanitizer = new ThinkingStreamSanitizer();
@@ -68,7 +79,42 @@ internal sealed class OpenAiProvider : TranslationProviderBase
         }
     }
 
-    internal HttpRequestMessage CreateCompletionsRequest(UnderstandRequest request)
+    /// <summary>
+    /// 发出首请求；若端点以 400 点名拒绝非标思考参数，则去掉 <c>enable_thinking</c> / <c>thinking</c>
+    /// 原样重试一次（NVIDIA：Validation: Unsupported parameter(s): `enable_thinking`, `thinking`），
+    /// 并记住该端点方言，让后续请求一开始就不带这两个参数。
+    /// </summary>
+    private async Task<HttpResponseMessage> SendWithThinkingParameterFallbackAsync(
+        HttpRequestMessage message,
+        UnderstandRequest request,
+        bool isResponses,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await SendAsync(message, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ProviderHttpException ex) when (ShouldRetryWithoutThinkingParameters(isResponses, ex))
+        {
+            _thinkingParametersRejected = true;
+            using var retry = CreateCompletionsRequest(request, skipThinkingParameters: true);
+            return await SendAsync(retry, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 是否值得去掉非标思考参数重试：只有 completions 链路会下发它们；仅当服务端以 400 且报文点名
+    /// thinking / reasoning_effort 时才判定「方言不被接受」，坏 Key、模型不存在等其余 400 原样抛出不重试。
+    /// </summary>
+    private bool ShouldRetryWithoutThinkingParameters(bool isResponses, ProviderHttpException ex) =>
+        !isResponses &&
+        !_thinkingParametersRejected &&
+        ex.StatusCode == HttpStatusCode.BadRequest &&
+        ex.ServerMessage is { } serverMessage &&
+        (serverMessage.Contains("thinking", StringComparison.OrdinalIgnoreCase) ||
+         serverMessage.Contains("reasoning_effort", StringComparison.OrdinalIgnoreCase));
+
+    internal HttpRequestMessage CreateCompletionsRequest(UnderstandRequest request, bool skipThinkingParameters = false)
     {
         var system = PromptTemplates.GetSystemPrompt(request, Prompts);
         if (request.Kind == UnderstandKind.Translate && Profile.Model.Contains("homura", StringComparison.OrdinalIgnoreCase))
@@ -137,7 +183,7 @@ internal sealed class OpenAiProvider : TranslationProviderBase
                 bodyDict["reasoning_effort"] = "low";
             }
         }
-        else
+        else if (!skipThinkingParameters)
         {
             bodyDict["enable_thinking"] = Profile.EnableThinking;
             bodyDict["thinking"] = new { type = Profile.EnableThinking ? "enabled" : "disabled" };

@@ -28,6 +28,7 @@ internal static partial class SelfTest
         TestTranslationSessionAndMultiTurnReplay();
         TestThinkingStreamSanitizer();
         TestProviderThinkingParameters();
+        TestOpenAiThinkingParameterRejectionFallback();
         TestProviderOutOfBandThinkingExtraction();
     }
 
@@ -1225,6 +1226,135 @@ internal static partial class SelfTest
         Check(
             "Gemini provider with EnableThinking=true nests thinkingBudget=-1 inside generationConfig",
             geminiOnDoc.RootElement.GetProperty("generationConfig").GetProperty("thinkingConfig").GetProperty("thinkingBudget").GetInt32() == -1);
+    }
+
+    /// <summary>
+    /// 严格校验端点（NVIDIA）把非标思考参数整单打回（issue 022）：provider 必须去掉 enable_thinking / thinking
+    /// 重试一次并正常出流，且记住该端点方言，让后续请求一开始就不带这两个参数；与思考无关的 400 不得重试。
+    /// </summary>
+    private static void TestOpenAiThinkingParameterRejectionFallback()
+    {
+        var profile = new ProviderProfile
+        {
+            BaseUrl = "https://integrate.api.nvidia.com/v1",
+            Model = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+            EnableThinking = false,
+        };
+        var request = new UnderstandRequest(UnderstandKind.Translate, "こんにちは", null, "中文（简体）");
+
+        // 首请求带非标参数被 NVIDIA 打回，第二次去掉后正常流式，第三次应一开始就不带。
+        var handler = new ScriptedHandler(
+            Rejected("Validation: Unsupported parameter(s): `enable_thinking`, `thinking`."),
+            Streaming("你好世界"),
+            Streaming("第二次请求"));
+        using var provider = new OpenAiProvider(profile, "key", new PromptConfig(), handler);
+
+        var first = Drain(provider, request);
+        var second = Drain(provider, request);
+
+        Check(
+            "Endpoint rejecting thinking parameters retries once without them and streams translation",
+            handler.Requests.Count == 3 &&
+            first.Any(delta => delta.Channel == DeltaChannel.Translation && delta.Text == "你好世界") &&
+            second.Any(delta => delta.Channel == DeltaChannel.Translation && delta.Text == "第二次请求"));
+
+        Check(
+            "Retry and follow-up requests omit enable_thinking, thinking and reasoning_effort",
+            handler.Requests[0].Contains("enable_thinking", StringComparison.Ordinal) &&
+            handler.Requests[1].Contains("enable_thinking", StringComparison.Ordinal) == false &&
+            handler.Requests[1].Contains("\"thinking\"", StringComparison.Ordinal) == false &&
+            handler.Requests[1].Contains("reasoning_effort", StringComparison.Ordinal) == false &&
+            handler.Requests[2].Contains("enable_thinking", StringComparison.Ordinal) == false);
+
+        // 与思考参数无关的 400（坏 Key、模型不存在）必须原样抛出，不做无谓重试。
+        var unrelatedHandler = new ScriptedHandler(Rejected("model not found"));
+        using var unrelatedProvider = new OpenAiProvider(profile, "key", new PromptConfig(), unrelatedHandler);
+        string? error = null;
+        try
+        {
+            Drain(unrelatedProvider, request);
+        }
+        catch (ProviderHttpException ex)
+        {
+            error = ex.ServerMessage;
+        }
+
+        Check(
+            "Unrelated 400 rejection surfaces without retrying",
+            unrelatedHandler.Requests.Count == 1 && error == "model not found");
+
+        // 只点名 reasoning_effort 的严格端点同样走去参重试（重试会连它一起省掉）。
+        var effortHandler = new ScriptedHandler(
+            Rejected("Unsupported parameter(s): `reasoning_effort`"),
+            Streaming("思考参数全去掉"));
+        var effortProfile = profile.Clone();
+        effortProfile.Model = "o1-mini";
+        effortProfile.EnableThinking = true;
+        using var effortProvider = new OpenAiProvider(effortProfile, "key", new PromptConfig(), effortHandler);
+        var effortDeltas = Drain(effortProvider, request);
+
+        Check(
+            "Endpoint rejecting reasoning_effort retries without the whole thinking parameter family",
+            effortHandler.Requests.Count == 2 &&
+            effortHandler.Requests[0].Contains("reasoning_effort", StringComparison.Ordinal) &&
+            effortHandler.Requests[1].Contains("reasoning_effort", StringComparison.Ordinal) == false &&
+            effortDeltas.Any(delta => delta.Channel == DeltaChannel.Translation && delta.Text == "思考参数全去掉"));
+    }
+
+    /// <summary>同步收干 provider 的流式增量；自测主循环是同步的。</summary>
+    private static List<UnderstandDelta> Drain(ITranslationProvider provider, UnderstandRequest request)
+    {
+        var deltas = new List<UnderstandDelta>();
+        var enumerator = provider.StreamAsync(request, CancellationToken.None).GetAsyncEnumerator();
+        try
+        {
+            while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+            {
+                deltas.Add(enumerator.Current);
+            }
+        }
+        finally
+        {
+            enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+
+        return deltas;
+    }
+
+    /// <summary>服务端 400 回包；报文走 error.message，与 ProviderHttpException 的解析口径一致。</summary>
+    private static HttpResponseMessage Rejected(string message) => new(HttpStatusCode.BadRequest)
+    {
+        Content = new StringContent(JsonSerializer.Serialize(new { error = new { message } })),
+    };
+
+    /// <summary>一段成功的 SSE 流：单个 content 增量后 [DONE]。</summary>
+    private static HttpResponseMessage Streaming(string text) => new(HttpStatusCode.OK)
+    {
+        Content = new StringContent(
+            $"data: {{\"choices\":[{{\"delta\":{{\"content\":\"{text}\"}}}}]}}\n\ndata: [DONE]\n\n"),
+    };
+
+    /// <summary>按脚本依次回包的假 handler：记录请求体，用于复现服务端 400 与成功流（issue 022）。</summary>
+    private sealed class ScriptedHandler : HttpMessageHandler
+    {
+        private readonly Queue<HttpResponseMessage> _responses = [];
+
+        public ScriptedHandler(params HttpResponseMessage[] responses)
+        {
+            foreach (var response in responses)
+            {
+                _responses.Enqueue(response);
+            }
+        }
+
+        /// <summary>按发送顺序记录的请求体。</summary>
+        public List<string> Requests { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(await request.Content!.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+            return _responses.Dequeue();
+        }
     }
 
     private static void TestProviderOutOfBandThinkingExtraction()

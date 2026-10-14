@@ -14,12 +14,13 @@ internal abstract class TranslationProviderBase : ITranslationProvider
     protected readonly string ApiKey;
     protected readonly PromptConfig Prompts;
 
-    protected TranslationProviderBase(ProviderProfile profile, string apiKey, PromptConfig prompts)
+    protected TranslationProviderBase(ProviderProfile profile, string apiKey, PromptConfig prompts, HttpMessageHandler? transport = null)
     {
         Profile = profile.Clone();
         ApiKey = apiKey;
         Prompts = prompts;
-        _client = new HttpClient
+        // transport 只供自测注入假网络栈复现服务端行为；生产恒为默认 handler。
+        _client = new HttpClient(transport ?? new HttpClientHandler())
         {
             Timeout = TimeSpan.FromSeconds(profile.TimeoutSeconds),
         };
