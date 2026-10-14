@@ -136,6 +136,21 @@ internal static partial class SelfTest
             "general page applies AutoExplain toggle change to configuration",
             !appliedConfig.General.AutoExplain);
 
+        // 选取/剪贴板翻译的自动翻译开关读写闭环（与「OCR 后自动翻译」各自独立，默认开）
+        var pasteAutoTranslatePage = new GeneralPage();
+        pasteAutoTranslatePage.Load(new AppConfig { General = new GeneralConfig { PasteAutoTranslate = false } });
+        var pasteAutoTranslateToggle = Find<WpfPrimitives.ToggleButton>(pasteAutoTranslatePage, "PasteAutoTranslateToggle");
+        Check(
+            "general page loads the paste selection auto-translate switch accurately",
+            pasteAutoTranslateToggle?.IsChecked == false);
+
+        pasteAutoTranslateToggle!.IsChecked = true;
+        var pasteAppliedConfig = new AppConfig();
+        pasteAutoTranslatePage.Apply(pasteAppliedConfig);
+        Check(
+            "general page applies the paste selection auto-translate switch to configuration",
+            pasteAppliedConfig.General.PasteAutoTranslate);
+
         // 2.3-A：目标语言下拉直接引用共享列表的同一批实例（母语写法），
         // 旧配置的中文名/语言代码别名仍能命中，无需配置迁移。
         var targetBox = Find<WpfControls.ComboBox>(page, "TargetLanguageBox");

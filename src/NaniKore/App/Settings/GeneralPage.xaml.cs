@@ -54,6 +54,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     {
         ArgumentNullException.ThrowIfNull(config);
         AutoTranslateToggle.IsChecked = config.General.AutoTranslate;
+        PasteAutoTranslateToggle.IsChecked = config.General.PasteAutoTranslate;
         AutoExplainToggle.IsChecked = config.General.AutoExplain;
         PhoneticsEnabledToggle.IsChecked = config.Phonetics.Enabled;
         PhoneticsRareOnlyToggle.IsChecked = config.Phonetics.RareOnly;
@@ -77,6 +78,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     {
         ArgumentNullException.ThrowIfNull(config);
         config.General.AutoTranslate = AutoTranslateToggle.IsChecked == true;
+        config.General.PasteAutoTranslate = PasteAutoTranslateToggle.IsChecked == true;
         config.General.AutoExplain = AutoExplainToggle.IsChecked == true;
         config.Phonetics.Enabled = PhoneticsEnabledToggle.IsChecked == true;
         config.Phonetics.RareOnly = PhoneticsRareOnlyToggle.IsChecked == true;

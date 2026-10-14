@@ -568,6 +568,7 @@ internal static partial class SelfTest
                 version: 0.1.1
                 general:
                   auto_translate: true
+                  paste_auto_translate: false
                   auto_explain: true
                   target_language: ja
                 pipeline:
@@ -602,6 +603,7 @@ internal static partial class SelfTest
             Check(
                 "YAML round-trip retains known fields and normalizes invalid values",
                 store.Current.General.AutoTranslate &&
+                !store.Current.General.PasteAutoTranslate &&
                 store.Current.General.AutoExplain &&
                 store.Current.General.TargetLanguage == "ja" &&
                 store.Current.Pipeline.Mode == "local_ocr" &&
@@ -626,7 +628,9 @@ internal static partial class SelfTest
                 reloaded.Current.Prompts.VisionBase == "Transcribe\n\n---\n\nTranslate into {{target_language}}." &&
                 reloaded.Current.Windows.SettingsWidth == 800 &&
                 reloaded.Current.Windows.SettingsHeight == 640 &&
+                !reloaded.Current.General.PasteAutoTranslate &&
                 AppConfigCloner.Clone(reloaded.Current).General.AutoExplain &&
+                !AppConfigCloner.Clone(reloaded.Current).General.PasteAutoTranslate &&
                 AppConfigCloner.Clone(reloaded.Current).Profiles.Single().Name == "test" &&
                 AppConfigCloner.Clone(reloaded.Current).Prompts.JapanesePlugin == "Custom ja-JP" &&
                 AppConfigCloner.Clone(reloaded.Current).Prompts.VisionBase == "Transcribe\n\n---\n\nTranslate into {{target_language}}.");
@@ -683,6 +687,7 @@ internal static partial class SelfTest
                 unsupported.Current.Pipeline.ActiveProfile == "OpenAI 默认" &&
                 unsupported.Current.Profiles.Count == 3 &&
                 !unsupported.Current.General.AutoTranslate &&
+                unsupported.Current.General.PasteAutoTranslate &&
                 unsupported.Current.General.TargetLanguage == "中文（简体）" &&
                 File.ReadAllText(Path.Combine(dataDirectory, "config.yaml")).Contains("translation:", StringComparison.Ordinal));
         });

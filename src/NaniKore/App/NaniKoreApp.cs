@@ -144,7 +144,7 @@ internal sealed class NaniKoreApp : Application
     /// <summary>
     /// 选取/剪贴板翻译（issue 018）：输入获取与截图链路完全同构——同一个 provider、同一套提示词、
     /// 同一个单实例结果面板。区别只在输入来源与锚点：没有选区矩形，面板以当前鼠标光标为锚点。
-    /// 本路径忽略 <c>auto_translate</c>（热键本身就是「立即翻译」的意图），<c>auto_explain</c> 跟随配置。
+    /// 文本路径遵循 <c>general.paste_auto_translate</c>（默认开）：关闭时只呈现原文（含注音），由「翻译」按钮显式触发；视觉直喂不受此开关约束，恒定一次完成识别与翻译（与截图链路的 <c>auto_translate</c> 同口径）。<c>auto_explain</c> 跟随配置。
     /// </summary>
     private async Task PasteTranslateAsync()
     {
@@ -187,6 +187,8 @@ internal sealed class NaniKoreApp : Application
             if (outcome.ImagePng is { Length: > 0 } imagePng)
             {
                 // 视觉直喂：原文区留空，PNG 原图进 provider；剪贴板保持不动。
+                // 恒定自动翻译（autoTranslate: true）：vision_oneshot 将识别与翻译合成一次调用，没有「只呈现原文」的中间态，
+                // 与截图链路视觉直喂同口径，不受 paste_auto_translate 开关约束。
                 _lastImagePng = imagePng;
                 var visionPanel = EnsureResultPanel(anchor);
                 visionPanel.Reset(
@@ -207,9 +209,15 @@ internal sealed class NaniKoreApp : Application
                 PasteInputKind.ClipboardText => "已读取剪贴板文本。",
                 _ => "已读取剪贴板文本。",
             };
+            // 选取翻译的自动翻译开关（默认开）：关闭时只呈现原文（含注音），由面板「翻译」按钮显式触发，
+            // 与截图链路 local_ocr 文本路径的 auto_translate 完全同口径。
+            var autoTranslate = config.General.PasteAutoTranslate;
             var panel = EnsureResultPanel(anchor);
-            panel.Reset(outcome.Text, status, autoTranslate: true, autoExplain: autoExplain);
-            _ = StartTranslationAsync(outcome.Text, null, outcome.Notice);
+            panel.Reset(outcome.Text, status, autoTranslate, autoExplain: autoExplain);
+            if (autoTranslate)
+            {
+                _ = StartTranslationAsync(outcome.Text, null, outcome.Notice);
+            }
         }
         catch (DirectoryNotFoundException exception)
         {
