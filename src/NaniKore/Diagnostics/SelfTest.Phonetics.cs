@@ -9,6 +9,7 @@ internal static partial class SelfTest
     {
         TestAnnotationProfileAndDedupe();
         TestAnnotationFormatter();
+        TestIpaTranscription();
         TestEnglishPipeline();
         TestPinyinToneConversion();
         TestRegistryLanguageRouting();
@@ -187,9 +188,14 @@ internal static partial class SelfTest
     private static void TestEnglishPipeline()
     {
         Check(
-            "CMUdict ARPAbet 转 IPA（应激位）",
-            ArpabetIpaConverter.Convert("Y UW0 B IH1 K W IH0 T AH0 S") == "juːbˈɪkwɪtəs",
+            "CMUdict ARPAbet 转 IPA（音节切分与重音归位）",
+            ArpabetIpaConverter.Convert("Y UW0 B IH1 K W IH0 T AH0 S") == "juː.ˈbɪk.wɪ.təs",
             $"actual={ArpabetIpaConverter.Convert("Y UW0 B IH1 K W IH0 T AH0 S")}");
+
+        Check(
+            "CMUdict ARPAbet 转 IPA（重读 AH 记 ʌ）",
+            ArpabetIpaConverter.Convert("G AH1 V ER0 M AH0 N T") == "ˈɡʌv.ɜːr.mənt",
+            $"actual={ArpabetIpaConverter.Convert("G AH1 V ER0 M AH0 N T")}");
 
         var studiesCandidates = EnglishLemmatizer.Candidates("studies");
         Check(
@@ -198,6 +204,45 @@ internal static partial class SelfTest
             EnglishLemmatizer.Candidates("abandoned").Contains("abandon") &&
             EnglishLemmatizer.Candidates("running").Contains("run"),
             $"studies -> {string.Join(",", studiesCandidates)}");
+    }
+
+    /// <summary>
+    /// 词典式 IPA 规范化：词典里的历史 wire format（重音贴在元音前、无音节点、IY 不带 ː）
+    /// 必须归一成主人熟悉的词典形态；且对已规范化的条目幂等（将来换哈希的新词典读出来不许被动过）。
+    /// </summary>
+    private static void TestIpaTranscription()
+    {
+        Check(
+            "treason 归一为主人预期的词典式 IPA",
+            IpaTranscription.Normalize("trˈizən") == "ˈtriː.zən",
+            $"actual={IpaTranscription.Normalize("trˈizən")}");
+
+        Check(
+            "government 重读 schwa 记 ʌ",
+            IpaTranscription.Normalize("ɡˈəvɜːrmənt") == "ˈɡʌv.ɜːr.mənt",
+            $"actual={IpaTranscription.Normalize("ɡˈəvɜːrmənt")}");
+
+        Check(
+            "photograph 次重音与三辅音起首",
+            IpaTranscription.Normalize("fˈoʊtəɡrˌæf") == "ˈfoʊ.tə.ˌɡræf",
+            $"actual={IpaTranscription.Normalize("fˈoʊtəɡrˌæf")}");
+
+        Check(
+            "banana 重读短元音后首辅音收尾（美音口径）",
+            IpaTranscription.Normalize("bənˈænə") == "bə.ˈnæn.ə",
+            $"actual={IpaTranscription.Normalize("bənˈænə")}");
+
+        Check(
+            "strength 单音节不插音节点",
+            IpaTranscription.Normalize("strˈeŋkθ") == "ˈstreŋkθ",
+            $"actual={IpaTranscription.Normalize("strˈeŋkθ")}");
+
+        Check(
+            "规范化幂等：已规范化的条目再走一遍不变",
+            IpaTranscription.Normalize(IpaTranscription.Normalize("trˈizən")) == "ˈtriː.zən" &&
+            IpaTranscription.Normalize("juː.ˈbɪk.wɪ.təs") == "juː.ˈbɪk.wɪ.təs" &&
+            IpaTranscription.Normalize("ˈfoʊ.tə.ˌɡræf") == "ˈfoʊ.tə.ˌɡræf",
+            $"actual={IpaTranscription.Normalize(IpaTranscription.Normalize("trˈizən"))}");
     }
 
     private static void TestPinyinToneConversion()
@@ -340,18 +385,25 @@ internal static partial class SelfTest
         var ubiquitous = Annotated(annotator, "The ubiquitous government", new AnnotationContext(defaultProfile));
         Check(
             "英语金样本：难词注 IPA，停用/高频词不注",
-            ubiquitous == "The ubiquitous[juːbˈɪkwɪtəs] government",
+            ubiquitous == "The ubiquitous[juː.ˈbɪk.wɪ.təs] government",
             $"actual={ubiquitous}");
         var inflection = Annotated(annotator, "abandoned the field", new AnnotationContext(defaultProfile));
         Check(
             "英语金样本：屈折词被停用词包围仍只注自身",
-            inflection == "abandoned[əbˈændənd] the field",
+            inflection == "abandoned[ə.ˈbæn.dənd] the field",
             $"actual={inflection}");
         var possessive = annotator.Annotate("Bob's device", new AnnotationContext(defaultProfile));
         Check(
             "英语金样本：所有格只给词干注音",
             possessive is [{ Start: 0, Length: 3 }, ..],
             $"actual={AnnotatedTextFormatter.Compose("Bob's device", possessive)}");
+
+        // 主人反馈的样本：历史条目读出来必须是词典式 ˈtriː.zən，而不是 trˈizən
+        var treason = annotator.Annotate("treason", new AnnotationContext(defaultProfile));
+        Check(
+            "英语金样本：treason 注成词典式 IPA",
+            treason is [{ Start: 0, Length: 7, Reading: "ˈtriː.zən" }],
+            $"actual={AnnotatedTextFormatter.Compose("treason", treason)}");
     }
 
     /// <summary>黄金样例辅助：一次标注一次拼装（AnnotationContext 的去重是单篇状态，重复调用会清空结果）。</summary>

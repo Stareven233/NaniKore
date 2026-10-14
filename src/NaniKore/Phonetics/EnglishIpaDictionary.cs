@@ -37,6 +37,11 @@ internal sealed class EnglishIpaDictionary : IDisposable
     }
 
     /// <summary>按小写词形查主读音；未命中返回 null。</summary>
+    /// <remarks>
+    /// 读出的历史条目是生成期 wire format（重音贴在元音前、无音节点、IY 不带 ː，如 treason → trˈizən），
+    /// 必须过 <see cref="IpaTranscription.Normalize"/> 归一成词典式 IPA（ˈtriː.zən）再给界面；
+    /// 该归一对按新口径生成的条目幂等，词典二进制因此无需重建换哈希。
+    /// </remarks>
     public string? Lookup(string word)
     {
         if (string.IsNullOrEmpty(word))
@@ -47,7 +52,8 @@ internal sealed class EnglishIpaDictionary : IDisposable
         using var command = _connection.CreateCommand();
         command.CommandText = "SELECT ipa FROM words WHERE word = $word LIMIT 1";
         command.Parameters.AddWithValue("$word", word.ToLowerInvariant());
-        return command.ExecuteScalar() as string;
+        var stored = command.ExecuteScalar() as string;
+        return stored is null ? null : IpaTranscription.Normalize(stored);
     }
 
     public void Dispose() => _connection.Dispose();

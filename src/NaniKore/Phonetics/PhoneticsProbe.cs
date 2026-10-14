@@ -49,6 +49,7 @@ internal static class PhoneticsProbe
             ("zh", "不行就去银行"),
             ("en", "The ubiquitous government"),
             ("en", "abandoned the field"),
+            ("en", "treason"),
             ("en", "Bob's device")
         };
 

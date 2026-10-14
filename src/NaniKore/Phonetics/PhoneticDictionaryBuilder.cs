@@ -7,53 +7,54 @@ using Microsoft.Data.Sqlite;
 
 namespace NaniKore.Phonetics;
 
-/// <summary>CMUdict ARPAbet → IPA 转换（美音口径的单读音近似；多音词取主读音，生成期定音）。</summary>
+/// <summary>
+/// CMUdict ARPAbet → 词典式 IPA（美音口径的单读音近似；多音词取主读音，生成期定音）。
+/// 音节切分、重音归位与长音符补全全部委托 <see cref="IpaTranscription"/>，与运行期读取历史条目同一套口径。
+/// </summary>
 internal static class ArpabetIpaConverter
 {
-    private static readonly Dictionary<string, string> PhoneToIpa = new(StringComparer.Ordinal)
+    private static readonly Dictionary<string, (string Symbol, bool IsVowel)> PhoneToIpa = new(StringComparer.Ordinal)
     {
-        // 元音：应激位（1 主重音 / 2 次重音）在拼装时前置于音节首元音
-        ["AA"] = "ɑː", ["AE"] = "æ", ["AH"] = "ə", ["AO"] = "ɔː",
-        ["AW"] = "aʊ", ["AY"] = "aɪ", ["EH"] = "e", ["ER"] = "ɜːr",
-        ["EY"] = "eɪ", ["IH"] = "ɪ", ["IY"] = "i", ["OW"] = "oʊ",
-        ["OY"] = "ɔɪ", ["UH"] = "ʊ", ["UW"] = "uː",
-        ["AX"] = "ə", ["IX"] = "ə", ["UX"] = "ʊ",
+        // 元音：双元音与长元音直接记到位（iː/uː/ɑː/ɔː/ɜːr），重读 AH 另按 STRUT 记 ʌ
+        ["AA"] = ("ɑː", true), ["AE"] = ("æ", true), ["AH"] = ("ə", true), ["AO"] = ("ɔː", true),
+        ["AW"] = ("aʊ", true), ["AY"] = ("aɪ", true), ["EH"] = ("e", true), ["ER"] = ("ɜːr", true),
+        ["EY"] = ("eɪ", true), ["IH"] = ("ɪ", true), ["IY"] = ("iː", true), ["OW"] = ("oʊ", true),
+        ["OY"] = ("ɔɪ", true), ["UH"] = ("ʊ", true), ["UW"] = ("uː", true),
+        ["AX"] = ("ə", true), ["IX"] = ("ə", true), ["UX"] = ("ʊ", true),
         // 辅音
-        ["B"] = "b", ["CH"] = "tʃ", ["D"] = "d", ["DH"] = "ð", ["DX"] = "ɾ",
-        ["F"] = "f", ["G"] = "ɡ", ["HH"] = "h", ["JH"] = "dʒ",
-        ["K"] = "k", ["L"] = "l", ["M"] = "m", ["N"] = "n", ["NG"] = "ŋ",
-        ["P"] = "p", ["Q"] = "ʔ", ["R"] = "r", ["S"] = "s", ["SH"] = "ʃ",
-        ["T"] = "t", ["TH"] = "θ", ["V"] = "v", ["W"] = "w",
-        ["Y"] = "j", ["Z"] = "z", ["ZH"] = "ʒ"
+        ["B"] = ("b", false), ["CH"] = ("tʃ", false), ["D"] = ("d", false), ["DH"] = ("ð", false), ["DX"] = ("ɾ", false),
+        ["F"] = ("f", false), ["G"] = ("ɡ", false), ["HH"] = ("h", false), ["JH"] = ("dʒ", false),
+        ["K"] = ("k", false), ["L"] = ("l", false), ["M"] = ("m", false), ["N"] = ("n", false), ["NG"] = ("ŋ", false),
+        ["P"] = ("p", false), ["Q"] = ("ʔ", false), ["R"] = ("r", false), ["S"] = ("s", false), ["SH"] = ("ʃ", false),
+        ["T"] = ("t", false), ["TH"] = ("θ", false), ["V"] = ("v", false), ["W"] = ("w", false),
+        ["Y"] = ("j", false), ["Z"] = ("z", false), ["ZH"] = ("ʒ", false)
     };
 
-    /// <summary>把 "Y UW0 B IH1 K W IH0 T AH0 S" 转成 "juːbɪˈkwɪtəs"。</summary>
+    /// <summary>把 "Y UW0 B IH1 K W IH0 T AH0 S" 转成 "juː.ˈbɪk.wɪ.təs"。</summary>
     public static string Convert(string arpabet)
     {
-        var phones = arpabet.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var builder = new StringBuilder();
-        foreach (var raw in phones)
+        var phones = new List<IpaPhone>();
+        foreach (var raw in arpabet.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            var separator = raw[^1] - '0';
-            var phone = separator is >= 0 and <= 2 ? raw[..^1] : raw;
-            if (!PhoneToIpa.TryGetValue(phone, out var ipa))
+            var digit = raw[^1] - '0';
+            var hasStress = digit is >= 0 and <= 2;
+            var phone = hasStress ? raw[..^1] : raw; // 无重音位的条目（极少数语气词）按无重音处理
+            if (!PhoneToIpa.TryGetValue(phone, out var entry))
             {
                 continue;
             }
 
-            if (separator == 1)
+            var stress = hasStress ? digit : 0;
+            var symbol = entry.Symbol;
+            if (phone == "AH" && stress is 1 or 2)
             {
-                builder.Append('ˈ');
-            }
-            else if (separator == 2)
-            {
-                builder.Append('ˌ');
+                symbol = "ʌ"; // 美音 STRUT：重读 AH 记 ʌ，非重读 AH/AX/IX 一律 ə
             }
 
-            builder.Append(ipa);
+            phones.Add(new IpaPhone(symbol, entry.IsVowel, entry.IsVowel ? stress : 0));
         }
 
-        return builder.ToString();
+        return IpaTranscription.Format(phones);
     }
 }
 

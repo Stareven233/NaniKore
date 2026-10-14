@@ -567,6 +567,16 @@ internal static partial class SelfTest
                 upArgs.Handled && notifiedMessage?.Contains("とお") == true);
         }
 
+        // 5. 英语词元的注音控件必须说「音标」：措辞按注音文本自身判定，不能一律按日语假名
+        var ipaRuby = new RubyInlineControl("treason", "ˈtriː.zən");
+        Check("english reading kind is detected as ipa", ipaRuby.ReadingKind == RubyReadingKind.Ipa);
+        Check("english base noun is 单词 rather than 汉字", RubyReadingTerms.Base(RubyReadingKind.Ipa) == "单词");
+        Check("pinyin reading kind is detected", RubyReadingTerms.Detect("nǐ hǎo") == RubyReadingKind.Pinyin);
+        Check("unrecognizable reading falls back to neutral 读音", RubyReadingTerms.Reading(RubyReadingTerms.Detect("123")) == "读音");
+        notifiedMessage = null;
+        ipaRuby.CopyReading();
+        Check("copy ipa reading notifies with 音标 wording", notifiedMessage?.Contains("音标") == true);
+
         RubyInlineControl.StatusNotificationRequested -= statusHandler;
     }
 }

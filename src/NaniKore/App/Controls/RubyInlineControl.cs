@@ -15,7 +15,9 @@ using WpfPoint = System.Windows.Point;
 namespace NaniKore.App.Controls;
 
 /// <summary>
-/// 振假名内联排版控件：上行小字注音假名，下行汉字正文底字，支持假名/汉字独立复制与快捷右键菜单。
+/// 注音内联排版控件：上行小字注音（振假名 / 拼音 / 音标），下行正文底字，
+/// 支持读音/底字独立复制与快捷右键菜单。措辞按 <see cref="RubyReadingKind"/> 自适应，
+/// 免得英语词元上也说「假名」。
 /// </summary>
 internal sealed class RubyInlineControl : Grid
 {
@@ -29,10 +31,16 @@ internal sealed class RubyInlineControl : Grid
 
     public string RubyText { get; }
 
+    /// <summary>注音种类（由注音文本自身判定），决定控件内的假名/拼音/音标措辞。</summary>
+    public RubyReadingKind ReadingKind { get; }
+
     public RubyInlineControl(string baseText, string rubyText, double baseFontSize = 14)
     {
         BaseText = baseText;
         RubyText = rubyText;
+        ReadingKind = RubyReadingTerms.Detect(rubyText);
+        var readingNoun = RubyReadingTerms.Reading(ReadingKind);
+        var baseNoun = RubyReadingTerms.Base(ReadingKind);
 
         Focusable = false;
         IsHitTestVisible = true; // 允许子元素接收鼠标悬停、单独点击与右键上下文菜单
@@ -57,7 +65,7 @@ internal sealed class RubyInlineControl : Grid
             TextAlignment = TextAlignment.Center,
             Margin = new Thickness(0, 0, 0, 0.5),
             Cursor = WpfCursors.Hand,
-            ToolTip = $"点击复制假名: {rubyText}\r\n右键查看更多选项",
+            ToolTip = $"点击复制{readingNoun}: {rubyText}\r\n右键查看更多选项",
         };
 
         rubyBlock.MouseEnter += (_, _) => rubyBlock.Foreground = hoverAccentBrush;
@@ -103,25 +111,25 @@ internal sealed class RubyInlineControl : Grid
             Foreground = WpfApplication.Current?.TryFindResource("Brush.Text.Primary") as WpfBrush ?? WpfBrushes.Black,
             HorizontalAlignment = WpfHorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
-            ToolTip = $"汉字: {baseText} (读音: {rubyText})\r\n右键查看更多选项",
+            ToolTip = $"{baseNoun}: {baseText} ({readingNoun}: {rubyText})\r\n右键查看更多选项",
         };
         SetRow(baseBlock, 1);
         Children.Add(baseBlock);
 
-        // 3. 专属右键菜单：直达复制汉字、假名与带注音文本
+        // 3. 专属右键菜单：直达复制底字、读音与带注音文本
         ContextMenu = CreateContextMenu();
     }
 
     public void CopyReading()
     {
         _ = TrySetClipboard(RubyText);
-        StatusNotificationRequested?.Invoke($"已复制假名到剪贴板：{RubyText}");
+        StatusNotificationRequested?.Invoke($"已复制{RubyReadingTerms.Reading(ReadingKind)}到剪贴板：{RubyText}");
     }
 
     public void CopyBaseText()
     {
         _ = TrySetClipboard(BaseText);
-        StatusNotificationRequested?.Invoke($"已复制汉字到剪贴板：{BaseText}");
+        StatusNotificationRequested?.Invoke($"已复制{RubyReadingTerms.Base(ReadingKind)}到剪贴板：{BaseText}");
     }
 
     public void CopyAnnotated()
@@ -155,14 +163,14 @@ internal sealed class RubyInlineControl : Grid
 
         var copyBaseItem = new WpfMenuItem
         {
-            Header = $"复制汉字 \"{BaseText}\"",
+            Header = $"复制{RubyReadingTerms.Base(ReadingKind)} \"{BaseText}\"",
         };
         copyBaseItem.Click += (_, _) => CopyBaseText();
         menu.Items.Add(copyBaseItem);
 
         var copyRubyItem = new WpfMenuItem
         {
-            Header = $"复制假名 \"{RubyText}\"",
+            Header = $"复制{RubyReadingTerms.Reading(ReadingKind)} \"{RubyText}\"",
         };
         copyRubyItem.Click += (_, _) => CopyReading();
         menu.Items.Add(copyRubyItem);

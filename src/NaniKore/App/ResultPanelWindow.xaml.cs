@@ -54,6 +54,9 @@ internal sealed partial class ResultPanelWindow : Window
     private string? _selectedSourceLanguage;
     private bool _loadingSourceLanguages;
 
+    // 当前原文的注音种类：原文区右键菜单与状态提示据此说「假名/拼音/音标」，不再一律按日语措辞
+    private RubyReadingKind _sourceReadingKind = RubyReadingKind.Unknown;
+
     public ResultPanelWindow()
     {
         InitializeComponent();
@@ -432,6 +435,7 @@ internal sealed partial class ResultPanelWindow : Window
 
         var languageCode = _selectedSourceLanguage ?? DetectSourceLanguageCode(plain);
         var displayName = PhoneticLanguages.DisplayName(languageCode) ?? languageCode;
+        var readingKind = ReadingKindForLanguage(languageCode);
         var annotator = PhoneticAnnotatorRegistryHolder.Default.GetAnnotator(languageCode);
         if (annotator is null)
         {
@@ -465,11 +469,11 @@ internal sealed partial class ResultPanelWindow : Window
             // await 续体未必回到面板线程（自测/无同步上下文场景）：整段落地逻辑显式跳回
             if (!Dispatcher.CheckAccess())
             {
-                await Dispatcher.InvokeAsync(() => ApplyAnnotationIfCurrent(plain, spans, displayName, manual, cancellation.Token));
+                await Dispatcher.InvokeAsync(() => ApplyAnnotationIfCurrent(plain, spans, displayName, readingKind, manual, cancellation.Token));
                 return;
             }
 
-            ApplyAnnotationIfCurrent(plain, spans, displayName, manual, cancellation.Token);
+            ApplyAnnotationIfCurrent(plain, spans, displayName, readingKind, manual, cancellation.Token);
         }
         catch (OperationCanceledException)
         {
@@ -496,6 +500,7 @@ internal sealed partial class ResultPanelWindow : Window
         string plain,
         IReadOnlyList<AnnotationSpan> spans,
         string displayName,
+        RubyReadingKind readingKind,
         bool manual,
         CancellationToken cancellation)
     {
@@ -505,7 +510,7 @@ internal sealed partial class ResultPanelWindow : Window
             return;
         }
 
-        ApplyAnnotation(plain, spans, displayName, manual);
+        ApplyAnnotation(plain, spans, displayName, readingKind, manual);
     }
 
     /// <summary>线程安全读原文（供注音计算前的快照使用）。</summary>
@@ -525,11 +530,13 @@ internal sealed partial class ResultPanelWindow : Window
     }
 
     /// <summary>把注音区间叠加为注音形态：区间 → 汉字[读音] 文本 → FlowDocument，复用既有 ruby 链路。</summary>
-    private void ApplyAnnotation(string plain, IReadOnlyList<AnnotationSpan> spans, string displayName, bool manual)
+    private void ApplyAnnotation(string plain, IReadOnlyList<AnnotationSpan> spans, string displayName, RubyReadingKind readingKind, bool manual)
     {
         var ruby = spans.Count == 0 ? plain : AnnotatedTextFormatter.Compose(plain, spans);
         _annotatedSource = ruby;
         _annotationSourcePlain = plain;
+        _sourceReadingKind = readingKind;
+        ApplySourceMenuWording();
         if (!_isEditingSource)
         {
             SourceViewer.Document = RubyDocumentBuilder.Build(ruby);
@@ -544,6 +551,27 @@ internal sealed partial class ResultPanelWindow : Window
                 : $"已按{displayName}重新注音（{spans.Count} 词）。");
         }
     }
+
+    /// <summary>
+    /// 原文区右键菜单随注音种类改措辞：日语说假名、中文说拼音、英语说音标，
+    /// 免得英语原文上也挂「复制纯日文 / 汉字[假名]」。
+    /// </summary>
+    private void ApplySourceMenuWording()
+    {
+        var reading = RubyReadingTerms.Reading(_sourceReadingKind);
+        CopyPlainSourceMenuItem.Header = "复制纯原文";
+        CopyAnnotatedSourceMenuItem.Header = $"复制带注音文本 ({RubyReadingTerms.Base(_sourceReadingKind)}[{reading}])";
+        CopyReadingSourceMenuItem.Header = $"复制纯{reading}";
+    }
+
+    /// <summary>源语言代码 → 注音种类（原文区菜单与状态提示的措辞口径）。</summary>
+    private static RubyReadingKind ReadingKindForLanguage(string? languageCode) => languageCode switch
+    {
+        "ja" => RubyReadingKind.Kana,
+        "zh" => RubyReadingKind.Pinyin,
+        "en" => RubyReadingKind.Ipa,
+        _ => RubyReadingKind.Unknown
+    };
 
     /// <summary>自动探测口径：假名优先判日语，其次简体中文，再拉丁英语；无声无息的纯汉字兜底按中文拼音。</summary>
     private string DetectSourceLanguageCode(string plain)
@@ -811,7 +839,7 @@ internal sealed partial class ResultPanelWindow : Window
         if (!string.IsNullOrEmpty(text))
         {
             System.Windows.Clipboard.SetText(text);
-            SetStatus(hasSelection ? "已复制选中日文到剪贴板。" : "已复制纯日文到剪贴板。");
+            SetStatus(hasSelection ? "已复制选中原文到剪贴板。" : "已复制纯原文到剪贴板。");
             e.Handled = true;
         }
     }
@@ -826,7 +854,7 @@ internal sealed partial class ResultPanelWindow : Window
         if (!string.IsNullOrEmpty(text))
         {
             System.Windows.Clipboard.SetText(text);
-            SetStatus(hasSelection ? "已复制选中日文到剪贴板。" : "已复制纯日文到剪贴板。");
+            SetStatus(hasSelection ? "已复制选中原文到剪贴板。" : "已复制纯原文到剪贴板。");
         }
     }
 
@@ -854,7 +882,8 @@ internal sealed partial class ResultPanelWindow : Window
         if (!string.IsNullOrEmpty(text))
         {
             System.Windows.Clipboard.SetText(text);
-            SetStatus(hasSelection ? "已复制选中纯假名读音到剪贴板。" : "已复制纯假名读音到剪贴板。");
+            var reading = RubyReadingTerms.Reading(_sourceReadingKind);
+            SetStatus(hasSelection ? $"已复制选中纯{reading}到剪贴板。" : $"已复制纯{reading}到剪贴板。");
         }
     }
 

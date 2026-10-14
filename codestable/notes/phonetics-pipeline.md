@@ -45,8 +45,9 @@ dotnet run --project src/NaniKore -- --build-phonetics
 管线（`PhoneticDictionaryBuilder.BuildEnglishDatabase`）：
 
 1. 逐行读 `_source/cmudict.dict`，跳过 `;;;` 注释、`WORD(2)` 变音条目与单字母缩写；
-2. 词面统一小写；ARPAbet → IPA 由 `ArpabetIpaConverter` 转换（应激位 1/2 转写为 `ˈ`/`ˌ`，
-   紧跟其后元音；约定见下“口径备注”）；
+2. 词面统一小写；ARPAbet → IPA 由 `ArpabetIpaConverter` 转换，音节切分、重音归位与长音符补全
+   统一委托 `IpaTranscription`（应激位 1/2 转写为 `ˈ`/`ˌ` 并放到音节首，音节点 `.` 分隔音节，
+   重读 `AH` 记 `ʌ`；约定见下“口径备注”）；
 3. 写入 `Data Source=...` 的单表（`words(word TEXT PRIMARY KEY, ipa TEXT) WITHOUT ROWID`）SQLite；
 4. 落地 `deps/phonetics/en/ipa_dict.db`。
 
@@ -121,3 +122,12 @@ dotnet run --project src/NaniKore -- --self-test         # 全量无 UI 自测�
   `artifacts/self-test-failures.log`（UTF-8）为准。
 - **en 词典落地用同路径重建**（先删后建），不做“临时文件 + Move”：SQLite 连接释放与 Windows 文件锁
   的交互在杀毒软件实时扫描下不稳定，移动会间歇性 `ERROR_SHARING_VIOLATION`。
+- **词典式 IPA 由 `IpaTranscription` 统一产出**（`ArpabetIpaConverter` 与运行期读取共用）：
+  音节切分按「每个元音核一个音节 + 辅音在核间分配」，辅音归属两条口径——重读短元音后首辅音收尾
+  （sister `ˈsɪs.tɜːr`、apple `ˈæp.əl`、banana `bə.ˈnæn.ə`），长元音/双元音或非重读音节后按最大
+  onset 原则尽量多划给后一音节且起首簇必须合法（treason `ˈtriː.zən`、photograph `ˈfoʊ.tə.ˌɡræf`）；
+  重音位前移到音节首，音节点 `.` 分隔，`IY/UW` 带长音符（`iː/uː`），重读 `AH` 记 `ʌ`。
+  **已发布的历史条目是旧 wire format**（重音贴在元音前、无音节点、`IY` 不带 ː，如 treason 存的是
+  `trˈizən`），因此 `EnglishIpaDictionary.Lookup` 读出后必须过 `IpaTranscription.Normalize` 归一——
+  ipa_dict.db 是「哈希即版本」的分布式产物，不能随代码一起重建换哈希；该归一对新口径条目幂等，
+  将来真重生词典并回填哈希后，运行期这一遍就是空转。

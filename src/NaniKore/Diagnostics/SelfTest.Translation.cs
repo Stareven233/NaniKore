@@ -506,6 +506,18 @@ internal static partial class SelfTest
             RubyTextParser.ToPlainText(sample4) == "apple and banana" &&
             RubyTextParser.ToReadingText(sample4) == "ˈæpl and bəˈnɑːnə");
 
+        // 4b. 带音节点的新式 IPA（ˈtriː.zən）同样要能被解析成注音段，点号不是句子标点
+        var sample4b = "an act of treason[ˈtriː.zən]";
+        var segments4b = RubyTextParser.Parse(sample4b);
+        Check(
+            "ruby parser parses dotted ipa reading with syllable separator",
+            segments4b.Count == 2 &&
+            segments4b[0] is { IsRuby: false, Text: "an act of " } &&
+            segments4b[1] is { IsRuby: true, Text: "treason", Ruby: "ˈtriː.zən" } &&
+            RubyTextParser.ToPlainText(sample4b) == "an act of treason" &&
+            RubyTextParser.ToReadingText(sample4b) == "an act of ˈtriː.zən",
+            $"actual={string.Join("|", segments4b.Select(s => $"{s.Text}:{s.Ruby}"))}");
+
         // 5. 排除代码下标与孤立括号
         var sample5 = "int x = arr[0] + list[1]; [tag]";
         var segments5 = RubyTextParser.Parse(sample5);

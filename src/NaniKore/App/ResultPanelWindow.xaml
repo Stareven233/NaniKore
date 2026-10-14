@@ -84,9 +84,9 @@
                                               PreviewMouseUp="OnSourceViewerMouseUp">
                         <FlowDocumentScrollViewer.ContextMenu>
                             <ContextMenu>
-                                <MenuItem Header="复制纯日文" Click="OnCopyPlainSourceClick" />
-                                <MenuItem Header="复制带注音文本 (汉字[假名])" Click="OnCopyAnnotatedSourceClick" />
-                                <MenuItem Header="复制纯假名读音" Click="OnCopyReadingSourceClick" />
+                                <MenuItem x:Name="CopyPlainSourceMenuItem" Header="复制纯原文" Click="OnCopyPlainSourceClick" />
+                                <MenuItem x:Name="CopyAnnotatedSourceMenuItem" Header="复制带注音文本 (汉字[读音])" Click="OnCopyAnnotatedSourceClick" />
+                                <MenuItem x:Name="CopyReadingSourceMenuItem" Header="复制纯读音" Click="OnCopyReadingSourceClick" />
                                 <Separator />
                                 <MenuItem Command="ApplicationCommands.SelectAll" Header="全选" />
                             </ContextMenu>

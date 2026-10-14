@@ -18,11 +18,11 @@ internal enum RubyCopyKind
 {
     Plain,       // 纯正文（例如：“ここは通れないよ”）
     Annotated,   // 带注音方括号（例如：“ここは通[とお]れないよ”）
-    ReadingOnly, // 纯读音（例如：“ここはとおれないよ”）
+    ReadingOnly, // 纯读音（例如：“ここはとおれないよ”、IPA 音标）
 }
 
 /// <summary>
-/// 振假名 FlowDocument 构建与选区文本提取工具。
+/// 振假名/注音 FlowDocument 构建与选区文本提取工具。
 /// </summary>
 internal static class RubyDocumentBuilder
 {
