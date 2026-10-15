@@ -22,6 +22,8 @@ $publishOutput = Join-Path $root 'artifacts\win-x64'
 $publishedExecutable = Join-Path $publishOutput 'NaniKore.exe'
 $buildOutputDirectory = Join-Path $root 'src\NaniKore\bin'
 $dependenciesDirectory = Join-Path $root 'deps'
+$debugOutputDirectory = Split-Path -Parent $debugExecutable
+$dataDirectory = Join-Path $root '.data'
 
 $onnxRuntimeNativeFiles = @(
     'onnxruntime.dll',
@@ -183,6 +185,101 @@ function Remove-NaniKorePackageCacheFiles {
         Remove-Item -Recurse -Force
 }
 
+function Remove-NaniKoreJunction {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        # 仅用于发布输出里的 deps 这类构建残留（模型可用 scripts/sync-deps.py 重新拉取）。
+        # 用户数据目录（.data）严禁打开此开关：绝不整目录删除。
+        [switch]$IncludeRealDirectory
+    )
+
+    $item = Get-Item -Force -LiteralPath $Path -ErrorAction SilentlyContinue
+    if ($null -eq $item) {
+        return
+    }
+
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        # 只删联接点本身，绝不加 -Recurse：个别宿主会穿透链接把目标目录的内容一起删掉。
+        Remove-Item -LiteralPath $Path -Force
+        return
+    }
+
+    if ($IncludeRealDirectory) {
+        Write-Warning "$Path 不是联接点而是真实目录，已按构建残留清除。"
+        Remove-Item -LiteralPath $Path -Recurse -Force
+    }
+}
+
+function Set-NaniKoreJunction {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [Parameter(Mandatory)]
+        [string]$Target,
+
+        # .data 由应用首启自行创建，构建脚本不能因为还没有数据目录就失败。
+        [switch]$CreateTarget
+    )
+
+    # 归一化成绝对路径再比较，避免 ..\ 与尾部分隔符造成「目标明明相同却重建链接」。
+    $resolvedTarget = [System.IO.Path]::GetFullPath($Target).TrimEnd('\', '/')
+    $existing = Get-Item -Force -LiteralPath $Path -ErrorAction SilentlyContinue
+
+    if ($null -ne $existing) {
+        if (($existing.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            # PowerShell 6+ 才暴露联接目标；读不到时保守认为已挂对（本脚本建的链目标不会变）。
+            $currentTarget = $existing.Target
+            if ($null -eq $currentTarget -or
+                [System.IO.Path]::GetFullPath($currentTarget).TrimEnd('\', '/') -eq $resolvedTarget) {
+                return
+            }
+
+            # 目标变了：摘旧链后按新目标重建，只动链接不动数据。
+            Remove-Item -LiteralPath $Path -Force
+        }
+        elseif ($existing.PSIsContainer -and -not @(Get-ChildItem -LiteralPath $Path -Force)) {
+            # 空目录（dotnet publish 等留下的残壳）直接替换，不值得留备份。
+            Remove-Item -LiteralPath $Path -Force
+        }
+        else {
+            # 真实目录/文件绝不静默覆盖：应用自己创建的 .data 就长这样，
+            # 整体改名备份后再挂链，并明确告知原内容去哪了。
+            if (Get-Process -Name 'NaniKore' -ErrorAction SilentlyContinue) {
+                Write-Warning 'NaniKore 正在运行，其数据目录即将被移动：请退出应用后重启，否则运行中的实例仍读写旧位置。'
+            }
+
+            $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+            $backupPath = "$Path.backup-$stamp"
+            $suffix = 2
+            while (Test-Path -LiteralPath $backupPath) {
+                $backupPath = "$Path.backup-$stamp-$suffix"
+                $suffix++
+            }
+
+            Move-Item -LiteralPath $Path -Destination $backupPath
+            Write-Warning "$Path 已存在且不是联接点，原内容已备份到 $backupPath，随后挂接到 $resolvedTarget。"
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $resolvedTarget -PathType Container)) {
+        if (-not $CreateTarget) {
+            throw "联接点目标不存在：$resolvedTarget。请先创建该目录。"
+        }
+
+        New-Item -ItemType Directory -Path $resolvedTarget -Force | Out-Null
+    }
+
+    $parentDirectory = Split-Path -Parent $Path
+    if (-not (Test-Path -LiteralPath $parentDirectory -PathType Container)) {
+        New-Item -ItemType Directory -Path $parentDirectory -Force | Out-Null
+    }
+
+    New-Item -ItemType Junction -Path $Path -Target $resolvedTarget | Out-Null
+}
+
 function New-NaniKoreReleaseArchive {
     param(
         [Parameter(Mandatory)]
@@ -241,10 +338,11 @@ function New-NaniKoreReleaseArchive {
 
         # 发布目录内容直接置于 ZIP 根目录；完整包额外携带 deps/，解压后即可使用本地 OCR。
         # .data 是本机运行期数据（配置、密钥密文、收藏库）：从 artifacts\win-x64 跑过一次应用就会生成它，
-        # 一个排除项全挡住，杜绝把用户数据打进发布包（issue 017）。nanikore.db 是 .data 之前的旧收藏库名，
+        # 一个排除项全挡住，杜绝把用户数据打进发布包（issue 017）。.data.backup-* 是挂接联接点时为
+        # 既有运行期数据留的备份，同样一件都不能进交付物。nanikore.db 是 .data 之前的旧收藏库名，
         # dotnet publish 不清输出目录，旧版运行留下的残留同样不能进交付物。
         Get-ChildItem -LiteralPath $PublishOutput -Force |
-            Where-Object { $_.Name -ne '.data' -and $_.Name -ne 'nanikore.db' } |
+            Where-Object { $_.Name -ne '.data' -and $_.Name -ne 'nanikore.db' -and $_.Name -notlike '.data.backup-*' } |
             Copy-Item -Destination $stagingDirectory -Recurse -Force
 
         if ($IncludeFullDependencies) {
@@ -346,12 +444,11 @@ try {
                 Set-NaniKoreOnnxRuntimeLinks -OutputDirectory $buildOutputDirectory -DependenciesDirectory $dependenciesDirectory
                 Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $buildOutputDirectory
             }
-            $depsLink = Join-Path $PSScriptRoot "..\src\NaniKore\bin\Debug\net10.0-windows10.0.19041.0\deps"
-            if (-not (Test-Path $depsLink)) { New-Item -ItemType Junction -Path $depsLink -Target (Join-Path $PSScriptRoot "..\deps") }
-            $depsLink = Join-Path $PSScriptRoot "..\src\NaniKore\bin\Debug\net10.0-windows10.0.19041.0\.data"
-            if (-not (Test-Path $depsLink)) { New-Item -ItemType Junction -Path $depsLink -Target (Join-Path $PSScriptRoot "..\.data") }
-            $depsLink = Join-Path $PSScriptRoot "..\artifacts\win-x64\.data"
-            if (-not (Test-Path $depsLink)) { New-Item -ItemType Junction -Path $depsLink -Target (Join-Path $PSScriptRoot "..\.data") }
+            # 本机数据目录单一真相（issue 017）：调试产物与发布产物都挂接仓库根 .data，
+            # 不各存一份，免得「调试版改的配置发布版看不到」。deps 同理挂到仓库 deps/。
+            Set-NaniKoreJunction -Path (Join-Path $debugOutputDirectory 'deps') -Target $dependenciesDirectory
+            Set-NaniKoreJunction -Path (Join-Path $debugOutputDirectory '.data') -Target $dataDirectory -CreateTarget
+            Set-NaniKoreJunction -Path (Join-Path $publishOutput '.data') -Target $dataDirectory -CreateTarget
         }
         'run' {
             & $dotnet run --project $project -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
@@ -366,20 +463,23 @@ try {
             $stalePdb = Join-Path $publishOutput 'NaniKore.pdb'
             Remove-Item -LiteralPath $stalePdb -Force -ErrorAction SilentlyContinue
 
+            # deps 先摘链：dotnet publish 与打包阶段的递归复制都会穿透联接点，
+            # 带着整棵模型树跑一遍既慢又会把 deps/ 原样拖进 zip staging；发布收尾再挂回来。
+            $publishDepsLink = Join-Path $publishOutput 'deps'
+            Remove-NaniKoreJunction -Path $publishDepsLink -IncludeRealDirectory
+
             & $dotnet publish $project --configuration Release --runtime win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false --output $publishOutput -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
             $exitCode = $LASTEXITCODE
             if ($exitCode -ne 0) {
                 break
             }
-            $depsLink = Join-Path $PSScriptRoot "..\artifacts\win-x64\deps"
-            Set-NaniKoreOnnxRuntimeLinks -OutputDirectory $buildOutputDirectory -DependenciesDirectory $dependenciesDirectory
-            Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $buildOutputDirectory
             # 默认发布包不携带固定的 ONNX Runtime DLL；完整包从 deps/ 原样打包。
-            Remove-Item -LiteralPath (Join-Path $publishOutput 'deps'), (Join-Path $publishOutput 'onnxruntime.dll'), (Join-Path $publishOutput 'onnxruntime_providers_shared.dll') -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath (Join-Path $publishOutput 'onnxruntime.dll'), (Join-Path $publishOutput 'onnxruntime_providers_shared.dll') -Force -ErrorAction SilentlyContinue
             # 配置模板是交付物：显式同步到发布输出。PreserveNewest 在中间产物较新时会整段跳过复制，
             # 不能只靠 csproj 的复制项；同时清掉旧链路可能残留的运行期 config.yaml（issue 017）。
             Remove-Item -LiteralPath (Join-Path $publishOutput 'config.yaml') -Force -ErrorAction SilentlyContinue
             Copy-Item -LiteralPath (Join-Path $root 'config.template.yaml') -Destination $publishOutput -Force
+            # NuGet 附带的 .lib 是 Windows 链接器导入库，应用运行时只需要 DLL，不进交付物。
             Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $publishOutput
             # 运行期数据（.data/config.yaml、keys.bin、collections.db）不再进交付物；发布只带配置模板。
             $productVersion = Get-NaniKoreProductVersion -ConfigPath (Join-Path $root 'config.template.yaml')
@@ -389,9 +489,10 @@ try {
                 -DependenciesDirectory $dependenciesDirectory `
                 -ProductVersion $productVersion `
                 -IncludeFullDependencies:$Full
-            if (-not (Test-Path $depsLink)) {
-                New-Item -ItemType Junction -Path $depsLink -Target (Join-Path $PSScriptRoot "..\deps")
-            }
+            # 打包结束才挂本机链接：发布目录与仓库根 .data 共用同一份配置与密钥，调试版同样指向那里；
+            # 交付 zip 不含 .data，解压出去的副本完全独立，用户数据不会随发布包外流。
+            Set-NaniKoreJunction -Path $publishDepsLink -Target $dependenciesDirectory
+            Set-NaniKoreJunction -Path (Join-Path $publishOutput '.data') -Target $dataDirectory -CreateTarget
             Write-Host "Created release archive: $archivePath"
         }
     }
