@@ -39,8 +39,10 @@ internal static partial class SelfTest
 
         // 结果面板：本地注音、双语态与翻译流、指标条、精讲生命周期、划词气泡、振假名文档
         TestResultPanelSourceAnnotation();
+        TestResultPanelAnnotateButton();
         TestResultPanelRubyDualModeAndTranslationFlow();
         TestResultPanelMetricsBar();
+        TestResultPanelViewportLayout();
         TestExplanationExpanderLifecycle();
         TestExplanationCardViewFavorites();
         TestSelectionBubbleInteractions();

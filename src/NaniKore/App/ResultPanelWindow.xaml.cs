@@ -240,6 +240,7 @@ internal sealed partial class ResultPanelWindow : Window
         _originalEditingText = SourceTextBox.Text;
         _receivedAnnotatedSource = false;
         NormalizeSourceButton.IsEnabled = true;
+        AnnotateSourceButton.IsEnabled = true;
         TranslateButton.Content = "翻译"; // 初次进入始终为“翻译”
         TranslationTextBox.Clear();
         ExplanationView.Clear();
@@ -287,6 +288,7 @@ internal sealed partial class ResultPanelWindow : Window
     public void SetTranslationInProgress(bool inProgress)
     {
         NormalizeSourceButton.IsEnabled = !inProgress;
+        AnnotateSourceButton.IsEnabled = !inProgress;
         TranslateButton.IsEnabled = !inProgress;
         if (!inProgress)
         {
@@ -997,6 +999,23 @@ internal sealed partial class ResultPanelWindow : Window
     {
         CommitEditingSourceIfActive();
         TranslateRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// 显式注音入口：与翻译彻底解耦——点击即把当前原文按源语言口径叠加读音并展示假名阅读态。
+    /// 编辑态先提交为事实源（假名只能由 FlowDocument 承载，编辑框里只看得到纯文本）；
+    /// 手动触发必须走 manual 重算，即便纯文本未变也按当前下拉语言重新叠加。
+    /// </summary>
+    private void OnAnnotateSourceClick(object sender, RoutedEventArgs e)
+    {
+        CommitEditingSourceIfActive();
+        if (string.IsNullOrWhiteSpace(SourceText))
+        {
+            SetStatus("没有可注音的原文。");
+            return;
+        }
+
+        _ = AnnotateSourceAsync(manual: true);
     }
 
     private void OnClearTranslationClick(object sender, RoutedEventArgs e) => ClearTranslation();

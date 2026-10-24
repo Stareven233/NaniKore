@@ -22,15 +22,18 @@
     <ScrollViewer x:Name="ContentScrollViewer"
                   VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled"
-                  Focusable="False">
+                  Focusable="False"
+                  Padding="16,14,16,14">
         <!--
             整体内容区滚动（issue 015 / 1.2）：8 行 Grid 在原布局下总高于默认 520 客户区，
             Grid 不滚动直接溢出裁切，精讲底部与状态栏看不见也滚不到。整页滚动后任何内容都可到达。
             MinHeight 绑回视口高度：内容不高时星号行仍然撑满窗口，内容超高时才出现纵向滚动条；
             精讲区另有 MaxHeight（SizeChanged 维持 ActualHeight * 0.45）形成外层整页滚 + 内层局部滚的两级滚动。
+            内外边距必须分离（Grid 不挂 Margin，间距全部由本 ScrollViewer 的 Padding 承担）：
+            ScrollViewer 的 extent 会把子的 Margin 一并计入，而 MinHeight 只绑 ViewportHeight，
+             Margin 不扣除就会永久溢出「Margin 像素数」，滚动条常驻且底部统计条永远被裁一截。
         -->
-        <Grid Margin="16,14,16,14"
-              MinHeight="{Binding ViewportHeight, ElementName=ContentScrollViewer, Mode=OneWay}">
+        <Grid MinHeight="{Binding ViewportHeight, ElementName=ContentScrollViewer, Mode=OneWay}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" MinHeight="80" />
@@ -56,6 +59,11 @@
                             Content="规范化"
                             ToolTip="整理换行和空格，并补齐中日韩文字与拉丁字母、数字之间的空格"
                             Click="OnNormalizeSourceClick" />
+                    <!-- 显式注音入口（与翻译解耦）：点击即按当前源语言口径把读音叠到原文区，无需先点翻译 -->
+                    <Button x:Name="AnnotateSourceButton" MinWidth="72" Margin="8,0,0,0"
+                            Content="注音"
+                            ToolTip="立即对原文区的文本标注读音（假名/拼音/音标），不需要先翻译"
+                            Click="OnAnnotateSourceClick" />
                     <Button x:Name="TranslateButton" Style="{DynamicResource Button.Accent}" MinWidth="72" Margin="8,0,0,0"
                             Content="翻译" Click="OnTranslateClick" />
                 </StackPanel>

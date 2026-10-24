@@ -3,6 +3,7 @@ using NaniKore.App.Controls;
 using NaniKore.App.Settings;
 using NaniKore.Config;
 using NaniKore.Favorites;
+using NaniKore.Phonetics;
 using NaniKore.Translation;
 
 namespace NaniKore.Diagnostics;
@@ -199,6 +200,177 @@ internal static partial class SelfTest
         Check(
             "begin translation preserves modified source instead of reverting to initial source",
             panel.SourceText == "私は 先生です。");
+    }
+
+    /// <summary>
+    /// 结果面板视口布局契约（回归 issue 015 遗留的 margin 溢出缺陷）：
+    /// 视口内边距只能由 ScrollViewer.Padding 承担，内容 Grid 严禁再挂纵向 Margin——
+    /// ScrollViewer 的 extent 会把子的 Margin 一并计入，而 MinHeight 只绑 ViewportHeight，
+    /// 不扣除 Margin 就永久溢出「Margin 像素数」：滚动条常驻、底部时长统计条永远被裁一截，
+    /// 且放大窗口也治不好（星号行吞掉所有余量，底部依旧分不到空间）。
+    /// 默认与放大视口下都必须零滚动条、统计条完整可见；内容真高时才按设计出现外层滚动条（两级滚动）。
+    /// </summary>
+    private static void TestResultPanelViewportLayout()
+    {
+        EnsureThemedApplication();
+
+        foreach (var (width, height) in new[] { (700.0, 443.0), (1600.0, 860.0) })
+        {
+            var panel = new ResultPanelWindow();
+            // 注音开关关闭：布局断言不依赖注音词典是否就绪
+            panel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = false, RareOnly = true });
+            panel.Reset("こ こ は  通[とお]れないよ", "OCR 完成", autoTranslate: true);
+            panel.Append(new UnderstandDelta(DeltaChannel.Translation, "这里过不去哦。"));
+            panel.SetMetrics(new TranslationMetrics(320, 45, 680, 1750, 42.1));
+
+            var scroller = Find<WpfControls.ScrollViewer>(panel, "ContentScrollViewer");
+            var grid = scroller?.Content as WpfControls.Grid;
+            var metricsBar = Find<WpfControls.Border>(panel, "MetricsBar");
+            ArrangePanelViewport(scroller, width, height);
+
+            Check(
+                $"viewport {width}x{height} needs no scrollbar and keeps the metrics bar fully visible",
+                scroller is not null &&
+                scroller.ComputedVerticalScrollBarVisibility != Wpf.Visibility.Visible &&
+                scroller.ScrollableHeight <= 0.5 &&
+                grid is not null &&
+                grid.DesiredSize.Height <= scroller.ViewportHeight + 0.5 &&
+                metricsBar is not null &&
+                metricsBar.Visibility == Wpf.Visibility.Visible &&
+                ElementBottom(metricsBar, scroller) <= scroller.ActualHeight + 0.5);
+
+            // 结构不变量：纵向内边距在 ScrollViewer 上，内容 Grid 不再挂 Margin
+            Check(
+                $"viewport {width}x{height} carries the inset on the scroll viewer padding instead of the content grid margin",
+                scroller is not null &&
+                scroller.Padding.Top > 0 &&
+                scroller.Padding.Bottom > 0 &&
+                grid is not null &&
+                grid.Margin.Top == 0 &&
+                grid.Margin.Bottom == 0);
+        }
+
+        // 反向契约：内容真高（展开的精讲）时外层滚动条按设计出现，两级滚动不被削弱
+        var tallPanel = new ResultPanelWindow();
+        tallPanel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = false, RareOnly = true });
+        tallPanel.Reset("原文", "OCR 完成", autoTranslate: true);
+        tallPanel.Append(new UnderstandDelta(DeltaChannel.Translation, "译文"));
+        tallPanel.SetExplanationEnabled(true);
+        tallPanel.ExpandExplanation();
+        Find<ExplanationCardView>(tallPanel, "ExplanationView")?.SetText(
+            string.Join("\n", Enumerable.Range(0, 40).Select(index => $"### [词汇/短语]\n- **词{index}** | 读音{index} | 名词 | 释义{index}")));
+        var tallScroller = Find<WpfControls.ScrollViewer>(tallPanel, "ContentScrollViewer");
+        ArrangePanelViewport(tallScroller, 700, 443);
+        Check(
+            "genuinely tall content still gets the outer scrollbar so two-level scrolling survives",
+            tallScroller is not null &&
+            tallScroller.ComputedVerticalScrollBarVisibility == Wpf.Visibility.Visible &&
+            tallScroller.ScrollableHeight > 0);
+    }
+
+    /// <summary>无头驱动一次面板视口布局：直接对 ScrollViewer 子树测量/排列，不 Show 窗口（不依赖真实桌面会话）。</summary>
+    private static void ArrangePanelViewport(WpfControls.ScrollViewer? scroller, double width, double height)
+    {
+        if (scroller is null)
+        {
+            return;
+        }
+
+        // MinHeight 绑 ViewportHeight：多轮测量/排列让绑定收敛后再断言
+        for (var i = 0; i < 4; i++)
+        {
+            scroller.Measure(new Wpf.Size(width, height));
+            scroller.Arrange(new Wpf.Rect(0, 0, width, height));
+        }
+
+        scroller.UpdateLayout();
+    }
+
+    /// <summary>元素底边在视口坐标系里的 Y（滚动条常驻缺陷下会超出视口高度而被裁掉）。</summary>
+    private static double ElementBottom(Wpf.FrameworkElement element, Wpf.FrameworkElement viewport) =>
+        element.TransformToAncestor(viewport).Transform(new Wpf.Point(element.ActualWidth, element.ActualHeight)).Y;
+
+    /// <summary>
+    /// 显式注音按钮契约（与翻译解耦）：按钮位居「规范化」与「翻译」之间；
+    /// 初始纯文本编辑态点击即提交事实源并切到假名阅读态，全程不发起翻译；
+    /// 空原文温和提示；注音总开关关闭时软降级并指向设置，不抛错不清原文。
+    /// </summary>
+    private static void TestResultPanelAnnotateButton()
+    {
+        EnsureThemedApplication();
+
+        var panel = new ResultPanelWindow();
+        panel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = true, RareOnly = true });
+        panel.Reset("彼は躊躇なく答えた。", "OCR 完成", autoTranslate: false);
+
+        var annotateButton = Find<WpfControls.Button>(panel, "AnnotateSourceButton");
+        var normalizeButton = Find<WpfControls.Button>(panel, "NormalizeSourceButton");
+        var translateButton = Find<WpfControls.Button>(panel, "TranslateButton");
+        var viewerBorder = Find<WpfControls.Border>(panel, "SourceViewerBorder");
+        var statusBar = Find<InfoBar>(panel, "StatusBar");
+
+        // 工具栏顺序契约：规范化 → 注音 → 翻译
+        Check(
+            "annotate button sits between normalize and translate in the toolbar",
+            annotateButton is not null &&
+            normalizeButton is not null &&
+            translateButton is not null &&
+            annotateButton.Parent is WpfControls.StackPanel toolbar &&
+            toolbar.Children.IndexOf(normalizeButton) is var normalizeIndex && normalizeIndex >= 0 &&
+            toolbar.Children.IndexOf(annotateButton) == normalizeIndex + 1 &&
+            toolbar.Children.IndexOf(translateButton) == normalizeIndex + 2);
+
+        // 初始为纯文本编辑态（未开启自动翻译）：点注音即切到假名阅读态，且不发起翻译
+        var translateRequested = false;
+        panel.TranslateRequested += (_, _) => translateRequested = true;
+        if (annotateButton is not null)
+        {
+            RaiseClick(annotateButton);
+        }
+
+        WaitForAnnotation(panel);
+        Check(
+            "clicking annotate switches plain edit mode into ruby reading view without translating",
+            viewerBorder?.Visibility == Wpf.Visibility.Visible &&
+            !translateRequested &&
+            string.Equals(panel.SourceText, "彼は躊躇なく答えた。", StringComparison.Ordinal));
+
+        // 假名叠加与状态反馈依赖 ja 词典就绪；未就绪时只守住「事实源不被破坏」
+        if (PhoneticAnnotatorRegistryHolder.Default.GetAnnotator("ja")?.IsAvailable == true)
+        {
+            Check(
+                "clicking annotate overlays furigana while the plain source stays the single source of truth",
+                panel.AnnotatedSourceText.Contains('[') &&
+                string.Equals(RubyTextParser.ToPlainText(panel.AnnotatedSourceText), "彼は躊躇なく答えた。", StringComparison.Ordinal));
+        }
+        else
+        {
+            Skip("ja 词典未就绪（deps/phonetics/ja），跳过注音按钮的假名叠加断言");
+        }
+
+        // 空原文：不计算不报错，温和提示
+        panel.Reset(string.Empty, "等待 OCR", autoTranslate: false);
+        if (annotateButton is not null)
+        {
+            RaiseClick(annotateButton);
+        }
+
+        Check(
+            "annotate with empty source shows a gentle hint instead of failing",
+            statusBar?.Message == "没有可注音的原文。");
+
+        // 总开关关闭：软降级并提示去向设置，原文事实源不受影响
+        panel.Reset("彼は躊躇なく答えた。", "OCR 完成", autoTranslate: false);
+        panel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = false, RareOnly = true });
+        if (annotateButton is not null)
+        {
+            RaiseClick(annotateButton);
+        }
+
+        Check(
+            "annotate with phonetics disabled degrades gracefully with a settings hint",
+            statusBar?.Message.Contains("设置-通用") == true &&
+            string.Equals(panel.SourceText, "彼は躊躇なく答えた。", StringComparison.Ordinal));
     }
 
     /// <summary>底部指标条契约：SetMetrics 拼接摘要并显示，BeginTranslation 清空并折叠。</summary>
