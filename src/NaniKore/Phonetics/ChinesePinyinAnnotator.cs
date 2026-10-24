@@ -74,6 +74,27 @@ internal sealed class ChinesePinyinAnnotator : ITextAnnotator, IDisposable
         return spans;
     }
 
+    /// <summary>候选词数 = 含汉字词面数：与 <see cref="Annotate"/> 同一套分词口径，只数词形不查读音。</summary>
+    public int CountWords(string plainText)
+    {
+        EnsureTagger();
+        if (_tagger is null || string.IsNullOrEmpty(plainText))
+        {
+            return 0;
+        }
+
+        var count = 0;
+        foreach (var node in _tagger.Parse(plainText))
+        {
+            if (!string.IsNullOrEmpty(node.Surface) && ContainsHanzi(node.Surface))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
     public void Dispose()
     {
         lock (_gate)

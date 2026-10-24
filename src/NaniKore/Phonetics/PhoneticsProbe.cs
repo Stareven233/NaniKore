@@ -30,6 +30,7 @@ internal static class PhoneticsProbe
         Console.WriteLine("[判据] 停用词条数（计数）："
             + $" ja={CountLines("stopwords-ja")}, zh={CountLines("stopwords-zh")}, en={CountLines("stopwords-en")},"
             + $" common-chars-ja={CountLines("common-chars-ja")}, common-chars-zh={CountLines("common-chars-zh")}");
+        Console.WriteLine($"[判据] 短文本全注阈值={AnnotationProfile.ShortTextWordThreshold}：ja 3词={AnnotationProfile.Load("ja", wordCount: 3).AnnotateAll}，ja 12词={AnnotationProfile.Load("ja", wordCount: 12).AnnotateAll}");
 
         Console.WriteLine($"[arpabet] ubiquitous 码点：{(Dump(ArpabetIpaConverter.Convert("Y UW0 B IH1 K W IH0 T AH0 S")))}");
         Console.WriteLine($"[拼音] ri4={Dump(PinyinToneConverter.ConvertSyllable("ri4"))}, Ri4 Ben3={Dump(PinyinToneConverter.ConvertPhrase("Ri4 Ben3"))}");
@@ -38,16 +39,21 @@ internal static class PhoneticsProbe
         var samples = new (string Language, string Text)[]
         {
             ("ja", "日本語を勉強する日本語"),
+            ("ja", "日本語を勉強する"),
             ("ja", "食べた"),
             ("ja", "買い出しに行く"),
             ("ja", "行きます"),
             ("ja", "躊躇した"),
+            ("ja", "薬の過剰摂取で亡くなった被害者。その原因は致死量を超える6錠の睡眠薬。"),
+            ("ja", "先生は日本語で問題を説明して、生徒たちは静かに聞いていた。その後みんなで復習を始めた。"),
             ("zh", "龃龉的滋味"),
+            ("zh", "日本"),
             ("zh", "尴尬而不失礼貌"),
             ("zh", "魑魅魍魉横行"),
             ("zh", "饕餮大餐"),
             ("zh", "不行就去银行"),
             ("en", "The ubiquitous government"),
+            ("en", "The ubiquitous government and treason"),
             ("en", "abandoned the field"),
             ("en", "treason"),
             ("en", "Bob's device")
@@ -56,9 +62,15 @@ internal static class PhoneticsProbe
         foreach (var (language, text) in samples)
         {
             var annotator = registry.GetAnnotator(language);
-            var context = new AnnotationContext(AnnotationProfile.Load(language, rareOnly: false));
-            var spans = annotator is null ? [] : annotator.Annotate(text, context);
-            Console.WriteLine($"[{language}] available={annotator?.IsAvailable} {text} => {Dump(AnnotatedTextFormatter.Compose(text, spans))} (spans={spans.Count})");
+            var wordCount = annotator?.CountWords(text) ?? 0;
+            // 生产口径：候选词不足阈值时短文本全注，否则按设置里的仅难词过滤
+            var profile = AnnotationProfile.Load(language, wordCount: wordCount);
+            var spans = annotator is null ? [] : annotator.Annotate(text, new AnnotationContext(profile));
+            Console.WriteLine($"[{language}] available={annotator?.IsAvailable} 词数={wordCount} 全注={profile.AnnotateAll} {text} => {Dump(AnnotatedTextFormatter.Compose(text, spans))} (spans={spans.Count})");
+
+            // 黄金样例调试视角：关闭难词过滤后的原始候选（停用词仍生效），与生产口径对照看过滤吃掉了什么
+            var rawSpans = annotator is null ? [] : annotator.Annotate(text, new AnnotationContext(AnnotationProfile.Load(language, rareOnly: false)));
+            Console.WriteLine($"[{language}]   仅难词=关 {text} => {Dump(AnnotatedTextFormatter.Compose(text, rawSpans))} (spans={rawSpans.Count})");
         }
 
         if (registry.GetAnnotator("zh") is ITextAnnotator zhAnnotator)

@@ -93,6 +93,39 @@ internal sealed class EnglishIpaAnnotator : ITextAnnotator, IDisposable
         return spans;
     }
 
+    /// <summary>候选词数 = 长度≥2 的拉丁词元数：与 <see cref="Annotate"/> 同一套词元口径，且不依赖词典是否就绪。</summary>
+    public int CountWords(string plainText)
+    {
+        if (string.IsNullOrEmpty(plainText))
+        {
+            return 0;
+        }
+
+        var count = 0;
+        var i = 0;
+        while (i < plainText.Length)
+        {
+            if (!IsWordChar(plainText[i]))
+            {
+                i++;
+                continue;
+            }
+
+            var start = i;
+            while (i < plainText.Length && IsWordChar(plainText[i]))
+            {
+                i++;
+            }
+
+            if (i - start >= 2)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
     public void Dispose() => _dictionary?.Dispose();
 
     /// <summary>词典下载落地后清闩锁：下一次探测重新打开 SQLite，实现无需重启的热生效。</summary>

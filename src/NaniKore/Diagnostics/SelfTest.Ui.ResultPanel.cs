@@ -373,6 +373,50 @@ internal static partial class SelfTest
             string.Equals(panel.SourceText, "彼は躊躇なく答えた。", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 短文本全注豁免（主人要求）：可注音候选词不足 10 个时不再过滤难词，每个候选词都带读音；
+    /// 词数达到阈值后仍按「仅难词」过滤。注音按钮与 Reset 落地的自动注音走同一条链路，行为不漂移。
+    /// </summary>
+    private static void TestResultPanelShortTextAnnotateAll()
+    {
+        EnsureThemedApplication();
+
+        if (PhoneticAnnotatorRegistryHolder.Default.GetAnnotator("ja")?.IsAvailable != true)
+        {
+            Skip("ja 词典未就绪（deps/phonetics/ja），跳过短文本全注端到端断言");
+            return;
+        }
+
+        var panel = new ResultPanelWindow();
+        panel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = true, RareOnly = true });
+
+        // 两个候选词的短语：常用汉字词（日本語）与策展停用词（出来る 之外的常用词）都注音
+        panel.Reset("日本語を勉強する", "OCR 完成", autoTranslate: false);
+        WaitForAnnotation(panel);
+        Check(
+            "short source annotates every candidate word instead of filtering common ones",
+            panel.AnnotatedSourceText == "日本語[にほんご]を勉強[べんきょう]する",
+            $"actual={panel.AnnotatedSourceText}");
+
+        // 恰足 10 个候选词的长句：回到仅难词，先生/日本語/問題 这类全常用字词不带读音
+        const string longSource = "先生は日本語で問題を説明して、生徒たちは静かに聞いていた。その後みんなで復習を始めた。";
+        panel.Reset(longSource, "OCR 完成", autoTranslate: false);
+        WaitForAnnotation(panel);
+        Check(
+            "long source keeps the rare-only filtering for common words",
+            panel.AnnotatedSourceText.Contains("説明[せつめい]") &&
+            !panel.AnnotatedSourceText.Contains("先生[") &&
+            !panel.AnnotatedSourceText.Contains("日本語[") &&
+            !panel.AnnotatedSourceText.Contains("問題["),
+            $"actual={panel.AnnotatedSourceText}");
+
+        // 事实源不受注音形态影响：纯文本原文始终原样可读
+        Check(
+            "short-text annotation keeps the plain source untouched",
+            string.Equals(panel.SourceText, longSource, StringComparison.Ordinal) &&
+            string.Equals(RubyTextParser.ToPlainText(panel.AnnotatedSourceText), longSource, StringComparison.Ordinal));
+    }
+
     /// <summary>底部指标条契约：SetMetrics 拼接摘要并显示，BeginTranslation 清空并折叠。</summary>
     private static void TestResultPanelMetricsBar()
     {

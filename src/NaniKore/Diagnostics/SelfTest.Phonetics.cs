@@ -8,6 +8,7 @@ internal static partial class SelfTest
     private static void RunPhoneticsTests()
     {
         TestAnnotationProfileAndDedupe();
+        TestAnnotationShortTextWordCount();
         TestAnnotationFormatter();
         TestIpaTranscription();
         TestEnglishPipeline();
@@ -37,10 +38,65 @@ internal static partial class SelfTest
             PhoneticLanguages.DisplayName(null) is null);
     }
 
-    /// <summary>
-    /// 按语言词典状态：Ready 必须与清单完整性判定一致（哈希即版本）；
-    /// 未装配语言（如 ko）返回 Unsupported 而不是崩溃。
-    /// </summary>
+    /// <summary>词数统计与短文本全注豁免的输入口径：各标注器按自己的分词口径数候选词，阈值边界由 AnnotationProfile 裁决。</summary>
+    private static void TestAnnotationShortTextWordCount()
+    {
+        Check("短文本全注阈值为 10", AnnotationProfile.ShortTextWordThreshold == 10);
+
+        var registry = TextAnnotatorRegistry.CreateDefault();
+        var english = registry.GetAnnotator("en");
+        if (english is null || !english.IsAvailable)
+        {
+            Skip("en 词典未就绪（deps/phonetics/en），跳过英语词数与短语边界金样本");
+        }
+        else
+        {
+            Check(
+                "英语词数：拉丁词元计数，单字母不计",
+                english.CountWords("The ubiquitous government and treason") == 5 &&
+                english.CountWords("I am a doctor") == 2 &&
+                english.CountWords("Bob's device") == 2);
+
+            var nineWords = "the quick brown fox jumps over the lazy dog";
+            var tenWords = "the quick brown fox jumps over the lazy dog again";
+            var nine = AnnotatedTextFormatter.Compose(nineWords, registry.Annotate(nineWords, "en"));
+            var ten = AnnotatedTextFormatter.Compose(tenWords, registry.Annotate(tenWords, "en"));
+            Check(
+                "英语短语边界：9 词全注（停用词也注），10 词起回到仅难词",
+                nine.StartsWith("the[", StringComparison.Ordinal) && !ten.Contains("the[", StringComparison.Ordinal),
+                $"nine={nine} | ten={ten}");
+        }
+
+        var japanese = registry.GetAnnotator("ja");
+        if (japanese is null || !japanese.IsAvailable)
+        {
+            Skip("ja 词典未就绪（deps/phonetics/ja），跳过日语词数金样本");
+        }
+        else
+        {
+            Check(
+                "日语词数：含汉字词面计数，纯假名与拉丁不计",
+                japanese.CountWords("日本語を勉強する") == 2 &&
+                japanese.CountWords("躊躇した") == 1 &&
+                japanese.CountWords("これはiPhoneです") == 0 &&
+                japanese.CountWords("薬の過剰摂取で亡くなった被害者。その原因は致死量を超える6錠の睡眠薬。") >= AnnotationProfile.ShortTextWordThreshold);
+        }
+
+        var chinese = registry.GetAnnotator("zh");
+        if (chinese is null || !chinese.IsAvailable)
+        {
+            Skip("zh 词典未就绪（deps/phonetics/zh），跳过中文词数金样本");
+        }
+        else
+        {
+            Check(
+                "中文词数：含汉字词面计数",
+                chinese.CountWords("日本") == 1 &&
+                chinese.CountWords("不行就去银行") == 4);
+        }
+    }
+
+    /// <summary>按语言词典状态：Ready 必须与清单完整性判定一致（哈希即版本）；未装配语言（如 ko）返回 Unsupported 而不是崩溃。</summary>
     private static void TestPhoneticDictionaryStates()
     {
         foreach (var language in PhoneticLanguages.All)
@@ -113,7 +169,7 @@ internal static partial class SelfTest
 
         Check(
             "重置可用性后英语注音不受影响",
-            registry.Annotate("The ubiquitous government", "en").Count == 1);
+            registry.Annotate("The ubiquitous government", "en").Count == 3);
 
         // 清闩锁只影响「是否重新探测词典」，不得改动注音行为本身
         var before = Annotated(english, "The ubiquitous government", new AnnotationContext(AnnotationProfile.Load("en")));
@@ -159,6 +215,14 @@ internal static partial class SelfTest
 
         var disabled = AnnotationProfile.Load("ja", enabled: false);
         Check("总开关关闭时一律不注", disabled.IsSkipped("躊躇"));
+
+        // 短文本全注豁免：候选词不足阈值时停用词表与难词过滤全部让位（主人要求短句全部注音）
+        var shortJa = AnnotationProfile.Load("ja", wordCount: AnnotationProfile.ShortTextWordThreshold - 1);
+        Check("短文本豁免：常用汉字词也注", !shortJa.IsSkipped("日本語"));
+        Check("短文本豁免：策展停用词也注", !shortJa.IsSkipped("出来る"));
+        Check("短文本豁免：恰足阈值仍过滤", AnnotationProfile.Load("ja", wordCount: AnnotationProfile.ShortTextWordThreshold).IsSkipped("日本語"));
+        Check("短文本豁免：英语停用词在短语里也注", !AnnotationProfile.Load("en", wordCount: 3).IsSkipped("the"));
+        Check("短文本豁免：总开关关闭时仍不注", AnnotationProfile.Load("ja", enabled: false, wordCount: 3).IsSkipped("躊躇"));
 
         var context = new AnnotationContext(AnnotationProfile.Load("ja", rareOnly: false));
         Check("同篇同词形同读音只注首现", context.ShouldEmit("日本語", "にほんご") && !context.ShouldEmit("日本語", "にほんご"));
@@ -279,8 +343,8 @@ internal static partial class SelfTest
         {
             var pinned = registry.Annotate("The ubiquitous government", pinnedLanguage);
             Check(
-                "手选英语：拉丁词元按英语注音",
-                pinned.Count == 1,
+                "手选英语：三个词的短语全注（含停用词与高频词）",
+                pinned.Count == 3,
                 $"actual={AnnotatedTextFormatter.Compose("The ubiquitous government", pinned)}");
         }
     }

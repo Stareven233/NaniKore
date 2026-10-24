@@ -465,8 +465,14 @@ internal sealed partial class ResultPanelWindow : Window
         _annotationCancellation = cancellation;
         try
         {
-            var profile = AnnotationProfile.Load(languageCode, _phonetics.Enabled, _phonetics.RareOnly);
-            var spans = await Task.Run(() => annotator.Annotate(plain, new AnnotationContext(profile)), cancellation.Token);
+            // 词数决定过滤口径：候选词不足阈值时短文本全注（停用词与难词过滤一并让位），否则维持仅难词。
+            // 计数与标注同一次后台执行，UI 线程只负责最终落地。
+            var spans = await Task.Run(() =>
+            {
+                var wordCount = annotator.CountWords(plain);
+                var profile = AnnotationProfile.Load(languageCode, _phonetics.Enabled, _phonetics.RareOnly, wordCount);
+                return annotator.Annotate(plain, new AnnotationContext(profile));
+            }, cancellation.Token);
 
             // await 续体未必回到面板线程（自测/无同步上下文场景）：整段落地逻辑显式跳回
             if (!Dispatcher.CheckAccess())
@@ -548,8 +554,9 @@ internal sealed partial class ResultPanelWindow : Window
         _originalEditingText = plain;
         if (manual)
         {
+            // 短文本全注口径下「没有命中」指的是没有可标注的候选词，不再暗示难词过滤
             SetStatus(spans.Count == 0
-                ? $"已按{displayName}重新注音：没有命中难词。"
+                ? $"已按{displayName}重新注音：没有可标注的单词。"
                 : $"已按{displayName}重新注音（{spans.Count} 词）。");
         }
     }

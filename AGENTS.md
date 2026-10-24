@@ -13,7 +13,7 @@
 
 ## 3. 构建与测试
 - 依赖的 .net sdk 可以从 DOTNET_ROOT 用户变量获取
-- `./scripts/dev.ps1 [args]` 负责构建/测试：
+- 使用 `./scripts/dev.ps1 [args]` 进行构建/测试：
   - `args: build`: 构建 Debug 版本。会自动递增config.template.yaml的版本号
   - `args: test`: 运行无 UI 自测
   - `args: run`: 启动桌面应用

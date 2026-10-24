@@ -63,7 +63,7 @@
                 </controls:SettingsRow>
                 <Border Style="{DynamicResource Divider.Row}" />
                 <controls:SettingsRow Header="仅注难词"
-                                      Description="开启时停用词、高频词与常用字（日语常用漢字表 / 简体一级字表）不注；关闭时全文注音。">
+                                      Description="开启时停用词、高频词与常用字（日语常用漢字表 / 简体一级字表）不注；关闭时全文注音。可注音的单词不足 10 个时视为短语，始终全部注音。">
                     <ToggleButton x:Name="PhoneticsRareOnlyToggle" Style="{DynamicResource ToggleSwitch}" />
                 </controls:SettingsRow>
                 <Border Style="{DynamicResource Divider.Row}" />

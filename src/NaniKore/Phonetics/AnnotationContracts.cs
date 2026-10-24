@@ -30,6 +30,13 @@ internal interface ITextAnnotator
 
     /// <summary>对纯文本原文产出注音区间；停用过滤与去重统一经 <paramref name="context"/> 裁决。</summary>
     IReadOnlyList<AnnotationSpan> Annotate(string plainText, AnnotationContext context);
+
+    /// <summary>
+    /// 统计本篇原文中「可注音候选词」的数量：与 <see cref="Annotate"/> 同一套词元口径
+    /// （日语/中文数含汉字词面，英语数长度≥2 的拉丁词元），但不查读音，成本约等于一次分词。
+    /// 词数交给 <see cref="AnnotationProfile.Load"/> 裁决短文本全注豁免（不足 10 词时不再过滤难词）。
+    /// </summary>
+    int CountWords(string plainText);
 }
 
 /// <summary>
@@ -38,21 +45,30 @@ internal interface ITextAnnotator
 /// </summary>
 internal sealed class AnnotationProfile
 {
+    /// <summary>
+    /// 短文本全注豁免的词数阈值：本篇可注音候选词不足此数时视为短语，停用词表与难词过滤全部让位。
+    /// 几个词的短句（短语、标题、OCR 碎片）再按难词过滤往往什么都不注，主人要求此时全部标注。
+    /// </summary>
+    public const int ShortTextWordThreshold = 10;
+
     private readonly HashSet<string> _stopWords;
     private readonly HashSet<char> _commonChars;
+    private readonly bool _annotateAll;
 
     private AnnotationProfile(
         string languageCode,
         bool enabled,
         bool rareOnly,
         HashSet<string> stopWords,
-        HashSet<char> commonChars)
+        HashSet<char> commonChars,
+        bool annotateAll)
     {
         LanguageCode = languageCode;
         Enabled = enabled;
         RareOnly = rareOnly;
         _stopWords = stopWords;
         _commonChars = commonChars;
+        _annotateAll = annotateAll;
     }
 
     /// <summary>语言代码。</summary>
@@ -64,25 +80,39 @@ internal sealed class AnnotationProfile
     /// <summary>仅注难词：开启时再叠加「常用字符表」过滤；关闭时只走停用词表。</summary>
     public bool RareOnly { get; }
 
-    /// <summary>从嵌入式数据资源装载三语判据；文件缺失时退化为「不注」的最保守口径。</summary>
-    public static AnnotationProfile Load(string languageCode, bool enabled = true, bool rareOnly = true)
+    /// <summary>短文本全注：本篇候选词数不足 <see cref="ShortTextWordThreshold"/> 时为 true，两张过滤器一并让位。</summary>
+    public bool AnnotateAll => _annotateAll;
+
+    /// <summary>
+    /// 从嵌入式数据资源装载三语判据；文件缺失时退化为「不注」的最保守口径。
+    /// <paramref name="wordCount"/> 是本篇可注音候选词数（由 <see cref="ITextAnnotator.CountWords"/> 统计）：
+    /// 不足 <see cref="ShortTextWordThreshold"/> 时触发 <see cref="AnnotateAll"/> 豁免。
+    /// 默认 <see cref="int.MaxValue"/> 即长文本口径，直接装载（如金样本自测）保持既有过滤语义。
+    /// </summary>
+    public static AnnotationProfile Load(string languageCode, bool enabled = true, bool rareOnly = true, int wordCount = int.MaxValue)
     {
         var stopWords = EmbeddedData.LoadLines($"stopwords-{languageCode}.txt");
         // ja/zh 各有常用字符表（en 无规范字符表，交停用词表裁决）
         var commonChars = EmbeddedData.LoadChars(
             languageCode == "ja" ? "common-chars-ja.txt" : languageCode == "zh" ? "common-chars-zh.txt" : null);
-        return new AnnotationProfile(languageCode, enabled, rareOnly, stopWords, commonChars);
+        return new AnnotationProfile(languageCode, enabled, rareOnly, stopWords, commonChars, wordCount < ShortTextWordThreshold);
     }
 
     /// <summary>
     /// 该词形是否淘汰：开关关闭、命中停用词表、或（仅难词模式下）整词均为常用字符表的汉字。
     /// 无汉字的词元（假名/拉丁）不经字符表裁决——日语假名本就不注，拉丁词交给英语停用词表。
+    /// <see cref="AnnotateAll"/> 时两张过滤器全部让位：短文本里的每个候选词都注音。
     /// </summary>
     public bool IsSkipped(string surface)
     {
         if (!Enabled || string.IsNullOrEmpty(surface))
         {
             return true;
+        }
+
+        if (_annotateAll)
+        {
+            return false;
         }
 
         if (_stopWords.Contains(Key(surface)))

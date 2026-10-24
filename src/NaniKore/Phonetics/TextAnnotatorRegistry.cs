@@ -73,7 +73,9 @@ internal sealed class TextAnnotatorRegistry
                 continue;
             }
 
-            var context = new AnnotationContext(AnnotationProfile.Load(annotator.LanguageCode));
+            // 与结果面板同一口径：候选词不足阈值时短文本全注，否则按难词过滤
+            var profile = AnnotationProfile.Load(annotator.LanguageCode, wordCount: annotator.CountWords(plainText));
+            var context = new AnnotationContext(profile);
             spans.AddRange(annotator.Annotate(plainText, context));
         }
 
