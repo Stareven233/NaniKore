@@ -31,6 +31,7 @@ internal sealed class NaniKoreApp : Application
     private GlobalHotkeyWindow? _captureHotkey;
     private GlobalHotkeyWindow? _pasteHotkey;
     private OcrEngine? _ocrEngine;
+    private OcrHttpServer? _ocrHttpServer;
     private ProviderFactory? _providerFactory;
     private TrayIconHost? _trayIcon;
     private ResultPanelWindow? _resultPanel;
@@ -94,6 +95,7 @@ internal sealed class NaniKoreApp : Application
         // 两个热键各自独立注册：一个失败只气泡提示，另一个与托盘菜单照常可用。
         TryRegisterHotkey(HotkeySlot.Capture);
         TryRegisterHotkey(HotkeySlot.Paste);
+        ConfigureOcrHttpServer(_configStore.Current.General.OcrListen);
 
         Console.WriteLine("NaniKore translation pipeline is ready.");
         Console.WriteLine($"Press {_configStore.Current.Hotkeys.Capture} to capture and translate a region.");
@@ -775,6 +777,11 @@ internal sealed class NaniKoreApp : Application
             TryRegisterHotkey(HotkeySlot.Paste);
         }
 
+        if (!string.Equals(oldConfig.General.OcrListen, next.General.OcrListen, StringComparison.OrdinalIgnoreCase))
+        {
+            ConfigureOcrHttpServer(next.General.OcrListen);
+        }
+
         // 目标语言可能已变：同步刷新结果卡上的收藏语言探测口径（不打断当前展示）。
         _resultPanel?.SetTargetLanguage(next.General.TargetLanguage);
         // 注音开关可能已变：结果卡按新口径决定是否叠加注音（原文区不强刷，下一轮原文自然生效）。
@@ -941,6 +948,28 @@ internal sealed class NaniKoreApp : Application
         }
     }
 
+    private void ConfigureOcrHttpServer(string? listenAddress)
+    {
+        _ocrHttpServer?.Dispose();
+        _ocrHttpServer = null;
+
+        if (string.IsNullOrWhiteSpace(listenAddress))
+        {
+            return;
+        }
+
+        try
+        {
+            _ocrHttpServer = new OcrHttpServer(listenAddress, bitmap => GetOcrEngine().Recognize(bitmap));
+            Console.WriteLine($"OCR HTTP service listening on {_ocrHttpServer.EndpointDescription}");
+        }
+        catch (Exception ex)
+        {
+            _trayIcon?.ShowWarning($"OCR HTTP 服务启动失败：{ex.Message}");
+            Console.Error.WriteLine($"[NaniKore] Failed to start OCR HTTP server on {listenAddress}: {ex.Message}");
+        }
+    }
+
     private void ShowFailure(string message, Exception exception)
     {
         Console.Error.WriteLine($"{message} {exception}");
@@ -953,6 +982,7 @@ internal sealed class NaniKoreApp : Application
         _settingsWindow?.Close();
         _resultPanel?.Close();
         _trayIcon?.Dispose();
+        _ocrHttpServer?.Dispose();
         _providerFactory?.Dispose();
         _ocrEngine?.Dispose();
         _captureHotkey?.Dispose();

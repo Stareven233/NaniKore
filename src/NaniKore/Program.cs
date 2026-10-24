@@ -3,6 +3,7 @@ using System.Text.Json;
 using NaniKore.App;
 using NaniKore.Config;
 using NaniKore.Diagnostics;
+using NaniKore.Interop;
 using NaniKore.Ocr;
 using NaniKore.Phonetics;
 using NaniKore.Translation;
@@ -17,6 +18,11 @@ internal static class Program
     {
         // 诊断 CLI（自测/探查/词典生成）统一用 UTF-8 控制台，中文与 IPA 输出都可读
         UseUtf8Console();
+        if (args.Length > 0)
+        {
+            // 作为 WinExe，CLI 交互执行时需主动附加控制台，保证标准输出直接可见
+            NativeMethods.AttachConsole(NativeMethods.AttachParentProcess);
+        }
 
         if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase))
         {
@@ -187,7 +193,7 @@ internal static class Program
     {
         if (optionIndex + 1 >= args.Count)
         {
-            Console.Error.WriteLine("Usage: NaniKore --ocr-file <image-path>");
+            Console.Error.WriteLine("Usage: NaniKore --ocr-file <image-path> [--json]");
             return 2;
         }
 
@@ -196,6 +202,16 @@ internal static class Program
             using var image = new Bitmap(Path.GetFullPath(args[optionIndex + 1]));
             using var engine = OcrEngine.CreateDefault();
             var result = engine.Recognize(image);
+            if (args.Contains("--json", StringComparer.OrdinalIgnoreCase))
+            {
+                var json = JsonSerializer.Serialize(result.ToDto(), new JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                });
+                Console.WriteLine(json);
+                return 0;
+            }
             foreach (var line in result.Lines)
             {
                 Console.WriteLine($"[{line.Confidence:P1}] {line.Bounds}: {line.Text}");

@@ -1,4 +1,7 @@
 using System.Drawing.Imaging;
+using System.Net;
+using System.Net.Http;
+using NaniKore.App;
 using NaniKore.Ocr;
 using NaniKore.Ocr.Detection;
 using NaniKore.Ocr.Imaging;
@@ -19,6 +22,7 @@ internal static partial class SelfTest
         TestCtcDecoding();
         TestReadingOrder();
         TestSourceTextNormalization();
+        TestOcrHttpServer();
     }
 
     private static void TestSelectionGeometry()
@@ -150,6 +154,46 @@ internal static partial class SelfTest
         Check(
             "source normalization preserves already normalized text",
             SourceTextNormalizer.Normalize("A 1 中文") == "A 1 中文");
+    }
+
+    private static void TestOcrHttpServer()
+    {
+        using var server = new OcrHttpServer("127.0.0.1:0", bmp => new OcrResult([
+            new OcrLine(new Rectangle(10, 20, 30, 40), "mock_http_text", 0.99f)
+        ], TimeSpan.FromMilliseconds(42)));
+
+        using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{server.Port}") };
+
+        var healthResp = client.GetAsync("/health").GetAwaiter().GetResult();
+        var healthJson = healthResp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+        Check("OcrHttpServer health endpoint returns 200 ok", healthResp.IsSuccessStatusCode && healthJson.Contains("\"status\":\"ok\""));
+
+        using var dummy = new Bitmap(10, 10, PixelFormat.Format32bppArgb);
+        using var ms = new MemoryStream();
+        dummy.Save(ms, ImageFormat.Png);
+        var postContent = new ByteArrayContent(ms.ToArray());
+        var postResp = client.PostAsync("/ocr", postContent).GetAwaiter().GetResult();
+        var postJson = postResp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+        Check("OcrHttpServer recognizes raw image binary", postResp.IsSuccessStatusCode && postJson.Contains("mock_http_text") && postJson.Contains("\"elapsed_ms\""));
+
+        var tempFile = Path.Combine(Path.GetTempPath(), $"nanikore_test_{Guid.NewGuid():N}.png");
+        try
+        {
+            dummy.Save(tempFile, ImageFormat.Png);
+            var queryResp = client.PostAsync($"/ocr?path={Uri.EscapeDataString(tempFile)}", null).GetAwaiter().GetResult();
+            var queryJson = queryResp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            Check("OcrHttpServer recognizes image via path query", queryResp.IsSuccessStatusCode && queryJson.Contains("mock_http_text"));
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+            {
+                File.Delete(tempFile);
+            }
+        }
+
+        var notFoundResp = client.GetAsync("/nonexistent").GetAwaiter().GetResult();
+        Check("OcrHttpServer returns 404 for unknown route", notFoundResp.StatusCode == HttpStatusCode.NotFound);
     }
 
     private static void SetClass(float[] probabilities, int time, int classCount, int character, float value) =>

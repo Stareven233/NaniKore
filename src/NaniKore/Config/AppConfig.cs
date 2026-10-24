@@ -46,6 +46,9 @@ internal sealed class GeneralConfig
     public bool AutoExplain { get; set; }
 
     public string TargetLanguage { get; set; } = "中文（简体）";
+
+    /// <summary>开发者选项：本地 OCR HTTP 监听地址（格式 host:port，如 127.0.0.1:39281 或 0.0.0.0:39281），留空不启用。</summary>
+    public string OcrListen { get; set; } = string.Empty;
 }
 
 internal sealed class PipelineConfig
