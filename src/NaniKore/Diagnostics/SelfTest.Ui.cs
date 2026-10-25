@@ -47,6 +47,7 @@ internal static partial class SelfTest
         TestExplanationExpanderLifecycle();
         TestExplanationCardViewFavorites();
         TestSelectionBubbleInteractions();
+        TestSelectionBubbleFavoriteNote();
         TestRubyDocumentBuilderAndSelectionCopy();
     }
 

@@ -676,6 +676,9 @@ internal sealed class NaniKoreApp : Application
         }
 
         var panel = new ResultPanelWindow();
+        // 尺寸记忆（issue：缩放不记忆）：优先本会话已拖拽过的值；首建时从落盘配置播种，跨重启恢复上次大小。
+        _lastPanelWidth ??= _configStore.Current.Windows.ResultPanelWidth;
+        _lastPanelHeight ??= _configStore.Current.Windows.ResultPanelHeight;
         if (_lastPanelWidth is > 0 && _lastPanelHeight is > 0)
         {
             panel.Width = _lastPanelWidth.Value;
@@ -690,6 +693,9 @@ internal sealed class NaniKoreApp : Application
                 _lastPanelHeight = panel.ActualHeight;
             }
         };
+
+        // 失焦即视为本次调整告一段落：把面板尺寸写回配置，跨重启仍能恢复（尺寸未变则不写盘）。
+        panel.Deactivated += (_, _) => PersistResultPanelSize(panel);
 
         panel.TranslateRequested += (_, _) => _ = StartTranslationAsync(panel.SourceText, _lastImagePng);
         panel.ExplanationRequested += (_, _) => _ = StartExplanationAsync();
@@ -710,6 +716,8 @@ internal sealed class NaniKoreApp : Application
         panel.SettingsRequested += (_, tab) => ShowSettings(tab);
         panel.Closed += (_, _) =>
         {
+            // 关闭前把尺寸写回配置，保证下次（含重启后）识别时恢复到此大小。
+            PersistResultPanelSize(panel);
             _resultPanel = null;
             // 关闭即放弃本轮结果：翻译与精讲两条流都要取消，避免面板关闭后继续更新旧内容。
             CancelTranslation();
@@ -723,6 +731,49 @@ internal sealed class NaniKoreApp : Application
         }
 
         return panel;
+    }
+
+    /// <summary>
+    /// 把结果面板当前尺寸写回配置（issue：缩放不记忆）。仅在正常窗口状态、尺寸确实变化时落盘，
+    /// 未变化则不写 config.yaml；写盘失败静默吞咽——尺寸记忆是尽力而为的增强，不阻断失焦/关闭流程。
+    /// 与设置窗关闭时的尺寸回写同范式（见 <see cref="SettingsWindow.ResolvePersistedSize"/>）。
+    /// </summary>
+    private void PersistResultPanelSize(ResultPanelWindow panel)
+    {
+        if (panel.WindowState != WindowState.Normal)
+        {
+            return;
+        }
+
+        var width = panel.ActualWidth;
+        var height = panel.ActualHeight;
+        if (!double.IsFinite(width) || !double.IsFinite(height) || width <= 0 || height <= 0)
+        {
+            return;
+        }
+
+        // 以面板声明的最小尺寸为下限，防止异常数据把窗口记成不可操作的大小。
+        width = Math.Max(panel.MinWidth, width);
+        height = Math.Max(panel.MinHeight, height);
+
+        var windows = _configStore.Current.Windows;
+        if (Math.Abs(windows.ResultPanelWidth - width) < 0.5 &&
+            Math.Abs(windows.ResultPanelHeight - height) < 0.5)
+        {
+            return;
+        }
+
+        var next = AppConfigCloner.Clone(_configStore.Current);
+        next.Windows.ResultPanelWidth = width;
+        next.Windows.ResultPanelHeight = height;
+        try
+        {
+            _configStore.AtomicWrite(next);
+        }
+        catch
+        {
+            // 尺寸记忆尽力而为：失焦/关闭流程不因写盘失败而中断。
+        }
     }
 
     private void ShowSettings(SettingsTab tab = SettingsTab.General)

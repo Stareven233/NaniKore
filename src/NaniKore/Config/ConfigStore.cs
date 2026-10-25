@@ -279,6 +279,22 @@ internal sealed class ConfigStore
             normalized = true;
         }
 
+        // 结果面板尺寸记忆：越界或非法数据回退到面板 XAML 默认（700×520），
+        // 下限对齐面板 MinWidth/MinHeight，防止异常 DPI 数据把面板缩到不可操作。
+        if (double.IsNaN(config.Windows.ResultPanelWidth) || double.IsInfinity(config.Windows.ResultPanelWidth) ||
+            config.Windows.ResultPanelWidth is < 440 or > 3840)
+        {
+            config.Windows.ResultPanelWidth = 700;
+            normalized = true;
+        }
+
+        if (double.IsNaN(config.Windows.ResultPanelHeight) || double.IsInfinity(config.Windows.ResultPanelHeight) ||
+            config.Windows.ResultPanelHeight is < 300 or > 2160)
+        {
+            config.Windows.ResultPanelHeight = 520;
+            normalized = true;
+        }
+
         if (reportWarnings && normalized)
         {
             LoadWarning ??= "config.yaml 中的非法配置已回落到默认值。";

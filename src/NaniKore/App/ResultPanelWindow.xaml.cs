@@ -1202,8 +1202,15 @@ internal sealed partial class ResultPanelWindow : Window
             if (!string.IsNullOrEmpty(text) && text.Length <= 100)
             {
                 var mousePos = e.GetPosition(SourceViewer);
+                // 注音单词收藏补齐（issue：原文区收藏丢注音）：底字之外再取纯读音，
+                // 当选区确实带注音（读音与底字不同）时，把读音作为备注随收藏一并落库；
+                // 无注音的普通选区不写备注，与译文框/原文编辑框口径一致。
+                var reading = RubyDocumentBuilder.ExtractFromSelection(selection, RubyCopyKind.ReadingOnly)?.Trim();
+                var note = !string.IsNullOrEmpty(reading) && !string.Equals(reading, text, StringComparison.Ordinal)
+                    ? $"读音: {reading}"
+                    : null;
                 SelectionBubble.SetDefaultLanguage(CurrentSourceLanguage);
-                SelectionBubble.ShowAt(SourceViewer, new Rect(mousePos.X, mousePos.Y, 1, 1), text);
+                SelectionBubble.ShowAt(SourceViewer, new Rect(mousePos.X, mousePos.Y, 1, 1), text, note);
             }
         }
     }

@@ -38,7 +38,6 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" MinHeight="80" />
                 <RowDefinition Height="8" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" MinHeight="80" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
@@ -112,22 +111,31 @@
             <GridSplitter Grid.Row="2" Height="8" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                           ResizeBehavior="PreviousAndNext" />
 
-            <Grid Grid.Row="3" Margin="0,0,0,6">
-                <TextBlock Text="译文" FontWeight="SemiBold" VerticalAlignment="Center" />
-                <Button x:Name="ClearTranslationButton"
-                        Style="{DynamicResource Button.Icon}"
-                        HorizontalAlignment="Right"
-                        ToolTip="清除译文"
-                        AutomationProperties.Name="清除译文"
-                        Click="OnClearTranslationClick">
-                    <TextBlock Text="&#xE894;" FontFamily="Segoe MDL2 Assets" />
-                </Button>
+            <!-- 译文块（标题 + 文本框）合并为一个星号行：GridSplitter 的 Next 目标由原来的「Auto 标题行」
+                 改成这个星号内容行，拖拽只在原文内容与译文内容之间重分配空间，标题随内容整体移动、永不被顶占。
+                 译文框自带 VerticalScrollBarVisibility=Auto，行高被拉小时文本内部滚动，观感正确。 -->
+            <Grid Grid.Row="3" MinHeight="80">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0" Margin="0,0,0,6">
+                    <TextBlock Text="译文" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Button x:Name="ClearTranslationButton"
+                            Style="{DynamicResource Button.Icon}"
+                            HorizontalAlignment="Right"
+                            ToolTip="清除译文"
+                            AutomationProperties.Name="清除译文"
+                            Click="OnClearTranslationClick">
+                        <TextBlock Text="&#xE894;" FontFamily="Segoe MDL2 Assets" />
+                    </Button>
+                </Grid>
+                <TextBox x:Name="TranslationTextBox" Grid.Row="1"
+                         Style="{DynamicResource TextBox.Multiline}"
+                         IsReadOnly="True" />
             </Grid>
-            <TextBox x:Name="TranslationTextBox" Grid.Row="4"
-                     Style="{DynamicResource TextBox.Multiline}"
-                     IsReadOnly="True" />
 
-            <Grid Grid.Row="5" Margin="0,10,0,0">
+            <Grid Grid.Row="4" Margin="0,10,0,0">
                 <Expander x:Name="ExplanationExpander"
                           Header="📖 精讲与语法解析 (点击展开)"
                           IsEnabled="False"
@@ -146,7 +154,7 @@
                 </StackPanel>
             </Grid>
 
-            <StackPanel Grid.Row="6" Margin="0,10,0,0">
+            <StackPanel Grid.Row="5" Margin="0,10,0,0">
                 <controls:InfoBar x:Name="StatusBar" />
                 <Border x:Name="MetricsBar" Margin="0,6,0,0"
                         Background="{DynamicResource Brush.Control.Background}"
@@ -168,7 +176,7 @@
                 </Border>
             </StackPanel>
 
-            <Expander x:Name="ErrorDetailsExpander" Grid.Row="7" Header="查看完整错误"
+            <Expander x:Name="ErrorDetailsExpander" Grid.Row="6" Header="查看完整错误"
                       Margin="0,8,0,0" Visibility="Collapsed">
                 <TextBox x:Name="ErrorDetailsTextBox" Style="{DynamicResource TextBox.Multiline}"
                          IsReadOnly="True" MaxHeight="160" />

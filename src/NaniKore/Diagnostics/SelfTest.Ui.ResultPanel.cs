@@ -713,6 +713,49 @@ internal static partial class SelfTest
     }
 
     /// <summary>
+    /// 注音单词收藏备注（issue：原文区收藏丢注音）：气泡经 ShowAt 收到备注时，收藏落库携带该备注；
+    /// 无备注入口（译文框/原文编辑框）收藏后 note 为空，不写多余备注。备注随每次 ShowAt 重置，防止上轮注音串味。
+    /// </summary>
+    private static void TestSelectionBubbleFavoriteNote()
+    {
+        EnsureThemedApplication();
+
+        var favoriteService = new InMemoryFavoriteService();
+        var panel = new ResultPanelWindow();
+        panel.SetFavoriteService(favoriteService);
+        var bubble = Find<SelectionBubblePopup>(panel, "SelectionBubble");
+        bubble?.SetFavoriteService(favoriteService);
+
+        // 带注音备注：原文区注音单词收藏后 note = 备注（读音），注音不再丢失
+        bubble?.ShowAt(panel, new Wpf.Rect(0, 0, 8, 8), "通", "读音: とお");
+        RaiseFavorite(bubble);
+        var withNote = favoriteService.GetAllFavorites().FirstOrDefault();
+        Check(
+            "favoriting a ruby word carries the reading into the note",
+            withNote is not null &&
+            withNote.Content == "通" &&
+            withNote.Note == "读音: とお");
+
+        // 无备注入口：收藏后 note 为空，上轮备注不串到下一条
+        bubble?.ShowAt(panel, new Wpf.Rect(0, 0, 8, 8), "食べる");
+        RaiseFavorite(bubble);
+        var withoutNote = favoriteService.GetAllFavorites().FirstOrDefault(item => item.Content == "食べる");
+        Check(
+            "favoriting without a reading leaves the note empty",
+            withoutNote is not null &&
+            string.IsNullOrEmpty(withoutNote.Note));
+
+        // 点击收藏按钮：触发点前移到 PreviewMouseLeftButtonDown（与既有交互一致）
+        void RaiseFavorite(SelectionBubblePopup? target)
+        {
+            if (target?.FavoriteButton is { } button)
+            {
+                button.RaiseEvent(LeftButton(Wpf.UIElement.PreviewMouseLeftButtonDownEvent, button));
+            }
+        }
+    }
+
+    /// <summary>
     /// 振假名文档构建与划词复制（issue 008 Phase 3 / issue 015）：
     /// RubyDocumentBuilder 把「汉字[读音]」切片成 FlowDocument；
     /// 三种复制口径（Plain / Annotated / ReadingOnly）必须能跨 InlineUIContainer 边界精准提取；

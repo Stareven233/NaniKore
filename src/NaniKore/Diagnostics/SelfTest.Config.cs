@@ -10,9 +10,54 @@ namespace NaniKore.Diagnostics;
 
 internal static partial class SelfTest
 {
+    /// <summary>
+    /// 结果面板尺寸记忆（issue：缩放不记忆）：result_panel_width/height 与设置窗尺寸同范式落盘、跨重启恢复；
+    /// 越界或非法值由归一化回退面板默认（700×520），下限对齐面板 MinWidth/MinHeight，克隆不丢字段。
+    /// </summary>
+    private static void TestResultPanelSizeConfigRoundTrip()
+    {
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
+        {
+            // 合法值：读盘恢复 + AtomicWrite 往返不丢、克隆保留
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
+                version: 0.1.1
+                windows:
+                  result_panel_width: 960
+                  result_panel_height: 640
+                """);
+            var store = new ConfigStore(dataDirectory, templateDirectory);
+            Check(
+                "result panel size loads from config",
+                store.Current.Windows.ResultPanelWidth == 960 &&
+                store.Current.Windows.ResultPanelHeight == 640);
+            store.AtomicWrite(store.Current);
+            var reloaded = new ConfigStore(dataDirectory, templateDirectory);
+            Check(
+                "result panel size survives an atomic write round-trip and clone",
+                reloaded.Current.Windows.ResultPanelWidth == 960 &&
+                reloaded.Current.Windows.ResultPanelHeight == 640 &&
+                AppConfigCloner.Clone(reloaded.Current).Windows.ResultPanelWidth == 960 &&
+                AppConfigCloner.Clone(reloaded.Current).Windows.ResultPanelHeight == 640);
+
+            // 越界值：宽低于面板 MinWidth(440)、高超过上限(2160) → 归一化回退默认 700×520
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
+                version: 0.1.1
+                windows:
+                  result_panel_width: 100
+                  result_panel_height: 99999
+                """);
+            var clamped = new ConfigStore(dataDirectory, templateDirectory);
+            Check(
+                "out-of-range result panel size normalizes back to the panel defaults",
+                clamped.Current.Windows.ResultPanelWidth == 700 &&
+                clamped.Current.Windows.ResultPanelHeight == 520);
+        });
+    }
+
     private static void RunConfigTests()
     {
         TestConfigRoundTrip();
+        TestResultPanelSizeConfigRoundTrip();
         TestEmptyPromptKeysSurviveRewrite();
         TestPasteHotkeyNormalization();
         TestLegacyVisionOneshotKeyIsIgnored();

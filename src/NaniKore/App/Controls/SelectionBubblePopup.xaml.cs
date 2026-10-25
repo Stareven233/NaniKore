@@ -27,6 +27,10 @@ public partial class SelectionBubblePopup : UserControl
     private IFavoriteService? _favoriteService;
     private bool _isCurrentContentFavorited;
 
+    // 本次气泡打开时预设的备注（issue：原文区注音单词收藏）：由面板按选区注音生成后透传，
+    // 收藏时随条目一并落库；无注音的入口（译文框/原文编辑框）保持 null，不写备注。
+    private string? _pendingNote;
+
     /// <summary>收藏动作被触发时激发的事件。</summary>
     public event EventHandler<FavoriteItem>? FavoriteRequested;
 
@@ -66,6 +70,7 @@ public partial class SelectionBubblePopup : UserControl
         ContentTextBox.CaretIndex = ContentTextBox.Text.Length;
 
         CategoryComboBox.SelectedIndex = 0;
+        _pendingNote = null;
 
         // 打开前清理残留鼠标捕获，杜绝“划选残留捕获把后续点击导回文本框”的根因分支。
         ReleaseStaleCapture();
@@ -81,7 +86,7 @@ public partial class SelectionBubblePopup : UserControl
     /// <summary>
     /// 紧贴指定目标元素与局部矩形区域弹出气泡（基于 DIP 逻辑坐标，自适应翻转防出界）。
     /// </summary>
-    public void ShowAt(UIElement target, Rect targetRect, string selectedText)
+    public void ShowAt(UIElement target, Rect targetRect, string selectedText, string? note = null)
     {
         if (string.IsNullOrWhiteSpace(selectedText))
         {
@@ -92,6 +97,7 @@ public partial class SelectionBubblePopup : UserControl
         ContentTextBox.Text = selectedText.Trim();
         ContentTextBox.CaretIndex = ContentTextBox.Text.Length;
         CategoryComboBox.SelectedIndex = 0;
+        _pendingNote = string.IsNullOrWhiteSpace(note) ? null : note;
         ReleaseStaleCapture();
 
         BubblePopup.PlacementTarget = target;
@@ -117,6 +123,7 @@ public partial class SelectionBubblePopup : UserControl
         ContentTextBox.CaretIndex = ContentTextBox.Text.Length;
 
         CategoryComboBox.SelectedIndex = 0;
+        _pendingNote = null;
         ReleaseStaleCapture();
 
         BubblePopup.PlacementTarget = target;
@@ -142,6 +149,7 @@ public partial class SelectionBubblePopup : UserControl
 
         // 默认类别为“单词”
         CategoryComboBox.SelectedIndex = 0;
+        _pendingNote = null;
         ReleaseStaleCapture();
 
         BubblePopup.Placement = System.Windows.Controls.Primitives.PlacementMode.Absolute;
@@ -315,8 +323,9 @@ public partial class SelectionBubblePopup : UserControl
 
     private void OnPopupClosed(object? sender, EventArgs e)
     {
-        // 气泡关闭后清空内容
+        // 气泡关闭后清空内容与预设备注，防止上轮的注音备注串到下一条收藏
         ContentTextBox.Clear();
+        _pendingNote = null;
     }
 
     private void OnContentTextChanged(object sender, TextChangedEventArgs e)
@@ -405,7 +414,8 @@ public partial class SelectionBubblePopup : UserControl
                 Category = category,
                 Content = content,
                 Language = GetSelectedLanguage(),
-                Note = null,
+                // 原文区注音单词：把选区读音随条目一起收进备注（无注音入口为 null）
+                Note = _pendingNote,
                 CreatedAt = DateTimeOffset.Now
             };
 

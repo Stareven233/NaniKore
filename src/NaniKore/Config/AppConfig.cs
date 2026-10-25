@@ -159,6 +159,14 @@ internal sealed class WindowConfig
     public double SettingsWidth { get; set; } = 760;
 
     public double SettingsHeight { get; set; } = 620;
+
+    /// <summary>
+    /// 结果面板上次的窗口宽度与高度（issue：结果面板缩放不记忆）。与设置窗尺寸同范式落盘、跨重启恢复；
+    /// 无效值由 <see cref="ConfigStore"/> 归一化回退到面板 XAML 默认（700×520）。
+    /// </summary>
+    public double ResultPanelWidth { get; set; } = 700;
+
+    public double ResultPanelHeight { get; set; } = 520;
 }
 
 internal sealed class PromptConfig
@@ -213,6 +221,8 @@ internal static class AppConfigCloner
         {
             SettingsWidth = source.Windows.SettingsWidth,
             SettingsHeight = source.Windows.SettingsHeight,
+            ResultPanelWidth = source.Windows.ResultPanelWidth,
+            ResultPanelHeight = source.Windows.ResultPanelHeight,
         },
         Prompts = new PromptConfig
         {
