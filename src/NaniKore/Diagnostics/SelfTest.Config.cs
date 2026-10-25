@@ -49,8 +49,8 @@ internal static partial class SelfTest
             var clamped = new ConfigStore(dataDirectory, templateDirectory);
             Check(
                 "out-of-range result panel size normalizes back to the panel defaults",
-                clamped.Current.Windows.ResultPanelWidth == 700 &&
-                clamped.Current.Windows.ResultPanelHeight == 520);
+                clamped.Current.Windows.ResultPanelWidth == 960 &&
+                clamped.Current.Windows.ResultPanelHeight == 660);
         });
     }
 

@@ -3,7 +3,7 @@
 # 每个配置档只需 name / kind / base_url / model 四行；api_type / supports_vision / timeout_seconds /
 # enable_thinking 只在偏离缺省（completions / true / 30 / false）时才需要写，保存一次设置也不会反弹成更多行
 # API Key 不写在这里：以当前 Windows 用户的 DPAPI 密文整体保存在 .data/keys.bin（内部是 {配置档名: API Key} 的 JSON）。
-version: 0.5.7+2
+version: 0.5.7+4
 general:
   auto_translate: false
   # 选取/剪贴板翻译（Ctrl+Shift+S）读到内容后是否立即翻译；默认开，视觉直喂不受此约束。
@@ -44,9 +44,9 @@ phonetics:
 windows:
   settings_width: 1024
   settings_height: 700
-  # 结果面板上次的窗口尺寸：缩放后自动记忆，跨重启恢复；越界或非法值由程序回退默认（700×520）。
-  result_panel_width: 700
-  result_panel_height: 520
+  # 结果面板上次的窗口尺寸：缩放后自动记忆，跨重启恢复；越界或非法值由程序回退默认（960×660）。
+  result_panel_width: 960
+  result_panel_height: 660
 prompts:
   # 提示词键一律留空即回落内置默认模板，填入非空内容时以本文件为准。可用占位符 {{target_language}} 会展开为目标语言。
   base: ~

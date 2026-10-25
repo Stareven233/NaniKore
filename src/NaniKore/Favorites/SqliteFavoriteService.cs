@@ -250,7 +250,9 @@ public sealed class SqliteFavoriteService : IFavoriteService
                 Category = reader.GetString(1),
                 Content = reader.GetString(2),
                 Note = reader.IsDBNull(3) ? null : reader.GetString(3),
-                CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(4)),
+                // created_at 以 Unix 毫秒（UTC 基准）落库；读回必须转回本地时区，
+                // 否则 FromUnixTimeMilliseconds 得到 Offset=0 的 UTC 墙钟，展示按 UTC 会比本地（如 UTC+8）早若干小时。
+                CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(4)).ToLocalTime(),
                 Language = reader.IsDBNull(5) ? "日本語" : reader.GetString(5),
             });
         }

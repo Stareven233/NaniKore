@@ -162,11 +162,11 @@ internal sealed class WindowConfig
 
     /// <summary>
     /// 结果面板上次的窗口宽度与高度（issue：结果面板缩放不记忆）。与设置窗尺寸同范式落盘、跨重启恢复；
-    /// 无效值由 <see cref="ConfigStore"/> 归一化回退到面板 XAML 默认（700×520）。
+    /// 无效值由 <see cref="ConfigStore"/> 归一化回退到面板 XAML 默认（960×660）。
     /// </summary>
-    public double ResultPanelWidth { get; set; } = 700;
+    public double ResultPanelWidth { get; set; } = 960;
 
-    public double ResultPanelHeight { get; set; } = 520;
+    public double ResultPanelHeight { get; set; } = 660;
 }
 
 internal sealed class PromptConfig
