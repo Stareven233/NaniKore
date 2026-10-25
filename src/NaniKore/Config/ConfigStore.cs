@@ -11,11 +11,14 @@ namespace NaniKore.Config;
 /// </summary>
 internal sealed class ConfigStore
 {
-    private static readonly IDeserializer Deserializer = new DeserializerBuilder()
+    // YamlDotNet 静态上下文（裁决 2 + epic 002 穿刺 2）：编译期生成的访问器取代运行期反射，
+    // NativeAOT 下无 IL3050。三个选项与迁移前的反射 builder 逐项一致；「读→写→读」产出
+    // 经穿刺 2 在 10 份样本（含真实 .data/config.yaml）上验证与反射路径逐字节等价。
+    private static readonly IDeserializer Deserializer = new StaticDeserializerBuilder(new ConfigYamlStaticContext())
         .IgnoreUnmatchedProperties()
         .WithNamingConvention(UnderscoredNamingConvention.Instance)
         .Build();
-    private static readonly ISerializer Serializer = new SerializerBuilder()
+    private static readonly ISerializer Serializer = new StaticSerializerBuilder(new ConfigYamlStaticContext())
         .WithNamingConvention(UnderscoredNamingConvention.Instance)
         .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitNull)
         .Build();

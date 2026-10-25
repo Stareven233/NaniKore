@@ -177,7 +177,11 @@ Ctrl+Shift+A
 - **`StaticLink.Avalonia`（2026-10-25 移除）**：主人改选「精简 exe + 原生 DLL 旁置」后不再需要静态链接包——`dotnet publish -r win-x64 -p:PublishAot=true` 会把三个原生库作为 RID 运行时资产自动复制到输出目录。少一个第三方构建依赖，穿刺 1 与跨平台打包同步简化（版本配对表也一起不再关心）。
 - `SkiaSharp` **3.119.x（与 Avalonia 12 同源）**：承接 `System.Drawing` 的位图与 PNG 编解码；其 `runtimes/win-x64/native/` 资产就是旁置的 `libSkiaSharp.dll` 来源。
 - `Microsoft.Data.Sqlite`、`LibNMeCab`、`Microsoft.ML.OnnxRuntime` **版本不动**——它们是业务核心，与 UI 引擎无关。
-- `YamlDotNet` 保留，配 `StaticContext` 源生成（裁决见「AOT 阻断项」1 与文末裁决记录）。（审计修订）当前钉 16.3.0 + `Vecc.YamlDotNet.Analyzers.StaticGenerator`；P0 顺带评估升级 18.1.0——StaticGenerator 已收进 YamlDotNet 主仓并附带一批 AOT/安全修复（最大递归默认值、struct 支持、net10.0 target）。升级与否不改变「单路线、不并行维护」的裁决。
+- `YamlDotNet` 保留，配 `StaticContext` 源生成（裁决见「AOT 阻断项」1 与文末裁决记录）。**当前钉 18.1.0 + `Vecc.YamlDotNet.Analyzers.StaticGenerator` 18.1.0（同号不混搭）**——2026-10-25 穿刺 2 实测后主人裁定从 16.3.0 升级（裁决 18）：两版静态路径跨版本产出零差异、AOT 均 0 警告，升级无行为风险，收益是 net10.0 原生 target 与上游 AOT/安全修复（最大递归默认值、struct 支持；StaticGenerator 已收进 YamlDotNet 主仓）。升级不改变「单路线、不并行维护」的裁决。
+
+  **（2026-10-25 穿刺 2 实测结论，issue 002-x）：静态路线成立，升级已执行。** 四个可落地事实：① 上下文类标记用 `[YamlStaticContext]` + 每个类型一条 `[YamlSerializable(typeof(X))]`，**生成器不沿类型图递归发现**，嵌套段与 `List` 元素必须逐个登记（漏登记报 YDNG001 警告，schema 变更时这是唯一同步点）；② 上下文类必须 `public partial`（`internal` 报 CS0262）；③ 18.1.0 与 16.3.0 静态路径在 10 份样本上产出**跨版本零差异**，两者静态专用 AOT 发布均 0 警告——升级无行为风险；④ 含反射基线的构建报 IL3050×2 + YamlDotNet 程序集 IL2104/IL3053，精确证明「反射是阻断点、静态上下文把它整个移出 AOT 图」。
+
+  **（2026-10-25 主人批准升级并落地）：主工程已钉 `YamlDotNet` 18.1.0 + `Vecc.YamlDotNet.Analyzers.StaticGenerator` 18.1.0（同号不混搭）；`src/NaniKore/Config/ConfigYamlStaticContext.cs` 登记 8 个类型；`ConfigStore` 两个 builder 已切 `StaticDeserializerBuilder` / `StaticSerializerBuilder`（三选项与迁移前逐项一致）。主工程 Debug 构建 0 警告（`TreatWarningsAsErrors` 下无 YDNG = 类型图无漏登记），全量自测 630 PASS / 0 FAIL。** 此后 `src/NaniKore` 内不再有 YamlDotNet 反射路径，P5 的 YamlDotNet 对策项提前完成。
 
 ### 2. 交付形态与目录契约
 
@@ -246,7 +250,7 @@ NaniKore（net10.0，Avalonia 宿主）
 
 | # | 阻断项 | 现状 | 对策 | 打通判据 |
 |---|---|---|---|---|
-| 1 | **YamlDotNet 反射反序列化** | `ConfigStore` 用 `DeserializerBuilder` / `SerializerBuilder`，运行期反射遍历 `AppConfig` 类型图 | **已裁决：`StaticDeserializerBuilder` + `[YamlStaticContext]`**（`Vecc.YamlDotNet.Analyzers.StaticGenerator`）——源生成、无反射、改动集中在一个上下文类，高性能与好维护双优；类型图不兼容时退手写 YAML 子集解析器（仅需支持嵌套映射、`- ` 列表项、标量、`~`、块标量、注释，约 300–350 行），但**不并行维护两条路** | 用一份真实 `.data/config.yaml`（含中文注释、四行档形态、多行 prompt）反序列化→序列化→再反序列化，结果与迁移前逐字节等价 |
+| 1 | **YamlDotNet 反射反序列化** | （迁移前基线，2026-10-25 已消除）`ConfigStore` 原用 `DeserializerBuilder` / `SerializerBuilder`，运行期反射遍历 `AppConfig` 类型图 | **已裁决：`StaticDeserializerBuilder` + `[YamlStaticContext]`**（`Vecc.YamlDotNet.Analyzers.StaticGenerator`）——源生成、无反射、改动集中在一个上下文类，高性能与好维护双优；类型图不兼容时退手写 YAML 子集解析器（仅需支持嵌套映射、`- ` 列表项、标量、`~`、块标量、注释，约 300–350 行），但**不并行维护两条路** | 用一份真实 `.data/config.yaml`（含中文注释、四行档形态、多行 prompt）反序列化→序列化→再反序列化，结果与迁移前逐字节等价。**已打通并落地（2026-10-25，issue 002-x，结论「成立」）：src 已切静态路线，主工程 0 ILC 警告、全量自测 630 PASS** |
 | 2 | **System.Text.Json 反射** | `SecretStore` 用 `JsonSerializer.Deserialize<Dictionary<string,string>>` / `SerializeToUtf8Bytes` | 加 `JsonSerializerContext` 源生成；`Dictionary<string,string>` 在源生成下有内建支持，预期改动极小。`keys.bin` 同时加方案版本头（见第 7 节） | AOT 发布物跑通「保存→读取→换用户→损坏文件」四条路径 + 旧格式零迁移 |
 | 3 | **原生 DLL 无法进 NativeAOT 单文件**（2026-10-25 修订：放弃单文件，改随包旁置） | Avalonia 需 `libSkiaSharp` / `libHarfBuzzSharp` / `av_libglesv2`；OCR 需 `onnxruntime.dll` + `onnxruntime_providers_shared.dll`；SQLite 需 `e_sqlite3.dll` | **Avalonia 三个 + SQLite**：不静态链接、不内嵌，作为 RID 运行时资产随包旁置根目录，.NET 原生探测自动加载（零解析代码；SQLite 侧由穿刺 7 验证 AOT 下 bundle 探测仍工作）。<br>**ONNX**：不随包；沿用「设置页按需下载到 `deps/`」+ `NativeLibrary.SetDllImportResolver` 从 `deps/` 加载 | 干净环境（无 .NET 运行时）解压即启动；下载 `deps/` 后 OCR 与收藏全绿；根目录 DLL 清单恰为 3 个 Avalonia 原生 + `e_sqlite3.dll` |
 | 4 | **LibNMeCab 反射风险** | `MeCabTagger.Create` / `MeCabIpaDicTagger.Create` 驱动日/中注音 | 上游 README 声称新设计已排除 `new T` 反射，但包未标 `IsTrimmable`。先跑 trim 分析；若报 IL2xxx 警告，加 `TrimmerRootAssembly` + 定向 `DynamicDependency`，仍不通则给注音器加惰性降级（不可用时走纯文本，不影响主链路） | AOT 发布物对日语句子注音结果与迁移前一致 |
@@ -388,7 +392,7 @@ NaniKore（net10.0，Avalonia 宿主）
 | 序 | 穿刺 | 结论 | 关键数字 / 事实 | 对方案的影响 |
 |---|---|---|---|---|
 | 1 | Avalonia 12 + .NET 10 NativeAOT 精简 exe + 旁置原生 DLL | **成立**（2026-10-25，issue 001） | exe 13.53 MB + 原生 DLL 17.97 MB = 31.50 MB；exe 无 CLR 头、不引用 hostfxr；抹掉 DOTNET_ROOT/PATH 中 dotnet 后干净启动、退出码 0；ILC 警告 0；冷启动温 335–450 ms | 交付形态确认：零运行时依赖 + 免安装可行，**不需要 `StaticLink.Avalonia`、不需要自定义加载代码**；体积预算按实测校准（第 6 节）；P6 必须清理 RID 资产附带的 `.pdb` |
-| 2–8 | — | 未开始 | — | — |
+| 2 | **YamlDotNet 静态上下文**：`StaticContext` 覆盖 `AppConfig` / `AppConfigDocument` 类型图 | **成立**（2026-10-25，issue 002-x；升级已落地） | 10 份样本（含真实 `.data/config.yaml`：9 配置档 + `>-` 多行折叠块标量）读→写→读与迁移前**逐字节等价**；四行档省略语义、旧 `id`/未知键容忍、多行块标量/引号/折行发射全部一致；静态专用 AOT 发布 **0 警告**（含反射基线则 IL3050×2 + IL2104/IL3053，归因清晰）；16.3.0 与 18.1.0 跨版本产出 **0 差异**；主工程升级后 Debug 构建 0 警告、全量自测 **630 PASS / 0 FAIL** | 对策坐实为 `StaticDeserializerBuilder` + `[YamlStaticContext]` 上下文类（8 类型逐个显式登记，生成器不递归发现）；主人批准升级 18.1.0，`ConfigStore` 已切静态路线；P5 的 YamlDotNet 项提前完成 |
 
 ### 分批推进（P1–P6，P0 通过后才授权）
 
@@ -398,7 +402,7 @@ NaniKore（net10.0，Avalonia 宿主）
 | **P2 平台服务** | 托盘（裁决 11 定案：Avalonia `TrayIcon` + 自绘 `WS_EX_NOACTIVATE` 通知小窗替代气泡）、全局热键（Win32 消息窗口）、剪贴板网关（Win32 API）、屏幕捕获（BitBlt→SKBitmap）、PNG 编码（SkiaSharp）、选区浮层（无边框自绘窗口）、消息对话框、应用图标 | 穿刺 6 的四项全部在真实环境通过；`Overlay/SelectionGeometry.cs` 原样复用；托盘 7 个警告调用点在无窗口场景可达（阻断项 12） |
 | **P3 结果面板** | `ResultPanelWindow` + `ExplanationCardView` + `SelectionBubblePopup` + `InfoBar` + 指标栏 + 振假名双模 + 划词气泡 + 异步剪贴板；SQLite 按穿刺 7 结论落地（`e_sqlite3.dll` 随包旁置根目录，收藏零下载） | 穿刺 5 通过；19 个 UI 自测中属于结果面板的部分按新引擎重写并通过 |
 | **P4 设置界面** | `SettingsWindow` + 五个页面 + `HotkeyRecorderBox` + 删除 `NumberBox` 改用 `NumericUpDown` + 编译绑定改造 | 五个页面全部可达；保存/取消/尺寸记忆/版本提示/连接测试五条路径通过 |
-| **P5 业务接回** | 按 P0 结论落实 AOT 对策（YamlDotNet **StaticContext 已定** / SecretStore + **OcrHttpServer** 两处 JSON + keys.bin 方案版本头 / MeCab / 资源名 / Globalization）；OCR 核心 Bitmap→Skia 边界迁移；平台层接口落地；`NaniKoreApp` 编排逻辑搬迁（含 10-24 新增的 OcrHttpServer 装配）；**ILC 警告预算逐条对账（`TreatWarningsAsErrors` 下零警告，或定向 `NoWarn` + 理由注释，策略见裁决 13）** | 全量自测全绿（审计修订后的现状基线：非 UI 88 + UI 23，含 OcrHttpServer 4 条）；`--dump-prompt` / `--dump-config` / `--self-test` / `--inspect-models` / `--translate-*` / `--ocr-file [--json]` 全部 CLI 入口行为不变 |
+| **P5 业务接回** | 按 P0 结论落实 AOT 对策（YamlDotNet **StaticContext 已定并已落地** / SecretStore + **OcrHttpServer** 两处 JSON + keys.bin 方案版本头 / MeCab / 资源名 / Globalization）；OCR 核心 Bitmap→Skia 边界迁移；平台层接口落地；`NaniKoreApp` 编排逻辑搬迁（含 10-24 新增的 OcrHttpServer 装配）；**ILC 警告预算逐条对账（`TreatWarningsAsErrors` 下零警告，或定向 `NoWarn` + 理由注释，策略见裁决 13）** | 全量自测全绿（审计修订后的现状基线：非 UI 88 + UI 23，含 OcrHttpServer 4 条；UI 相关按新引擎重写，数量不回退）；`--dump-prompt` / `--dump-config` / `--self-test` / `--inspect-models` / `--translate-*` / `--ocr-file [--json]` 全部 CLI 入口行为不变 |
 | **P6 收尾** | AOT 发布通道接入 `dev.ps1 publish`（`-p:PublishAot=true -r win-x64`，**不设 `PublishSingleFile`**；保留现有的 onnxruntime DLL 摘除与 `.lib` 清理逻辑）；目录契约验收（根目录 = 精简 exe + 4 个随包原生 DLL + 模板 + NOTICE；免安装 ZIP 干净环境全旅程；deps/ 下载后 OCR 旅程）；体积与冷启动实测入档；`GlobalUsings.cs` 别名删除；`NOTICE` 许可条目更新**并加入发布输出**（当前 zip 并不含 NOTICE，是新增动作）；文档回写；分支合并回 `main` | 精简 exe + 旁置 DLL 在无 .NET 运行时的机器上完成「热键→框选→OCR→翻译→收藏」全旅程；关闭条件全绿并经主人确认 |
 
 ## 当前推进
@@ -410,7 +414,8 @@ NaniKore（net10.0，Avalonia 宿主）
 | Issue | 穿刺 | 状态 |
 |---|---|---|
 | [001-x-穿刺1-avalonia12-nativeaot-精简exe与旁置原生dll](issues/001-x-穿刺1-avalonia12-nativeaot-精简exe与旁置原生dll.md) | 穿刺 1：Avalonia 12 + .NET 10 + NativeAOT 精简 exe + 旁置原生 DLL | **已关闭**（2026-10-25，结论「成立」） |
-| 002–008 | 穿刺 2–8，按上表顺序；001 出结论并回写本 spec 后再建下一条 | 未创建 |
+| [002-x-穿刺2-yamldotnet静态上下文与字节级往返](issues/002-x-穿刺2-yamldotnet静态上下文与字节级往返.md) | 穿刺 2：YamlDotNet 静态上下文 + 字节级往返 + 版本评估 | **已关闭**（2026-10-25，结论「成立」；升级 18.1.0 已落地 src） |
+| 003–008 | 穿刺 3–8，按上表顺序；002 关闭后建下一条 | 未创建（下一条 = 穿刺 3：ONNX Runtime 在 NativeAOT 下的加载） |
 
 **P1–P6 批次 issue：** 待 P0 风险结论表成形后再切（上表是建议切片，不是承诺）。编号在本 Epic 的 `issues/` 树内独立起算。
 
@@ -433,13 +438,14 @@ NaniKore（net10.0，Avalonia 宿主）
 
 **已裁决（2026-10-25，主人全部采纳审计建议）：**
 
-11. **托盘警告通道**：选 (b)——保留 Avalonia `TrayIcon` 管图标与菜单，气泡替换为自绘 `WS_EX_NOACTIVATE` 通知小窗（`ABM_GETTASKBARPOS` 定位 + 定时淡出，约 +80–120 行，顺带做深浅色一致）。若穿刺 2 发现小窗定位/焦点时序调不稳，退化到 (a) `ITrayHost` 直连 `Shell_NotifyIcon`（行为与现状逐字一致，代价约 +100–150 行 + 菜单退化）。
+11. **托盘警告通道**：选 (b)——保留 Avalonia `TrayIcon` 管图标与菜单，气泡替换为自绘 `WS_EX_NOACTIVATE` 通知小窗（`ABM_GETTASKBARPOS` 定位 + 定时淡出，约 +80–120 行，顺带做深浅色一致）。若 P2 批次（平台服务）发现小窗定位/焦点时序调不稳，退化到 (a) `ITrayHost` 直连 `Shell_NotifyIcon`（行为与现状逐字一致，代价约 +100–150 行 + 菜单退化）。
 12. **主题路线与视觉契约权威性**：默认 FluentTheme + Palette 资源键覆写 + 局部 Style；**允许 deliberate modernization**（12.1 的 Win11 圆角等），但每条偏离必须显式记录在本 spec 的取舍清单，不允许静默漂移；穿刺 8 用原型比对验证「覆写能达到 Epic 001 视觉契约」。全量移植 1060 行自定义模板仅作覆写失败时的备选。
 13. **ILC 警告预算**：定向 `NoWarn` + 白名单——集中在 csproj 一个 ItemGroup，逐条列库名/警告号/理由/复测条件；**项目自身代码的 ILC 警告零容忍全修**；白名单清单作为关闭条件的人工过审项。
 14. **体积硬指标**：**记录值，不设硬指标**（主人原话「Q4 其实没那么严格」）。硬指标收敛为：零运行时依赖 + 免安装 + 解压即用 + 目录契约；exe 尽量精简（目标 ≤ 18 MB）即可，超了写明原因。UPX 与压缩内嵌继续搁置。
 15. **SQLite 归宿**（同日随交付形态修订）：**不静态链接**；`e_sqlite3.dll` 随包旁置根目录（主旅程依赖，不走 `deps/` 下载），收藏零外置且无降级文案负担。
 16. **OCR HTTP 服务 scope**：全量迁移（`JsonSerializerContext` + `Func<Bitmap, OcrResult>` 签名换型），不冻结不砍除——改造量小，且它是「同进程复用 OCR 给外部工具」的现成通道。
 17. **推进节奏**：保持 P0 八条全出结论才开 P1（分支内允许中间态），但给 P0 设 **5 个工作日时间盒**：任一条超时未出结论，带着「当前最优解 + 风险标注」升级主人，不无限期堵 P1。硬阻塞 = 穿刺 1/2/4/7（不成立就换方案）；穿刺 3/5/6/8 可带标注推进。
+18. **YamlDotNet 升级**（2026-10-25 收尾 issue 002 时裁定）：升级 16.3.0 → **18.1.0**（生成器同号），`ConfigStore` 同步切静态路线。依据：穿刺 2 实测两版静态路径跨版本产出零差异、AOT 均 0 警告，升级无行为风险；收益 = net10.0 原生 target + 上游 AOT/安全修复。**P5 的 YamlDotNet 对策项因此提前完成。**
 
 **有界简化（记录上限、触发与方向）：**
 
