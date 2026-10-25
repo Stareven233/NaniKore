@@ -21,7 +21,7 @@ created: 2026-10-14
 
 **代价集中在两处，都不在业务逻辑：**
 1. **约 9 千行 UI 与平台耦合代码要重写**（WPF 控件树 / FlowDocument 振假名 / WinForms 服务）；
-2. **约 10 千行业务核心大部分不用动**，但其中四个依赖的 AOT 可行性未验证（YamlDotNet、ONNX Runtime、SQLite native、LibNMeCab）——这是唯一可能让整条线走不通的地方。**例外是 OCR 管线**（审计修订）：`OcrEngine` / `TextDetector` / `TextRecognizer` / `TensorImageConverter` 的公开 API 全部接收 `System.Drawing.Bitmap`，而 System.Drawing 在 NativeAOT 下不可用，需系统性 Bitmap→Skia 迁移（约 266 行 + 测试），边界方案见第 3 节归属判断。
+2. **约 10 千行业务核心大部分不用动**，但其中四个依赖的 AOT 可行性原本未验证（YamlDotNet、ONNX Runtime、SQLite native、LibNMeCab）——这是唯一可能让整条线走不通的地方；**YamlDotNet 与 ONNX Runtime 已分别由穿刺 2 / 穿刺 3 实测打通（2026-10-25，均 0 ILC 警告）**，余下 SQLite native（穿刺 7）与 LibNMeCab（穿刺 4）。**例外是 OCR 管线**（审计修订）：`OcrEngine` / `TextDetector` / `TextRecognizer` / `TensorImageConverter` 的公开 API 全部接收 `System.Drawing.Bitmap`，而 System.Drawing 在 NativeAOT 下不可用，需系统性 Bitmap→Skia 迁移（约 266 行 + 测试），边界方案见第 3 节归属判断。
 
 **因此第一件事不是开工，是穿刺。** 下面「穿刺计划」列出 8 个风险点与各自的打通判据；任一条不成立，方案要回炉，而不是硬啃。
 
@@ -252,7 +252,7 @@ NaniKore（net10.0，Avalonia 宿主）
 |---|---|---|---|---|
 | 1 | **YamlDotNet 反射反序列化** | （迁移前基线，2026-10-25 已消除）`ConfigStore` 原用 `DeserializerBuilder` / `SerializerBuilder`，运行期反射遍历 `AppConfig` 类型图 | **已裁决：`StaticDeserializerBuilder` + `[YamlStaticContext]`**（`Vecc.YamlDotNet.Analyzers.StaticGenerator`）——源生成、无反射、改动集中在一个上下文类，高性能与好维护双优；类型图不兼容时退手写 YAML 子集解析器（仅需支持嵌套映射、`- ` 列表项、标量、`~`、块标量、注释，约 300–350 行），但**不并行维护两条路** | 用一份真实 `.data/config.yaml`（含中文注释、四行档形态、多行 prompt）反序列化→序列化→再反序列化，结果与迁移前逐字节等价。**已打通并落地（2026-10-25，issue 002-x，结论「成立」）：src 已切静态路线，主工程 0 ILC 警告、全量自测 630 PASS** |
 | 2 | **System.Text.Json 反射** | `SecretStore` 用 `JsonSerializer.Deserialize<Dictionary<string,string>>` / `SerializeToUtf8Bytes` | 加 `JsonSerializerContext` 源生成；`Dictionary<string,string>` 在源生成下有内建支持，预期改动极小。`keys.bin` 同时加方案版本头（见第 7 节） | AOT 发布物跑通「保存→读取→换用户→损坏文件」四条路径 + 旧格式零迁移 |
-| 3 | **原生 DLL 无法进 NativeAOT 单文件**（2026-10-25 修订：放弃单文件，改随包旁置） | Avalonia 需 `libSkiaSharp` / `libHarfBuzzSharp` / `av_libglesv2`；OCR 需 `onnxruntime.dll` + `onnxruntime_providers_shared.dll`；SQLite 需 `e_sqlite3.dll` | **Avalonia 三个 + SQLite**：不静态链接、不内嵌，作为 RID 运行时资产随包旁置根目录，.NET 原生探测自动加载（零解析代码；SQLite 侧由穿刺 7 验证 AOT 下 bundle 探测仍工作）。<br>**ONNX**：不随包；沿用「设置页按需下载到 `deps/`」+ `NativeLibrary.SetDllImportResolver` 从 `deps/` 加载 | 干净环境（无 .NET 运行时）解压即启动；下载 `deps/` 后 OCR 与收藏全绿；根目录 DLL 清单恰为 3 个 Avalonia 原生 + `e_sqlite3.dll` |
+| 3 | **原生 DLL 无法进 NativeAOT 单文件**（2026-10-25 修订：放弃单文件，改随包旁置） | Avalonia 需 `libSkiaSharp` / `libHarfBuzzSharp` / `av_libglesv2`；OCR 需 `onnxruntime.dll` + `onnxruntime_providers_shared.dll`；SQLite 需 `e_sqlite3.dll` | **Avalonia 三个 + SQLite**：不静态链接、不内嵌，作为 RID 运行时资产随包旁置根目录，.NET 原生探测自动加载（零解析代码；SQLite 侧由穿刺 7 验证 AOT 下 bundle 探测仍工作）。<br>**ONNX**：不随包；沿用「设置页按需下载到 `deps/`」+ `NativeLibrary.SetDllImportResolver` 从 `deps/` 加载。（**ONNX 侧已打通**，2026-10-25 issue 003：AOT 发布 0 警告，det/rec 两会话 + 真实推理 + CTC 全绿，JIT 与 AOT 输出一致；注意 NuGet 会把 `onnxruntime.dll` 复制进发布根目录，**必须摘除**，否则根目录拷贝优先于 `deps/`，按需下载机制形同虚设） | 干净环境（无 .NET 运行时）解压即启动；下载 `deps/` 后 OCR 与收藏全绿；根目录 DLL 清单恰为 3 个 Avalonia 原生 + `e_sqlite3.dll` |
 | 4 | **LibNMeCab 反射风险** | `MeCabTagger.Create` / `MeCabIpaDicTagger.Create` 驱动日/中注音 | 上游 README 声称新设计已排除 `new T` 反射，但包未标 `IsTrimmable`。先跑 trim 分析；若报 IL2xxx 警告，加 `TrimmerRootAssembly` + 定向 `DynamicDependency`，仍不通则给注音器加惰性降级（不可用时走纯文本，不影响主链路） | AOT 发布物对日语句子注音结果与迁移前一致 |
 | 5 | **振假名富文本无对应物** | `FlowDocumentScrollViewer` + `RubyInlineControl`（Grid 两行堆叠）+ 选区文本提取 | Avalonia 无 FlowDocument。采用**两行堆叠方案**：`SelectableTextBlock` + `Inlines`，每个 ruby 词元用内联容器挂一个两行小面板（沿用现有 `RubyInlineControl` 的视觉与交互契约：悬停变色、单击复制读音、右键三选）。代价：跨词元的原生划选连续性会变差，需实测并可能改为「整段只读 + 右键复制」（是否接受见文末开放项） | 日语句子的振假名排版、三种复制格式、双击编辑双模，四条路径人工确认不回退 |
 | 6 | **全局热键无 Avalonia API** | WinForms `NativeWindow` 承载 `RegisterHotKey` | 独立 Win32 消息-only 窗口（纯 `[LibraryImport]`，脱离 WinForms），跑在专用 STA 线程；跨平台时替换实现，接口不变 | 两个热键独立注册/注销/冲突提示、录制期间临时注销，行为与现状一致 |
@@ -393,6 +393,7 @@ NaniKore（net10.0，Avalonia 宿主）
 |---|---|---|---|---|
 | 1 | Avalonia 12 + .NET 10 NativeAOT 精简 exe + 旁置原生 DLL | **成立**（2026-10-25，issue 001） | exe 13.53 MB + 原生 DLL 17.97 MB = 31.50 MB；exe 无 CLR 头、不引用 hostfxr；抹掉 DOTNET_ROOT/PATH 中 dotnet 后干净启动、退出码 0；ILC 警告 0；冷启动温 335–450 ms | 交付形态确认：零运行时依赖 + 免安装可行，**不需要 `StaticLink.Avalonia`、不需要自定义加载代码**；体积预算按实测校准（第 6 节）；P6 必须清理 RID 资产附带的 `.pdb` |
 | 2 | **YamlDotNet 静态上下文**：`StaticContext` 覆盖 `AppConfig` / `AppConfigDocument` 类型图 | **成立**（2026-10-25，issue 002-x；升级已落地） | 10 份样本（含真实 `.data/config.yaml`：9 配置档 + `>-` 多行折叠块标量）读→写→读与迁移前**逐字节等价**；四行档省略语义、旧 `id`/未知键容忍、多行块标量/引号/折行发射全部一致；静态专用 AOT 发布 **0 警告**（含反射基线则 IL3050×2 + IL2104/IL3053，归因清晰）；16.3.0 与 18.1.0 跨版本产出 **0 差异**；主工程升级后 Debug 构建 0 警告、全量自测 **630 PASS / 0 FAIL** | 对策坐实为 `StaticDeserializerBuilder` + `[YamlStaticContext]` 上下文类（8 类型逐个显式登记，生成器不递归发现）；主人批准升级 18.1.0，`ConfigStore` 已切静态路线；P5 的 YamlDotNet 项提前完成 |
+| 3 | **ONNX Runtime 在 NativeAOT 下的加载**：`SetDllImportResolver` 从 `deps/` 加载 + 显式 provider 设置 | **成立**（2026-10-25，issue 003-x） | AOT 发布 **0 警告 / 0 错误**（含链接进脚手架的 HttpClient 下载器文件，零 `NoWarn`）；摘除 NuGet 复制进根目录的原生 DLL 后，det 会话 110 ms / rec 110 ms、推理 20/15 ms；det 概率图 `[0.000000, 0.999705]`、8221/102400 像素过 thresh=0.2；rec 输出 `[1,40,18710]`，`C == 字典 18709 + blank`，CTC 解码不抛；输入敏感性 102384/102400 元素不同（计算图真实执行）；JIT vs AOT 确定性输出 **MATCH**；阴性对照（`deps/onnxruntime` 缺失）退出码 2 不走到原生加载；`--download` 运行时链路 JIT/AOT 双路线跑通 | ONNX Runtime 托管侧（1.28.0）AOT 零警告可用，`deps/` 解析机制有效，托管/原生版本配对无问题；**OCR 依赖保持外部 `deps/`（默认方案）坐实**；P6 的 onnxruntime DLL 摘除从「体积卫生」升级为**正确性要求**（根目录拷贝会遮蔽 `deps/` 下载的 DLL）；P5 接设置页下载流程时无额外 AOT 风险 |
 
 ### 分批推进（P1–P6，P0 通过后才授权）
 
@@ -403,7 +404,7 @@ NaniKore（net10.0，Avalonia 宿主）
 | **P3 结果面板** | `ResultPanelWindow` + `ExplanationCardView` + `SelectionBubblePopup` + `InfoBar` + 指标栏 + 振假名双模 + 划词气泡 + 异步剪贴板；SQLite 按穿刺 7 结论落地（`e_sqlite3.dll` 随包旁置根目录，收藏零下载） | 穿刺 5 通过；19 个 UI 自测中属于结果面板的部分按新引擎重写并通过 |
 | **P4 设置界面** | `SettingsWindow` + 五个页面 + `HotkeyRecorderBox` + 删除 `NumberBox` 改用 `NumericUpDown` + 编译绑定改造 | 五个页面全部可达；保存/取消/尺寸记忆/版本提示/连接测试五条路径通过 |
 | **P5 业务接回** | 按 P0 结论落实 AOT 对策（YamlDotNet **StaticContext 已定并已落地** / SecretStore + **OcrHttpServer** 两处 JSON + keys.bin 方案版本头 / MeCab / 资源名 / Globalization）；OCR 核心 Bitmap→Skia 边界迁移；平台层接口落地；`NaniKoreApp` 编排逻辑搬迁（含 10-24 新增的 OcrHttpServer 装配）；**ILC 警告预算逐条对账（`TreatWarningsAsErrors` 下零警告，或定向 `NoWarn` + 理由注释，策略见裁决 13）** | 全量自测全绿（审计修订后的现状基线：非 UI 88 + UI 23，含 OcrHttpServer 4 条；UI 相关按新引擎重写，数量不回退）；`--dump-prompt` / `--dump-config` / `--self-test` / `--inspect-models` / `--translate-*` / `--ocr-file [--json]` 全部 CLI 入口行为不变 |
-| **P6 收尾** | AOT 发布通道接入 `dev.ps1 publish`（`-p:PublishAot=true -r win-x64`，**不设 `PublishSingleFile`**；保留现有的 onnxruntime DLL 摘除与 `.lib` 清理逻辑）；目录契约验收（根目录 = 精简 exe + 4 个随包原生 DLL + 模板 + NOTICE；免安装 ZIP 干净环境全旅程；deps/ 下载后 OCR 旅程）；体积与冷启动实测入档；`GlobalUsings.cs` 别名删除；`NOTICE` 许可条目更新**并加入发布输出**（当前 zip 并不含 NOTICE，是新增动作）；文档回写；分支合并回 `main` | 精简 exe + 旁置 DLL 在无 .NET 运行时的机器上完成「热键→框选→OCR→翻译→收藏」全旅程；关闭条件全绿并经主人确认 |
+| **P6 收尾** | AOT 发布通道接入 `dev.ps1 publish`（`-p:PublishAot=true -r win-x64`，**不设 `PublishSingleFile`**；保留现有的 onnxruntime DLL 摘除与 `.lib` 清理逻辑——摘除是**正确性要求**而非体积卫生：NuGet 复制进根目录的 `onnxruntime.dll` 会被 .NET 原生探测优先加载，使用户下载进 `deps/` 的清单哈希 DLL 形同虚设，issue 003 实测证实）；目录契约验收（根目录 = 精简 exe + 4 个随包原生 DLL + 模板 + NOTICE；免安装 ZIP 干净环境全旅程；deps/ 下载后 OCR 旅程）；体积与冷启动实测入档；`GlobalUsings.cs` 别名删除；`NOTICE` 许可条目更新**并加入发布输出**（当前 zip 并不含 NOTICE，是新增动作）；文档回写；分支合并回 `main` | 精简 exe + 旁置 DLL 在无 .NET 运行时的机器上完成「热键→框选→OCR→翻译→收藏」全旅程；关闭条件全绿并经主人确认 |
 
 ## 当前推进
 
@@ -415,7 +416,8 @@ NaniKore（net10.0，Avalonia 宿主）
 |---|---|---|
 | [001-x-穿刺1-avalonia12-nativeaot-精简exe与旁置原生dll](issues/001-x-穿刺1-avalonia12-nativeaot-精简exe与旁置原生dll.md) | 穿刺 1：Avalonia 12 + .NET 10 + NativeAOT 精简 exe + 旁置原生 DLL | **已关闭**（2026-10-25，结论「成立」） |
 | [002-x-穿刺2-yamldotnet静态上下文与字节级往返](issues/002-x-穿刺2-yamldotnet静态上下文与字节级往返.md) | 穿刺 2：YamlDotNet 静态上下文 + 字节级往返 + 版本评估 | **已关闭**（2026-10-25，结论「成立」；升级 18.1.0 已落地 src） |
-| 003–008 | 穿刺 3–8，按上表顺序；002 关闭后建下一条 | 未创建（下一条 = 穿刺 3：ONNX Runtime 在 NativeAOT 下的加载） |
+| [003-x-穿刺3-onnxruntime-nativeaot加载与真实推理](issues/003-x-穿刺3-onnxruntime-nativeaot加载与真实推理.md) | 穿刺 3：ONNX Runtime 在 NativeAOT 下从 `deps/` 加载并跑通真实推理 | **已关闭**（2026-10-25，结论「成立」；spec 已回写） |
+| 004–008 | 穿刺 4–8，按上表顺序；003 关闭后建下一条 | 未创建（下一条 = 穿刺 4：LibNMeCab AOT 存活） |
 
 **P1–P6 批次 issue：** 待 P0 风险结论表成形后再切（上表是建议切片，不是承诺）。编号在本 Epic 的 `issues/` 树内独立起算。
 
