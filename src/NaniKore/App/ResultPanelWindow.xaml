@@ -20,27 +20,30 @@
         Foreground="{DynamicResource Brush.Text.Primary}"
         Background="{DynamicResource Brush.Window.Background}">
     <!--
-        根 Grid 有界（由窗口客户区限定，不再整页外包 ScrollViewer）：
-        上部「原文块 + 分隔条 + 译文块」占星号行，GridSplitter 在两条星号行之间可靠重分配空间——
-        GridSplitter 一旦落在可滚动容器里就会随滚动 extent 抖动、单向失效（issue：译文区拖不动），
-        移出滚动容器后原文/译文两个方向都能顺滑缩放；两者各自内部本就有滚动（FlowDocumentScrollViewer / 多行 TextBox）。
-        下部「精讲 + 状态 + 错误」独立进一个 ScrollViewer（第 3 行 Auto）：内容超高时它自己滚，保证精讲底部与统计条可达（issue 015 / 1.2 的诉求由这个局部滚动承接）。
-        外边框内缩由根 Grid 的 Margin 承担；下部 ScrollViewer 内容 StackPanel 不挂纵向 Margin，滚动 extent 干净。
+        独立分区高度调节 + 整页滚动：
+        原文框与译文框各有一个「贴各自底边」的拖动把手（Thumb，样式 ResizeGripThumb）。把手拖动只改写
+        它上方那一行的像素高度（OnSourceResizeDragDelta / OnTranslationResizeDragDelta）——原文把手不改译文、
+        译文把手不改原文，二者彻底独立，不做零和交换。用 Thumb 而非 GridSplitter：独立改行高的行为确定、可无头自测锁定。
+        整个 Grid 由 ScrollViewer 承载（内容定高）：任意一框被拖高后页面变高，超出窗口即出现滚动条，
+        溢出靠整页滚动解决，绝不挤压另一框。原文/译文各自内部本就有滚动（FlowDocumentScrollViewer / 多行 TextBox）。
+        外边框内缩由 ScrollViewer.Padding 承担；Grid 不把 MinHeight 绑到视口（内容定高），滚动 extent 干净。
     -->
-    <Grid Margin="16,14,16,14">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" MinHeight="80" />
-            <RowDefinition Height="8" />
-            <RowDefinition Height="*" MinHeight="80" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-
-        <!-- 原文块：标题工具栏 + 振假名/编辑内容，整体作为一个星号行参与缩放 -->
-        <Grid Grid.Row="0">
+    <ScrollViewer x:Name="ContentScrollViewer"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled"
+                  Focusable="False"
+                  Padding="16,14,16,16">
+        <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />              <!-- 0: 原文标题工具栏 -->
+                <RowDefinition Height="200" MinHeight="80" /> <!-- 1: 原文框（可拖高/矮） -->
+                <RowDefinition Height="Auto" />              <!-- 2: 原文把手 -->
+                <RowDefinition Height="Auto" />              <!-- 3: 译文标题 -->
+                <RowDefinition Height="200" MinHeight="80" /> <!-- 4: 译文框（可拖高/矮） -->
+                <RowDefinition Height="Auto" />              <!-- 5: 译文把手 -->
+                <RowDefinition Height="Auto" />              <!-- 6: 精讲 + 状态 + 错误 -->
             </Grid.RowDefinitions>
+
             <DockPanel Grid.Row="0" Margin="0,0,0,6">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <!-- 源语言口径：默认按探测，手选任一语言则本地注音引擎按该语言重新叠加 -->
@@ -104,19 +107,14 @@
                          PreviewKeyDown="OnSourceTextBoxPreviewKeyDown"
                          LostFocus="OnSourceTextBoxLostFocus" />
             </Grid>
-        </Grid>
 
-        <GridSplitter x:Name="SourceTranslationSplitter" Grid.Row="1" Height="8"
-                      HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                      ResizeBehavior="PreviousAndNext" />
+            <!-- 原文把手：Thumb 拖动只改原文框那一行的高度，译文框不受影响 -->
+            <Thumb x:Name="SourceResizeThumb" Grid.Row="2" Height="8"
+                   HorizontalAlignment="Stretch"
+                   Style="{DynamicResource ResizeGripThumb}"
+                   DragDelta="OnSourceResizeDragDelta" />
 
-        <!-- 译文块：标题 + 译文文本框，整体作为一个星号行参与缩放；标题随内容移动、永不被顶占 -->
-        <Grid Grid.Row="2">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
-            <Grid Grid.Row="0" Margin="0,0,0,6">
+            <Grid Grid.Row="3" Margin="0,4,0,6">
                 <TextBlock Text="译文" FontWeight="SemiBold" VerticalAlignment="Center" />
                 <Button x:Name="ClearTranslationButton"
                         Style="{DynamicResource Button.Icon}"
@@ -127,19 +125,18 @@
                     <TextBlock Text="&#xE894;" FontFamily="Segoe MDL2 Assets" />
                 </Button>
             </Grid>
-            <TextBox x:Name="TranslationTextBox" Grid.Row="1"
+
+            <TextBox x:Name="TranslationTextBox" Grid.Row="4"
                      Style="{DynamicResource TextBox.Multiline}"
                      IsReadOnly="True" />
-        </Grid>
 
-        <!-- 下部滚动区：精讲 + 状态/统计 + 错误详情，超高时独立滚动；收藏气泡挂这里（零尺寸 Popup，不占布局） -->
-        <ScrollViewer x:Name="ContentScrollViewer" Grid.Row="3"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled"
-                      Focusable="False"
-                      Margin="0,10,0,0"
-                      Padding="0">
-            <StackPanel>
+            <!-- 译文把手：Thumb 拖动只改译文框那一行的高度，原文框不受影响 -->
+            <Thumb x:Name="TranslationResizeThumb" Grid.Row="5" Height="8"
+                   HorizontalAlignment="Stretch"
+                   Style="{DynamicResource ResizeGripThumb}"
+                   DragDelta="OnTranslationResizeDragDelta" />
+
+            <StackPanel Grid.Row="6" Margin="0,10,0,0">
                 <Grid>
                     <Expander x:Name="ExplanationExpander"
                               Header="📖 精讲与语法解析 (点击展开)"
@@ -189,6 +186,6 @@
 
                 <controls:SelectionBubblePopup x:Name="SelectionBubble" />
             </StackPanel>
-        </ScrollViewer>
-    </Grid>
+        </Grid>
+    </ScrollViewer>
 </Window>

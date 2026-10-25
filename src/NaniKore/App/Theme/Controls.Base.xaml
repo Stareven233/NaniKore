@@ -519,6 +519,33 @@
         </Setter>
     </Style>
 
+    <!-- 独立分区调节把手（原文/译文各自底边）：细线 + 悬停/拖动高亮，纵向缩放光标；
+         带 x:Key 的显式样式，绝不波及 ScrollBar 内部同名 Thumb。 -->
+    <Style x:Key="ResizeGripThumb" TargetType="Thumb">
+        <Setter Property="Cursor" Value="SizeNS" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border Background="Transparent">
+                        <Border x:Name="Line"
+                                Height="1"
+                                VerticalAlignment="Center"
+                                Background="{DynamicResource Brush.Divider}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Line" Property="Background" Value="{DynamicResource Brush.Accent}" />
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Line" Property="Background" Value="{DynamicResource Brush.Accent}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style TargetType="ToolTip">
         <Setter Property="Background" Value="{DynamicResource Brush.Card.Background}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Card.Border}" />

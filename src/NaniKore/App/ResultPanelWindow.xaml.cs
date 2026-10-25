@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -1028,6 +1029,29 @@ internal sealed partial class ResultPanelWindow : Window
     private void OnClearTranslationClick(object sender, RoutedEventArgs e) => ClearTranslation();
 
     private void OnSettingsClick(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke(this, SettingsTab.Translation);
+
+    // 原文框 / 译文框各自底边的调节把手行号（见 ResultPanelWindow.xaml 的 Grid.RowDefinitions）。
+    private const int SourceRegionRow = 1;
+    private const int TranslationRegionRow = 4;
+
+    private void OnSourceResizeDragDelta(object sender, DragDeltaEventArgs e) =>
+        ResizeRegionRow(SourceRegionRow, e.VerticalChange);
+
+    private void OnTranslationResizeDragDelta(object sender, DragDeltaEventArgs e) =>
+        ResizeRegionRow(TranslationRegionRow, e.VerticalChange);
+
+    /// <summary>按拖动增量改写页面 Grid 某一行的像素高度（下限该行 MinHeight）；页面内容定高，行高变化由外层 ScrollViewer 以滚动承接，绝不牵连同页其他行。</summary>
+    private void ResizeRegionRow(int rowIndex, double verticalChange)
+    {
+        if (ContentScrollViewer?.Content is not Grid page || rowIndex < 0 || rowIndex >= page.RowDefinitions.Count)
+        {
+            return;
+        }
+
+        var row = page.RowDefinitions[rowIndex];
+        var next = Math.Max(row.MinHeight, row.Height.Value + verticalChange);
+        row.Height = new GridLength(next, GridUnitType.Pixel);
+    }
 
     /// <summary>控制底部精讲 Expander 的启用状态（仅在产出有效译文后激活）。</summary>
     public void SetExplanationEnabled(bool enabled)

@@ -203,10 +203,10 @@ internal static partial class SelfTest
     }
 
     /// <summary>
-    /// 结果面板分割与下部滚动契约（issue：译文区不能拖动 + issue 015 / 1.2 精讲可达）：
-    /// 原文块、分隔条、译文块都住在有界根 Grid 里（不在任何 ScrollViewer 之下），分隔条 PreviousAndNext——
-    /// GridSplitter 一旦落在滚动容器里就会随滚动 extent 抖动、单向失效，移出后原文/译文两个方向都能可靠缩放；
-    /// 下部精讲/状态/错误独立进 ContentScrollViewer，内容超高时它滚，保证精讲底部与统计条可达。
+    /// 独立分区高度调节契约（issue：译文区自身也要能拖、且原文拖动不牵连译文）：
+    /// 原文框与译文框各有一个贴自身底边的 GridSplitter（PreviousAndNext，另一目标是不可压缩的 Auto 行），
+    /// 拖动某把把手只增减它上方那一框的高度——原文把手不改译文、译文把手不改原文，二者独立、无零和交换；
+    /// 整个页面由 ScrollViewer 承载（内容定高），两框都被拖高后页面变高、超出视口即整页滚动，溢出靠滚动解决。
     /// </summary>
     private static void TestResultPanelViewportLayout()
     {
@@ -219,53 +219,56 @@ internal static partial class SelfTest
         panel.Append(new UnderstandDelta(DeltaChannel.Translation, "这里过不去哦。"));
         panel.SetMetrics(new TranslationMetrics(320, 45, 680, 1750, 42.1));
 
-        var splitter = Find<WpfControls.GridSplitter>(panel, "SourceTranslationSplitter");
-        var bottomScroller = Find<WpfControls.ScrollViewer>(panel, "ContentScrollViewer");
-        var metricsBar = Find<WpfControls.Border>(panel, "MetricsBar");
-        Check(
-            "source/translation splitter sits in the bounded root grid with PreviousAndNext, never inside a scroll viewer",
-            splitter is not null &&
-            splitter.ResizeBehavior == WpfControls.GridResizeBehavior.PreviousAndNext &&
-            !HasScrollViewerAncestor(splitter) &&
-            bottomScroller is not null &&
-            bottomScroller.VerticalScrollBarVisibility == WpfControls.ScrollBarVisibility.Auto &&
-            bottomScroller.HorizontalScrollBarVisibility == WpfControls.ScrollBarVisibility.Disabled &&
-            metricsBar is not null &&
-            metricsBar.Visibility == Wpf.Visibility.Visible);
+        var scroller = Find<WpfControls.ScrollViewer>(panel, "ContentScrollViewer");
+        var page = scroller?.Content as WpfControls.Grid;
+        var sourceThumb = Find<WpfPrimitives.Thumb>(panel, "SourceResizeThumb");
+        var translationThumb = Find<WpfPrimitives.Thumb>(panel, "TranslationResizeThumb");
+        ArrangePanelViewport(scroller, 960, 660);
 
-        // 反向契约：下部内容真高（展开的精讲）时，下部 ScrollViewer 出现滚动条，精讲底部与统计条仍可达
-        var tallPanel = new ResultPanelWindow();
-        tallPanel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = false, RareOnly = true });
-        tallPanel.Reset("原文", "OCR 完成", autoTranslate: true);
-        tallPanel.Append(new UnderstandDelta(DeltaChannel.Translation, "译文"));
-        tallPanel.SetExplanationEnabled(true);
-        tallPanel.ExpandExplanation();
-        Find<ExplanationCardView>(tallPanel, "ExplanationView")?.SetText(
-            string.Join("\n", Enumerable.Range(0, 40).Select(index => $"### [词汇/短语]\n- **词{index}** | 读音{index} | 名词 | 释义{index}")));
-        var tallScroller = Find<WpfControls.ScrollViewer>(tallPanel, "ContentScrollViewer");
-        ArrangePanelViewport(tallScroller, 960, 200);
         Check(
-            "genuinely tall bottom content scrolls so the explanation bottom and status bar stay reachable",
-            tallScroller is not null &&
-            tallScroller.ComputedVerticalScrollBarVisibility == Wpf.Visibility.Visible &&
-            tallScroller.ScrollableHeight > 0);
-    }
+            "page hosts two independent region grips, both panes are pixel-height rows in the scroll viewer",
+            page is not null &&
+            sourceThumb is not null &&
+            translationThumb is not null &&
+            scroller is not null &&
+            scroller.VerticalScrollBarVisibility == WpfControls.ScrollBarVisibility.Auto &&
+            scroller.HorizontalScrollBarVisibility == WpfControls.ScrollBarVisibility.Disabled &&
+            page.RowDefinitions.Count >= 6 &&
+            page.RowDefinitions[1].Height.GridUnitType == Wpf.GridUnitType.Pixel &&
+            page.RowDefinitions[4].Height.GridUnitType == Wpf.GridUnitType.Pixel);
 
-    /// <summary>沿逻辑树判断节点是否位于某个 ScrollViewer 之下（断言分割器已移出滚动容器）。</summary>
-    private static bool HasScrollViewerAncestor(Wpf.DependencyObject node)
-    {
-        var current = node;
-        while (current is not null)
+        // 原文把手只改原文框：下拖后 Row1（原文）增高，Row4（译文）纹丝不动
+        var sourceBefore = page!.RowDefinitions[1].Height.Value;
+        var translationBefore = page!.RowDefinitions[4].Height.Value;
+        sourceThumb!.RaiseEvent(new WpfPrimitives.DragDeltaEventArgs(0, 60)
         {
-            if (current is WpfControls.ScrollViewer)
-            {
-                return true;
-            }
+            RoutedEvent = WpfPrimitives.Thumb.DragDeltaEvent,
+            Source = sourceThumb
+        });
+        Check(
+            "dragging the source grip resizes only the source pane, translation untouched",
+            Math.Abs(page.RowDefinitions[1].Height.Value - (sourceBefore + 60)) < 0.5 &&
+            Math.Abs(page.RowDefinitions[4].Height.Value - translationBefore) < 0.5);
 
-            current = Wpf.LogicalTreeHelper.GetParent(current);
-        }
+        // 译文把手只改译文框：下拖后 Row4（译文）增高，Row1（原文）保持刚才的值不变
+        var sourceAfterSourceDrag = page.RowDefinitions[1].Height.Value;
+        translationThumb!.RaiseEvent(new WpfPrimitives.DragDeltaEventArgs(0, 60)
+        {
+            RoutedEvent = WpfPrimitives.Thumb.DragDeltaEvent,
+            Source = translationThumb
+        });
+        Check(
+            "dragging the translation grip resizes only the translation pane, source untouched",
+            Math.Abs(page.RowDefinitions[4].Height.Value - (translationBefore + 60)) < 0.5 &&
+            Math.Abs(page.RowDefinitions[1].Height.Value - sourceAfterSourceDrag) < 0.5);
 
-        return false;
+        // 二者都被拖高 → 页面变高超出视口 → 整页滚动条出现（溢出靠滚动解决，不挤压彼此）
+        ArrangePanelViewport(scroller, 960, 660);
+        Check(
+            "both panes enlarged overflow the viewport and the whole page scrolls",
+            scroller is not null &&
+            scroller.ComputedVerticalScrollBarVisibility == Wpf.Visibility.Visible &&
+            scroller.ScrollableHeight > 0);
     }
 
     /// <summary>无头驱动一次面板视口布局：直接对 ScrollViewer 子树测量/排列，不 Show 窗口（不依赖真实桌面会话）。</summary>
@@ -276,7 +279,7 @@ internal static partial class SelfTest
             return;
         }
 
-        // 下部 ScrollViewer 有界（由所在 Auto 行限定）：多轮测量/排列让内部布局收敛后再断言
+        // 页面 ScrollViewer 内容定高：多轮测量/排列让行高与滚动 extent 收敛后再断言
         for (var i = 0; i < 4; i++)
         {
             scroller.Measure(new Wpf.Size(width, height));
