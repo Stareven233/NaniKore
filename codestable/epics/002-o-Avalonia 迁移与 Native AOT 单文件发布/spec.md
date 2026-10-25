@@ -286,7 +286,7 @@ NaniKore（net10.0，Avalonia 宿主）
 
 ### 6. 体积预算
 
-**这是目标，不是承诺；口径是「根目录 exe」，不含 `deps/` 与 `.data/`。** 第三方报告的量级：
+**这是目标，不是承诺；口径是「根目录 exe」，不含 `deps/` 与 `.data/`。** 第三方报告的量级（2026-10-25 已按穿刺 1 本机实测校准，见本节末）：
 
 | 组成 | 量级 |
 |---|---|
@@ -299,7 +299,23 @@ NaniKore（net10.0，Avalonia 宿主）
 
 **（审计修订）口径校准：** 迁移前基线是 framework-dependent 单文件 **26.8 MB**（`--self-contained false` + `PublishSingleFile`，zip 9.0 MB）。AOT 的真实收益是**运行时依赖归零 + 免安装**；旁置原生 DLL 后 exe 预期 12–20 MB（约为基线一半），总体积 20–28 MB 量级，「体积轻巧」的感知主要来自 zip（预计 7–8 MB）。验收硬指标 = 零运行时依赖 + 目录契约；exe 绝对体积记录实测值（裁决 14 已定：不设硬指标，UPX 与压缩内嵌继续搁置）。
 
-**（2026-10-25 主人修订）分布调整：** 放弃静态链接后，Skia/HarfBuzz/ANGLE 原生（合计约 8–13 MB）从 exe 移入旁置 DLL：exe 预期 12–20 MB，**总体积与原单文件方案持平（20–28 MB 量级）——变的只是分布，不是总量**。必须说清的边界：**NativeAOT 下托管代码无法拆成 DLL**，能拆的只有原生库；应用代码更新仍然重发整个 exe。「更新方便」的真实构成是 (a) 原生库在 ABI 兼容时可独立替换（代价：混放不同版本的文件会 ABI 错配 crash，所以更新必须整目录覆盖 ZIP）；(b) exe 本身体积约减半。若主人真正想要的是「改业务逻辑只发一个业务 DLL」，那与 NativeAOT 互斥，只能回到 framework-dependent（违反零运行时依赖）或 self-contained JIT（exe + 上百框架 DLL，形态与体积都不占优）——当前裁决不指向那个方向。
+**（2026-10-25 主人修订）分布调整：** 放弃静态链接后，Skia/HarfBuzz/ANGLE 原生从 exe 移入旁置 DLL：exe 预期 12–20 MB。**变的只是分布、不是总量**的说法已被穿刺 1 实测部分推翻，见下。
+
+**（2026-10-25 穿刺 1 实测校准，取代本节的量级估计）：** 本机实测（Avalonia 12.1.4 + Fluent + SkiaSharp 3.119.4 最小工程，开关组 = `InvariantGlobalization` + `OptimizationPreference=Size` + `StripSymbols` + `IlcTrimMetadata` + `DebugType=none` + `SatelliteResourceLanguages=en`，证据见 issue 001）：
+
+| 组成 | 实测 |
+|---|---|
+| 精简 exe（NativeAOT，含 Avalonia + Fluent + 业务骨架） | 13.53 MB |
+| 旁置原生 DLL（libSkiaSharp 11.1 + av_libglesv2 5.1 + libHarfBuzzSharp 1.7） | 17.97 MB |
+| 目录合计 | 31.50 MB |
+| 冷启动（进程创建 → 窗口呈现，墙钟） | 温 335–450 ms；冷文件缓存首启 1,399 ms |
+| ILC 警告 | 0 条（最小工程基线，非业务代码面） |
+
+对预算表的三点修正：**旁置原生 DLL 合计不是 8–13 MB 而是约 18 MB**（Skia 11.1 + ANGLE 5.4 占 16.5 MB）；目录合计落在 31.5 MB 而非 20–28 MB；「分布变、总量不变」不成立——总量同样高于原估约 3.5 MB。按裁决 14 这些是记录值不是硬指标；exe 仍约为迁移前 framework-dependent 单文件 26.8 MB 基线的一半，AOT 的真实收益保持「运行时依赖归零 + 免安装」不变。
+
+**另一条必须带进 P6 的实测发现：** SkiaSharp / HarfBuzzSharp 的原生 RID 资产会把调试符号（`libSkiaSharp.pdb` 84 MB + `libHarfBuzzSharp.pdb` 21 MB）一起复制进发布目录，`StripSymbols` 管不到——不显式清理的话 zip 凭空多约 105 MB。清理靶已在 issue 001 的脚手架 csproj 里落地（`RemoveNativeSymbolsFromPublish`），P6 接入发布通道时照搬。
+
+**必须说清的边界（不因实测校准而改变）：** NativeAOT 下托管代码无法拆成 DLL，能拆的只有原生库；应用代码更新仍然重发整个 exe。「更新方便」的真实构成是 (a) 原生库在 ABI 兼容时可独立替换（代价：混放不同版本的文件会 ABI 错配 crash，所以更新必须整目录覆盖 ZIP）；(b) exe 本身体积约减半。若主人真正想要的是「改业务逻辑只发一个业务 DLL」，那与 NativeAOT 互斥，只能回到 framework-dependent（违反零运行时依赖）或 self-contained JIT（exe + 上百框架 DLL，形态与体积都不占优）——当前裁决不指向那个方向。
 
 **外置部分不计入体积口径。** ONNX Runtime native（`onnxruntime.dll` + `onnxruntime_providers_shared.dll`，合计约 13 MB）不随包，按需下载到 `deps/`——主旅程不依赖它。这是主人裁决的默认方案；「压缩内嵌 + 首启解压」的备选（约 28–32 MB）已评估并否决，记录在「有界简化」。（2026-10-25 修订：SQLite native 改为随包旁置根目录而非 `deps/` 下载，见穿刺 7 与裁决 15。）
 
@@ -344,7 +360,11 @@ NaniKore（net10.0，Avalonia 宿主）
 
 ### 分支与合并
 
-**开发分支（主人裁决，裁决 7）：** 本 Epic 全程在独立分支 `avalonia` 开发，`main` 不动。分支内允许中间态（双引擎并存、Debug 可跑而 AOT 未通）；合回 `main` 的判据 = 文末关闭条件全绿 + 主人确认，合入方式建议 squash（中间态无保留价值）。P0 穿刺脚手架同样只在分支内存在，不进 `src/`。
+**开发分支（主人裁决，裁决 7）：** 本 Epic 全程在独立分支 `avalonia` 开发，`main` 不动。分支内允许中间态（双引擎并存、Debug 可跑而 AOT 未通）；合回 `main` 的判据 = 文末关闭条件全绿 + 主人确认，合入方式建议 squash（中间态无保留价值）。
+
+**穿刺脚手架的位置：** 仓库根 `pierce/` 目录，每个穿刺一个子目录（如 `pierce/p1-avalonia-aot/`）。约束：不进 `src/`、不进 `NaniKore.slnx`、不被 `scripts/dev.ps1` 引用——`dev.ps1 build/test/run/publish` 的原语义不受穿刺影响。打通的部分是 P1 正式骨架的来源；P0 全部出结论后，`pierce/` 按各条结论决定去留（并入正式代码或删除）。
+
+**（2026-10-25 主人裁定）`pierce/` 是本地工作区，已加入 `.gitignore`、不入库：** 穿刺的价值是结论而不是代码，结论全部沉淀在 `codestable/` 的 issue 与 epic spec 里；脚手架按 issue「执行痕迹」的记录随时可重建（官方模板 + 开关组 + 验证脚本都在 issue 中写明了）。这样 `avalonia` 分支上只有制度记忆与正式代码两类变更，不会被一次性产物污染。
 
 ### 穿刺计划（P0，不碰主分支）
 
@@ -361,7 +381,14 @@ NaniKore（net10.0，Avalonia 宿主）
 | 7 | **SQLite native 在 NativeAOT 下的旁置加载**（2026-10-25 随交付形态修订）：验证 `e_sqlite3.dll` 作为 RID 资产随包旁置根目录时，`Microsoft.Data.Sqlite` / `SQLitePCLRaw` 的 bundle 探测在 AOT 下仍自动找到它（与今天 framework-dependent 发布物同布局，零自定义代码） | AOT 产物跑通一次收藏写入与一次跨实例读取；确认无需 `DirectPInvoke` / `NativeLibrary.Load` 定制 | bundle 的反射式自动装配在 AOT 下失效 → 显式 `SQLitePCL.raw.SetProvider(new SQLite3Provider_e_sqlite3())` 或 `DirectPInvoke` + 显式加载；仍不通则给收藏加惰性降级（不影响主链路） |
 | 8 | **主题与视觉保真度**（审计新增）：用 Epic 001 的视觉契约（双模原文区、划词气泡、精讲卡、状态栏）在 Avalonia 里做原型比对；默认路线 = FluentTheme + Palette 资源键覆写 + 局部 Style（裁决 12），全量移植 1060 行自定义 WPF 模板为备选 | 原型在深浅色下与 Epic 001 草图逐项人工比对通过；路线选择回写本 spec 与裁决 12 | 全量移植自定义模板（工作量与风险最高，仅当 FluentTheme 覆写达不到视觉契约时） |
 
-**P0 的产物不是代码，是一张风险结论表**（每条：成立 / 不成立 / 退路 / 实测数字），回写进本 spec 的「当前怎么理解」，再决定 P1 是否开工。
+**P0 的产物不是代码，是一张风险结论表**（每条：成立 / 不成立 / 退路 / 实测数字），回写进本 spec 的「当前怎么理解」，再决定 P1 是否开工。每条穿刺对应 Epic `issues/` 树内一个常规 issue（`type: feature`），一次只推进一条：出结论并回写本 spec 后才建下一条。
+
+**P0 风险结论表（逐条累积）：**
+
+| 序 | 穿刺 | 结论 | 关键数字 / 事实 | 对方案的影响 |
+|---|---|---|---|---|
+| 1 | Avalonia 12 + .NET 10 NativeAOT 精简 exe + 旁置原生 DLL | **成立**（2026-10-25，issue 001） | exe 13.53 MB + 原生 DLL 17.97 MB = 31.50 MB；exe 无 CLR 头、不引用 hostfxr；抹掉 DOTNET_ROOT/PATH 中 dotnet 后干净启动、退出码 0；ILC 警告 0；冷启动温 335–450 ms | 交付形态确认：零运行时依赖 + 免安装可行，**不需要 `StaticLink.Avalonia`、不需要自定义加载代码**；体积预算按实测校准（第 6 节）；P6 必须清理 RID 资产附带的 `.pdb` |
+| 2–8 | — | 未开始 | — | — |
 
 ### 分批推进（P1–P6，P0 通过后才授权）
 
@@ -374,7 +401,20 @@ NaniKore（net10.0，Avalonia 宿主）
 | **P5 业务接回** | 按 P0 结论落实 AOT 对策（YamlDotNet **StaticContext 已定** / SecretStore + **OcrHttpServer** 两处 JSON + keys.bin 方案版本头 / MeCab / 资源名 / Globalization）；OCR 核心 Bitmap→Skia 边界迁移；平台层接口落地；`NaniKoreApp` 编排逻辑搬迁（含 10-24 新增的 OcrHttpServer 装配）；**ILC 警告预算逐条对账（`TreatWarningsAsErrors` 下零警告，或定向 `NoWarn` + 理由注释，策略见裁决 13）** | 全量自测全绿（审计修订后的现状基线：非 UI 88 + UI 23，含 OcrHttpServer 4 条）；`--dump-prompt` / `--dump-config` / `--self-test` / `--inspect-models` / `--translate-*` / `--ocr-file [--json]` 全部 CLI 入口行为不变 |
 | **P6 收尾** | AOT 发布通道接入 `dev.ps1 publish`（`-p:PublishAot=true -r win-x64`，**不设 `PublishSingleFile`**；保留现有的 onnxruntime DLL 摘除与 `.lib` 清理逻辑）；目录契约验收（根目录 = 精简 exe + 4 个随包原生 DLL + 模板 + NOTICE；免安装 ZIP 干净环境全旅程；deps/ 下载后 OCR 旅程）；体积与冷启动实测入档；`GlobalUsings.cs` 别名删除；`NOTICE` 许可条目更新**并加入发布输出**（当前 zip 并不含 NOTICE，是新增动作）；文档回写；分支合并回 `main` | 精简 exe + 旁置 DLL 在无 .NET 运行时的机器上完成「热键→框选→OCR→翻译→收藏」全旅程；关闭条件全绿并经主人确认 |
 
-**Issues：** 本 Epic 尚未创建任何 issue。上表是**建议切片**，待 P0 结论与未确认问题裁决后再建，编号在本 Epic 的 `issues/` 树内独立起算。
+## 当前推进
+
+**分支：** `avalonia`（裁决 7）。本 Epic 的 spec 更新与 issue 只存在于该分支；`pierce/` 穿刺脚手架是本地工作区（`.gitignore` 忽略，见「分支与合并」）；`main` 不动。
+
+**P0 穿刺 issue（按风险排序逐条创建、逐条出结论，一次只推进一条）：**
+
+| Issue | 穿刺 | 状态 |
+|---|---|---|
+| [001-x-穿刺1-avalonia12-nativeaot-精简exe与旁置原生dll](issues/001-x-穿刺1-avalonia12-nativeaot-精简exe与旁置原生dll.md) | 穿刺 1：Avalonia 12 + .NET 10 + NativeAOT 精简 exe + 旁置原生 DLL | **已关闭**（2026-10-25，结论「成立」） |
+| 002–008 | 穿刺 2–8，按上表顺序；001 出结论并回写本 spec 后再建下一条 | 未创建 |
+
+**P1–P6 批次 issue：** 待 P0 风险结论表成形后再切（上表是建议切片，不是承诺）。编号在本 Epic 的 `issues/` 树内独立起算。
+
+**节奏（裁决 17）：** P0 八条全出结论才开 P1；单条 5 个工作日时间盒，超时带「当前最优解 + 风险标注」升级主人，不无限期堵 P1。硬阻塞 = 穿刺 1/2/4/7（不成立就换方案）；穿刺 3/5/6/8 可带标注推进。
 
 ### 裁决
 
@@ -418,14 +458,14 @@ NaniKore（net10.0，Avalonia 宿主）
 
 ## 关闭时要满足
 
-- [ ] P0 六条穿刺全部有结论（成立/不成立/退路）并回写本 spec。
+- [ ] P0 八条穿刺全部有结论（成立/不成立/退路）并回写本 spec。
 - [ ] `src/NaniKore` 内无 `System.Windows`、`System.Windows.Forms`、`System.Drawing` 引用；`GlobalUsings.cs` 的 WPF/WinForms 别名体系删除。
 - [ ] `./scripts/dev.ps1 test` 全量自测全绿（审计修订后的现状基线：非 UI 88 + UI 23 个测试方法、609 条断言，含 10-24 起的 OcrHttpServer 4 条；UI 相关按新引擎重写，数量不回退）。
 - [ ] 现有 `.data/config.yaml`、`keys.bin`、`collections.db` 副本在新程序上零迁移可用（人工确认）。
 - [ ] 全部 CLI 入口（`--self-test` / `--inspect-models` / `--build-phonetics` / `--phonetics-probe` / `--ocr-file [--json]` / `--dump-config` / `--dump-prompt` / `--translate-text` / `--translate-image` / `--settings-preview`）行为不变。
 - [ ] **交付物目录契约验收**：根目录 = 精简 `NaniKore.exe` + 4 个随包原生 DLL（`libSkiaSharp` / `libHarfBuzzSharp` / `av_libglesv2` / `e_sqlite3.dll`）+ `config.template.yaml` + `NOTICE`；子目录只有 `deps/` 与 `.data/`；解压即用（免安装）。
 - [ ] NativeAOT 产物在无 .NET 运行时的机器上完成「热键 → 框选 → OCR（deps/ 就位）→ 翻译 → 收藏」全旅程（人工确认）。
-- [ ] 体积与冷启动时间实测入档，与 15–25 MB 目标的关系写明（达成 / 未达成及原因）。
+- [ ] 体积与冷启动时间实测入档（裁决 14：exe 体积是记录值、不设硬指标；硬指标是零运行时依赖 + 免安装 + 解压即用 + 目录契约，超目标写明原因）。
 - [ ] 本 Epic 已从开发分支合并回 `main`（主人确认后）。
 - [ ] `codestable/spec/index.md` 的「工具链与发布」「捕获与选区」等节已更新；Vision 三节已重写。
 

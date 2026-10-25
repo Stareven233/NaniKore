@@ -7,6 +7,10 @@
 *.so
 *.dylib
 
+# Epic 002 的穿刺脚手架：一次性风险验证工程，结论沉淀在 codestable/，代码本身不入库
+# （工程基准与重建命令见各穿刺 issue，随时可按记录重来）
+/pierce/
+
 # 本地模型文件：模型清单保留，权重不提交
 deps/*
 **/.ms_upload_cache
