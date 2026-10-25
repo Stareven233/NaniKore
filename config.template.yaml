@@ -10,7 +10,7 @@ general:
   paste_auto_translate: false
   auto_explain: false
   target_language: 中文（简体）
-  # 开发者选项：本地 OCR HTTP 监听地址（格式 host:port，如 127.0.0.1:39281 或 0.0.0.0:39281），留空表示不开启
+  # 开发者选项：本地 OCR HTTP 监听地址（格式 host:port，如 127.0.0.1:23335 或 0.0.0.0:23335），留空表示不开启
   ocr_listen: ""
 pipeline:
   mode: local_ocr
