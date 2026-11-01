@@ -395,6 +395,7 @@ NaniKore（net10.0，Avalonia 宿主）
 | 2 | **YamlDotNet 静态上下文**：`StaticContext` 覆盖 `AppConfig` / `AppConfigDocument` 类型图 | **成立**（2026-10-25，issue 002-x；升级已落地） | 10 份样本（含真实 `.data/config.yaml`：9 配置档 + `>-` 多行折叠块标量）读→写→读与迁移前**逐字节等价**；四行档省略语义、旧 `id`/未知键容忍、多行块标量/引号/折行发射全部一致；静态专用 AOT 发布 **0 警告**（含反射基线则 IL3050×2 + IL2104/IL3053，归因清晰）；16.3.0 与 18.1.0 跨版本产出 **0 差异**；主工程升级后 Debug 构建 0 警告、全量自测 **630 PASS / 0 FAIL** | 对策坐实为 `StaticDeserializerBuilder` + `[YamlStaticContext]` 上下文类（8 类型逐个显式登记，生成器不递归发现）；主人批准升级 18.1.0，`ConfigStore` 已切静态路线；P5 的 YamlDotNet 项提前完成 |
 | 3 | **ONNX Runtime 在 NativeAOT 下的加载**：`SetDllImportResolver` 从 `deps/` 加载 + 显式 provider 设置 | **成立**（2026-10-25，issue 003-x） | AOT 发布 **0 警告 / 0 错误**（含链接进脚手架的 HttpClient 下载器文件，零 `NoWarn`）；摘除 NuGet 复制进根目录的原生 DLL 后，det 会话 110 ms / rec 110 ms、推理 20/15 ms；det 概率图 `[0.000000, 0.999705]`、8221/102400 像素过 thresh=0.2；rec 输出 `[1,40,18710]`，`C == 字典 18709 + blank`，CTC 解码不抛；输入敏感性 102384/102400 元素不同（计算图真实执行）；JIT vs AOT 确定性输出 **MATCH**；阴性对照（`deps/onnxruntime` 缺失）退出码 2 不走到原生加载；`--download` 运行时链路 JIT/AOT 双路线跑通 | ONNX Runtime 托管侧（1.28.0）AOT 零警告可用，`deps/` 解析机制有效，托管/原生版本配对无问题；**OCR 依赖保持外部 `deps/`（默认方案）坐实**；P6 的 onnxruntime DLL 摘除从「体积卫生」升级为**正确性要求**（根目录拷贝会遮蔽 `deps/` 下载的 DLL）；P5 接设置页下载流程时无额外 AOT 风险 |
 | 4 | **LibNMeCab AOT 存活**：trim 分析 + 真实日/中注音 | **成立**（2026-10-25，issue 004-x） | NativeAOT 发布 **0 警告 / 0 错误**（`IlcTrimMetadata` 下零 IL2xxx，无需保留描述符）；exe 1.46 MB；ja/zh 真实词典（IPAdic + CC-CEDICT→MeCab，均 UTF-8）上 11 条金样本 + 原始分词 + 确定性断言全 PASS；JIT vs AOT 确定性输出 **MATCH**（逐字节等价）；真·隔离阴性对照 exit 2 不崩；`InvariantGlobalization=true` 对 MeCab 无副作用 | LibNMeCab 0.10.2 AOT 零警告可用，注音器按原样接回、不需惰性降级，阻断项 4 的退路均不触发；裁决 8 的 MeCab 部分获实测支撑（UTF-8 词典走内建编码）；四个未验证依赖收敛为 SQLite native（穿刺 7）一项 |
+| 5 | **振假名在 Avalonia 的可行形态**：`SelectableTextBlock` + `Inlines` + 两行堆叠词元 | **成立**（2026-11-01，issue 005-x） | `InlineUIContainer` 在字符流中确定性占据 1 个 `U+FFFC` 字符，通过偏移量双向累加建立 O(N) 映射，三种复制格式（纯正文/带注音/纯读音）全量与子选区 13 项断言全 PASS；词元在拖选中表现为不可分割的原子单元，划选顺滑；双击切 TextBox 就地编辑与失焦恢复完好复刻；NativeAOT 发布 **0 警告 / 0 错误**，exe 13.93 MB，干净环境无运行时自测全绿 | 退路方案无需触发（无需降级为整段只读，保留原生划选）；P3（结果面板）的原型直接由 `AvaloniaRubyDocumentBuilder` 与 `AvaloniaRubyInlineControl` 承接；剪贴板接口对齐 Avalonia 12 的 `DataTransfer` |
 
 ### 分批推进（P1–P6，P0 通过后才授权）
 
@@ -419,7 +420,8 @@ NaniKore（net10.0，Avalonia 宿主）
 | [002-x-穿刺2-yamldotnet静态上下文与字节级往返](issues/002-x-穿刺2-yamldotnet静态上下文与字节级往返.md) | 穿刺 2：YamlDotNet 静态上下文 + 字节级往返 + 版本评估 | **已关闭**（2026-10-25，结论「成立」；升级 18.1.0 已落地 src） |
 | [003-x-穿刺3-onnxruntime-nativeaot加载与真实推理](issues/003-x-穿刺3-onnxruntime-nativeaot加载与真实推理.md) | 穿刺 3：ONNX Runtime 在 NativeAOT 下从 `deps/` 加载并跑通真实推理 | **已关闭**（2026-10-25，结论「成立」；spec 已回写） |
 | [004-x-穿刺4-libnmecab-nativeaot存活与日中注音等价](issues/004-x-穿刺4-libnmecab-nativeaot存活与日中注音等价.md) | 穿刺 4：LibNMeCab AOT 存活 + 日/中注音等价 | **已关闭**（2026-10-25，结论「成立」；spec 已回写） |
-| 005–008 | 穿刺 5–8，按上表顺序；004 关闭后建下一条 | 未创建（下一条 = 穿刺 5：振假名在 Avalonia 的可行形态） |
+| [005-x-穿刺5-振假名在avalonia的可行形态](issues/005-x-穿刺5-振假名在avalonia的可行形态.md) | 穿刺 5：振假名在 Avalonia 的可行形态 | **已关闭**（2026-11-01，结论「成立」；spec 已回写） |
+| 006–008 | 穿刺 6–8，按上表顺序；005 关闭后建下一条 | 未创建（下一条 = 穿刺 6：无边框全屏浮层 + 全局热键 + 不抢焦点面板） |
 
 **P1–P6 批次 issue：** 待 P0 风险结论表成形后再切（上表是建议切片，不是承诺）。编号在本 Epic 的 `issues/` 树内独立起算。
 
