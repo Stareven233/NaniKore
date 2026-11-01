@@ -1,168 +1,167 @@
-using NaniKore.App.Controls;
-using NaniKore.App.Settings;
-using NaniKore.Config;
-using NaniKore.Input;
+using Avalonia;
+using Avalonia.Media;
+using Avalonia.Styling;
+using Color = Avalonia.Media.Color;
+using Colors = Avalonia.Media.Colors;
+using NaniKore.App.Theme;
 
 namespace NaniKore.Diagnostics;
 
 /// <summary>
-/// 无 UI 自测（UI 套件）的总调度与共享 WPF 无头测试基座。
-/// 按关注点拆分为四个 partial 文件：
-/// - <see cref="SelfTest"/> (Ui): 调度、WPF 无头测试辅助工具、热键录制盒交互
-/// - <see cref="SelfTest"/> (Ui.Settings): 主题资源、自适应布局契约、各设置页绑定与尺寸记忆
-/// - <see cref="SelfTest"/> (Ui.ResultPanel): 结果面板的注音、双语态、翻译流、精讲与划词气泡
-/// - <see cref="SelfTest"/> (Input): 热键手势解析、F1–F12 单键与选取/剪贴板输入获取状态机
+/// 无 UI 自测（UI 套件）：Avalonia 12 渲染底座、FluentTheme 资源解析、深浅色模式与对比度校验。
+/// 结果面板与设置页相关 UI 自测将在 P3/P4 对应批次按 Avalonia 重写并重新接入。
 /// </summary>
-/// <remarks>
-/// WPF 与 WinForms 类型名撞车，本项目统一经 GlobalUsings.cs 的 Wpf* / WinForms 别名引用，
-/// 不再出现全限定名（见 <c>GlobalUsings.cs</c> 顶部说明）。
-/// </remarks>
 internal static partial class SelfTest
 {
     private static void RunUiTests()
     {
-        // 热键录制盒（手势解析与 F1–F12 单键规则在 SelfTest.Input）
-        TestHotkeyRecorderInteraction();
-        TestPasteRecorderUnbind();
-
-        // 设置页：主题资源、布局契约、页面绑定、尺寸记忆、收藏管理页、窗口层级
+        EnsureThemedApplication();
         TestThemeResourcesResolve();
-        TestSettingsPagesUseAdaptiveLayout();
-        TestGeneralPagePipelineDependencyVisibility();
-        TestGeneralPagePhoneticsCards();
-        TestSharedLanguageChoicesAndDetectionMapping();
-        TestTranslationPagePromptEditing();
-        TestSettingsCloseSizeMemory();
-        TestSettingsCloseSizeWriteBackKeepsExternalUpdates();
-        TestFavoritesSettingsPageFilteringAndEvents();
-        TestWindowProperties();
-
-        // 结果面板：本地注音、双语态与翻译流、指标条、精讲生命周期、划词气泡、振假名文档
-        TestResultPanelSourceAnnotation();
-        TestResultPanelAnnotateButton();
-        TestResultPanelShortTextAnnotateAll();
-        TestResultPanelRubyDualModeAndTranslationFlow();
-        TestResultPanelMetricsBar();
-        TestResultPanelViewportLayout();
-        TestExplanationExpanderLifecycle();
-        TestExplanationCardViewFavorites();
-        TestSelectionBubbleInteractions();
-        TestSelectionBubbleFavoriteNote();
-        TestRubyDocumentBuilderAndSelectionCopy();
+        TestContrastRatiosAndReadability();
+        TestThemeVariantHotSwitching();
     }
 
     /// <summary>
-    /// 无 UI 自测里也需要一个 WPF Application 承载资源；不调用 Run，只做资源解析。
+    /// 无 UI 自测中初始化无头 Avalonia Application，承载主题与样式字典解析。
     /// </summary>
     private static void EnsureThemedApplication()
     {
-        if (Wpf.Application.Current is null)
+        if (Application.Current is null)
         {
-            _ = new Wpf.Application { ShutdownMode = Wpf.ShutdownMode.OnExplicitShutdown };
-        }
-
-        NaniKore.App.Theme.ThemeManager.Initialize(Wpf.Application.Current!);
-    }
-
-    /// <summary>逻辑树遍历：页面尚未渲染时视觉树为空，断言必须走逻辑子元素。</summary>
-    private static IEnumerable<T> FindDescendants<T>(Wpf.DependencyObject root)
-        where T : Wpf.DependencyObject
-    {
-        foreach (var child in Wpf.LogicalTreeHelper.GetChildren(root).OfType<Wpf.DependencyObject>())
-        {
-            if (child is T match)
-            {
-                yield return match;
-            }
-
-            foreach (var nested in FindDescendants<T>(child))
-            {
-                yield return nested;
-            }
+            AppBuilder.Configure<NaniKoreApp>()
+                .UsePlatformDetect()
+                .SetupWithoutStarting();
         }
     }
 
-    /// <summary>泛型化的 x:Name 查找：设置页/窗口均在各自名称作用域注册，免去逐处强转。</summary>
-    private static T? Find<T>(Wpf.FrameworkElement root, string name)
-        where T : Wpf.FrameworkElement =>
-        root.FindName(name) as T;
-
-    /// <summary>以路由事件方式唤起点击，比反射触发更贴近真实输入路径。</summary>
-    private static void RaiseClick(WpfPrimitives.ButtonBase button) =>
-        button.RaiseEvent(new Wpf.RoutedEventArgs(WpfPrimitives.ButtonBase.ClickEvent));
-
-    /// <summary>构造左键路由事件参数（自测不依赖真实时间戳，统一取 0）。</summary>
-    private static WpfInput.MouseButtonEventArgs LeftButton(Wpf.RoutedEvent routedEvent, Wpf.IInputElement source) =>
-        new(WpfInput.Mouse.PrimaryDevice, 0, WpfInput.MouseButton.Left) { RoutedEvent = routedEvent, Source = source };
-
-    /// <summary>录制盒交互：按住修饰键回显半组合、Backspace 保持状态、Esc 还原录制前手势。</summary>
-    private static void TestHotkeyRecorderInteraction()
+    /// <summary>验证色板语义资源键在深浅色模式下的解析与键值一致性。</summary>
+    private static void TestThemeResourcesResolve()
     {
-        var recorder = new HotkeyRecorderBox { Gesture = "Ctrl+Shift+A" };
-        var suspensions = new List<bool>();
-        recorder.RecordingChanged += (_, recording) => suspensions.Add(recording);
+        var app = Application.Current;
+        Check("Palette.AppNotNull", app is not null);
+        if (app is null)
+        {
+            return;
+        }
 
-        recorder.BeginRecording();
-        recorder.ProcessRecordingKey(WinForms.Keys.ShiftKey, HotkeyGesture.ModControl | HotkeyGesture.ModShift);
-        Check(
-            "holding modifiers echoes the partial combination without ending recording",
-            recorder.IsRecording && recorder.DisplayText == "Ctrl+Shift+…" && recorder.Gesture == "Ctrl+Shift+A");
+        // 1. 深色色板解析
+        app.RequestedThemeVariant = ThemeVariant.Dark;
+        var darkBg = TryFindResource<IBrush>(app, "Brush.Window.Background", ThemeVariant.Dark);
+        var darkCardBg = TryFindResource<IBrush>(app, "Brush.Card.Background", ThemeVariant.Dark);
+        var darkAccent = TryFindResource<IBrush>(app, "Brush.Accent", ThemeVariant.Dark);
+        var darkText = TryFindResource<IBrush>(app, "Brush.Text.Primary", ThemeVariant.Dark);
 
-        recorder.ProcessRecordingKey(WinForms.Keys.Back, HotkeyGesture.ModControl);
-        Check(
-            "recording keeps state for backspace input",
-            recorder.IsRecording && recorder.Gesture == "Ctrl+Shift+A");
+        Check("Palette.Dark.WindowBgFound", darkBg is not null);
+        Check("Palette.Dark.CardBgFound", darkCardBg is not null);
+        Check("Palette.Dark.AccentFound", darkAccent is not null);
+        Check("Palette.Dark.TextPrimaryFound", darkText is not null);
 
-        recorder.ProcessRecordingKey(WinForms.Keys.Q, HotkeyGesture.ModControl | HotkeyGesture.ModShift);
-        Check(
-            "recording stores the normalized combination and releases the global hotkey once",
-            !recorder.IsRecording &&
-            recorder.Gesture == "Ctrl+Shift+Q" &&
-            recorder.DisplayText == "Ctrl+Shift+Q" &&
-            suspensions.SequenceEqual([true, false]));
+        if (darkAccent is ISolidColorBrush scbDarkAccent)
+        {
+            Check("Palette.Dark.AccentColorValue",
+                scbDarkAccent.Color.R == 0x95 && scbDarkAccent.Color.G == 0xCA && scbDarkAccent.Color.B == 0x00);
+        }
 
-        recorder.BeginRecording();
-        recorder.ProcessRecordingKey(WinForms.Keys.Escape, 0);
-        Check(
-            "escape restores the gesture that was active before recording",
-            !recorder.IsRecording && recorder.Gesture == "Ctrl+Shift+Q");
+        // 2. 浅色色板解析
+        app.RequestedThemeVariant = ThemeVariant.Light;
+        var lightBg = TryFindResource<IBrush>(app, "Brush.Window.Background", ThemeVariant.Light);
+        var lightCardBg = TryFindResource<IBrush>(app, "Brush.Card.Background", ThemeVariant.Light);
+        var lightAccent = TryFindResource<IBrush>(app, "Brush.Accent", ThemeVariant.Light);
+        var lightText = TryFindResource<IBrush>(app, "Brush.Text.Primary", ThemeVariant.Light);
 
-        var page = new HotkeyPage();
-        page.Load(new AppConfig { Hotkeys = new HotkeyConfig { Capture = "alt+f9", Paste = "f1" } });
-        var config = new AppConfig();
-        page.Apply(config);
-        Check(
-            "hotkey page normalizes stored gestures and validates before applying",
-            page.Validate() is null && config.Hotkeys.Capture == "Alt+F9" && config.Hotkeys.Paste == "F1");
+        Check("Palette.Light.WindowBgFound", lightBg is not null);
+        Check("Palette.Light.CardBgFound", lightCardBg is not null);
+        Check("Palette.Light.AccentFound", lightAccent is not null);
+        Check("Palette.Light.TextPrimaryFound", lightText is not null);
+
+        if (lightAccent is ISolidColorBrush scbLightAccent)
+        {
+            Check("Palette.Light.AccentColorValue",
+                scbLightAccent.Color.R == 0x95 && scbLightAccent.Color.G == 0xCA && scbLightAccent.Color.B == 0x00);
+        }
+
+        // 切回默认深色
+        app.RequestedThemeVariant = ThemeVariant.Dark;
     }
 
-    /// <summary>选取翻译录制框（issue 018）：Esc 解除绑定落空串，空手势显示占位提示。</summary>
-    private static void TestPasteRecorderUnbind()
+    /// <summary>验证品牌强调色与主文本在深浅色底色上的 WCAG AAA 对比度（7:1 规范）。</summary>
+    private static void TestContrastRatiosAndReadability()
     {
-        var unbind = new HotkeyRecorderBox { Gesture = "Ctrl+Shift+S", AllowUnbind = true, EmptyHint = "未绑定（Esc 解绑）" };
-        Check(
-            "a bound recorder echoes the configured gesture before recording",
-            !unbind.IsRecording && unbind.DisplayText == "Ctrl+Shift+S");
+        var app = Application.Current;
+        if (app is null) return;
 
-        unbind.BeginRecording();
-        unbind.ProcessRecordingKey(WinForms.Keys.Escape, 0);
-        Check(
-            "escape unbinds the paste gesture instead of restoring the previous one",
-            !unbind.IsRecording && unbind.Gesture.Length == 0 && unbind.DisplayText == "未绑定（Esc 解绑）");
+        // 深色主文本 vs 深色底
+        var darkBg = (TryFindResource<IBrush>(app, "Brush.Window.Background", ThemeVariant.Dark) as ISolidColorBrush)?.Color ?? Colors.Black;
+        var darkText = (TryFindResource<IBrush>(app, "Brush.Text.Primary", ThemeVariant.Dark) as ISolidColorBrush)?.Color ?? Colors.White;
+        var darkRatio = CalculateContrastRatio(darkText, darkBg);
+        Check("Contrast.DarkTextPrimaryAgainstBg", darkRatio >= 7.0, $"Ratio: {darkRatio:F2}");
 
-        // 解绑后仍可重新录制：空手势不锁死录制框。
-        unbind.BeginRecording();
-        unbind.ProcessRecordingKey(WinForms.Keys.F5, 0);
-        Check(
-            "an unbound paste recorder accepts a new single function key",
-            !unbind.IsRecording && unbind.Gesture == "F5" && unbind.DisplayText == "F5");
+        // 浅色主文本 vs 浅色底
+        var lightBg = (TryFindResource<IBrush>(app, "Brush.Window.Background", ThemeVariant.Light) as ISolidColorBrush)?.Color ?? Colors.White;
+        var lightText = (TryFindResource<IBrush>(app, "Brush.Text.Primary", ThemeVariant.Light) as ISolidColorBrush)?.Color ?? Colors.Black;
+        var lightRatio = CalculateContrastRatio(lightText, lightBg);
+        Check("Contrast.LightTextPrimaryAgainstBg", lightRatio >= 7.0, $"Ratio: {lightRatio:F2}");
 
-        // 截图录制框保持原语义：Esc 只是取消并还原。
-        var keep = new HotkeyRecorderBox { Gesture = "Ctrl+Shift+A" };
-        keep.BeginRecording();
-        keep.ProcessRecordingKey(WinForms.Keys.Escape, 0);
-        Check(
-            "the capture recorder still cancels and restores on escape",
-            !keep.IsRecording && keep.Gesture == "Ctrl+Shift+A");
+        // 强调色在深浅色下的对比度
+        var accent = (TryFindResource<IBrush>(app, "Brush.Accent", ThemeVariant.Dark) as ISolidColorBrush)?.Color ?? Colors.Green;
+        var onAccentDark = (TryFindResource<IBrush>(app, "Brush.Text.OnAccent", ThemeVariant.Dark) as ISolidColorBrush)?.Color ?? Colors.Black;
+        var accentRatio = CalculateContrastRatio(accent, onAccentDark);
+        Check("Contrast.AccentOnDarkTextOnAccent", accentRatio >= 7.0, $"Ratio: {accentRatio:F2}");
+    }
+
+    /// <summary>验证 ThemeVariant 热切换平滑生效。</summary>
+    private static void TestThemeVariantHotSwitching()
+    {
+        var app = Application.Current;
+        if (app is null) return;
+
+        app.RequestedThemeVariant = ThemeVariant.Dark;
+        Check("ThemeVariant.InitiallyDark", app.RequestedThemeVariant == ThemeVariant.Dark);
+
+        app.RequestedThemeVariant = ThemeVariant.Light;
+        Check("ThemeVariant.SwitchedToLight", app.RequestedThemeVariant == ThemeVariant.Light);
+
+        var lightBg = TryFindResource<IBrush>(app, "Brush.Window.Background", ThemeVariant.Light);
+        Check("ThemeVariant.LightBgResolvedAfterSwitch", lightBg is not null);
+
+        app.RequestedThemeVariant = ThemeVariant.Dark;
+        Check("ThemeVariant.RestoredToDark", app.RequestedThemeVariant == ThemeVariant.Dark);
+    }
+
+    private static T? TryFindResource<T>(Application app, string key, ThemeVariant variant) where T : class
+    {
+        if (app.Resources.TryGetResource(key, variant, out var resource) && resource is T match)
+        {
+            return match;
+        }
+
+        if (app.Resources.TryGetResource(key, null, out var fallback) && fallback is T fallbackMatch)
+        {
+            return fallbackMatch;
+        }
+
+        return null;
+    }
+
+    private static double CalculateContrastRatio(Color c1, Color c2)
+    {
+        var l1 = CalculateRelativeLuminance(c1);
+        var l2 = CalculateRelativeLuminance(c2);
+        var lighter = Math.Max(l1, l2);
+        var darker = Math.Min(l1, l2);
+        return (lighter + 0.05) / (darker + 0.05);
+    }
+
+    private static double CalculateRelativeLuminance(Color c)
+    {
+        double R = AdjustComponent(c.R / 255.0);
+        double G = AdjustComponent(c.G / 255.0);
+        double B = AdjustComponent(c.B / 255.0);
+        return 0.2126 * R + 0.7152 * G + 0.0722 * B;
+
+        static double AdjustComponent(double val)
+        {
+            return val <= 0.03928 ? val / 12.92 : Math.Pow((val + 0.055) / 1.055, 2.4);
+        }
     }
 }

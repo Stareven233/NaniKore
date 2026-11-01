@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Windows.Forms;
 
 namespace NaniKore.Input;
 
@@ -109,7 +108,7 @@ internal static class HotkeyGesture
     /// 把一次按键（普通键 + 当前修饰键状态）转换成规范化组合。
     /// 返回 false 时 <paramref name="message"/> 是给用户的可理解提示，录制状态应保持不变。
     /// </summary>
-    internal static bool TryCapture(uint modifiers, Keys keyCode, out string gesture, out string message)
+    internal static bool TryCapture(uint modifiers, uint keyCode, out string gesture, out string message)
     {
         gesture = string.Empty;
         if (IsModifierKey(keyCode))
@@ -209,25 +208,25 @@ internal static class HotkeyGesture
 
     private static bool IsKeyDown(int virtualKey) => (Interop.NativeMethods.GetKeyState(virtualKey) & 0x8000) != 0;
 
-    internal static bool IsModifierKey(Keys keyCode) => keyCode
-        is Keys.ControlKey or Keys.ShiftKey or Keys.Menu
-        or Keys.LControlKey or Keys.RControlKey
-        or Keys.LShiftKey or Keys.RShiftKey
-        or Keys.LMenu or Keys.RMenu
-        or Keys.LWin or Keys.RWin;
+    internal static bool IsModifierKey(uint keyCode) => keyCode
+        is (uint)VirtualKeyShift or (uint)VirtualKeyControl or (uint)VirtualKeyMenu
+        or 0xA0 or 0xA1 // LShift / RShift
+        or 0xA2 or 0xA3 // LControl / RControl
+        or 0xA4 or 0xA5 // LMenu / RMenu
+        or (uint)VirtualKeyLeftWindows or (uint)VirtualKeyRightWindows;
 
-    private static bool TryMapKeyCode(Keys keyCode, out uint virtualKey)
+    private static bool TryMapKeyCode(uint keyCode, out uint virtualKey)
     {
         virtualKey = 0;
-        if (keyCode is >= Keys.A and <= Keys.Z or >= Keys.D0 and <= Keys.D9)
+        if (keyCode is >= (uint)'A' and <= (uint)'Z' or >= (uint)'0' and <= (uint)'9')
         {
-            virtualKey = (uint)keyCode;
+            virtualKey = keyCode;
             return true;
         }
 
-        if (keyCode is >= Keys.F1 and <= Keys.F24)
+        if (keyCode is >= VirtualKeyF1 and <= VirtualKeyF1 + 23)
         {
-            virtualKey = (uint)keyCode;
+            virtualKey = keyCode;
             return true;
         }
 

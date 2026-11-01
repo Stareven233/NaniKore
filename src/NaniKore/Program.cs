@@ -7,7 +7,7 @@ using NaniKore.Interop;
 using NaniKore.Ocr;
 using NaniKore.Phonetics;
 using NaniKore.Translation;
-using System.Windows.Forms;
+using Avalonia;
 
 namespace NaniKore;
 
@@ -78,27 +78,21 @@ internal static class Program
             return PreviewSettings();
         }
 
-        Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
-        Application.EnableVisualStyles();
-        Application.SetCompatibleTextRenderingDefault(false);
-        var application = new NaniKoreApp();
-        var exitCode = application.Run();
-        // 数据目录不可写等拒绝启动路径经 Application.Shutdown(1) 结束：Run 的返回值不带该退出码，以 Environment.ExitCode 兜底。
-        return exitCode == 0 ? Environment.ExitCode : exitCode;
+        // 桌面 GUI 启动：构建 Avalonia 应用并进入经典桌面生命周期
+        return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 
     private static int PreviewSettings()
     {
-        var app = new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnLastWindowClose };
-        NaniKore.App.Theme.ThemeManager.Initialize(app);
-        if (!TryCreateConfigStore(out var store))
-        {
-            return 1;
-        }
-
-        var window = new NaniKore.App.Settings.SettingsWindow(() => store.Current, _ => { }, (_, _) => Task.FromResult("ok"));
-        return app.Run(window);
+        // 待 P4 设置页迁移至 Avalonia 后接回，当前先呈现基座窗口
+        return BuildAvaloniaApp().StartWithClassicDesktopLifetime([]);
     }
+
+    public static AppBuilder BuildAvaloniaApp()
+        => AppBuilder.Configure<NaniKoreApp>()
+            .UsePlatformDetect()
+
+            .LogToTrace();
 
     /// <summary>CLI 统一建库入口：数据目录不可写时走 Console.Error 并回报失败，由调用方按退出码 1 结束。</summary>
     private static bool TryCreateConfigStore(out ConfigStore store)

@@ -1,0 +1,65 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- NaniKore 核心局部样式（Route A：精炼覆盖，零庞大冗余模板） -->
+
+    <!-- 品牌 Accent 按钮 -->
+    <Style Selector="Button.accent">
+        <Setter Property="Background" Value="{DynamicResource Brush.Accent}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.OnAccent}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource Brush.Accent.Hover}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.OnAccent}" />
+    </Style>
+    <Style Selector="Button.accent:pressed /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource Brush.Accent.Pressed}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.OnAccent}" />
+    </Style>
+
+    <!-- 卡片面板 Border.card -->
+    <Style Selector="Border.card">
+        <Setter Property="Background" Value="{DynamicResource Brush.Card.Background}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Card.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="12" />
+    </Style>
+
+    <!-- 控件底框 Border.control -->
+    <Style Selector="Border.control">
+        <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="6" />
+    </Style>
+
+    <!-- 类别徽章 Border.badge -->
+    <Style Selector="Border.badge">
+        <Setter Property="Background" Value="{DynamicResource Brush.Accent.Subtle}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Padding" Value="6,2" />
+    </Style>
+
+    <!-- 文本次级样式 TextBlock.secondary -->
+    <Style Selector="TextBlock.secondary">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
+    </Style>
+
+    <!-- 标题文本 TextBlock.title -->
+    <Style Selector="TextBlock.title">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+
+    <!-- 状态栏与指标 Chip -->
+    <Style Selector="Border.metric-chip">
+        <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Padding" Value="8,3" />
+    </Style>
+</Styles>

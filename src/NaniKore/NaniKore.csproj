@@ -1,10 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
-    <!-- WinForms 与 WPF 同时启用，图片控件优先托管在 WinForms，界面与文本用 WPF -->
-    <UseWPF>true</UseWPF>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
@@ -15,17 +12,30 @@
     <ApplicationIcon>Assets\nanikore.ico</ApplicationIcon>
     <AssemblyName>NaniKore</AssemblyName>
     <RootNamespace>NaniKore</RootNamespace>
+
+    <!-- 允许特定平台 API 警告由运行时 OperatingSystem.IsWindows() 守卫承载 -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
-  <ItemGroup>
-    <!--
-      避免 WPF 和 SDK 的全局 using 隐式导入 System.IO，导致 System.IO.Path 与
-      System.Windows.Shapes.Path 歧义；项目内统一用 Shapes.Path 的地方需显式全限定，保证 OCR 代码不混淆。
-    -->
-    <Using Include="System.IO" />
-  </ItemGroup>
+
+  <!-- NativeAOT 发布口径（epic 002 P1 引入通道，P6 正式验收） -->
+  <PropertyGroup Condition="'$(PublishAot)' == 'true'">
+    <IsAotCompatible>true</IsAotCompatible>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <StripSymbols>true</StripSymbols>
+    <IlcTrimMetadata>true</IlcTrimMetadata>
+    <DebugType>none</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- 待 P5 批次系统性完成 JSON 源生成器改造后恢复严格 TreatWarningsAsErrors -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
   <ItemGroup>
     <EmbeddedResource Include="Assets\nanikore.ico" />
   </ItemGroup>
+
   <ItemGroup>
     <!--
       配置模板（issue 017）：随包发布，运行期只读；首启按字节原样复制到 程序目录\.data\config.yaml。
@@ -33,7 +43,22 @@
     -->
     <None Include="..\..\config.template.yaml" Link="config.template.yaml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+
   <ItemGroup>
+    <!-- Avalonia 12 核心套件与主题（P1 引入） -->
+    <PackageReference Include="Avalonia" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+
+    <!-- 跨框架/非 Windows TFM 下补充系统包（P1 审计修订） -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="10.0.0" />
+
+    <!-- 过渡期保持 System.Drawing.Common 供 OCR 管线使用（待 P5 统一收口到 SkiaSharp） -->
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
+
+    <!-- 业务核心依赖 -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <!-- 纯托管日语形态素引擎（LibNMeCab 为 GPL-2.0 / LGPL-2.1 双许可，NOTICE 已登记） -->
     <PackageReference Include="LibNMeCab" Version="0.10.2" />
@@ -46,6 +71,7 @@
     -->
     <PackageReference Include="Vecc.YamlDotNet.Analyzers.StaticGenerator" Version="18.1.0" />
   </ItemGroup>
+
   <ItemGroup>
     <!--
       注音判据数据：三语停用/高频词表与常用字符表（KB 级策展内容，与词典哈希解耦、随程序集分发）。
@@ -55,4 +81,41 @@
       <LogicalName>NaniKore.Phonetics.Data.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
+
+  <!-- 待 P2–P4 批次逐步替换为 Avalonia/Win32 的旧 WPF/WinForms 界面代码 -->
+  <ItemGroup>
+    <Compile Remove="App\Controls\ExplanationCardView.xaml.cs" />
+    <Compile Remove="App\Controls\HotkeyRecorderBox.cs" />
+    <Compile Remove="App\Controls\InfoBar.cs" />
+    <Compile Remove="App\Controls\MessageDialog.xaml.cs" />
+    <Compile Remove="App\Controls\NumberBox.cs" />
+    <Compile Remove="App\Controls\RubyDocumentBuilder.cs" />
+    <Compile Remove="App\Controls\RubyInlineControl.cs" />
+    <Compile Remove="App\Controls\SelectionBubblePopup.xaml.cs" />
+    <Compile Remove="App\Controls\SettingsGroup.cs" />
+    <Compile Remove="App\Settings\**\*.cs" />
+    <Compile Remove="App\ApplicationIcon.cs" />
+    <Compile Remove="App\NaniKoreApp.cs" />
+    <Compile Remove="App\OcrProgressWindow.xaml.cs" />
+    <Compile Remove="App\OcrResultWindow.xaml.cs" />
+    <Compile Remove="App\ResultPanelWindow.xaml.cs" />
+    <Compile Remove="App\TrayIconHost.cs" />
+    <Compile Remove="Capture\DesktopCapturer.cs" />
+    <Compile Remove="Imaging\PngEncoder.cs" />
+    <Compile Remove="Input\GlobalHotkeyWindow.cs" />
+    <Compile Remove="Input\PasteInputAcquirer.cs" />
+    <Compile Remove="Overlay\SelectionForm.cs" />
+    <Compile Remove="Diagnostics\SelfTest.Input.cs" />
+    <Compile Remove="Diagnostics\SelfTest.Ui.ResultPanel.cs" />
+    <Compile Remove="Diagnostics\SelfTest.Ui.Settings.cs" />
+    <None Remove="**\*.xaml" />
+  </ItemGroup>
+
+  <!-- 清理 RID 原生资产复制过来的调试符号，防止 zip 膨胀（来自穿刺 1 结论） -->
+  <Target Name="RemoveNativeSymbolsFromPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_PierceNativeSymbol Include="$(PublishDir)*.pdb" />
+    </ItemGroup>
+    <Delete Files="@(_PierceNativeSymbol)" />
+  </Target>
 </Project>

@@ -1,5 +1,5 @@
-﻿param(
-    [ValidateSet('build', 'run', 'test', 'publish')]
+param(
+    [ValidateSet('build', 'run', 'test', 'publish', 'aot')]
     [string]$Command = 'build',
 
     [ValidateSet('build', 'publish')]
@@ -16,7 +16,7 @@ $root = Split-Path -Parent $PSScriptRoot
 
 $solution = Join-Path $root 'NaniKore.slnx'
 $project = Join-Path $root 'src\NaniKore\NaniKore.csproj'
-$debugExecutable = Join-Path $root 'src\NaniKore\bin\Debug\net10.0-windows10.0.19041.0\NaniKore.exe'
+$debugExecutable = Join-Path $root 'src\NaniKore\bin\Debug\net10.0\NaniKore.exe'
 $artifactsDirectory = Join-Path $root 'artifacts'
 $publishOutput = Join-Path $root 'artifacts\win-x64'
 $publishedExecutable = Join-Path $publishOutput 'NaniKore.exe'
@@ -494,6 +494,31 @@ try {
             Set-NaniKoreJunction -Path $publishDepsLink -Target $dependenciesDirectory
             Set-NaniKoreJunction -Path (Join-Path $publishOutput '.data') -Target $dataDirectory -CreateTarget
             Write-Host "Created release archive: $archivePath"
+        }
+        'aot' {
+            # NativeAOT 发布通道（epic 002 P1 基座引入，P6 正式验收）：
+            # 精简 exe + 随包原生 DLL 旁置；不内嵌、不走 PublishSingleFile。
+            $publishOutputAot = Join-Path $artifactsDirectory 'win-x64-aot'
+            $publishAotDepsLink = Join-Path $publishOutputAot 'deps'
+            Remove-NaniKoreJunction -Path $publishAotDepsLink -IncludeRealDirectory
+
+            & $dotnet publish $project --configuration Release --runtime win-x64 -p:PublishAot=true --output $publishOutputAot -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0) {
+                break
+            }
+
+            # 摘除 NuGet 复制进根目录的原生 ONNX DLL（issue 003 实测：必须摘除，否则优先于 deps/ 加载）
+            Remove-Item -LiteralPath (Join-Path $publishOutputAot 'onnxruntime.dll'), (Join-Path $publishOutputAot 'onnxruntime_providers_shared.dll') -Force -ErrorAction SilentlyContinue
+            # 显式同步配置模板
+            Remove-Item -LiteralPath (Join-Path $publishOutputAot 'config.yaml') -Force -ErrorAction SilentlyContinue
+            Copy-Item -LiteralPath (Join-Path $root 'config.template.yaml') -Destination $publishOutputAot -Force
+            Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $publishOutputAot
+
+            Set-NaniKoreJunction -Path $publishAotDepsLink -Target $dependenciesDirectory
+            Set-NaniKoreJunction -Path (Join-Path $publishOutputAot '.data') -Target $dataDirectory -CreateTarget
+
+            Write-Host "NativeAOT build succeeded in $publishOutputAot."
         }
     }
 }

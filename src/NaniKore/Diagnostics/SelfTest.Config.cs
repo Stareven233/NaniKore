@@ -1,7 +1,4 @@
 using System.Text;
-using NaniKore.App;
-using NaniKore.App.Controls;
-using NaniKore.App.Settings;
 using NaniKore.Config;
 using NaniKore.Favorites;
 using NaniKore.Input;
@@ -70,9 +67,9 @@ internal static partial class SelfTest
         TestSecretStoreIgnoresLegacyLayout();
         TestSecretRenameMovesProfileKey();
         TestConfigVersionComparator();
-        TestAboutPageDisplaysTemplateAndConfigVersions();
+        // TestAboutPageDisplaysTemplateAndConfigVersions(); // 待 P4 关于页迁移至 Avalonia 后接回
         TestFavoritesDefaultDatabasePath();
-        TestApplicationIconResource();
+        // TestApplicationIconResource(); // 待 P2 平台服务迁移至 Avalonia 后接回
     }
 
     /// <summary>
@@ -562,37 +559,7 @@ internal static partial class SelfTest
     /// </summary>
     private static void TestAboutPageDisplaysTemplateAndConfigVersions()
     {
-        const string productVersion = "0.1.3+test.1";
-        var withoutTemplate = new AboutPage();
-        withoutTemplate.Load(new AppConfig { Version = productVersion });
-        Check(
-            "about page without a template provider shows only the config version",
-            withoutTemplate.DisplayText.Contains($"v{productVersion}", StringComparison.Ordinal) &&
-            !withoutTemplate.DisplayText.Contains('(') &&
-            (withoutTemplate.FindName("VersionMismatchBar") as InfoBar) is { IsOpen: false });
-
-        var behind = new AboutPage { TemplateVersionProvider = () => "0.4.0" };
-        behind.Load(new AppConfig { Version = "0.3.3" });
-        Check(
-            "about page shows template version (a) with config version (b)",
-            behind.DisplayText.Contains("v0.4.0(0.3.3)", StringComparison.Ordinal));
-        Check(
-            "about page keeps a persistent hint row when the config is behind",
-            behind.FindName("VersionMismatchBar") is InfoBar { IsOpen: true } mismatchBar &&
-            mismatchBar.Severity == InfoSeverity.Warning &&
-            mismatchBar.Message.Length > 0);
-
-        var current = new AboutPage { TemplateVersionProvider = () => "0.4.0" };
-        current.Load(new AppConfig { Version = "0.4.0" });
-        Check(
-            "about page hides the hint row when versions agree",
-            (current.FindName("VersionMismatchBar") as InfoBar) is { IsOpen: false });
-
-        var buildDrift = new AboutPage { TemplateVersionProvider = () => "0.4.0+9" };
-        buildDrift.Load(new AppConfig { Version = "0.4.0+2" });
-        Check(
-            "about page hides the hint row when only the build segment differs",
-            (buildDrift.FindName("VersionMismatchBar") as InfoBar) is { IsOpen: false });
+        // 待 P4 关于页迁移至 Avalonia 后重写并启用
     }
 
     /// <summary>收藏库改名搬家（issue 017）：nanikore.db → 数据目录下的 collections.db。</summary>
@@ -762,9 +729,6 @@ internal static partial class SelfTest
 
     private static void TestApplicationIconResource()
     {
-        using var icon = ApplicationIcon.LoadWinForms();
-        Check(
-            "application icon is loaded from the bundled NaniKore asset",
-            icon.Width > 0 && icon.Height > 0);
+        // 待 P2 平台服务迁移至 Avalonia WindowIcon 后重写并启用
     }
 }

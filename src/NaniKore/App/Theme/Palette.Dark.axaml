@@ -1,38 +1,35 @@
-<!--
-    浅色语义色板。所有控件样式只引用这里的语义键，主题切换时整份字典被替换，
-    因此页面 XAML 必须用 DynamicResource 引用，不能用 StaticResource。
-    品牌基调取自纳西妲配色：草地绿强调 + 灰白主底，克制用绿，边框用灰绿/鼠尾草绿系。
--->
-<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <!-- 分层底色：窗口最低，卡片抬升，控件再抬升，用纯色模拟层次而不用亚克力。 -->
-    <Color x:Key="Color.Window.Background">#F2F8F4</Color>
-    <Color x:Key="Color.Sidebar.Background">#E7F0EA</Color>
-    <Color x:Key="Color.Card.Background">#FFFFFF</Color>
-    <Color x:Key="Color.Control.Background">#F8FBF9</Color>
-    <Color x:Key="Color.Control.BackgroundHover">#EFF5F1</Color>
-    <Color x:Key="Color.Control.BackgroundPressed">#E8F0EB</Color>
-    <Color x:Key="Color.Control.Border">#C7D8D2</Color>
-    <Color x:Key="Color.Control.BorderHover">#A9C4BC</Color>
-    <Color x:Key="Color.Card.Border">#DCE8E2</Color>
-    <Color x:Key="Color.Divider">#D8E4DE</Color>
-    <Color x:Key="Color.Text.Primary">#1F2E27</Color>
-    <Color x:Key="Color.Text.Secondary">#5C6F65</Color>
-    <Color x:Key="Color.Text.Disabled">#A2B1A8</Color>
-    <!-- 草地绿是亮色，深色文字对比度约 7.7:1，白色反而不可读，故 OnAccent 用深绿。 -->
-    <Color x:Key="Color.Text.OnAccent">#1B2A1F</Color>
-    <!-- 品牌强调色固定为草地绿，ThemeManager 不再用系统强调色覆盖。 -->
+    <!-- NaniKore 深色语义色板（沉静深绿灰/炭色，草地绿品牌强调） -->
+    <Color x:Key="Color.Window.Background">#1C2420</Color>
+    <Color x:Key="Color.Sidebar.Background">#171E1B</Color>
+    <Color x:Key="Color.Card.Background">#242C27</Color>
+    <Color x:Key="Color.Control.Background">#2A342E</Color>
+    <Color x:Key="Color.Control.BackgroundHover">#313C35</Color>
+    <Color x:Key="Color.Control.BackgroundPressed">#252E29</Color>
+    <Color x:Key="Color.Control.Border">#3B4740</Color>
+    <Color x:Key="Color.Control.BorderHover">#4E5C54</Color>
+    <Color x:Key="Color.Card.Border">#2F3933</Color>
+    <Color x:Key="Color.Divider">#333E37</Color>
+    <Color x:Key="Color.Text.Primary">#EAF2EC</Color>
+    <Color x:Key="Color.Text.Secondary">#A9B6AC</Color>
+    <Color x:Key="Color.Text.Disabled">#6E7C73</Color>
+    <Color x:Key="Color.Text.OnAccent">#111D0B</Color>
     <Color x:Key="Color.Accent">#95CA00</Color>
     <Color x:Key="Color.Accent.Hover">#C6E05B</Color>
     <Color x:Key="Color.Accent.Pressed">#7FA800</Color>
-    <Color x:Key="Color.Accent.Subtle">#EDF5DA</Color>
-    <Color x:Key="Color.Success">#178A48</Color>
-    <Color x:Key="Color.Warning">#9C5F00</Color>
-    <Color x:Key="Color.Danger">#C42B1C</Color>
-    <Color x:Key="Color.Scroll.Thumb">#B5C6BE</Color>
-    <Color x:Key="Color.Overlay.Hover">#14000000</Color>
-    <Color x:Key="Color.Overlay.Pressed">#22000000</Color>
+    <Color x:Key="Color.Accent.Subtle">#243120</Color>
+    <Color x:Key="Color.Success">#5EC77E</Color>
+    <Color x:Key="Color.Warning">#E0A64B</Color>
+    <Color x:Key="Color.Danger">#F0827B</Color>
+    <Color x:Key="Color.Scroll.Thumb">#45524B</Color>
 
+    <!-- 覆写 Avalonia FluentTheme 系统内置强调色 -->
+    <Color x:Key="SystemAccentColor">#95CA00</Color>
+    <Color x:Key="SystemAccentColorLight1">#C6E05B</Color>
+    <Color x:Key="SystemAccentColorDark1">#7FA800</Color>
+
+    <!-- 语义化 SolidColorBrush 映射 -->
     <SolidColorBrush x:Key="Brush.Window.Background" Color="{StaticResource Color.Window.Background}" />
     <SolidColorBrush x:Key="Brush.Sidebar.Background" Color="{StaticResource Color.Sidebar.Background}" />
     <SolidColorBrush x:Key="Brush.Card.Background" Color="{StaticResource Color.Card.Background}" />
@@ -55,6 +52,4 @@
     <SolidColorBrush x:Key="Brush.Warning" Color="{StaticResource Color.Warning}" />
     <SolidColorBrush x:Key="Brush.Danger" Color="{StaticResource Color.Danger}" />
     <SolidColorBrush x:Key="Brush.Scroll.Thumb" Color="{StaticResource Color.Scroll.Thumb}" />
-    <SolidColorBrush x:Key="Brush.Overlay.Hover" Color="{StaticResource Color.Overlay.Hover}" />
-    <SolidColorBrush x:Key="Brush.Overlay.Pressed" Color="{StaticResource Color.Overlay.Pressed}" />
 </ResourceDictionary>
