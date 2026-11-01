@@ -21,7 +21,7 @@ created: 2026-10-14
 
 **代价集中在两处，都不在业务逻辑：**
 1. **约 9 千行 UI 与平台耦合代码要重写**（WPF 控件树 / FlowDocument 振假名 / WinForms 服务）；
-2. **约 10 千行业务核心大部分不用动**，但其中四个依赖的 AOT 可行性原本未验证（YamlDotNet、ONNX Runtime、SQLite native、LibNMeCab）——这是唯一可能让整条线走不通的地方；**YamlDotNet 与 ONNX Runtime 已分别由穿刺 2 / 穿刺 3 实测打通（2026-10-25，均 0 ILC 警告）**，余下 SQLite native（穿刺 7）；**LibNMeCab 亦已由穿刺 4 实测打通（2026-10-25，0 ILC 警告，日/中注音与迁移前逐字节等价）**。**例外是 OCR 管线**（审计修订）：`OcrEngine` / `TextDetector` / `TextRecognizer` / `TensorImageConverter` 的公开 API 全部接收 `System.Drawing.Bitmap`，而 System.Drawing 在 NativeAOT 下不可用，需系统性 Bitmap→Skia 迁移（约 266 行 + 测试），边界方案见第 3 节归属判断。
+2. **约 10 千行业务核心大部分不用动**，但其中四个依赖的 AOT 可行性原本未验证（YamlDotNet、ONNX Runtime、SQLite native、LibNMeCab）——这是唯一可能让整条线走不通的地方；**YamlDotNet、ONNX Runtime、LibNMeCab 与 SQLite native 已分别由穿刺 2 / 3 / 4 / 7 实测打通（均 0 ILC 警告，e_sqlite3.dll 随包旁置自动探测，51 项断言全绿）**。**例外是 OCR 管线**（审计修订）：`OcrEngine` / `TextDetector` / `TextRecognizer` / `TensorImageConverter` 的公开 API 全部接收 `System.Drawing.Bitmap`，而 System.Drawing 在 NativeAOT 下不可用，需系统性 Bitmap→Skia 迁移（约 266 行 + 测试），边界方案见第 3 节归属判断。
 
 **因此第一件事不是开工，是穿刺。** 下面「穿刺计划」列出 8 个风险点与各自的打通判据；任一条不成立，方案要回炉，而不是硬啃。
 
@@ -120,7 +120,7 @@ Ctrl+Shift+A
 - `YamlDotNet` 静态上下文对现有 `AppConfig` 类型图（嵌套类 + `List<T>` + 多行块标量）的覆盖度。
 - `Microsoft.ML.OnnxRuntime` 1.28.0 托管侧在 NativeAOT 下的 trim 警告面。
 - `LibNMeCab` 0.10.2 是否真的无反射（上游 README 声称新设计「排除了转型与反射（new T）」，但未标注 `IsTrimmable`）。
-- `Microsoft.Data.Sqlite` / `SQLitePCLRaw` 在 NativeAOT 下的加载方式（审计修订：提升为独立穿刺 7；2026-10-25 起 `e_sqlite3.dll` 按新目录契约随包旁置根目录，与今天发布物同布局，穿刺验证 AOT 下自动探测仍工作）。
+- `Microsoft.Data.Sqlite` / `SQLitePCLRaw` 在 NativeAOT 下的加载方式（已由穿刺 7 实测打通：2026-11-01，`e_sqlite3.dll` 作为 RID 资产随包旁置根目录，.NET 原生探测自动加载，0 ILC 警告，51 项全生命周期断言全绿）。
 - （审计修订）**OCR 核心的 `System.Drawing.Bitmap` 迁移**：`OcrEngine.Recognize` / `TextDetector.Detect` / `TextRecognizer.Recognize` / `TensorImageConverter`（约 266 行）公开 API 全部接收 `System.Drawing.Bitmap`，而 System.Drawing 在 NativeAOT 下不可用（GDI+ 封装依赖 COM `IStream` 编组，NativeAOT 无内建 COM；已查证 dotnet/runtime#115753 与 .NET 设计文档「only in the context of Windows Forms and GDI+」）。这不是零改动区，需系统性 Bitmap→Skia 迁移，边界方案见第 3 节归属判断。
 - （审计修订）10-24 新增的 `App/OcrHttpServer.cs`（约 15 KB）与既有但初版映射表漏列的 `OcrProgressWindow` / `OcrResultWindow` 两个 WPF 窗口，补入「应用宿主」行清点。
 
@@ -397,6 +397,7 @@ NaniKore（net10.0，Avalonia 宿主）
 | 4 | **LibNMeCab AOT 存活**：trim 分析 + 真实日/中注音 | **成立**（2026-10-25，issue 004-x） | NativeAOT 发布 **0 警告 / 0 错误**（`IlcTrimMetadata` 下零 IL2xxx，无需保留描述符）；exe 1.46 MB；ja/zh 真实词典（IPAdic + CC-CEDICT→MeCab，均 UTF-8）上 11 条金样本 + 原始分词 + 确定性断言全 PASS；JIT vs AOT 确定性输出 **MATCH**（逐字节等价）；真·隔离阴性对照 exit 2 不崩；`InvariantGlobalization=true` 对 MeCab 无副作用 | LibNMeCab 0.10.2 AOT 零警告可用，注音器按原样接回、不需惰性降级，阻断项 4 的退路均不触发；裁决 8 的 MeCab 部分获实测支撑（UTF-8 词典走内建编码）；四个未验证依赖收敛为 SQLite native（穿刺 7）一项 |
 | 5 | **振假名在 Avalonia 的可行形态**：`SelectableTextBlock` + `Inlines` + 两行堆叠词元 | **成立**（2026-11-01，issue 005-x） | `InlineUIContainer` 在字符流中确定性占据 1 个 `U+FFFC` 字符，通过偏移量双向累加建立 O(N) 映射，三种复制格式（纯正文/带注音/纯读音）全量与子选区 13 项断言全 PASS；词元在拖选中表现为不可分割的原子单元，划选顺滑；双击切 TextBox 就地编辑与失焦恢复完好复刻；NativeAOT 发布 **0 警告 / 0 错误**，exe 13.93 MB，干净环境无运行时自测全绿 | 退路方案无需触发（无需降级为整段只读，保留原生划选）；P3（结果面板）的原型直接由 `AvaloniaRubyDocumentBuilder` 与 `AvaloniaRubyInlineControl` 承接；剪贴板接口对齐 Avalonia 12 的 `DataTransfer` |
 | 6 | **无边框全屏浮层 + 全局热键 + 不抢焦点面板**：三个窗口层级问题一次打通 | **成立**（2026-11-01，issue 006-x） | 纯 Win32 BitBlt 抓屏直灌 SKBitmap（摆脱 System.Drawing）；HWND 强制对齐覆盖全虚拟桌面（含负坐标与混合 DPI），选区与物理像素 1:1 精准对齐；纯 Win32 消息专用窗口承载热键，注册/回调/1409冲突拦截/录制期注销三态全绿，0 委托分配与反射；结果面板 `ShowActivated=false` + `SetWindowPos(SWP_NOACTIVATE)` 严格保护前台焦点不抢夺，主动点击交互正常；NativeAOT 发布 **0 警告 / 0 错误**，exe 13.62 MB，干净环境无运行时自测 21 项断言全 PASS | 平台层核心服务与表现层三大硬风险全通；P2 批次直接由 `DesktopCapturer`、`SelectionOverlayWindow`、`Win32HotkeyHost` 承接，彻底扫清 WinForms/System.Drawing 移除障碍；P3 结果面板不抢焦点方案定案 |
+| 7 | **SQLite native 在 NativeAOT 下的旁置加载**：`e_sqlite3.dll` 作为 RID 资产随包旁置根目录自动探测 + 收藏持久化 | **成立**（2026-11-01，issue 007-x） | NativeAOT 发布 **0 警告 / 0 错误**（零 `NoWarn`）；产物恰为 2 个文件：精简 exe 2.24 MB + 旁置 `e_sqlite3.dll` 1.89 MB = 4.13 MB，PE 无 CLR 头；标准原生探测自动发现并加载旁置 DLL，零自定义解析代码；干净环境抹除 SDK/运行时下 SqliteFavoriteService 全生命周期（惰性建库/CRUD/UTF-8多语言/Upsert/归一化去重/跨实例持久化/修改冲突拦截/删除）与 EnglishIpaDictionary 只读参数化查询等 10 模块 **51 项断言全 PASS**；`InvariantGlobalization=true` 模式兼容良好；阴性对照（缺失 DLL 时退出码 -1073740791）拦截生效 | 四大核心依赖可行性全部打通并收敛；P3 批次直接复用 `SqliteFavoriteService.cs` 与 `EnglishIpaDictionary.cs`，无需任何 AOT 适配胶水；P6 目录契约（根目录精简 exe + 4 个原生 DLL）坐实；裁决 8 全球化审计全面闭环 |
 
 ### 分批推进（P1–P6，P0 通过后才授权）
 
@@ -423,7 +424,8 @@ NaniKore（net10.0，Avalonia 宿主）
 | [004-x-穿刺4-libnmecab-nativeaot存活与日中注音等价](issues/004-x-穿刺4-libnmecab-nativeaot存活与日中注音等价.md) | 穿刺 4：LibNMeCab AOT 存活 + 日/中注音等价 | **已关闭**（2026-10-25，结论「成立」；spec 已回写） |
 | [005-x-穿刺5-振假名在avalonia的可行形态](issues/005-x-穿刺5-振假名在avalonia的可行形态.md) | 穿刺 5：振假名在 Avalonia 的可行形态 | **已关闭**（2026-11-01，结论「成立」；spec 已回写） |
 | [006-x-穿刺6-无边框全屏浮层全局热键与不抢焦点面板](issues/006-x-穿刺6-无边框全屏浮层全局热键与不抢焦点面板.md) | 穿刺 6：无边框全屏浮层 + 全局热键 + 不抢焦点面板 | **已关闭**（2026-11-01，结论「成立」；spec 已回写） |
-| 007–008 | 穿刺 7–8，按上表顺序；006 关闭后建下一条 | 未创建（下一条 = 穿刺 7：SQLite native 在 NativeAOT 下的旁置加载） |
+| [007-x-穿刺7-sqlite-nativeaot旁置加载与持久化](issues/007-x-穿刺7-sqlite-nativeaot旁置加载与持久化.md) | 穿刺 7：SQLite native 在 NativeAOT 下的旁置加载与持久化 | **已关闭**（2026-11-01，结论「成立」；spec 已回写） |
+| 008 | 穿刺 8：主题与视觉保真度 | 未创建（下一条 = 穿刺 8：主题与视觉保真度原型比对） |
 
 **P1–P6 批次 issue：** 待 P0 风险结论表成形后再切（上表是建议切片，不是承诺）。编号在本 Epic 的 `issues/` 树内独立起算。
 
@@ -440,7 +442,7 @@ NaniKore（net10.0，Avalonia 宿主）
 5. **托盘菜单主题**：接受系统原生菜单不跟随应用深色主题；记为有界简化，升级方向 = 自绘托盘弹出窗（Avalonia `Popup` + 自绘菜单项），触发条件 = 主人认为视觉割裂不可接受
 6. **`deps/` 位置与根目录口径**（2026-10-25 修订，取代原「根目录仅 exe」口径）：`deps/` 与 `.data/` 仍是仅有的两个子目录；根目录 = 精简 exe + 随包原生 DLL（`libSkiaSharp` / `libHarfBuzzSharp` / `av_libglesv2` / `e_sqlite3.dll`）+ `config.template.yaml` + `NOTICE`。主人明确偏好「exe 尽量精简、依赖拆 DLL、更新方便」胜过「根目录单独一个 exe」。
 7. **分支名与合并方式**：`avalonia` + squash 回 `main`
-8. **`InvariantGlobalization`**：默认开启（省约 30 MB）；P0 审计（4 文件 9 处 `CultureInfo`、`NumberBox`→`NumericUpDown` 的 `int.Parse`、MeCab/SQLite 区域依赖）后定稿。**（2026-10-25 穿刺 4 实测：MeCab 侧成立——ja/zh 词典为 UTF-8，走 .NET 内建 UTF-8 编码，与全球化模式无关；边界 = 仅限 UTF-8 词典，若将来引入 Shift_JIS/EUC-JP 词典需 CodePages provider 并重测。SQLite 侧待穿刺 7。）**
+8. **`InvariantGlobalization`**：默认开启（省约 30 MB）；P0 审计（4 文件 9 处 `CultureInfo`、`NumberBox`→`NumericUpDown` 的 `int.Parse`、MeCab/SQLite 区域依赖）后定稿。**（2026-10-25 穿刺 4 实测：MeCab 侧成立——ja/zh 词典为 UTF-8，走 .NET 内建 UTF-8 编码，与全球化模式无关；2026-11-01 穿刺 7 实测：SQLite 侧成立——SQLite 原生 C 库内部处理 UTF-8 基于字节流与内建 ASCII 规则，浮点数/ISO 日期/多语言文本与 LIKE 均不受影响；全球化审计全面通过实测支撑。）**
 9.  **划选体验降级**：跨词元原生划选尽量保证，提前测试评估可行性（穿刺 5 结论后定）。
 10. **UPX**：默认不用（牺牲启动速度与内存）；仅记录，不建议开。
 
