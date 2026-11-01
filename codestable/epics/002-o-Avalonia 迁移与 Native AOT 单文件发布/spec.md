@@ -398,6 +398,7 @@ NaniKore（net10.0，Avalonia 宿主）
 | 5 | **振假名在 Avalonia 的可行形态**：`SelectableTextBlock` + `Inlines` + 两行堆叠词元 | **成立**（2026-11-01，issue 005-x） | `InlineUIContainer` 在字符流中确定性占据 1 个 `U+FFFC` 字符，通过偏移量双向累加建立 O(N) 映射，三种复制格式（纯正文/带注音/纯读音）全量与子选区 13 项断言全 PASS；词元在拖选中表现为不可分割的原子单元，划选顺滑；双击切 TextBox 就地编辑与失焦恢复完好复刻；NativeAOT 发布 **0 警告 / 0 错误**，exe 13.93 MB，干净环境无运行时自测全绿 | 退路方案无需触发（无需降级为整段只读，保留原生划选）；P3（结果面板）的原型直接由 `AvaloniaRubyDocumentBuilder` 与 `AvaloniaRubyInlineControl` 承接；剪贴板接口对齐 Avalonia 12 的 `DataTransfer` |
 | 6 | **无边框全屏浮层 + 全局热键 + 不抢焦点面板**：三个窗口层级问题一次打通 | **成立**（2026-11-01，issue 006-x） | 纯 Win32 BitBlt 抓屏直灌 SKBitmap（摆脱 System.Drawing）；HWND 强制对齐覆盖全虚拟桌面（含负坐标与混合 DPI），选区与物理像素 1:1 精准对齐；纯 Win32 消息专用窗口承载热键，注册/回调/1409冲突拦截/录制期注销三态全绿，0 委托分配与反射；结果面板 `ShowActivated=false` + `SetWindowPos(SWP_NOACTIVATE)` 严格保护前台焦点不抢夺，主动点击交互正常；NativeAOT 发布 **0 警告 / 0 错误**，exe 13.62 MB，干净环境无运行时自测 21 项断言全 PASS | 平台层核心服务与表现层三大硬风险全通；P2 批次直接由 `DesktopCapturer`、`SelectionOverlayWindow`、`Win32HotkeyHost` 承接，彻底扫清 WinForms/System.Drawing 移除障碍；P3 结果面板不抢焦点方案定案 |
 | 7 | **SQLite native 在 NativeAOT 下的旁置加载**：`e_sqlite3.dll` 作为 RID 资产随包旁置根目录自动探测 + 收藏持久化 | **成立**（2026-11-01，issue 007-x） | NativeAOT 发布 **0 警告 / 0 错误**（零 `NoWarn`）；产物恰为 2 个文件：精简 exe 2.24 MB + 旁置 `e_sqlite3.dll` 1.89 MB = 4.13 MB，PE 无 CLR 头；标准原生探测自动发现并加载旁置 DLL，零自定义解析代码；干净环境抹除 SDK/运行时下 SqliteFavoriteService 全生命周期（惰性建库/CRUD/UTF-8多语言/Upsert/归一化去重/跨实例持久化/修改冲突拦截/删除）与 EnglishIpaDictionary 只读参数化查询等 10 模块 **51 项断言全 PASS**；`InvariantGlobalization=true` 模式兼容良好；阴性对照（缺失 DLL 时退出码 -1073740791）拦截生效 | 四大核心依赖可行性全部打通并收敛；P3 批次直接复用 `SqliteFavoriteService.cs` 与 `EnglishIpaDictionary.cs`，无需任何 AOT 适配胶水；P6 目录契约（根目录精简 exe + 4 个原生 DLL）坐实；裁决 8 全球化审计全面闭环 |
+| 8 | **主题与视觉保真度**：用 Epic 001 视觉契约在 Avalonia 里做原型比对，验证 Route A 路线（FluentTheme + Palette 覆写） | **成立**（2026-11-01，issue 008-x） | NativeAOT 发布 **0 警告 / 0 错误**，exe 14.01 MB + 原生 DLL 17.97 MB = 31.97 MB；干净环境无 .NET 运行时自测 8 模块 **40 项断言全 PASS**；Route A 完美承载双模原文区、译文区、划词气泡、精讲微卡片与状态指标栏，深浅色下对比度全部超越 WCAG AAA 7:1（8.91:1 / 13.92:1 / 13.20:1）；深浅色热切换零闪烁；刻意现代化（Win11 Fluent 2 微圆角与微动效）显著提升视觉品质 | 裁决 12 定案：正式选定 Route A，**彻底否决并免除全量移植 1060 行旧 XAML 模板的庞大负担**；P1 基座工作量直接减负约 800 行；P3 结果面板原型直接就绪；**P0 八条穿刺全数圆满打通，进入 P1 授权准备态** |
 
 ### 分批推进（P1–P6，P0 通过后才授权）
 
@@ -425,7 +426,7 @@ NaniKore（net10.0，Avalonia 宿主）
 | [005-x-穿刺5-振假名在avalonia的可行形态](issues/005-x-穿刺5-振假名在avalonia的可行形态.md) | 穿刺 5：振假名在 Avalonia 的可行形态 | **已关闭**（2026-11-01，结论「成立」；spec 已回写） |
 | [006-x-穿刺6-无边框全屏浮层全局热键与不抢焦点面板](issues/006-x-穿刺6-无边框全屏浮层全局热键与不抢焦点面板.md) | 穿刺 6：无边框全屏浮层 + 全局热键 + 不抢焦点面板 | **已关闭**（2026-11-01，结论「成立」；spec 已回写） |
 | [007-x-穿刺7-sqlite-nativeaot旁置加载与持久化](issues/007-x-穿刺7-sqlite-nativeaot旁置加载与持久化.md) | 穿刺 7：SQLite native 在 NativeAOT 下的旁置加载与持久化 | **已关闭**（2026-11-01，结论「成立」；spec 已回写） |
-| 008 | 穿刺 8：主题与视觉保真度 | 未创建（下一条 = 穿刺 8：主题与视觉保真度原型比对） |
+| [008-x-穿刺8-主题与视觉保真度原型比对](issues/008-x-穿刺8-主题与视觉保真度原型比对.md) | 穿刺 8：主题与视觉保真度原型比对 | **已关闭**（2026-11-01，结论「成立」；spec 已回写） |
 
 **P1–P6 批次 issue：** 待 P0 风险结论表成形后再切（上表是建议切片，不是承诺）。编号在本 Epic 的 `issues/` 树内独立起算。
 
@@ -449,7 +450,7 @@ NaniKore（net10.0，Avalonia 宿主）
 **已裁决（2026-10-25，主人全部采纳审计建议）：**
 
 11. **托盘警告通道**：选 (b)——保留 Avalonia `TrayIcon` 管图标与菜单，气泡替换为自绘 `WS_EX_NOACTIVATE` 通知小窗（`ABM_GETTASKBARPOS` 定位 + 定时淡出，约 +80–120 行，顺带做深浅色一致）。若 P2 批次（平台服务）发现小窗定位/焦点时序调不稳，退化到 (a) `ITrayHost` 直连 `Shell_NotifyIcon`（行为与现状逐字一致，代价约 +100–150 行 + 菜单退化）。
-12. **主题路线与视觉契约权威性**：默认 FluentTheme + Palette 资源键覆写 + 局部 Style；**允许 deliberate modernization**（12.1 的 Win11 圆角等），但每条偏离必须显式记录在本 spec 的取舍清单，不允许静默漂移；穿刺 8 用原型比对验证「覆写能达到 Epic 001 视觉契约」。全量移植 1060 行自定义模板仅作覆写失败时的备选。
+12. **主题路线与视觉契约权威性**：默认 FluentTheme + Palette 资源键覆写 + 局部 Style；**允许 deliberate modernization**（12.1 的 Win11 圆角等），但每条偏离必须显式记录在本 spec 的取舍清单，不允许静默漂移；穿刺 8 用原型比对验证「覆写能达到 Epic 001 视觉契约」。全量移植 1060 行自定义模板仅作覆写失败时的备选。**（2026-11-01 穿刺 8 实测定案）：正式选定默认路线 Route A（FluentTheme + Palette 语义色板覆写 + 局部 Style），正式放弃备选路线 Route B（全量移植 1060 行自定义 WPF 模板）。依据：穿刺 8 原型 40 项断言全 PASS，草地绿品牌色、分层底色与双模/卡片/气泡交互 100% 达成，WCAG AAA 对比度全部通过（8.91:1 / 13.92:1 / 13.20:1），深浅色热切换顺畅；消解 1060 行脆弱 XAML 维护包袱，P1 基座代码量骤减约 800 行。**
 13. **ILC 警告预算**：定向 `NoWarn` + 白名单——集中在 csproj 一个 ItemGroup，逐条列库名/警告号/理由/复测条件；**项目自身代码的 ILC 警告零容忍全修**；白名单清单作为关闭条件的人工过审项。
 14. **体积硬指标**：**记录值，不设硬指标**（主人原话「Q4 其实没那么严格」）。硬指标收敛为：零运行时依赖 + 免安装 + 解压即用 + 目录契约；exe 尽量精简（目标 ≤ 18 MB）即可，超了写明原因。UPX 与压缩内嵌继续搁置。
 15. **SQLite 归宿**（同日随交付形态修订）：**不静态链接**；`e_sqlite3.dll` 随包旁置根目录（主旅程依赖，不走 `deps/` 下载），收藏零外置且无降级文案负担。
@@ -474,7 +475,7 @@ NaniKore（net10.0，Avalonia 宿主）
 
 ## 关闭时要满足
 
-- [ ] P0 八条穿刺全部有结论（成立/不成立/退路）并回写本 spec。
+- [x] P0 八条穿刺全部有结论（成立/不成立/退路）并回写本 spec。
 - [ ] `src/NaniKore` 内无 `System.Windows`、`System.Windows.Forms`、`System.Drawing` 引用；`GlobalUsings.cs` 的 WPF/WinForms 别名体系删除。
 - [ ] `./scripts/dev.ps1 test` 全量自测全绿（审计修订后的现状基线：非 UI 88 + UI 23 个测试方法、609 条断言，含 10-24 起的 OcrHttpServer 4 条；UI 相关按新引擎重写，数量不回退）。
 - [ ] 现有 `.data/config.yaml`、`keys.bin`、`collections.db` 副本在新程序上零迁移可用（人工确认）。
