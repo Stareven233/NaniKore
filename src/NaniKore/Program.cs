@@ -1,4 +1,6 @@
-using System.Drawing.Imaging;
+using Avalonia;
+using NaniKore.Imaging;
+using SkiaSharp;
 using System.Text.Json;
 using NaniKore.App;
 using NaniKore.Config;
@@ -7,7 +9,7 @@ using NaniKore.Interop;
 using NaniKore.Ocr;
 using NaniKore.Phonetics;
 using NaniKore.Translation;
-using Avalonia;
+
 
 namespace NaniKore;
 
@@ -193,17 +195,19 @@ internal static class Program
 
         try
         {
-            using var image = new Bitmap(Path.GetFullPath(args[optionIndex + 1]));
+            var imagePath = Path.GetFullPath(args[optionIndex + 1]);
+            using var image = SKBitmap.Decode(imagePath);
+            if (image is null)
+            {
+                Console.Error.WriteLine($"Failed to decode image from {imagePath}");
+                return 1;
+            }
             using var engine = OcrEngine.CreateDefault();
             var result = engine.Recognize(image);
             if (args.Contains("--json", StringComparer.OrdinalIgnoreCase))
             {
-                var json = JsonSerializer.Serialize(result.ToDto(), new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-                });
-                Console.WriteLine(json);
+                var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(result.ToDto(), NaniKoreJsonSerializerContext.Default.OcrResponseDto);
+                Console.WriteLine(System.Text.Encoding.UTF8.GetString(jsonBytes));
                 return 0;
             }
             foreach (var line in result.Lines)
@@ -335,36 +339,26 @@ internal static class Program
             var systemPrompt = PromptTemplates.GetSystemPrompt(request, prompts);
 
             // 字段名即 prompt-preview 页面（经 serve-preview.ps1 代理 /api/dump）的消费契约，改名需同步页面与中转服务。
-            var report = new
-            {
-                kind = kind == UnderstandKind.Explain ? "explain" : "translate",
-                path = DescribePromptPath(path),
-                target_language = targetLanguage,
-                source_preview = PreviewText(sourceText, string.Empty),
-                detection = new
-                {
-                    features = DescribeFeatures(detection),
-                    needs_japanese_ruby = detection.NeedsJapaneseRuby,
-                    needs_english_ipa = detection.NeedsEnglishIpa,
-                    is_pure_hanzi_japanese_candidate = detection.IsPureHanziJapaneseCandidate,
-                },
-                sections = sections
-                    .Select(section => new
-                    {
-                        name = section.Name,
-                        source = DescribeSectionSource(section.Source),
-                        text = section.Text,
-                    })
-                    .ToArray(),
-                system_prompt = systemPrompt,
-                estimated_tokens = TokenEstimator.Estimate(systemPrompt),
-            };
+            var report = new PromptDumpReportDto(
+                kind == UnderstandKind.Explain ? "explain" : "translate",
+                DescribePromptPath(path),
+                targetLanguage,
+                PreviewText(sourceText, string.Empty),
+                new PromptDumpDetectionDto(
+                    DescribeFeatures(detection),
+                    detection.NeedsJapaneseRuby,
+                    detection.NeedsEnglishIpa,
+                    detection.IsPureHanziJapaneseCandidate),
+                sections.Select(s => new PromptDumpSectionDto(s.Name, DescribeSectionSource(s.Source), s.Text)).ToArray(),
+                systemPrompt,
+                TokenEstimator.Estimate(systemPrompt));
 
-            var json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
+            var json = JsonSerializer.Serialize(report, NaniKoreJsonSerializerContext.Default.PromptDumpReportDto);
             if (args.Contains("--json", StringComparer.OrdinalIgnoreCase))
             {
                 // 机器通道：stdout 只留 JSON，供生成器 ConvertFrom-Json 直接消费。
                 Console.WriteLine(json);
+
                 return 0;
             }
 
@@ -534,10 +528,16 @@ internal static class Program
 
         try
         {
-            using var image = new Bitmap(Path.GetFullPath(args[optionIndex + 1]));
-            using var stream = new MemoryStream();
-            image.Save(stream, ImageFormat.Png);
-            return await RunTranslationAsync(args, string.Empty, stream.ToArray()).ConfigureAwait(false);
+            var imagePath = Path.GetFullPath(args[optionIndex + 1]);
+            using var image = SKBitmap.Decode(imagePath);
+            if (image is null)
+            {
+                Console.Error.WriteLine($"Failed to decode image from {imagePath}");
+                return 1;
+            }
+
+            var pngBytes = PngEncoder.Encode(image);
+            return await RunTranslationAsync(args, string.Empty, pngBytes).ConfigureAwait(false);
         }
         catch (Exception exception)
         {

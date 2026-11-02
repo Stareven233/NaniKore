@@ -759,8 +759,7 @@ internal static partial class SelfTest
         using var gemini = JsonDocument.Parse("""
             {"candidates":[{"content":{"parts":[{"text":"第一段"},{"text":"第二段"}]}}]}
             """);
-        using var emptyVisionContent = JsonDocument.Parse(JsonSerializer.Serialize(
-            ClaudeProvider.CreateContent((ReadOnlyMemory<byte>?)new byte[] { 1 }, string.Empty)));
+        var emptyVisionBlocks = ClaudeProvider.CreateContent((ReadOnlyMemory<byte>?)new byte[] { 1 }, string.Empty);
         Check(
             "provider text extraction handles OpenAI content arrays",
             TranslationProviderBase.GetTextContent(openAi.RootElement, "choices", "0", "delta", "content") == "视觉结果");
@@ -769,9 +768,7 @@ internal static partial class SelfTest
             TranslationProviderBase.GetTextContent(gemini.RootElement, "candidates") == "第一段第二段");
         Check(
             "Claude vision request omits an empty text content block",
-            emptyVisionContent.RootElement.ValueKind == JsonValueKind.Array &&
-            emptyVisionContent.RootElement.GetArrayLength() == 1 &&
-            emptyVisionContent.RootElement[0].GetProperty("type").GetString() == "image");
+            emptyVisionBlocks is System.Text.Json.Nodes.JsonArray { Count: 1 } blocks && blocks[0]?["type"]?.GetValue<string>() == "image");
     }
 
     private static void TestProviderCapabilitiesAndErrors()
@@ -1336,7 +1333,7 @@ internal static partial class SelfTest
     /// <summary>服务端 400 回包；报文走 error.message，与 ProviderHttpException 的解析口径一致。</summary>
     private static HttpResponseMessage Rejected(string message) => new(HttpStatusCode.BadRequest)
     {
-        Content = new StringContent(JsonSerializer.Serialize(new { error = new { message } })),
+        Content = new StringContent($"{{\"error\":{{\"message\":\"{message}\"}}}}", System.Text.Encoding.UTF8, "application/json"),
     };
 
     /// <summary>一段成功的 SSE 流：单个 content 增量后 [DONE]。</summary>

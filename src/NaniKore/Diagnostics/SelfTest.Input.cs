@@ -1,6 +1,5 @@
 using System.ComponentModel;
-using System.Drawing;
-using System.Drawing.Imaging;
+
 using System.Runtime.InteropServices;
 using Avalonia;
 using NaniKore.App;
@@ -146,8 +145,8 @@ internal static partial class SelfTest
     /// </summary>
     private static void TestPasteInputFallbackChain()
     {
-        OcrResult FakeOcr(Bitmap bitmap) => new(
-            [new OcrLine(new Rectangle(0, 0, 4, 4), "识别行一", 0.99f), new OcrLine(new Rectangle(0, 8, 4, 4), "识别行二", 0.98f)],
+        OcrResult FakeOcr(SKBitmap bitmap) => new(
+            [new OcrLine(new SKRectI(0, 0, 4, 4), "识别行一", 0.99f), new OcrLine(new SKRectI(0, 8, 4, 12), "识别行二", 0.98f)],
             TimeSpan.FromMilliseconds(120));
 
         // 1) 选区文本：Ctrl+C 后剪贴板出现新文本 → 直接采用，剪贴板不做任何还原。
@@ -185,7 +184,7 @@ internal static partial class SelfTest
             clipboardText.Current?.Text == "剪贴板原文");
 
         // 3) 剪贴板图像 × 视觉能力：PNG 直喂，剪贴板不动。
-        using var rawImg = new Bitmap(8, 6, PixelFormat.Format32bppArgb);
+        using var rawImg = new SKBitmap(8, 6, SKColorType.Bgra8888, SKAlphaType.Premul);
         var visionClipboard = new FakeClipboardGateway { Current = ClipboardSnapshot.FromImage(rawImg) };
         var visionOutcome = PasteInputAcquirer.Acquire(Request(visionClipboard, ClipboardImageRoute.DirectFeed, FakeOcr));
         Check(
@@ -254,20 +253,20 @@ internal static partial class SelfTest
             ocrClipboard.Current?.HasImage == true);
 
         // 4b) OCR 之前透明区域已铺白：喂进去的必须是不透明位图。
-        PixelFormat? ocrPixelFormat = null;
-        int? ocrCorner = null;
+        SKAlphaType? ocrAlphaType = null;
+        SKColor? ocrCorner = null;
         var flattenClipboard = new FakeClipboardGateway { Current = ClipboardSnapshot.FromImage(rawImg) };
         _ = PasteInputAcquirer.Acquire(Request(flattenClipboard, ClipboardImageRoute.LocalOcr, bitmap =>
         {
-            ocrPixelFormat = bitmap.PixelFormat;
-            ocrCorner = bitmap.GetPixel(0, 0).ToArgb();
+            ocrAlphaType = bitmap.AlphaType;
+            ocrCorner = bitmap.GetPixel(0, 0);
             return FakeOcr(bitmap);
         }));
         Check(
             "transparency is flattened to white before local ocr",
-            ocrPixelFormat is PixelFormat.Format32bppRgb &&
-            ocrCorner == Color.White.ToArgb(),
-            $"format={ocrPixelFormat} pixel={ocrCorner:X8}");
+            ocrAlphaType == SKAlphaType.Opaque &&
+            ocrCorner == SKColors.White,
+            $"alpha={ocrAlphaType} pixel={ocrCorner}");
 
         // 4c) 剪贴板同时含文本与图像：文本优先，图像既不喂 OCR 也不写回剪贴板。
         var mixed = new FakeClipboardGateway
@@ -275,7 +274,7 @@ internal static partial class SelfTest
             Current = new ClipboardSnapshot(
                 [new ClipboardFormat("UnicodeText", System.Text.Encoding.Unicode.GetBytes("混合原文\0"), NativeMethods.CF_UNICODETEXT), new ClipboardFormat("Bitmap", [], NativeMethods.CF_BITMAP)],
                 "混合原文",
-                new Bitmap(8, 6))
+                new SKBitmap(8, 6, SKColorType.Bgra8888, SKAlphaType.Premul))
         };
         var mixedOutcome = PasteInputAcquirer.Acquire(Request(mixed, ClipboardImageRoute.LocalOcr, _ =>
             throw new InvalidOperationException("文本优先时绝不应启动 OCR。")));
@@ -305,7 +304,7 @@ internal static partial class SelfTest
         {
             racing.CopyReplacesClipboardWith("用户在 OCR 期间复制的新内容");
             racing.ApplyCopy();
-            return FakeOcr(new Bitmap(1, 1));
+            return FakeOcr(new SKBitmap(1, 1, SKColorType.Bgra8888, SKAlphaType.Premul));
         }));
         Check(
             "a clipboard change during ocr blocks the write-back and keeps the user's new content",
@@ -367,7 +366,7 @@ internal static partial class SelfTest
         {
             original = gateway.Snapshot();
 
-            using var image = new Bitmap(8, 6);
+            using var image = new SKBitmap(8, 6, SKColorType.Bgra8888, SKAlphaType.Premul);
             var customBytes = System.Text.Encoding.UTF8.GetBytes("自定义格式数据");
             var testFormats = new List<ClipboardFormat>
             {
@@ -429,8 +428,9 @@ internal static partial class SelfTest
         {
             original = gateway.Snapshot();
 
-            using var image = new Bitmap(8, 6);
-            var hBitmap = image.GetHbitmap();
+            var screenDc = NativeMethods.GetDC(0);
+            var hBitmap = NativeMethods.CreateCompatibleBitmap(screenDc, 8, 6);
+            NativeMethods.ReleaseDC(0, screenDc);
             var text = "外来剪贴板文本\0";
             var chars = text.ToCharArray();
             var hMem = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (nuint)(chars.Length * sizeof(char)));
@@ -580,7 +580,7 @@ internal static partial class SelfTest
     private static PasteInputRequest Request(
         FakeClipboardGateway clipboard,
         ClipboardImageRoute imageRoute,
-        Func<Bitmap, OcrResult> recognize) =>
+        Func<SKBitmap, OcrResult> recognize) =>
         new(imageRoute, recognize, clipboard, clipboard.ApplyCopy, _ => false);
 
     /// <summary>内存剪贴板：记录还原与写回，供断言剪贴板终态。</summary>
@@ -604,7 +604,7 @@ internal static partial class SelfTest
 
         public void CopyReplacesClipboardWithImage()
         {
-            using var img = new Bitmap(8, 6, PixelFormat.Format32bppArgb);
+            using var img = new SKBitmap(8, 6, SKColorType.Bgra8888, SKAlphaType.Premul);
             CopyResult = ClipboardSnapshot.FromImage(img);
         }
 

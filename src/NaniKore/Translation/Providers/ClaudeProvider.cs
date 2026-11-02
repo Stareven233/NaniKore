@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using NaniKore.Config;
 
 namespace NaniKore.Translation.Providers;
@@ -57,25 +58,23 @@ internal sealed class ClaudeProvider : TranslationProviderBase
     internal HttpRequestMessage CreateRequest(UnderstandRequest request)
     {
         var system = PromptTemplates.GetSystemPrompt(request, Prompts);
-        object messages;
+        var messages = new JsonArray();
         if (request.Session is { Messages.Count: > 1 } session)
         {
-            var list = new List<object>();
             foreach (var m in session.Messages)
             {
                 var role = m.Role == ChatRole.Assistant ? "assistant" : "user";
                 var content = CreateContent(m.ImagePng, m.Text);
-                list.Add(new { role, content });
+                AppendNode(messages, new JsonObject { ["role"] = role, ["content"] = content });
             }
-            messages = list.ToArray();
         }
         else
         {
             var content = CreateContent(request.ImagePng, request.SourceText);
-            messages = new[] { new { role = "user", content } };
+            AppendNode(messages, new JsonObject { ["role"] = "user", ["content"] = content });
         }
 
-        var bodyDict = new Dictionary<string, object?>
+        var body = new JsonObject
         {
             ["model"] = Profile.Model,
             ["stream"] = true,
@@ -86,32 +85,39 @@ internal sealed class ClaudeProvider : TranslationProviderBase
 
         if (Profile.EnableThinking)
         {
-            bodyDict["thinking"] = new { type = "enabled", budget_tokens = 1024 };
+            body["thinking"] = new JsonObject { ["type"] = "enabled", ["budget_tokens"] = 1024 };
         }
 
-        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, "v1/messages"), bodyDict);
+        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, "v1/messages"), body);
         message.Headers.Add("x-api-key", ApiKey);
         message.Headers.Add("anthropic-version", "2023-06-01");
         return message;
     }
 
-    internal static object CreateContent(ReadOnlyMemory<byte>? imagePng, string? sourceText)
+    internal static JsonNode CreateContent(ReadOnlyMemory<byte>? imagePng, string? sourceText)
     {
         if (imagePng is not { Length: > 0 } image)
         {
-            return sourceText ?? string.Empty;
+            return JsonValue.Create(sourceText ?? string.Empty);
         }
 
-        var blocks = new List<object>
+        var imageBlock = new JsonObject
         {
-            new { type = "image", source = new { type = "base64", media_type = "image/png", data = Base64(image) } },
+            ["type"] = "image",
+            ["source"] = new JsonObject
+            {
+                ["type"] = "base64",
+                ["media_type"] = "image/png",
+                ["data"] = Base64(image),
+            },
         };
-        if (!string.IsNullOrWhiteSpace(sourceText))
+
+        if (string.IsNullOrWhiteSpace(sourceText))
         {
-            blocks.Add(new { type = "text", text = sourceText });
+            return NodeArray(imageBlock);
         }
 
-        return blocks;
+        return NodeArray(imageBlock, new JsonObject { ["type"] = "text", ["text"] = sourceText });
     }
 
     internal static (string Text, string Thinking) ExtractDelta(SseEvent frame)

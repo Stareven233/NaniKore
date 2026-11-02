@@ -28,8 +28,6 @@
     <IlcTrimMetadata>true</IlcTrimMetadata>
     <DebugType>none</DebugType>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <!-- 待 P5 批次系统性完成 JSON 源生成器改造后恢复严格 TreatWarningsAsErrors -->
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
@@ -55,9 +53,6 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
     <PackageReference Include="Microsoft.Win32.SystemEvents" Version="10.0.0" />
 
-    <!-- 过渡期保持 System.Drawing.Common 供 OCR 管线使用（待 P5 统一收口到 SkiaSharp） -->
-    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
-
     <!-- 业务核心依赖 -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <!-- 纯托管日语形态素引擎（LibNMeCab 为 GPL-2.0 / LGPL-2.1 双许可，NOTICE 已登记） -->
@@ -80,14 +75,6 @@
     <EmbeddedResource Include="Phonetics\Data\*.txt">
       <LogicalName>NaniKore.Phonetics.Data.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
-  </ItemGroup>
-
-  <!-- 待 P5 批次替换为 Avalonia 的旧代码 -->
-  <ItemGroup>
-    <Compile Remove="App\NaniKoreApp.cs" />
-    <Compile Remove="App\OcrProgressWindow.xaml.cs" />
-    <Compile Remove="App\OcrResultWindow.xaml.cs" />
-    <None Remove="**\*.xaml" />
   </ItemGroup>
 
   <!-- 清理 RID 原生资产复制过来的调试符号，防止 zip 膨胀（来自穿刺 1 结论） -->

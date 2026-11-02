@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing;
+
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -340,7 +340,7 @@ internal sealed partial class ResultPanelWindow : Window
     }
 
     /// <summary>在 Windows 物理像素下将窗口对齐桌面选区附近（不抢焦点）。</summary>
-    public void PositionNearSelection(Rectangle selectionOnDesktop)
+    public void PositionNearSelection(PixelRect selectionOnDesktop)
     {
         if (!IsVisible || _windowHandle == nint.Zero || !OperatingSystem.IsWindows())
         {
@@ -353,18 +353,18 @@ internal sealed partial class ResultPanelWindow : Window
         }
 
         // 使用 Screens 获取工作区
-        var screen = Screens.ScreenFromPoint(new PixelPoint(selectionOnDesktop.Left, selectionOnDesktop.Top))
+        var screen = Screens.ScreenFromPoint(new PixelPoint(selectionOnDesktop.X, selectionOnDesktop.Y))
                      ?? Screens.Primary;
         var workArea = screen?.WorkingArea ?? new PixelRect(0, 0, 1920, 1080);
 
         var windowWidth = windowBounds.Right - windowBounds.Left;
         var windowHeight = windowBounds.Bottom - windowBounds.Top;
-        var x = Math.Clamp(selectionOnDesktop.Left, workArea.X, workArea.X + workArea.Width - windowWidth);
+        var x = Math.Clamp(selectionOnDesktop.X, workArea.X, workArea.X + workArea.Width - windowWidth);
         var y = selectionOnDesktop.Bottom + PlacementGapPixels;
 
         if (y + windowHeight > workArea.Y + workArea.Height)
         {
-            y = selectionOnDesktop.Top - PlacementGapPixels - windowHeight;
+            y = selectionOnDesktop.Y - PlacementGapPixels - windowHeight;
         }
 
         y = Math.Clamp(y, workArea.Y, workArea.Y + workArea.Height - windowHeight);

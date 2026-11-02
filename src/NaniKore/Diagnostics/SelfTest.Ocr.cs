@@ -1,7 +1,8 @@
-using System.Drawing.Imaging;
 using System.Net;
 using System.Net.Http;
+using Avalonia;
 using NaniKore.App;
+using NaniKore.Imaging;
 using NaniKore.Ocr;
 using NaniKore.Ocr.Detection;
 using NaniKore.Ocr.Imaging;
@@ -9,6 +10,7 @@ using NaniKore.Ocr.Models;
 using NaniKore.Ocr.Recognition;
 using NaniKore.Overlay;
 using NaniKore.Translation;
+using SkiaSharp;
 
 namespace NaniKore.Diagnostics;
 
@@ -29,35 +31,37 @@ internal static partial class SelfTest
     {
         Check(
             "normalizes reverse drag",
-            SelectionGeometry.Normalize(new Point(90, 70), new Point(10, 20), new Size(100, 80)) ==
-            Rectangle.FromLTRB(10, 20, 90, 70));
+            SelectionGeometry.Normalize(new PixelPoint(90, 70), new PixelPoint(10, 20), new PixelSize(100, 80)) ==
+            new PixelRect(10, 20, 80, 50));
 
         Check(
             "clamps selection to bitmap bounds",
-            SelectionGeometry.Normalize(new Point(-20, 10), new Point(130, 90), new Size(100, 80)) ==
-            Rectangle.FromLTRB(0, 10, 100, 80));
+            SelectionGeometry.Normalize(new PixelPoint(-20, 10), new PixelPoint(130, 90), new PixelSize(100, 80)) ==
+            new PixelRect(0, 10, 100, 70));
 
-        var outer = new Rectangle(0, 0, 100, 80);
-        var selection = new Rectangle(10, 20, 30, 25);
+        var outer = new PixelRect(0, 0, 100, 80);
+        var selection = new PixelRect(10, 20, 30, 25);
         var outsideArea = SelectionGeometry.GetOutsideRegions(outer, selection)
             .Sum(region => region.Width * region.Height);
         Check(
             "outside dim regions do not overlap the selection",
             outsideArea == outer.Width * outer.Height - selection.Width * selection.Height);
 
-        using var source = new Bitmap(10, 10, PixelFormat.Format32bppPArgb);
-        using var cropped = source.Clone(new Rectangle(2, 3, 4, 5), PixelFormat.Format32bppPArgb);
-        Check("bitmap crop keeps requested dimensions", cropped.Size == new Size(4, 5));
+        using var source = new SKBitmap(10, 10, SKColorType.Bgra8888, SKAlphaType.Premul);
+        var subset = new SKBitmap();
+        var croppedOk = source.ExtractSubset(subset, new SKRectI(2, 3, 6, 8));
+        Check("bitmap crop keeps requested dimensions", croppedOk && subset.Width == 4 && subset.Height == 5);
+        subset.Dispose();
     }
 
     private static void TestImageTensorConversion()
     {
         Check(
             "detector resize aligns dimensions to 32",
-            TensorImageConverter.ComputeDetectorSize(new Size(100, 50), 736, 4000) == new Size(1472, 736));
+            TensorImageConverter.ComputeDetectorSize(new SKSizeI(100, 50), 736, 4000) == new SKSizeI(1472, 736));
 
-        using var pixel = new Bitmap(1, 1, PixelFormat.Format32bppArgb);
-        pixel.SetPixel(0, 0, Color.FromArgb(255, 10, 20, 30));
+        using var pixel = new SKBitmap(1, 1, SKColorType.Bgra8888, SKAlphaType.Premul);
+        pixel.SetPixel(0, 0, new SKColor(10, 20, 30, 255)); // R=10, G=20, B=30
         var detectorConfig = new DetectorConfig(
             0.2f,
             0.45f,
@@ -100,11 +104,11 @@ internal static partial class SelfTest
             map,
             10,
             10,
-            new Size(100, 100),
+            new SKSizeI(100, 100),
             new DetectorConfig(0.2f, 0.45f, 1.4f, 100, 32, 4000, [0, 0, 0], [1, 1, 1]));
         Check(
             "detector postprocess extracts and expands a connected text region",
-            boxes.Count == 1 && boxes[0].Bounds.Contains(new Rectangle(20, 30, 30, 30)));
+            boxes.Count == 1 && boxes[0].Bounds.Contains(new SKPointI(25, 35)));
     }
 
     private static void TestCtcDecoding()
@@ -127,9 +131,9 @@ internal static partial class SelfTest
     private static void TestReadingOrder()
     {
         var sorted = ReadingOrder.Sort([
-            new OcrLine(new Rectangle(80, 0, 20, 20), "right", 1),
-            new OcrLine(new Rectangle(0, 40, 20, 20), "bottom", 1),
-            new OcrLine(new Rectangle(0, 2, 20, 20), "left", 1),
+            new OcrLine(new SKRectI(80, 0, 100, 20), "right", 1),
+            new OcrLine(new SKRectI(0, 40, 20, 60), "bottom", 1),
+            new OcrLine(new SKRectI(0, 2, 20, 22), "left", 1),
         ]);
         Check(
             "OCR lines sort by row then horizontal position",
@@ -159,7 +163,7 @@ internal static partial class SelfTest
     private static void TestOcrHttpServer()
     {
         using var server = new OcrHttpServer("127.0.0.1:0", bmp => new OcrResult([
-            new OcrLine(new Rectangle(10, 20, 30, 40), "mock_http_text", 0.99f)
+            new OcrLine(new SKRectI(10, 20, 40, 60), "mock_http_text", 0.99f)
         ], TimeSpan.FromMilliseconds(42)));
 
         using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{server.Port}") };
@@ -168,10 +172,9 @@ internal static partial class SelfTest
         var healthJson = healthResp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
         Check("OcrHttpServer health endpoint returns 200 ok", healthResp.IsSuccessStatusCode && healthJson.Contains("\"status\":\"ok\""));
 
-        using var dummy = new Bitmap(10, 10, PixelFormat.Format32bppArgb);
-        using var ms = new MemoryStream();
-        dummy.Save(ms, ImageFormat.Png);
-        var postContent = new ByteArrayContent(ms.ToArray());
+        using var dummy = new SKBitmap(10, 10, SKColorType.Bgra8888, SKAlphaType.Premul);
+        var pngBytes = PngEncoder.Encode(dummy);
+        var postContent = new ByteArrayContent(pngBytes);
         var postResp = client.PostAsync("/ocr", postContent).GetAwaiter().GetResult();
         var postJson = postResp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
         Check("OcrHttpServer recognizes raw image binary", postResp.IsSuccessStatusCode && postJson.Contains("mock_http_text") && postJson.Contains("\"elapsed_ms\""));
@@ -179,7 +182,7 @@ internal static partial class SelfTest
         var tempFile = Path.Combine(Path.GetTempPath(), $"nanikore_test_{Guid.NewGuid():N}.png");
         try
         {
-            dummy.Save(tempFile, ImageFormat.Png);
+            File.WriteAllBytes(tempFile, pngBytes);
             var queryResp = client.PostAsync($"/ocr?path={Uri.EscapeDataString(tempFile)}", null).GetAwaiter().GetResult();
             var queryJson = queryResp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
             Check("OcrHttpServer recognizes image via path query", queryResp.IsSuccessStatusCode && queryJson.Contains("mock_http_text"));
@@ -201,4 +204,3 @@ internal static partial class SelfTest
 
     private static bool NearlyEqual(float left, float right) => MathF.Abs(left - right) < 0.0001f;
 }
-

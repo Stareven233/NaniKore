@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using NaniKore.Config;
 
 namespace NaniKore.Translation.Providers;
@@ -57,45 +58,64 @@ internal sealed class GeminiProvider : TranslationProviderBase
     internal HttpRequestMessage CreateRequest(UnderstandRequest request)
     {
         var system = PromptTemplates.GetSystemPrompt(request, Prompts);
-        object contents;
+        var contents = new JsonArray();
         if (request.Session is { Messages.Count: > 1 } session)
         {
-            var list = new List<object>();
             foreach (var m in session.Messages)
             {
                 var role = m.Role == ChatRole.Assistant ? "model" : "user";
-                var parts = new List<object> { new { text = m.Text ?? string.Empty } };
+                var parts = NodeArray(new JsonObject { ["text"] = m.Text ?? string.Empty });
                 if (m.ImagePng is { Length: > 0 } image)
                 {
-                    parts.Add(new { inline_data = new { mime_type = "image/png", data = Base64(image) } });
+                    AppendNode(parts, new JsonObject
+                    {
+                        ["inline_data"] = new JsonObject
+                        {
+                            ["mime_type"] = "image/png",
+                            ["data"] = Base64(image)
+                        }
+                    });
                 }
-                list.Add(new { role, parts });
+                AppendNode(contents, new JsonObject { ["role"] = role, ["parts"] = parts });
             }
-            contents = list.ToArray();
         }
         else
         {
-            var parts = new List<object> { new { text = request.SourceText ?? string.Empty } };
+            var parts = new JsonArray();
+            if (!string.IsNullOrEmpty(request.SourceText))
+            {
+                AppendNode(parts, new JsonObject { ["text"] = request.SourceText });
+            }
             if (request.ImagePng is { Length: > 0 } image)
             {
-                parts.Add(new { inline_data = new { mime_type = "image/png", data = Base64(image) } });
+                AppendNode(parts, new JsonObject
+                {
+                    ["inline_data"] = new JsonObject
+                    {
+                        ["mime_type"] = "image/png",
+                        ["data"] = Base64(image)
+                    }
+                });
             }
-            contents = new[] { new { role = "user", parts } };
+            AppendNode(contents, new JsonObject { ["role"] = "user", ["parts"] = parts });
         }
 
-        var bodyDict = new Dictionary<string, object?>
+        var body = new JsonObject
         {
-            ["system_instruction"] = new { parts = new[] { new { text = system } } },
+            ["system_instruction"] = new JsonObject
+            {
+                ["parts"] = NodeArray(new JsonObject { ["text"] = system })
+            },
             ["contents"] = contents,
         };
 
         if (Profile.EnableThinking)
         {
-            bodyDict["generationConfig"] = new
+            body["generationConfig"] = new JsonObject
             {
-                thinkingConfig = new
+                ["thinkingConfig"] = new JsonObject
                 {
-                    thinkingBudget = -1
+                    ["thinkingBudget"] = -1
                 }
             };
         }
@@ -103,17 +123,17 @@ internal sealed class GeminiProvider : TranslationProviderBase
                  Profile.Model.Contains("2.5", StringComparison.OrdinalIgnoreCase) ||
                  Profile.Model.Contains("2.0", StringComparison.OrdinalIgnoreCase))
         {
-            bodyDict["generationConfig"] = new
+            body["generationConfig"] = new JsonObject
             {
-                thinkingConfig = new
+                ["thinkingConfig"] = new JsonObject
                 {
-                    thinkingBudget = 0
+                    ["thinkingBudget"] = 0
                 }
             };
         }
 
         var endpoint = $"models/{Uri.EscapeDataString(Profile.Model)}:streamGenerateContent?alt=sse";
-        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, endpoint), bodyDict);
+        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, endpoint), body);
         message.Headers.Add("x-goog-api-key", ApiKey);
         return message;
     }

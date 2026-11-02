@@ -5,14 +5,22 @@ using System.Text.Json;
 namespace NaniKore.Config;
 
 /// <summary>
-/// 密钥单文件（issue 017）：数据目录下的 <c>keys.bin</c> 整块 DPAPI 密文，内层是
-/// <c>{配置档名: API Key}</c> 的 JSON。密钥位置只有一个，不可改、不需要改；
-/// 文件与目录名不含档名、不含 Key，点开文件是乱码。
-/// 旧布局 <c>%APPDATA%\NaniKore\secrets\{id}.bin</c> 不读、不删、不提（零兼容立场）。
+/// 密钥单文件（issue 017 / epic 002 第 7 节）：数据目录下的 <c>keys.bin</c> 密文。
+/// 外层带有方案版本头（Scheme 1 = Windows DPAPI CurrentUser），内层是
+/// <c>{配置档名: API Key}</c> 的 JSON（经由 AOT 静态源生成）。
+/// 现有未带版本头的历史 DPAPI 密文实现零迁移自动识别兼容；文件与目录名不含档名、不含 Key。
 /// </summary>
 internal sealed class SecretStore
 {
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("NaniKore.v1");
+
+    /// <summary>
+    /// 方案版本头魔数："NKKEY" (ASCII 5 字节) + Scheme (1 字节, 0x01 = Windows DPAPI) + Version (1 字节, 0x01)
+    /// </summary>
+    private static readonly byte[] SchemeHeaderPrefix = [(byte)'N', (byte)'K', (byte)'K', (byte)'E', (byte)'Y'];
+    private const byte SchemeDpapi = 1;
+    private const byte SchemeVersion1 = 1;
+    private const int HeaderLength = 7;
 
     private readonly string _keysPath;
 
@@ -78,6 +86,7 @@ internal sealed class SecretStore
     /// <summary>
     /// 读整份映射。文件缺失、DPAPI 解不开（换用户/换机器）或 JSON 损坏一律按「未配置」处理，
     /// 返回空字典，绝不泄露密文内容、绝不抛异常打断调用方。
+    /// 自动根据文件头判断方案版本：若无 NKKEY 头则作为旧版无头 DPAPI 处理（零迁移兼容）。
     /// </summary>
     private Dictionary<string, string> LoadMap()
     {
@@ -88,11 +97,40 @@ internal sealed class SecretStore
                 return NewMap();
             }
 
+            var rawBytes = File.ReadAllBytes(_keysPath);
+            if (rawBytes.Length == 0)
+            {
+                return NewMap();
+            }
+
+            byte[] ciphertext;
+            if (rawBytes.Length >= HeaderLength &&
+                rawBytes.AsSpan(0, 5).SequenceEqual(SchemeHeaderPrefix))
+            {
+                var scheme = rawBytes[5];
+                var version = rawBytes[6];
+                // 当前仅支持 Scheme 1 (DPAPI) Version 1；未知方案安全降级为空
+                if (scheme != SchemeDpapi || version != SchemeVersion1)
+                {
+                    return NewMap();
+                }
+
+                ciphertext = rawBytes[HeaderLength..];
+            }
+            else
+            {
+                // 无头旧格式：零迁移直接作为 DPAPI 密文读取
+                ciphertext = rawBytes;
+            }
+
             var plaintext = ProtectedData.Unprotect(
-                File.ReadAllBytes(_keysPath),
+                ciphertext,
                 Entropy,
                 DataProtectionScope.CurrentUser);
-            return JsonSerializer.Deserialize<Dictionary<string, string>>(plaintext) is { } map
+
+            return JsonSerializer.Deserialize(
+                plaintext,
+                NaniKoreJsonSerializerContext.Default.DictionaryStringString) is { } map
                 ? NewMap(map)
                 : NewMap();
         }
@@ -103,18 +141,30 @@ internal sealed class SecretStore
     }
 
     /// <summary>
-    /// 整块加密写盘：先序列化 JSON 再整体 DPAPI，临时文件 + File.Move 原子替换，
-    /// 避免崩溃留下半份映射（与 ConfigStore.AtomicWrite 同一套姿势）。
+    /// 整块加密写盘：先通过源生成上下文序列化 JSON，再经由 DPAPI 加密，
+    /// 拼装方案版本头后经临时文件原子替换，避免崩溃损坏文件。
     /// </summary>
     private void WriteMap(Dictionary<string, string> map)
     {
+        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(
+            map,
+            NaniKoreJsonSerializerContext.Default.DictionaryStringString);
+
         var ciphertext = ProtectedData.Protect(
-            JsonSerializer.SerializeToUtf8Bytes(map),
+            jsonBytes,
             Entropy,
             DataProtectionScope.CurrentUser);
+
+        // 打包带方案版本头的数据包
+        var payload = new byte[HeaderLength + ciphertext.Length];
+        SchemeHeaderPrefix.CopyTo(payload, 0);
+        payload[5] = SchemeDpapi;
+        payload[6] = SchemeVersion1;
+        ciphertext.CopyTo(payload, HeaderLength);
+
         Directory.CreateDirectory(Path.GetDirectoryName(_keysPath)!);
         var temporaryPath = _keysPath + ".tmp";
-        File.WriteAllBytes(temporaryPath, ciphertext);
+        File.WriteAllBytes(temporaryPath, payload);
         File.Move(temporaryPath, _keysPath, overwrite: true);
     }
 

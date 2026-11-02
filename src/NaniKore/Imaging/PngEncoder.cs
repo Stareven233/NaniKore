@@ -17,15 +17,4 @@ internal static class PngEncoder
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);
         return data.ToArray();
     }
-
-    /// <summary>
-    /// 过渡期支持 System.Drawing.Bitmap（供尚未完成 Skia 迁移的 OCR 部分使用）。
-    /// </summary>
-    public static byte[] Encode(System.Drawing.Bitmap image)
-    {
-        ArgumentNullException.ThrowIfNull(image);
-        using var stream = new MemoryStream();
-        image.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
-        return stream.ToArray();
-    }
 }

@@ -1,11 +1,15 @@
 using System.Diagnostics;
-using System.Drawing.Imaging;
 using NaniKore.Ocr.Detection;
 using NaniKore.Ocr.Models;
 using NaniKore.Ocr.Recognition;
+using SkiaSharp;
 
 namespace NaniKore.Ocr;
 
+/// <summary>
+/// 本地 OCR 核心引擎：编排 TextDetector（文本行检测）与 TextRecognizer（字符识别）。
+/// 输入与切片全面基于 SkiaSharp SKBitmap，彻底脱离 GDI+ 与 System.Drawing。
+/// </summary>
 internal sealed class OcrEngine : IDisposable
 {
     private readonly TextDetector _detector;
@@ -28,7 +32,10 @@ internal sealed class OcrEngine : IDisposable
     public static OcrEngine CreateDefault() =>
         new(PaddleOcrModelConfig.Load(ModelLocator.FindPaddleOcrDirectory()));
 
-    public OcrResult Recognize(Bitmap image)
+    /// <summary>
+    /// 对给定位图执行完整的检测与识别，返回按自然阅读顺序排序后的文本行结果。
+    /// </summary>
+    public OcrResult Recognize(SKBitmap image)
     {
         ArgumentNullException.ThrowIfNull(image);
         var stopwatch = Stopwatch.StartNew();
@@ -37,7 +44,7 @@ internal sealed class OcrEngine : IDisposable
 
         foreach (var detection in detections)
         {
-            using var crop = image.Clone(detection.Bounds, PixelFormat.Format32bppArgb);
+            using var crop = Crop(image, detection.Bounds);
             var text = _recognizer.Recognize(crop);
             if (string.IsNullOrWhiteSpace(text.Text))
             {
@@ -54,6 +61,25 @@ internal sealed class OcrEngine : IDisposable
         return new OcrResult(ReadingOrder.Sort(recognized), stopwatch.Elapsed);
     }
 
+    /// <summary>
+    /// 从源位图安全裁剪子区域。优先利用零拷贝 ExtractSubset，越界时回退到 Canvas 绘制拷贝。
+    /// </summary>
+    private static SKBitmap Crop(SKBitmap source, SKRectI bounds)
+    {
+        var subset = new SKBitmap();
+        if (source.ExtractSubset(subset, bounds))
+        {
+            return subset;
+        }
+
+        var safeWidth = Math.Max(1, bounds.Width);
+        var safeHeight = Math.Max(1, bounds.Height);
+        var copy = new SKBitmap(safeWidth, safeHeight, source.ColorType, source.AlphaType);
+        using var canvas = new SKCanvas(copy);
+        canvas.DrawBitmap(source, new SKRect(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom), new SKRect(0, 0, safeWidth, safeHeight));
+        return copy;
+    }
+
     public string DescribeModels() =>
         $"Detector {_detector.DescribeModel()}{Environment.NewLine}" +
         $"Recognizer {_recognizer.DescribeModel()}";
@@ -65,6 +91,9 @@ internal sealed class OcrEngine : IDisposable
     }
 }
 
+/// <summary>
+/// 文本行自然阅读顺序排序器（行分群与从左至右排序）。
+/// </summary>
 internal static class ReadingOrder
 {
     public static IReadOnlyList<OcrLine> Sort(IEnumerable<OcrLine> source)
@@ -99,8 +128,8 @@ internal static class ReadingOrder
         var representative = row[0].Bounds;
         var intersectionTop = Math.Max(representative.Top, candidate.Bounds.Top);
         var intersectionBottom = Math.Min(representative.Bottom, candidate.Bounds.Bottom);
-        var overlap = Math.Max(0, intersectionBottom - intersectionTop);
-        var minimumHeight = Math.Max(1, Math.Min(representative.Height, candidate.Bounds.Height));
-        return overlap / (double)minimumHeight >= 0.5;
+        var intersectionHeight = Math.Max(0, intersectionBottom - intersectionTop);
+        var baselineHeight = Math.Min(representative.Height, candidate.Bounds.Height);
+        return baselineHeight > 0 && intersectionHeight / (double)baselineHeight >= 0.5;
     }
 }

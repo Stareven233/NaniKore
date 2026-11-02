@@ -55,11 +55,18 @@ internal abstract class TranslationProviderBase : ITranslationProvider
         }
     }
 
-    protected static HttpRequestMessage CreateJsonRequest(HttpMethod method, Uri uri, object body)
+    /// <summary>AOT 安全的 JsonArray 构建：显式调用非泛型构造函数，杜绝 C# 集合初始化器解析至带 IL2026/IL3050 的 Add<T> 扩展。</summary>
+    protected static System.Text.Json.Nodes.JsonArray NodeArray(params System.Text.Json.Nodes.JsonNode?[] items) => new(items);
+
+    /// <summary>AOT 安全的 JsonArray 追加：显式绑定非泛型 Add(JsonNode?)，杜绝泛型 Add<T>。</summary>
+    protected static void AppendNode(System.Text.Json.Nodes.JsonArray array, System.Text.Json.Nodes.JsonNode? item) => array.Add(item);
+
+    /// <summary>构造下游 LLM 请求。载荷基于 JsonNode DOM 直出，零运行期反射，天然免疫 Native AOT 裁剪。</summary>
+    protected static HttpRequestMessage CreateJsonRequest(HttpMethod method, Uri uri, System.Text.Json.Nodes.JsonNode body)
     {
         return new HttpRequestMessage(method, uri)
         {
-            Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"),
+            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
         };
     }
 

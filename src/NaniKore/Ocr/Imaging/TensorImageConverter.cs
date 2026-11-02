@@ -1,13 +1,16 @@
-using System.Drawing.Imaging;
 using NaniKore.Ocr.Models;
+using SkiaSharp;
 
 namespace NaniKore.Ocr.Imaging;
 
+/// <summary>
+/// 将 SkiaSharp SKBitmap 原生转换为 ONNX 推理所需的 NCHW BGR 浮点张量，彻底摆脱 System.Drawing。
+/// </summary>
 internal static class TensorImageConverter
 {
-    public static ImageTensor CreateDetectorTensor(Bitmap image, DetectorConfig config)
+    public static ImageTensor CreateDetectorTensor(SKBitmap image, DetectorConfig config)
     {
-        var target = ComputeDetectorSize(image.Size, config.LimitSideLength, config.MaximumSideLength);
+        var target = ComputeDetectorSize(new SKSizeI(image.Width, image.Height), config.LimitSideLength, config.MaximumSideLength);
         var tensor = ResizeToNchwBgr(
             image,
             target.Width,
@@ -17,7 +20,7 @@ internal static class TensorImageConverter
         return new ImageTensor(tensor, target.Width, target.Height);
     }
 
-    public static ImageTensor CreateRecognizerTensor(Bitmap image, RecognizerConfig config)
+    public static ImageTensor CreateRecognizerTensor(SKBitmap image, RecognizerConfig config)
     {
         var widthRatio = image.Width / (double)Math.Max(1, image.Height);
         var targetWidth = Math.Clamp(
@@ -40,7 +43,7 @@ internal static class TensorImageConverter
         return new ImageTensor(tensor, targetWidth, config.ImageHeight);
     }
 
-    internal static Size ComputeDetectorSize(Size source, int minimumSideLength, int maximumSideLength)
+    internal static SKSizeI ComputeDetectorSize(SKSizeI source, int minimumSideLength, int maximumSideLength)
     {
         if (source.Width <= 0 || source.Height <= 0)
         {
@@ -56,11 +59,11 @@ internal static class TensorImageConverter
         // DB 检测网络会连续下采样，宽高必须对齐到 32；限制后至少保留一个 32 像素单元。
         var width = Math.Clamp(AlignNearest((int)Math.Round(source.Width * scale), 32), 32, maximumSideLength);
         var height = Math.Clamp(AlignNearest((int)Math.Round(source.Height * scale), 32), 32, maximumSideLength);
-        return new Size(width, height);
+        return new SKSizeI(width, height);
     }
 
     private static unsafe float[] ResizeToNchwBgr(
-        Bitmap image,
+        SKBitmap image,
         int resizedWidth,
         int resizedHeight,
         int canvasWidth,
@@ -68,30 +71,36 @@ internal static class TensorImageConverter
     {
         var output = new float[checked(3 * canvasWidth * resizedHeight)];
         var planeSize = checked(canvasWidth * resizedHeight);
-        var rectangle = new Rectangle(Point.Empty, image.Size);
-        var bitmapData = image.LockBits(rectangle, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+
+        // 确保位图格式为 Bgra8888（内存顺序为 B, G, R, A，与 PaddleOCR DecodeImage BGR 匹配）
+        var source = image.ColorType == SKColorType.Bgra8888
+            ? image
+            : image.Copy(SKColorType.Bgra8888);
+        var needDispose = !ReferenceEquals(source, image);
 
         try
         {
-            var sourceBase = (byte*)bitmapData.Scan0;
+            var sourceBase = (byte*)source.GetPixels();
+            var stride = source.RowBytes;
+
             for (var targetY = 0; targetY < resizedHeight; targetY++)
             {
-                var sourceY = (targetY + 0.5) * image.Height / resizedHeight - 0.5;
-                var y0 = Math.Clamp((int)Math.Floor(sourceY), 0, image.Height - 1);
-                var y1 = Math.Min(y0 + 1, image.Height - 1);
+                var sourceY = (targetY + 0.5) * source.Height / resizedHeight - 0.5;
+                var y0 = Math.Clamp((int)Math.Floor(sourceY), 0, source.Height - 1);
+                var y1 = Math.Min(y0 + 1, source.Height - 1);
                 var yWeight = (float)Math.Clamp(sourceY - y0, 0, 1);
-                var row0 = sourceBase + y0 * bitmapData.Stride;
-                var row1 = sourceBase + y1 * bitmapData.Stride;
+                var row0 = sourceBase + y0 * stride;
+                var row1 = sourceBase + y1 * stride;
 
                 for (var targetX = 0; targetX < resizedWidth; targetX++)
                 {
-                    var sourceX = (targetX + 0.5) * image.Width / resizedWidth - 0.5;
-                    var x0 = Math.Clamp((int)Math.Floor(sourceX), 0, image.Width - 1);
-                    var x1 = Math.Min(x0 + 1, image.Width - 1);
+                    var sourceX = (targetX + 0.5) * source.Width / resizedWidth - 0.5;
+                    var x0 = Math.Clamp((int)Math.Floor(sourceX), 0, source.Width - 1);
+                    var x1 = Math.Min(x0 + 1, source.Width - 1);
                     var xWeight = (float)Math.Clamp(sourceX - x0, 0, 1);
                     var outputIndex = targetY * canvasWidth + targetX;
 
-                    // GDI 的 32bpp 内存顺序是 BGRA，正好对应 PaddleOCR 的 BGR DecodeImage。
+                    // Bgra8888 内存顺序是 B, G, R, A，对应 channel 0=B, 1=G, 2=R
                     for (var channel = 0; channel < 3; channel++)
                     {
                         var top = Lerp(row0[x0 * 4 + channel], row0[x1 * 4 + channel], xWeight);
@@ -103,7 +112,10 @@ internal static class TensorImageConverter
         }
         finally
         {
-            image.UnlockBits(bitmapData);
+            if (needDispose)
+            {
+                source.Dispose();
+            }
         }
 
         return output;

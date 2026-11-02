@@ -1,5 +1,6 @@
 using NaniKore.Ocr.Imaging;
 using NaniKore.Ocr.Models;
+using SkiaSharp;
 
 namespace NaniKore.Ocr.Detection;
 
@@ -14,8 +15,10 @@ internal sealed class TextDetector : IDisposable
         _model = new OnnxModelRunner(modelPath);
     }
 
-    public IReadOnlyList<DetectionBox> Detect(Bitmap image)
+    public IReadOnlyList<DetectionBox> Detect(SKBitmap image)
     {
+        ArgumentNullException.ThrowIfNull(image);
+
         var input = TensorImageConverter.CreateDetectorTensor(image, _config);
         var output = _model.Run(input);
         if (output.Dimensions.Length < 2)
@@ -36,7 +39,7 @@ internal sealed class TextDetector : IDisposable
             output.Data.AsSpan(0, mapLength),
             mapWidth,
             mapHeight,
-            image.Size,
+            new SKSizeI(image.Width, image.Height),
             _config);
     }
 

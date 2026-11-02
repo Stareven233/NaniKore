@@ -122,6 +122,31 @@ internal static unsafe partial class NativeMethods
         BITMAPINFO* lpbmi,
         uint usage);
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BITMAP
+    {
+        public int bmType;
+        public int bmWidth;
+        public int bmHeight;
+        public int bmWidthBytes;
+        public ushort bmPlanes;
+        public ushort bmBitsPixel;
+        public nint bmBits;
+    }
+
+    [LibraryImport("gdi32.dll", EntryPoint = "GetObjectW")]
+    public static partial int GetObject(nint hGdiObj, int cbBuffer, void* lpvObject);
+
+    [LibraryImport("gdi32.dll", SetLastError = true)]
+    public static partial int SetDIBits(
+        nint hdc,
+        nint hbm,
+        uint start,
+        uint cLines,
+        void* lpBits,
+        BITMAPINFO* lpbmi,
+        uint ColorUse);
+
     #endregion
 
     #region 窗口、样式与消息循环

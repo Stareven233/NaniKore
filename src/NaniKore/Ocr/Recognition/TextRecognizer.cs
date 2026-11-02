@@ -1,5 +1,6 @@
 using NaniKore.Ocr.Imaging;
 using NaniKore.Ocr.Models;
+using SkiaSharp;
 
 namespace NaniKore.Ocr.Recognition;
 
@@ -14,8 +15,10 @@ internal sealed class TextRecognizer : IDisposable
         _model = new OnnxModelRunner(modelPath);
     }
 
-    public RecognitionText Recognize(Bitmap image)
+    public RecognitionText Recognize(SKBitmap image)
     {
+        ArgumentNullException.ThrowIfNull(image);
+
         var input = TensorImageConverter.CreateRecognizerTensor(image, _config);
         var output = _model.Run(input);
         if (output.Dimensions.Length != 3 || output.Dimensions[0] != 1)

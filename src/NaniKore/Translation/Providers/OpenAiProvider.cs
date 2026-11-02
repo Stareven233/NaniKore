@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using NaniKore.Config;
 
 namespace NaniKore.Translation.Providers;
@@ -128,13 +129,10 @@ internal sealed class OpenAiProvider : TranslationProviderBase
             system = $"请将以下{sourceLang}文本翻译为{request.TargetLanguage}，直接输出翻译结果，不要进行任何解释。";
         }
 
-        object[] messages;
+        var messages = new JsonArray();
         if (request.Session is { Messages.Count: > 1 } session)
         {
-            var list = new List<object>
-            {
-                new { role = "system", content = system }
-            };
+            AppendNode(messages, new JsonObject { ["role"] = "system", ["content"] = system });
             foreach (var m in session.Messages)
             {
                 var role = m.Role switch
@@ -143,36 +141,31 @@ internal sealed class OpenAiProvider : TranslationProviderBase
                     ChatRole.Assistant => "assistant",
                     _ => "user"
                 };
-                list.Add(new { role, content = FormatOpenAiContent(m) });
+                AppendNode(messages, new JsonObject { ["role"] = role, ["content"] = FormatOpenAiContent(m) });
             }
-            messages = list.ToArray();
         }
         else
         {
-            object userContent = request.ImagePng is { Length: > 0 } image
-                ? new object[]
-                {
-                    new { type = "text", text = request.SourceText ?? "" },
-                    new { type = "image_url", image_url = new { url = $"data:image/png;base64,{Base64(image)}" } },
-                }
-                : request.SourceText ?? string.Empty;
+            JsonNode userContent = request.ImagePng is { Length: > 0 } image
+                ? NodeArray(
+                    new JsonObject { ["type"] = "text", ["text"] = request.SourceText ?? "" },
+                    new JsonObject { ["type"] = "image_url", ["image_url"] = new JsonObject { ["url"] = $"data:image/png;base64,{Base64(image)}" } }
+                )
+                : JsonValue.Create(request.SourceText ?? string.Empty);
 
-            messages = new object[]
-            {
-                new { role = "system", content = system },
-                new { role = "user", content = userContent },
-            };
+            AppendNode(messages, new JsonObject { ["role"] = "system", ["content"] = system });
+            AppendNode(messages, new JsonObject { ["role"] = "user", ["content"] = userContent });
         }
 
         var isOfficialOpenAi = Profile.BaseUrl.Contains("api.openai.com", StringComparison.OrdinalIgnoreCase);
         var isReasoningModel = Profile.Model.StartsWith("o1", StringComparison.OrdinalIgnoreCase) ||
                                Profile.Model.StartsWith("o3", StringComparison.OrdinalIgnoreCase);
 
-        var bodyDict = new Dictionary<string, object?>
+        var body = new JsonObject
         {
             ["model"] = Profile.Model,
             ["stream"] = true,
-            ["stream_options"] = new { include_usage = true },
+            ["stream_options"] = new JsonObject { ["include_usage"] = true },
             ["messages"] = messages,
         };
 
@@ -180,45 +173,47 @@ internal sealed class OpenAiProvider : TranslationProviderBase
         {
             if (Profile.EnableThinking && isReasoningModel)
             {
-                bodyDict["reasoning_effort"] = "low";
+                body["reasoning_effort"] = "low";
             }
         }
         else if (!skipThinkingParameters)
         {
-            bodyDict["enable_thinking"] = Profile.EnableThinking;
-            bodyDict["thinking"] = new { type = Profile.EnableThinking ? "enabled" : "disabled" };
+            body["enable_thinking"] = Profile.EnableThinking;
+            body["thinking"] = new JsonObject { ["type"] = Profile.EnableThinking ? "enabled" : "disabled" };
             if (Profile.EnableThinking && isReasoningModel)
             {
-                bodyDict["reasoning_effort"] = "low";
+                body["reasoning_effort"] = "low";
             }
         }
 
-        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, "chat/completions"), bodyDict);
+        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, "chat/completions"), body);
         SetBearerToken(message, ApiKey);
         return message;
     }
 
-    private static object FormatOpenAiContent(ChatMessage message)
+    private static JsonNode FormatOpenAiContent(ChatMessage message)
     {
         if (message.ImagePng is { Length: > 0 } image)
         {
-            return new object[]
-            {
-                new { type = "text", text = message.Text ?? string.Empty },
-                new { type = "image_url", image_url = new { url = $"data:image/png;base64,{Base64(image)}" } },
-            };
+            return NodeArray(
+                new JsonObject { ["type"] = "text", ["text"] = message.Text ?? string.Empty },
+                new JsonObject { ["type"] = "image_url", ["image_url"] = new JsonObject { ["url"] = $"data:image/png;base64,{Base64(image)}" } }
+            );
         }
 
-        return message.Text ?? string.Empty;
+        return JsonValue.Create(message.Text ?? string.Empty);
     }
 
     internal HttpRequestMessage CreateResponsesRequest(UnderstandRequest request)
     {
         var system = PromptTemplates.GetSystemPrompt(request, Prompts);
-        var inputList = new List<object>
-        {
-            new { role = "system", content = new object[] { new { type = "input_text", text = system } } }
-        };
+        var inputList = NodeArray(
+            new JsonObject
+            {
+                ["role"] = "system",
+                ["content"] = NodeArray(new JsonObject { ["type"] = "input_text", ["text"] = system })
+            }
+        );
 
         if (request.Session is { Messages.Count: > 1 } session)
         {
@@ -226,45 +221,49 @@ internal sealed class OpenAiProvider : TranslationProviderBase
             {
                 if (m.Role == ChatRole.Assistant)
                 {
-                    inputList.Add(new { role = "assistant", content = new object[] { new { type = "output_text", text = m.Text } } });
+                    AppendNode(inputList, new JsonObject
+                    {
+                        ["role"] = "assistant",
+                        ["content"] = NodeArray(new JsonObject { ["type"] = "output_text", ["text"] = m.Text })
+                    });
                 }
                 else
                 {
-                    var content = new List<object> { new { type = "input_text", text = m.Text ?? string.Empty } };
+                    var content = NodeArray(new JsonObject { ["type"] = "input_text", ["text"] = m.Text ?? string.Empty });
                     if (m.ImagePng is { Length: > 0 } image)
                     {
-                        content.Add(new { type = "input_image", image_url = $"data:image/png;base64,{Base64(image)}" });
+                        AppendNode(content, new JsonObject { ["type"] = "input_image", ["image_url"] = $"data:image/png;base64,{Base64(image)}" });
                     }
-                    inputList.Add(new { role = "user", content });
+                    AppendNode(inputList, new JsonObject { ["role"] = "user", ["content"] = content });
                 }
             }
         }
         else
         {
-            var content = new List<object> { new { type = "input_text", text = request.SourceText ?? string.Empty } };
+            var content = NodeArray(new JsonObject { ["type"] = "input_text", ["text"] = request.SourceText ?? string.Empty });
             if (request.ImagePng is { Length: > 0 } image)
             {
-                content.Add(new { type = "input_image", image_url = $"data:image/png;base64,{Base64(image)}" });
+                AppendNode(content, new JsonObject { ["type"] = "input_image", ["image_url"] = $"data:image/png;base64,{Base64(image)}" });
             }
-            inputList.Add(new { role = "user", content });
+            AppendNode(inputList, new JsonObject { ["role"] = "user", ["content"] = content });
         }
 
         var isReasoningModel = Profile.Model.StartsWith("o1", StringComparison.OrdinalIgnoreCase) ||
                                Profile.Model.StartsWith("o3", StringComparison.OrdinalIgnoreCase);
 
-        var bodyDict = new Dictionary<string, object?>
+        var body = new JsonObject
         {
             ["model"] = Profile.Model,
             ["stream"] = true,
-            ["input"] = inputList.ToArray(),
+            ["input"] = inputList,
         };
 
         if (Profile.EnableThinking && isReasoningModel)
         {
-            bodyDict["reasoning"] = new { effort = "low" };
+            body["reasoning"] = new JsonObject { ["effort"] = "low" };
         }
 
-        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, "responses"), bodyDict);
+        var message = CreateJsonRequest(HttpMethod.Post, BuildUri(Profile.BaseUrl, "responses"), body);
         SetBearerToken(message, ApiKey);
         return message;
     }

@@ -1,9 +1,9 @@
-using System.Drawing;
 using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using NaniKore.Imaging;
 using NaniKore.Interop;
 using NaniKore.Ocr;
+using SkiaSharp;
 using NativeInput = NaniKore.Interop.NativeMethods.NativeInput;
 
 namespace NaniKore.Input;
@@ -59,7 +59,7 @@ internal sealed record PasteInputOutcome
 /// <param name="Recognize">本地 OCR 委托：传入的位图仅在调用期间有效（铺白产物在状态机返回前释放），不得在调用外持有。</param>
 internal sealed record PasteInputRequest(
     ClipboardImageRoute ImageRoute,
-    Func<Bitmap, OcrResult> Recognize,
+    Func<SKBitmap, OcrResult> Recognize,
     IClipboardGateway Clipboard,
     Action SendCopy,
     PollTick Tick);
@@ -100,12 +100,12 @@ internal sealed record ClipboardFormat(string Format, byte[] Data, uint? Standar
 /// <summary>
 /// 剪贴板快照：按格式把内容搬进进程自持内存，彻底脱离 COM 代理与短命句柄生命周期。
 /// </summary>
-internal sealed class ClipboardSnapshot
+internal sealed class ClipboardSnapshot : IDisposable
 {
     private readonly List<ClipboardFormat> _formats;
-    private readonly Bitmap? _image;
+    private readonly SKBitmap? _image;
 
-    public ClipboardSnapshot(List<ClipboardFormat> formats, string? text, Bitmap? image)
+    public ClipboardSnapshot(List<ClipboardFormat> formats, string? text, SKBitmap? image)
     {
         _formats = formats;
         Text = text;
@@ -127,7 +127,7 @@ internal sealed class ClipboardSnapshot
     /// <summary>
     /// 取出快照里的图像副本，所有权转移给调用方，用毕负责释放。
     /// </summary>
-    public Bitmap? DetachImage() => _image is not null ? new Bitmap(_image) : null;
+    public SKBitmap? DetachImage() => _image?.Copy();
 
     /// <summary>
     /// 基于当前快照生成附加文本的新快照（用于 OCR 原文写回：保留原图与原格式，附加识别文本）。
@@ -137,7 +137,7 @@ internal sealed class ClipboardSnapshot
         var newFormats = new List<ClipboardFormat>(_formats.Where(f => !IsTextFormat(f.Format)));
         var textBytes = System.Text.Encoding.Unicode.GetBytes(newText + "\0");
         newFormats.Add(new ClipboardFormat("UnicodeText", textBytes, NativeMethods.CF_UNICODETEXT));
-        return new ClipboardSnapshot(newFormats, newText, _image is not null ? new Bitmap(_image) : null);
+        return new ClipboardSnapshot(newFormats, newText, _image?.Copy());
     }
 
     public static bool IsTextFormat(string format) =>
@@ -157,9 +157,9 @@ internal sealed class ClipboardSnapshot
         return new ClipboardSnapshot(formats, text, null);
     }
 
-    public static ClipboardSnapshot FromImage(Bitmap image)
+    public static ClipboardSnapshot FromImage(SKBitmap image)
     {
-        var copy = new Bitmap(image);
+        var copy = image.Copy();
         var formats = new List<ClipboardFormat>
         {
             new("Bitmap", [], NativeMethods.CF_BITMAP)
@@ -174,6 +174,11 @@ internal sealed class ClipboardSnapshot
             new("FileDrop", System.Text.Encoding.UTF8.GetBytes(string.Join("\n", files)))
         };
         return new ClipboardSnapshot(formats, null, null);
+    }
+
+    public void Dispose()
+    {
+        _image?.Dispose();
     }
 }
 
@@ -305,7 +310,7 @@ internal static class PasteInputAcquirer
     }
 
     private static PasteInputOutcome TranslateImage(
-        Bitmap image,
+        SKBitmap image,
         PasteInputRequest request,
         ClipboardSnapshot source,
         string? notice,
@@ -322,7 +327,7 @@ internal static class PasteInputAcquirer
             if (request.ImageRoute == ClipboardImageRoute.DirectFeed)
             {
                 return new PasteInputOutcome
-                {
+            {
                     Kind = programOwnCopy ? PasteInputKind.SelectionImage : PasteInputKind.ClipboardImage,
                     ImagePng = PngEncoder.Encode(image),
                     Notice = notice,
@@ -364,12 +369,12 @@ internal static class PasteInputAcquirer
         }
     }
 
-    private static Bitmap WhiteMatte(Bitmap source)
+    private static SKBitmap WhiteMatte(SKBitmap source)
     {
-        var target = new Bitmap(source.Width, source.Height, System.Drawing.Imaging.PixelFormat.Format32bppRgb);
-        using var graphics = Graphics.FromImage(target);
-        graphics.Clear(Color.White);
-        graphics.DrawImage(source, 0, 0, source.Width, source.Height);
+        var target = new SKBitmap(source.Width, source.Height, SKColorType.Bgra8888, SKAlphaType.Opaque);
+        using var canvas = new SKCanvas(target);
+        canvas.Clear(SKColors.White);
+        canvas.DrawBitmap(source, 0, 0);
         return target;
     }
 
@@ -413,7 +418,7 @@ internal sealed class Win32ClipboardGateway : IClipboardGateway
         try
         {
             string? text = null;
-            Bitmap? image = null;
+            SKBitmap? image = null;
             var formats = new List<ClipboardFormat>();
 
             // 1. 读 Unicode 文本
@@ -444,20 +449,16 @@ internal sealed class Win32ClipboardGateway : IClipboardGateway
                 }
             }
 
-            // 2. 读位图
+            // 2. 读位图（脱离 System.Drawing，纯 Win32 GetDIBits 直灌 SKBitmap）
             if (NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_BITMAP))
             {
                 var hBmp = NativeMethods.GetClipboardData(NativeMethods.CF_BITMAP);
                 if (hBmp != 0)
                 {
-                    try
+                    image = ReadBitmapFromHBitmap(hBmp);
+                    if (image is not null)
                     {
-                        image = Image.FromHbitmap(hBmp);
                         formats.Add(new ClipboardFormat("Bitmap", [], NativeMethods.CF_BITMAP));
-                    }
-                    catch
-                    {
-                        image = null;
                     }
                 }
             }
@@ -548,11 +549,11 @@ internal sealed class Win32ClipboardGateway : IClipboardGateway
                 }
             }
 
-            // 2. 写回图像
+            // 2. 写回图像（纯 Win32 SetDIBits 构造 HBITMAP，脱离 System.Drawing）
             using var image = snapshot.DetachImage();
             if (image is not null)
             {
-                var hBitmap = image.GetHbitmap();
+                var hBitmap = CreateHBitmapFromSKBitmap(image);
                 if (hBitmap != 0)
                 {
                     NativeMethods.SetClipboardData(NativeMethods.CF_BITMAP, hBitmap);
@@ -657,6 +658,159 @@ internal sealed class Win32ClipboardGateway : IClipboardGateway
         }
         return false;
     }
+
+    /// <summary>
+    /// 从 Win32 HBITMAP 句柄提取像素并构造 SKBitmap，完全摆脱 System.Drawing.Image.FromHbitmap。
+    /// </summary>
+    private static unsafe SKBitmap? ReadBitmapFromHBitmap(nint hBmp)
+    {
+        NativeMethods.BITMAP bm;
+        if (NativeMethods.GetObject(hBmp, sizeof(NativeMethods.BITMAP), &bm) == 0)
+        {
+            return null;
+        }
+
+        var width = bm.bmWidth;
+        var height = bm.bmHeight;
+        if (width <= 0 || height <= 0)
+        {
+            return null;
+        }
+
+        var screenDc = NativeMethods.GetDC(0);
+        if (screenDc == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var memDc = NativeMethods.CreateCompatibleDC(screenDc);
+            if (memDc == 0)
+            {
+                return null;
+            }
+
+            try
+            {
+                var skBitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
+                var bmi = new NativeMethods.BITMAPINFO
+                {
+                    bmiHeader = new NativeMethods.BITMAPINFOHEADER
+                    {
+                        biSize = (uint)sizeof(NativeMethods.BITMAPINFOHEADER),
+                        biWidth = width,
+                        biHeight = -height,
+                        biPlanes = 1,
+                        biBitCount = 32,
+                        biCompression = NativeMethods.BI_RGB
+                    }
+                };
+
+                var lines = NativeMethods.GetDIBits(
+                    memDc,
+                    hBmp,
+                    0,
+                    (uint)height,
+                    (void*)skBitmap.GetPixels(),
+                    &bmi,
+                    NativeMethods.DIB_RGB_COLORS);
+
+                if (lines == 0)
+                {
+                    skBitmap.Dispose();
+                    return null;
+                }
+
+                return skBitmap;
+            }
+            finally
+            {
+                NativeMethods.DeleteDC(memDc);
+            }
+        }
+        finally
+        {
+            NativeMethods.ReleaseDC(0, screenDc);
+        }
+    }
+
+    /// <summary>
+    /// 从 SKBitmap 构造 Win32 HBITMAP 句柄以写回剪贴板，完全脱离 System.Drawing.Bitmap.GetHbitmap。
+    /// </summary>
+    private static unsafe nint CreateHBitmapFromSKBitmap(SKBitmap image)
+    {
+        var width = image.Width;
+        var height = image.Height;
+        var screenDc = NativeMethods.GetDC(0);
+        if (screenDc == 0)
+        {
+            return 0;
+        }
+
+        try
+        {
+            var memDc = NativeMethods.CreateCompatibleDC(screenDc);
+            if (memDc == 0)
+            {
+                return 0;
+            }
+
+            try
+            {
+                var hBmp = NativeMethods.CreateCompatibleBitmap(screenDc, width, height);
+                if (hBmp == 0)
+                {
+                    return 0;
+                }
+
+                var source = image.ColorType == SKColorType.Bgra8888 ? image : image.Copy(SKColorType.Bgra8888);
+                var needDispose = !ReferenceEquals(source, image);
+
+                try
+                {
+                    var bmi = new NativeMethods.BITMAPINFO
+                    {
+                        bmiHeader = new NativeMethods.BITMAPINFOHEADER
+                        {
+                            biSize = (uint)sizeof(NativeMethods.BITMAPINFOHEADER),
+                            biWidth = width,
+                            biHeight = -height,
+                            biPlanes = 1,
+                            biBitCount = 32,
+                            biCompression = NativeMethods.BI_RGB
+                        }
+                    };
+
+                    NativeMethods.SetDIBits(
+                        memDc,
+                        hBmp,
+                        0,
+                        (uint)height,
+                        (void*)source.GetPixels(),
+                        &bmi,
+                        NativeMethods.DIB_RGB_COLORS);
+
+                    return hBmp;
+                }
+                finally
+                {
+                    if (needDispose)
+                    {
+                        source.Dispose();
+                    }
+                }
+            }
+            finally
+            {
+                NativeMethods.DeleteDC(memDc);
+            }
+        }
+        finally
+        {
+            NativeMethods.ReleaseDC(0, screenDc);
+        }
+    }
 }
 
 /// <summary>用 SendInput 向前台窗口合成一次 Ctrl+C；只有前台程序响应复制时剪贴板才会变。</summary>
@@ -705,7 +859,7 @@ internal sealed class SendInputCopySimulator
 /// </summary>
 internal static class ClipboardInputSource
 {
-    public static PasteInputOutcome Acquire(ClipboardImageRoute imageRoute, Func<Bitmap, OcrResult> recognize)
+    public static PasteInputOutcome Acquire(ClipboardImageRoute imageRoute, Func<SKBitmap, OcrResult> recognize)
     {
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         bool Tick(int _)

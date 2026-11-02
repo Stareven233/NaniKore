@@ -1,14 +1,19 @@
 using NaniKore.Ocr.Models;
+using SkiaSharp;
 
 namespace NaniKore.Ocr.Detection;
 
+/// <summary>
+/// 文本检测概率图后处理（连通域洪泛 + 局部膨胀 + 映射至原图坐标）：
+/// 彻底摆脱 System.Drawing，纯 SkiaSharp 几何类型实现。
+/// </summary>
 internal static class DetectionPostprocessor
 {
     public static IReadOnlyList<DetectionBox> Extract(
         ReadOnlySpan<float> probabilityMap,
         int mapWidth,
         int mapHeight,
-        Size sourceSize,
+        SKSizeI sourceSize,
         DetectorConfig config)
     {
         if (probabilityMap.Length != checked(mapWidth * mapHeight))
@@ -105,12 +110,12 @@ internal static class DetectionPostprocessor
             }
         }
 
-        var bounds = Rectangle.FromLTRB(minimumX, minimumY, maximumX + 1, maximumY + 1);
+        var bounds = new SKRectI(minimumX, minimumY, maximumX + 1, maximumY + 1);
         return new Component(bounds, pixelCount, (float)(scoreSum / pixelCount));
     }
 
-    private static Rectangle Expand(
-        Rectangle bounds,
+    private static SKRectI Expand(
+        SKRectI bounds,
         int componentArea,
         float unclipRatio,
         int mapWidth,
@@ -120,31 +125,31 @@ internal static class DetectionPostprocessor
         // 避免为第一版引入体积明显的 OpenCV 原生依赖。旋转/弯曲文本会弱于官方后处理。
         var perimeter = Math.Max(1, 2 * (bounds.Width + bounds.Height));
         var distance = Math.Max(1, (int)Math.Ceiling(componentArea * unclipRatio / perimeter));
-        return Rectangle.FromLTRB(
+        return new SKRectI(
             Math.Max(0, bounds.Left - distance),
             Math.Max(0, bounds.Top - distance),
             Math.Min(mapWidth, bounds.Right + distance),
             Math.Min(mapHeight, bounds.Bottom + distance));
     }
 
-    private static Rectangle MapToSource(Rectangle bounds, int mapWidth, int mapHeight, Size source)
+    private static SKRectI MapToSource(SKRectI bounds, int mapWidth, int mapHeight, SKSizeI source)
     {
         var left = (int)Math.Floor(bounds.Left * source.Width / (double)mapWidth);
         var top = (int)Math.Floor(bounds.Top * source.Height / (double)mapHeight);
         var right = (int)Math.Ceiling(bounds.Right * source.Width / (double)mapWidth);
         var bottom = (int)Math.Ceiling(bounds.Bottom * source.Height / (double)mapHeight);
-        return Rectangle.FromLTRB(
+        return new SKRectI(
             Math.Clamp(left, 0, source.Width),
             Math.Clamp(top, 0, source.Height),
             Math.Clamp(right, 0, source.Width),
             Math.Clamp(bottom, 0, source.Height));
     }
 
-    private sealed record Component(Rectangle Bounds, int PixelCount, float Score)
+    private sealed record Component(SKRectI Bounds, int PixelCount, float Score)
     {
         public int Width => Bounds.Width;
         public int Height => Bounds.Height;
     }
 }
 
-internal sealed record DetectionBox(Rectangle Bounds, float Confidence);
+internal sealed record DetectionBox(SKRectI Bounds, float Confidence);

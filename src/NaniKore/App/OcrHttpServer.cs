@@ -1,10 +1,10 @@
-using System.Drawing;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
+using NaniKore.Config;
 using NaniKore.Ocr;
+using SkiaSharp;
 
 namespace NaniKore.App;
 
@@ -12,6 +12,7 @@ namespace NaniKore.App;
 /// 开发者专用的轻量本地 OCR HTTP 监听服务（issue 讨论决定）：
 /// 基于 TcpListener 原生实现极简 HTTP/1.1 协议栈，避开 Windows HttpListener 对 0.0.0.0
 /// 与非本地回环地址需要管理员权限注册 URL ACL 的限制。
+/// 全链路使用 SkiaSharp 解码与 AOT 静态源生成 JSON。
 /// </summary>
 internal sealed class OcrHttpServer : IDisposable
 {
@@ -19,21 +20,15 @@ internal sealed class OcrHttpServer : IDisposable
     private const int MaxBodyBytes = 50 * 1024 * 1024;
 
     private readonly TcpListener _listener;
-    private readonly Func<Bitmap, OcrResult> _recognizer;
+    private readonly Func<SKBitmap, OcrResult> _recognizer;
     private readonly CancellationTokenSource _cts = new();
     private readonly object _recognizeGate = new();
     private readonly Task _listenTask;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = false,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
     public string EndpointDescription { get; }
     public int Port { get; }
 
-    public OcrHttpServer(string listenAddress, Func<Bitmap, OcrResult> recognizer)
+    public OcrHttpServer(string listenAddress, Func<SKBitmap, OcrResult> recognizer)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(listenAddress);
         _recognizer = recognizer ?? throw new ArgumentNullException(nameof(recognizer));
@@ -136,7 +131,7 @@ internal sealed class OcrHttpServer : IDisposable
                 // 路由 1：探活探针
                 if (method == "GET" && (path == "/health" || path == "/healthz" || path == "/"))
                 {
-                    await SendJsonResponseAsync(stream, 200, "OK", new { status = "ok" }, ct).ConfigureAwait(false);
+                    await SendStatusAsync(stream, "ok", ct).ConfigureAwait(false);
                     return;
                 }
 
@@ -148,7 +143,7 @@ internal sealed class OcrHttpServer : IDisposable
                 }
 
                 // 其他路由：404
-                await SendJsonResponseAsync(stream, 404, "Not Found", new { error = $"Not found: {method} {path}" }, ct).ConfigureAwait(false);
+                await SendErrorAsync(stream, 404, "Not Found", $"Not found: {method} {path}", ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -156,12 +151,12 @@ internal sealed class OcrHttpServer : IDisposable
             }
             catch (BadHttpRequestException ex)
             {
-                await SendJsonResponseAsync(stream, ex.StatusCode, ex.ReasonPhrase, new { error = ex.Message }, ct).ConfigureAwait(false);
+                await SendErrorAsync(stream, ex.StatusCode, ex.ReasonPhrase, ex.Message, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"[OcrHttpServer] 请求处理异常：{ex}");
-                await SendJsonResponseAsync(stream, 500, "Internal Server Error", new { error = ex.Message }, ct).ConfigureAwait(false);
+                await SendErrorAsync(stream, 500, "Internal Server Error", ex.Message, ct).ConfigureAwait(false);
             }
         }
     }
@@ -203,11 +198,17 @@ internal sealed class OcrHttpServer : IDisposable
             var fullPath = Path.GetFullPath(imagePath);
             if (!File.Exists(fullPath))
             {
-                await SendJsonResponseAsync(stream, 400, "Bad Request", new { error = $"File not found: {fullPath}" }, ct).ConfigureAwait(false);
+                await SendErrorAsync(stream, 400, "Bad Request", $"File not found: {fullPath}", ct).ConfigureAwait(false);
                 return;
             }
 
-            using var fileImage = new Bitmap(fullPath);
+            using var fileImage = SKBitmap.Decode(fullPath);
+            if (fileImage is null)
+            {
+                await SendErrorAsync(stream, 400, "Bad Request", $"Failed to decode image from file: {fullPath}", ct).ConfigureAwait(false);
+                return;
+            }
+
             lock (_recognizeGate)
             {
                 result = _recognizer(fileImage);
@@ -215,29 +216,26 @@ internal sealed class OcrHttpServer : IDisposable
         }
         else if (body.Length > 0)
         {
-            try
+            using var bodyImage = SKBitmap.Decode(body);
+            if (bodyImage is null)
             {
-                using var ms = new MemoryStream(body, writable: false);
-                using var bodyImage = new Bitmap(ms);
-                lock (_recognizeGate)
-                {
-                    result = _recognizer(bodyImage);
-                }
-            }
-            catch (Exception ex)
-            {
-                await SendJsonResponseAsync(stream, 400, "Bad Request", new { error = $"Failed to decode image from request body: {ex.Message}" }, ct).ConfigureAwait(false);
+                await SendErrorAsync(stream, 400, "Bad Request", "Failed to decode image from request body.", ct).ConfigureAwait(false);
                 return;
+            }
+
+            lock (_recognizeGate)
+            {
+                result = _recognizer(bodyImage);
             }
         }
         else
         {
-            await SendJsonResponseAsync(stream, 400, "Bad Request", new { error = "No image data or file path provided. Provide binary body or ?path= query." }, ct).ConfigureAwait(false);
+            await SendErrorAsync(stream, 400, "Bad Request", "No image data or file path provided. Provide binary body or ?path= query.", ct).ConfigureAwait(false);
             return;
         }
 
         // 3. 返回结构化 JSON
-        await SendJsonResponseAsync(stream, 200, "OK", result.ToDto(), ct).ConfigureAwait(false);
+        await SendOcrResponseAsync(stream, result.ToDto(), ct).ConfigureAwait(false);
     }
 
     private static async Task<(string Method, string Path, Dictionary<string, string> Query, Dictionary<string, string> Headers, byte[] Body)>
@@ -386,11 +384,28 @@ internal sealed class OcrHttpServer : IDisposable
         return -1;
     }
 
-    private static async Task SendJsonResponseAsync(Stream stream, int statusCode, string reasonPhrase, object payload, CancellationToken ct)
+    private static async Task SendOcrResponseAsync(Stream stream, OcrResponseDto dto, CancellationToken ct)
+    {
+        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(dto, NaniKoreJsonSerializerContext.Default.OcrResponseDto);
+        await SendBytesAsync(stream, 200, "OK", jsonBytes, ct).ConfigureAwait(false);
+    }
+
+    private static async Task SendStatusAsync(Stream stream, string status, CancellationToken ct)
+    {
+        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(new OcrStatusDto(status), NaniKoreJsonSerializerContext.Default.OcrStatusDto);
+        await SendBytesAsync(stream, 200, "OK", jsonBytes, ct).ConfigureAwait(false);
+    }
+
+    private static async Task SendErrorAsync(Stream stream, int statusCode, string reasonPhrase, string error, CancellationToken ct)
+    {
+        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(new OcrErrorDto(error), NaniKoreJsonSerializerContext.Default.OcrErrorDto);
+        await SendBytesAsync(stream, statusCode, reasonPhrase, jsonBytes, ct).ConfigureAwait(false);
+    }
+
+    private static async Task SendBytesAsync(Stream stream, int statusCode, string reasonPhrase, byte[] jsonBytes, CancellationToken ct)
     {
         try
         {
-            var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(payload, JsonOptions);
             var header =
                 $"HTTP/1.1 {statusCode} {reasonPhrase}\r\n" +
                 $"Content-Type: application/json; charset=utf-8\r\n" +

@@ -1,9 +1,12 @@
 using System.Text.Json.Serialization;
+using SkiaSharp;
 
 namespace NaniKore.Ocr;
 
-internal sealed record OcrLine(Rectangle Bounds, string Text, float Confidence);
+/// <summary>OCR 识别单行文本框体与置信度。</summary>
+internal sealed record OcrLine(SKRectI Bounds, string Text, float Confidence);
 
+/// <summary>整图 OCR 识别结果集。</summary>
 internal sealed record OcrResult(IReadOnlyList<OcrLine> Lines, TimeSpan Elapsed)
 {
     public string Text => string.Join(Environment.NewLine, Lines.Select(line => line.Text));
@@ -14,7 +17,7 @@ internal sealed record OcrResult(IReadOnlyList<OcrLine> Lines, TimeSpan Elapsed)
         Lines.Select(l => new OcrLineDto(
             l.Text,
             MathF.Round(l.Confidence, 4),
-            new OcrLineBoundsDto(l.Bounds.X, l.Bounds.Y, l.Bounds.Width, l.Bounds.Height)
+            new OcrLineBoundsDto(l.Bounds.Left, l.Bounds.Top, l.Bounds.Width, l.Bounds.Height)
         )).ToArray());
 }
 
@@ -33,3 +36,9 @@ internal sealed record OcrResponseDto(
     [property: JsonPropertyName("text")] string Text,
     [property: JsonPropertyName("elapsed_ms")] double ElapsedMs,
     [property: JsonPropertyName("lines")] IReadOnlyList<OcrLineDto> Lines);
+
+internal sealed record OcrStatusDto(
+    [property: JsonPropertyName("status")] string Status);
+
+internal sealed record OcrErrorDto(
+    [property: JsonPropertyName("error")] string Error);
