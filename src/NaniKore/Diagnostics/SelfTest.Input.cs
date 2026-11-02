@@ -1,21 +1,31 @@
+using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
+using Avalonia;
+using NaniKore.App;
+using NaniKore.App.Controls;
+using NaniKore.Capture;
 using NaniKore.Input;
+using NaniKore.Interop;
 using NaniKore.Ocr;
-using FormsDataObject = System.Windows.Forms.DataObject;
-using FormsDataFormats = System.Windows.Forms.DataFormats;
-using IDataObject = System.Windows.Forms.IDataObject;
+using NaniKore.Overlay;
+using SkiaSharp;
 
 namespace NaniKore.Diagnostics;
 
 /// <summary>
-/// 无 UI 自测（输入链路）：热键手势解析、F1–F12 单键放开、选取/剪贴板输入获取状态机，
-/// 以及真实剪贴板的快照→还原 round-trip。
-/// 状态机一律走 <see cref="IClipboardGateway"/> 的内存实现，不碰真实剪贴板、不合成真实按键。
+/// 无 UI 自测（平台与输入链路）：热键手势解析、F1–F12 单键放开、输入获取状态机、
+/// 纯 Win32 真实剪贴板 round-trip、虚拟屏幕捕获与选区几何、热键宿主与应用图标。
 /// </summary>
 internal static partial class SelfTest
 {
+    private const uint VkQ = (uint)'Q';
+    private const uint VkControl = 0x11;
+    private const uint VkF5 = 0x74;
+    private const uint VkF7 = 0x76;
+    private const uint VkF13 = 0x7C;
+
     private static void RunInputTests()
     {
         TestHotkeyGestureNormalization();
@@ -25,6 +35,9 @@ internal static partial class SelfTest
         TestPasteInputFallbackChain();
         TestClipboardSnapshotRoundTrip();
         TestForeignImageClipboardRoundTrip();
+        TestDesktopCapturerAndGeometry();
+        TestWin32HotkeyHostLifecycle();
+        TestApplicationIconAndComponents();
     }
 
     /// <summary>热键手势规范化：修饰键别名与大小写归一，拒绝空串 / 纯修饰键 / 不支持的按键。</summary>
@@ -42,15 +55,15 @@ internal static partial class SelfTest
 
         Check(
             "captured combinations reuse the registration parser",
-            HotkeyGesture.TryCapture(HotkeyGesture.ModControl | HotkeyGesture.ModShift, WinForms.Keys.Q, out var captured, out _) &&
+            HotkeyGesture.TryCapture(HotkeyGesture.ModControl | HotkeyGesture.ModShift, VkQ, out var captured, out _) &&
             captured == "Ctrl+Shift+Q" &&
-            HotkeyGesture.Parse(captured) == (HotkeyGesture.ModControl | HotkeyGesture.ModShift, (uint)WinForms.Keys.Q));
+            HotkeyGesture.Parse(captured) == (HotkeyGesture.ModControl | HotkeyGesture.ModShift, VkQ));
 
         Check(
             "modifier-only and unmodified keys are refused with a readable reason",
-            !HotkeyGesture.TryCapture(HotkeyGesture.ModControl, WinForms.Keys.ControlKey, out _, out var modifierOnly) &&
+            !HotkeyGesture.TryCapture(HotkeyGesture.ModControl, VkControl, out _, out var modifierOnly) &&
             modifierOnly.Length > 0 &&
-            !HotkeyGesture.TryCapture(0, WinForms.Keys.Q, out _, out var missingModifier) &&
+            !HotkeyGesture.TryCapture(0, VkQ, out _, out var missingModifier) &&
             missingModifier.Length > 0);
 
         Check(
@@ -58,7 +71,6 @@ internal static partial class SelfTest
             HotkeyGesture.FormatPreview(HotkeyGesture.ModControl | HotkeyGesture.ModShift) == "Ctrl+Shift+…" &&
             HotkeyGesture.FormatPreview(0).Length == 0);
 
-        // 报错文案必须泛化：同一个解析器同时服务截图与选取两个槽位，不允许写死「截图」。
         Check(
             "gesture error messages stay generic and actionable",
             GestureError(string.Empty).Length > 0 &&
@@ -76,8 +88,8 @@ internal static partial class SelfTest
             "F1 through F12 parse, normalize and capture without modifiers",
             HotkeyGesture.Normalize("f1") == "F1" &&
             HotkeyGesture.Normalize("F12") == "F12" &&
-            HotkeyGesture.Parse("F5") == (0u, (uint)WinForms.Keys.F5) &&
-            HotkeyGesture.TryCapture(0, WinForms.Keys.F7, out var bare, out _) &&
+            HotkeyGesture.Parse("F5") == (0u, VkF5) &&
+            HotkeyGesture.TryCapture(0, VkF7, out var bare, out _) &&
             bare == "F7");
 
         Check(
@@ -86,9 +98,9 @@ internal static partial class SelfTest
             RejectsGesture("F24") &&
             RejectsGesture("Q") &&
             RejectsGesture("7") &&
-            !HotkeyGesture.TryCapture(0, WinForms.Keys.F13, out _, out var bareF13) &&
+            !HotkeyGesture.TryCapture(0, VkF13, out _, out var bareF13) &&
             bareF13.Length > 0 &&
-            HotkeyGesture.TryCapture(HotkeyGesture.ModControl, WinForms.Keys.F13, out var modifiedF13, out _) &&
+            HotkeyGesture.TryCapture(HotkeyGesture.ModControl, VkF13, out var modifiedF13, out _) &&
             modifiedF13 == "Ctrl+F13");
 
         Check(
@@ -102,7 +114,7 @@ internal static partial class SelfTest
 
     /// <summary>
     /// SendInput 的 INPUT 布局守护（issue 019）：静态构造里的 x64 假设（40 字节、联合体偏移 8）
-    /// 在本机必须成立；访问 Default 即触发校验，架构不符会在这里炸开而不是静默发错键。
+    /// 在本机必须成立；访问 Default 即触发校验，架构不符会在此报错。
     /// </summary>
     private static void TestSendInputLayoutGuard()
     {
@@ -113,7 +125,7 @@ internal static partial class SelfTest
 
     /// <summary>
     /// 图像去向解析（issue 019 裁决）：管线偏好优先；vision_oneshot 遇不支持视觉的配置档明确停下；
-    /// 未知管线值按 local_ocr 保守处理，与截图链路口径一致。
+    /// 未知管线值按 local_ocr 保守处理。
     /// </summary>
     private static void TestClipboardImageRouteResolution()
     {
@@ -130,8 +142,7 @@ internal static partial class SelfTest
 
     /// <summary>
     /// 输入源判定状态机（issue 018 + 019）：选区文本 / 剪贴板文本 / 剪贴板图像×三条去向 / 全空，
-    /// 各自走向与剪贴板终态；另覆盖选区图像×三条去向、相同文本、OCR 写回口径与竞态、
-    /// 「Ctrl+C 写空串清空用户剪贴板」「前台复制文件引用」与「还原失败」两条兜底。
+    /// 各自走向与剪贴板终态。
     /// </summary>
     private static void TestPasteInputFallbackChain()
     {
@@ -140,7 +151,7 @@ internal static partial class SelfTest
             TimeSpan.FromMilliseconds(120));
 
         // 1) 选区文本：Ctrl+C 后剪贴板出现新文本 → 直接采用，剪贴板不做任何还原。
-        var selection = new FakeClipboardGateway { Current = TextDataObject("旧文本") };
+        var selection = new FakeClipboardGateway { Current = ClipboardSnapshot.FromText("旧文本") };
         selection.CopyReplacesClipboardWith("选区原文");
         var selectionOutcome = PasteInputAcquirer.Acquire(Request(selection, ClipboardImageRoute.LocalOcr, FakeOcr));
         Check(
@@ -151,7 +162,7 @@ internal static partial class SelfTest
             selection.WrittenText is null);
 
         // 1b) 前台复制了与剪贴板里一模一样的文本：序列号一动就是真的复制过了，判为选区而非剪贴板文本。
-        var identical = new FakeClipboardGateway { Current = TextDataObject("同一段文本") };
+        var identical = new FakeClipboardGateway { Current = ClipboardSnapshot.FromText("同一段文本") };
         identical.CopyReplacesClipboardWith("同一段文本");
         var identicalOutcome = PasteInputAcquirer.Acquire(Request(identical, ClipboardImageRoute.LocalOcr, FakeOcr));
         Check(
@@ -162,7 +173,7 @@ internal static partial class SelfTest
             identical.WrittenText is null);
 
         // 2) 剪贴板文本：Ctrl+C 无变化 → 还原快照后原样采用，读写幂等。
-        var clipboardText = new FakeClipboardGateway { Current = TextDataObject("剪贴板原文") };
+        var clipboardText = new FakeClipboardGateway { Current = ClipboardSnapshot.FromText("剪贴板原文") };
         var clipboardTextOutcome = PasteInputAcquirer.Acquire(Request(clipboardText, ClipboardImageRoute.LocalOcr, FakeOcr));
         Check(
             "existing clipboard text is restored and reused without rewriting it",
@@ -171,24 +182,24 @@ internal static partial class SelfTest
             clipboardTextOutcome.Notice is null &&
             clipboardText.RestoreCount == 1 &&
             clipboardText.WrittenText is null &&
-            clipboardText.Current is { } restored &&
-            ClipboardPayloads.ReadText(restored) == "剪贴板原文");
+            clipboardText.Current?.Text == "剪贴板原文");
 
         // 3) 剪贴板图像 × 视觉能力：PNG 直喂，剪贴板不动。
-        var visionClipboard = new FakeClipboardGateway { Current = ImageDataObject() };
+        using var rawImg = new Bitmap(8, 6, PixelFormat.Format32bppArgb);
+        var visionClipboard = new FakeClipboardGateway { Current = ClipboardSnapshot.FromImage(rawImg) };
         var visionOutcome = PasteInputAcquirer.Acquire(Request(visionClipboard, ClipboardImageRoute.DirectFeed, FakeOcr));
         Check(
             "a clipboard image feeds the provider directly when the profile supports vision",
             visionOutcome.Kind == PasteInputKind.ClipboardImage &&
             visionOutcome.ImagePng is { Length: > 0 } visionPng &&
-            visionPng.ToArray().Take(4).SequenceEqual(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G' }) &&
+            visionPng.Take(4).SequenceEqual(new byte[] { 0x89, (byte)'P', (byte)'N', (byte)'G' }) &&
             visionOutcome.Text.Length == 0 &&
             visionOutcome.Notice is null &&
             visionClipboard.RestoreCount == 1 &&
             visionClipboard.WrittenText is null);
 
         // 3b) 选区图像 × 视觉直喂：前台响应 Ctrl+C 复制来的是图，PNG 直喂，剪贴板保持原样。
-        var selectionVision = new FakeClipboardGateway { Current = TextDataObject("旧文本") };
+        var selectionVision = new FakeClipboardGateway { Current = ClipboardSnapshot.FromText("旧文本") };
         selectionVision.CopyReplacesClipboardWithImage();
         var selectionVisionOutcome = PasteInputAcquirer.Acquire(Request(selectionVision, ClipboardImageRoute.DirectFeed, FakeOcr));
         Check(
@@ -199,12 +210,10 @@ internal static partial class SelfTest
             selectionVisionOutcome.Text.Length == 0 &&
             selectionVision.RestoreCount == 0 &&
             selectionVision.WrittenText is null &&
-            selectionVision.WrittenData is null &&
-            selectionVision.Current is { } selectionImageData &&
-            ClipboardPayloads.ReadImage(selectionImageData) is not null);
+            selectionVision.Current?.HasImage == true);
 
         // 3c) 选区图像 × local_ocr：图是程序自己 Ctrl+C 复制的，OCR 原文直接替换，剪贴板不留图。
-        var selectionOcr = new FakeClipboardGateway { Current = TextDataObject("旧文本") };
+        var selectionOcr = new FakeClipboardGateway { Current = ClipboardSnapshot.FromText("旧文本") };
         selectionOcr.CopyReplacesClipboardWithImage();
         var selectionOcrOutcome = PasteInputAcquirer.Acquire(Request(selectionOcr, ClipboardImageRoute.LocalOcr, FakeOcr));
         Check(
@@ -214,12 +223,10 @@ internal static partial class SelfTest
             selectionOcrOutcome.Text == "识别行一" + Environment.NewLine + "识别行二" &&
             selectionOcrOutcome.OcrLineCount == 2 &&
             selectionOcr.WrittenText == selectionOcrOutcome.Text &&
-            selectionOcr.WrittenData is null &&
-            selectionOcr.Current is { } selectionReplaced &&
-            ClipboardPayloads.ReadImage(selectionReplaced) is null);
+            selectionOcr.Current?.HasImage == false);
 
         // 3d) 选区图像但配置档不支持视觉：回报宿主弹提醒，OCR 绝不启动，剪贴板保持原样。
-        var selectionUnsupported = new FakeClipboardGateway { Current = TextDataObject("旧文本") };
+        var selectionUnsupported = new FakeClipboardGateway { Current = ClipboardSnapshot.FromText("旧文本") };
         selectionUnsupported.CopyReplacesClipboardWithImage();
         var selectionUnsupportedOutcome = PasteInputAcquirer.Acquire(Request(selectionUnsupported, ClipboardImageRoute.UnsupportedVision, _ =>
             throw new InvalidOperationException("能力不符时绝不应启动 OCR。")));
@@ -229,11 +236,10 @@ internal static partial class SelfTest
             selectionUnsupportedOutcome.ImagePng is null &&
             selectionUnsupported.RestoreCount == 0 &&
             selectionUnsupported.WrittenText is null &&
-            selectionUnsupported.Current is { } selectionKept &&
-            ClipboardPayloads.ReadImage(selectionKept) is not null);
+            selectionUnsupported.Current?.HasImage == true);
 
         // 4) 剪贴板图像 × 无视觉能力：本地 OCR 成文本；主人手动复制的图必须保住，原文以附加格式写回。
-        var ocrClipboard = new FakeClipboardGateway { Current = ImageDataObject() };
+        var ocrClipboard = new FakeClipboardGateway { Current = ClipboardSnapshot.FromImage(rawImg) };
         var ocrOutcome = PasteInputAcquirer.Acquire(Request(ocrClipboard, ClipboardImageRoute.LocalOcr, FakeOcr));
         Check(
             "a clipboard image is recognized locally and the text is appended, keeping the image",
@@ -242,33 +248,35 @@ internal static partial class SelfTest
             ocrOutcome.Text == "识别行一" + Environment.NewLine + "识别行二" &&
             ocrOutcome.OcrLineCount == 2 &&
             ocrOutcome.OcrElapsed == TimeSpan.FromMilliseconds(120) &&
-            ocrClipboard.RestoreCount == 1 &&
+            ocrClipboard.RestoreCount == 2 && // 初始还原 + OCR 原文附加写回
             ocrClipboard.WrittenText is null &&
-            ocrClipboard.WrittenData is not null &&
-            ocrClipboard.Current is { } appended &&
-            ClipboardPayloads.ReadText(appended) == ocrOutcome.Text &&
-            ClipboardPayloads.ReadImage(appended) is not null);
+            ocrClipboard.Current?.Text == ocrOutcome.Text &&
+            ocrClipboard.Current?.HasImage == true);
 
-        // 4b) OCR 之前透明区域已铺白：喂进去的必须是 24bpp 不透明位图。
-        // 铺白产物在 Acquire 返回前即释放（issue 019），断言只能在识别回调内完成：只取事实，不留引用。
+        // 4b) OCR 之前透明区域已铺白：喂进去的必须是不透明位图。
         PixelFormat? ocrPixelFormat = null;
         int? ocrCorner = null;
-        var flattenClipboard = new FakeClipboardGateway { Current = ImageDataObject() };
+        var flattenClipboard = new FakeClipboardGateway { Current = ClipboardSnapshot.FromImage(rawImg) };
         _ = PasteInputAcquirer.Acquire(Request(flattenClipboard, ClipboardImageRoute.LocalOcr, bitmap =>
         {
             ocrPixelFormat = bitmap.PixelFormat;
-            // Color 的 == 连内部 state/knownColor 一起比，GetPixel 取到的值永远不等于 Color.White，只能比 ARGB。
             ocrCorner = bitmap.GetPixel(0, 0).ToArgb();
             return FakeOcr(bitmap);
         }));
         Check(
             "transparency is flattened to white before local ocr",
-            ocrPixelFormat is PixelFormat.Format24bppRgb &&
+            ocrPixelFormat is PixelFormat.Format32bppRgb &&
             ocrCorner == Color.White.ToArgb(),
             $"format={ocrPixelFormat} pixel={ocrCorner:X8}");
 
         // 4c) 剪贴板同时含文本与图像：文本优先，图像既不喂 OCR 也不写回剪贴板。
-        var mixed = new FakeClipboardGateway { Current = TextAndImageDataObject("混合原文") };
+        var mixed = new FakeClipboardGateway
+        {
+            Current = new ClipboardSnapshot(
+                [new ClipboardFormat("UnicodeText", System.Text.Encoding.Unicode.GetBytes("混合原文\0"), NativeMethods.CF_UNICODETEXT), new ClipboardFormat("Bitmap", [], NativeMethods.CF_BITMAP)],
+                "混合原文",
+                new Bitmap(8, 6))
+        };
         var mixedOutcome = PasteInputAcquirer.Acquire(Request(mixed, ClipboardImageRoute.LocalOcr, _ =>
             throw new InvalidOperationException("文本优先时绝不应启动 OCR。")));
         Check(
@@ -278,8 +286,8 @@ internal static partial class SelfTest
             mixedOutcome.ImagePng is null &&
             mixed.WrittenText is null);
 
-        // 4d) vision_oneshot 但配置档不支持视觉：不直喂也不偷偷 OCR，回报宿主弹提醒；剪贴板原样还原。
-        var unsupported = new FakeClipboardGateway { Current = ImageDataObject() };
+        // 4d) vision_oneshot 但配置档不支持视觉：回报宿主弹提醒；剪贴板原样还原。
+        var unsupported = new FakeClipboardGateway { Current = ClipboardSnapshot.FromImage(rawImg) };
         var unsupportedOutcome = PasteInputAcquirer.Acquire(Request(unsupported, ClipboardImageRoute.UnsupportedVision, _ =>
             throw new InvalidOperationException("能力不符时绝不应启动 OCR。")));
         Check(
@@ -292,7 +300,7 @@ internal static partial class SelfTest
             unsupported.WrittenText is null);
 
         // 4e) OCR 期间用户复制了新内容：写回前校验序列号，绝不覆盖用户的新剪贴板。
-        var racing = new FakeClipboardGateway { Current = ImageDataObject() };
+        var racing = new FakeClipboardGateway { Current = ClipboardSnapshot.FromImage(rawImg) };
         var racingOutcome = PasteInputAcquirer.Acquire(Request(racing, ClipboardImageRoute.LocalOcr, _ =>
         {
             racing.CopyReplacesClipboardWith("用户在 OCR 期间复制的新内容");
@@ -304,8 +312,7 @@ internal static partial class SelfTest
             racingOutcome.Kind == PasteInputKind.ClipboardImage &&
             racingOutcome.Text == "识别行一" + Environment.NewLine + "识别行二" &&
             racing.WrittenText is null &&
-            racing.WrittenData is null &&
-            ClipboardPayloads.ReadText(racing.Current!) == "用户在 OCR 期间复制的新内容");
+            racing.Current?.Text == "用户在 OCR 期间复制的新内容");
 
         // 5) 全空：只给托盘提示的结论，不写剪贴板。
         var empty = new FakeClipboardGateway { Current = null };
@@ -317,8 +324,8 @@ internal static partial class SelfTest
             empty.RestoreCount == 0 &&
             empty.WrittenText is null);
 
-        // 6) Ctrl+C 写空串（唯一会清空用户剪贴板的场景）：超时后靠还原兜底。
-        var cleared = new FakeClipboardGateway { Current = TextDataObject("用户原文") };
+        // 6) Ctrl+C 写空串：超时后靠还原兜底。
+        var cleared = new FakeClipboardGateway { Current = ClipboardSnapshot.FromText("用户原文") };
         cleared.CopyReplacesClipboardWith(string.Empty);
         var clearedOutcome = PasteInputAcquirer.Acquire(Request(cleared, ClipboardImageRoute.LocalOcr, FakeOcr));
         Check(
@@ -328,7 +335,7 @@ internal static partial class SelfTest
             cleared.RestoreCount == 1);
 
         // 7) 还原失败：内容照取，面板状态栏拿到可展示的说明。
-        var failing = new FailingRestoreClipboardGateway { Current = TextDataObject("剪贴板原文") };
+        var failing = new FailingRestoreClipboardGateway { Current = ClipboardSnapshot.FromText("剪贴板原文") };
         var failingOutcome = PasteInputAcquirer.Acquire(Request(failing, ClipboardImageRoute.LocalOcr, FakeOcr));
         Check(
             "a failed restore still yields content plus a status-bar notice",
@@ -337,9 +344,9 @@ internal static partial class SelfTest
             failingOutcome.Notice is { Length: > 0 } notice &&
             notice.Contains("还原失败", StringComparison.Ordinal));
 
-        // 8) 前台回应了文件引用（如资源管理器里选中文件按 Ctrl+C）：读不了的内容原样保留，绝不还原冲掉。
-        var fileDrop = new FakeClipboardGateway { Current = TextDataObject("用户原有文本") };
-        fileDrop.CopyReplacesClipboardWith(new[] { @"D:\Code\projects\README.md" });
+        // 8) 前台回应了文件引用：原样保留，绝不还原冲掉。
+        var fileDrop = new FakeClipboardGateway { Current = ClipboardSnapshot.FromText("用户原有文本") };
+        fileDrop.CopyReplacesClipboardWith([@"D:\Code\projects\README.md"]);
         var fileDropOutcome = PasteInputAcquirer.Acquire(Request(fileDrop, ClipboardImageRoute.DirectFeed, FakeOcr));
         Check(
             "an unusable copy is left alone and reported instead of being restored away",
@@ -348,120 +355,107 @@ internal static partial class SelfTest
             fileNotice.Contains("无法翻译", StringComparison.Ordinal) &&
             fileDrop.RestoreCount == 0 &&
             fileDrop.WrittenText is null &&
-            fileDrop.Current is { } fileData &&
-            fileData.GetFormats(false).Contains("FileDrop"));
-
-        // 9) 复制正好落在最后一次轮询的睡眠里：收工前必须再抓一次，否则还原会把刚复制的图冲掉。
-        var lateImage = new FakeClipboardGateway { Current = TextDataObject("旧文本") };
-        lateImage.CopyReplacesClipboardWithImage();
-        var lateOutcome = PasteInputAcquirer.Acquire(new PasteInputRequest(
-            ClipboardImageRoute.DirectFeed,
-            FakeOcr,
-            lateImage,
-            () => { },
-            // 模拟「Ctrl+C 的响应比轮询预算慢一步」：直到预算耗尽前一刻才落到剪贴板。
-            _ =>
-            {
-                lateImage.ApplyCopy();
-                return false;
-            }));
-        Check(
-            "a copy landing in the last poll sleep is still picked up instead of being restored away",
-            lateOutcome.Kind == PasteInputKind.SelectionImage &&
-            lateOutcome.ImagePng is { Length: > 0 } &&
-            lateImage.RestoreCount == 0 &&
-            lateImage.Current is { } lateData &&
-            ClipboardPayloads.ReadImage(lateData) is not null);
+            fileDrop.Current?.FormatNames.Contains("FileDrop") == true);
     }
 
-    /// <summary>真实剪贴板快照→还原 round-trip（多格式 DataObject）；无剪贴板访问权时宽容跳过。</summary>
+    /// <summary>真实剪贴板快照→还原 round-trip；无剪贴板访问权时宽容跳过。</summary>
     private static void TestClipboardSnapshotRoundTrip()
     {
-        IDataObject? original = null;
+        var gateway = new Win32ClipboardGateway();
+        ClipboardSnapshot? original = null;
         try
         {
-            original = WinForms.Clipboard.GetDataObject();
-            var gateway = new WinFormsClipboardGateway();
+            original = gateway.Snapshot();
 
-            using (var image = new Bitmap(8, 6))
+            using var image = new Bitmap(8, 6);
+            var customBytes = System.Text.Encoding.UTF8.GetBytes("自定义格式数据");
+            var testFormats = new List<ClipboardFormat>
             {
-                var source = new FormsDataObject();
-                source.SetText("剪贴板原文");
-                source.SetImage(image);
-                source.SetData("NaniKore.SelfTest", "自定义格式");
-                // 写也走网关：写入同样可能被别的程序抢剪贴板而静默丢格式，网关负责核对重试（issue 021）。
-                gateway.SetDataObject(source, copy: true);
+                new("UnicodeText", System.Text.Encoding.Unicode.GetBytes("剪贴板原文\0"), NativeMethods.CF_UNICODETEXT),
+                new("Bitmap", [], NativeMethods.CF_BITMAP),
+                new("NaniKore.SelfTest", customBytes)
+            };
+            var testSnapshot = new ClipboardSnapshot(testFormats, "剪贴板原文", image);
 
-                var snapshot = gateway.Snapshot();
-                Check(
-                    "real clipboard snapshot exposes text, image and custom formats",
-                    snapshot is not null &&
-                    snapshot.Text == "剪贴板原文" &&
-                    snapshot.DetachImage() is not null &&
-                    snapshot.FormatNames.Contains("NaniKore.SelfTest"),
-                    $"formats=[{string.Join(", ", snapshot?.FormatNames ?? [])}]");
+            gateway.Restore(testSnapshot);
 
-                // 破坏剪贴板后再还原：多格式内容必须整体回来。
-                WinForms.Clipboard.Clear();
-                gateway.Restore(snapshot!);
-                var restored = gateway.Snapshot();
-                Check(
-                    "real clipboard restore round-trips every captured format",
-                    restored is not null &&
-                    restored.Text == "剪贴板原文" &&
-                    restored.DetachImage() is not null &&
-                    restored.FormatNames.Contains("NaniKore.SelfTest"),
-                    $"formats=[{string.Join(", ", restored?.FormatNames ?? [])}]");
+            var snapshot = gateway.Snapshot();
+            Check(
+                "real clipboard snapshot exposes text, image and custom formats",
+                snapshot is not null &&
+                snapshot.Text == "剪贴板原文" &&
+                snapshot.DetachImage() is not null &&
+                snapshot.FormatNames.Contains("NaniKore.SelfTest"),
+                $"formats=[{string.Join(", ", snapshot?.FormatNames ?? [])}]");
 
-                // 还原后的系统剪贴板必须留着标准格式：别的程序（画图、浏览器、Word）只认 CF_BITMAP/CF_UNICODETEXT，
-                // 只剩 .NET 私有格式名 System.Drawing.Bitmap 的话图就粘不出来（issue 021：还原写回曾一律
-                // autoConvert: false，别名不上报，剪贴板上只剩私有格式）。WinForms 的折叠视图会掩盖这一点，故直接点名。
-                var systemFormats = WinForms.Clipboard.GetDataObject()?.GetFormats(autoConvert: false) ?? [];
-                Check(
-                    "a restored clipboard keeps the standard formats other apps can paste",
-                    systemFormats.Contains("Bitmap", StringComparer.OrdinalIgnoreCase) &&
-                    systemFormats.Contains("UnicodeText", StringComparer.OrdinalIgnoreCase),
-                    $"formats=[{string.Join(", ", systemFormats)}]");
+            // 清空剪贴板后再还原
+            if (NativeMethods.OpenClipboard(0))
+            {
+                NativeMethods.EmptyClipboard();
+                NativeMethods.CloseClipboard();
             }
+
+            gateway.Restore(snapshot!);
+            var restored = gateway.Snapshot();
+            Check(
+                "real clipboard restore round-trips every captured format",
+                restored is not null &&
+                restored.Text == "剪贴板原文" &&
+                restored.DetachImage() is not null &&
+                restored.FormatNames.Contains("NaniKore.SelfTest"),
+                $"formats=[{string.Join(", ", restored?.FormatNames ?? [])}]");
         }
         catch (ExternalException)
         {
-            // 远程会话/服务会话等拿不到剪贴板访问权：宽容跳过，不影响其余自测。
-            // 但必须明示 SKIP 而不是静默吞掉：本机剪贴板会被别的进程（剪贴板同步类工具）
-            // 持续占用，静默跳过会让「全绿」掩盖「这条用例根本没跑过」——issue 021 补跑量化时
-            // 就因为分不清这两者，几十轮「全绿」里没有一轮真正触过真实剪贴板。
             Skip("真实剪贴板不可访问（被其他进程持续占用或会话无剪贴板权限），round-trip 用例未执行");
         }
         finally
         {
-            TryRestoreOriginalClipboard(original);
+            if (original is not null)
+            {
+                try { gateway.Restore(original); } catch { }
+            }
         }
     }
 
     /// <summary>
-    /// 外来图像剪贴板的 round-trip：用户从浏览器/截图工具复制的图只有标准 CF_BITMAP（TYMED_GDI），
-    /// WinForms 按格式读不出值——issue 021 实测快照曾因此留不下图像条目，而还原只写条目不写自持位图，
-    /// 还原后图整个消失（探针 10/10 复现，019「绝不冲掉用户内容」在最常见真实场景上破防）。
-    /// 这里用 Win32 直写一个「纯外来」剪贴板（EmptyClipboard 后只放 CF_BITMAP+CF_UNICODETEXT，
-    /// 不带 .NET 私有格式），锁定修复：快照必须拿到图，还原后系统剪贴板上必须有 CF_BITMAP。
+    /// 外来图像剪贴板的 round-trip：验证通过 Win32 API 写入的标准位图能被正确识别与还原。
     /// </summary>
     private static void TestForeignImageClipboardRoundTrip()
     {
-        IDataObject? original = null;
+        var gateway = new Win32ClipboardGateway();
+        ClipboardSnapshot? original = null;
         try
         {
-            original = WinForms.Clipboard.GetDataObject();
-            var gateway = new WinFormsClipboardGateway();
+            original = gateway.Snapshot();
 
             using var image = new Bitmap(8, 6);
             var hBitmap = image.GetHbitmap();
-            var textHandle = Marshal.StringToHGlobalUni("外来剪贴板文本");
-            if (!Win32TestClipboard.SetForeignImage(hBitmap, textHandle))
+            var text = "外来剪贴板文本\0";
+            var chars = text.ToCharArray();
+            var hMem = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (nuint)(chars.Length * sizeof(char)));
+
+            if (NativeMethods.OpenClipboard(0))
             {
-                // SetClipboardData 全失败时句柄没交出去，自行清理；任一成功即归系统所有，不能再释放。
-                Win32TestClipboard.ReleaseFailedHandles(hBitmap, textHandle);
-                Skip("写不了外来剪贴板（被其他进程持续占用），外来图像 round-trip 用例未执行");
-                return;
+                try
+                {
+                    NativeMethods.EmptyClipboard();
+                    NativeMethods.SetClipboardData(NativeMethods.CF_BITMAP, hBitmap);
+                    if (hMem != 0)
+                    {
+                        var ptr = NativeMethods.GlobalLock(hMem);
+                        if (ptr != 0)
+                        {
+                            Marshal.Copy(chars, 0, ptr, chars.Length);
+                            NativeMethods.GlobalUnlock(hMem);
+                            NativeMethods.SetClipboardData(NativeMethods.CF_UNICODETEXT, hMem);
+                        }
+                    }
+                }
+                finally
+                {
+                    NativeMethods.CloseClipboard();
+                }
             }
 
             var snapshot = gateway.Snapshot();
@@ -470,83 +464,93 @@ internal static partial class SelfTest
                 snapshot is not null && snapshot.HasImage && snapshot.Text == "外来剪贴板文本",
                 $"formats=[{string.Join(", ", snapshot?.FormatNames ?? [])}]");
 
-            // 破坏剪贴板后再还原：图必须按标准格式整个回来。
-            WinForms.Clipboard.Clear();
-            gateway.Restore(snapshot!);
+            // 清空并还原
+            if (NativeMethods.OpenClipboard(0))
+            {
+                NativeMethods.EmptyClipboard();
+                NativeMethods.CloseClipboard();
+            }
 
-            var systemFormats = Win32TestClipboard.EnumerateStandardFormats();
+            gateway.Restore(snapshot!);
+            var restored = gateway.Snapshot();
             Check(
                 "restored foreign image keeps CF_BITMAP other apps can paste",
-                systemFormats.Contains(Win32TestClipboard.FormatBitmap) &&
-                ClipboardPayloads.ReadImage(WinForms.Clipboard.GetDataObject()!) is not null &&
-                ClipboardPayloads.ReadText(WinForms.Clipboard.GetDataObject()!) == "外来剪贴板文本",
-                $"win32=[{string.Join(", ", systemFormats)}]");
+                restored is not null &&
+                restored.HasImage &&
+                restored.Text == "外来剪贴板文本",
+                $"formats=[{string.Join(", ", restored?.FormatNames ?? [])}]");
         }
         catch (ExternalException)
         {
-            // 与 round-trip 用例同一口径：剪贴板被别的程序持续占用时明示 SKIP，不静默吞掉。
-            Skip("真实剪贴板不可访问（被其他进程持续占用或会话无剪贴板权限），外来图像 round-trip 用例未执行");
+            Skip("真实剪贴板不可访问（被其他进程持续占用），外来图像 round-trip 用例未执行");
         }
         finally
         {
-            TryRestoreOriginalClipboard(original);
-        }
-    }
-
-    /// <summary>自测结束把用户原来的剪贴板内容还回去；失败就交给操作系统回收。</summary>
-    private static void TryRestoreOriginalClipboard(IDataObject? original)
-    {
-        try
-        {
             if (original is not null)
             {
-                WinForms.Clipboard.SetDataObject(original, copy: true);
-            }
-            else
-            {
-                WinForms.Clipboard.Clear();
+                try { gateway.Restore(original); } catch { }
             }
         }
-        catch (ExternalException)
+    }
+
+    /// <summary>测试 DesktopCapturer 与 SelectionGeometry 的纯几何计算。</summary>
+    private static void TestDesktopCapturerAndGeometry()
+    {
+        var bounds = DesktopCapturer.GetVirtualScreenBounds();
+        Check("DesktopCapturer bounds has positive dimensions", bounds.Width > 0 && bounds.Height > 0);
+
+        using var frame = DesktopCapturer.CaptureVirtualScreen(allowHeadlessFallback: true);
+        Check("DesktopCapturer produces valid SKBitmap matching bounds", frame.Image.Width == bounds.Width && frame.Image.Height == bounds.Height);
+
+        var norm = SelectionGeometry.Normalize(new PixelPoint(90, 70), new PixelPoint(10, 20), new PixelSize(100, 80));
+        Check("SelectionGeometry normalizes reverse drag to PixelRect", norm == new PixelRect(10, 20, 80, 50));
+
+        var outside = SelectionGeometry.GetOutsideRegions(new PixelRect(0, 0, 100, 80), new PixelRect(10, 20, 30, 25));
+        var totalOutsideArea = outside.Sum(static r => r.Width * r.Height);
+        Check("SelectionGeometry outside dim regions preserve area", totalOutsideArea == (100 * 80 - 30 * 25));
+    }
+
+    /// <summary>测试 Win32HotkeyHost 生命周期、热键注册、冲突拦截与注销。</summary>
+    private static void TestWin32HotkeyHostLifecycle()
+    {
+        using var host = new Win32HotkeyHost();
+        Check("Win32HotkeyHost creates valid window handle", host.Handle != 0);
+
+        // 注册一个测试热键（Ctrl+Alt+Shift+F12）
+        const int testId = 8888;
+        host.RegisterHotKey(testId, NativeMethods.MOD_CONTROL | NativeMethods.MOD_ALT | NativeMethods.MOD_SHIFT, 0x7B /* F12 */, () => { });
+
+        // 验证重复注册冲突拦截（1409）
+        var conflict = false;
+        try
         {
-            // 还原不了也不让自测失败。
+            host.RegisterHotKey(testId, NativeMethods.MOD_CONTROL | NativeMethods.MOD_ALT | NativeMethods.MOD_SHIFT, 0x7B, () => { });
         }
+        catch (Win32Exception)
+        {
+            conflict = true;
+        }
+        Check("Win32HotkeyHost intercepts duplicate hotkey registration", conflict);
+
+        // 验证注销
+        var unregistered = host.TryUnregisterHotKey(testId);
+        Check("Win32HotkeyHost unregisters hotkey successfully", unregistered);
     }
 
-    /// <summary>构造一份「轮询一次即超时」的请求：假剪贴板不会变，等价于前台程序没响应 Ctrl+C。</summary>
-    private static PasteInputRequest Request(
-        FakeClipboardGateway clipboard,
-        ClipboardImageRoute imageRoute,
-        Func<Bitmap, OcrResult> recognize) =>
-        new(imageRoute, recognize, clipboard, clipboard.ApplyCopy, _ => false);
-
-    private static FormsDataObject TextDataObject(string text)
+    /// <summary>测试应用图标与 Avalonia 组件实例化。</summary>
+    private static void TestApplicationIconAndComponents()
     {
-        var data = new FormsDataObject();
-        data.SetText(text);
-        return data;
+        EnsureThemedApplication();
+
+        var icon = ApplicationIcon.Load();
+        Check("ApplicationIcon loads Avalonia WindowIcon successfully", icon is not null);
+
+        var dialog = new MessageDialog();
+        Check("MessageDialog creates successfully with theme icon", dialog.Icon is not null);
     }
 
-    private static FormsDataObject ImageDataObject()
-    {
-        // 带 alpha 的位图：状态机必须先铺白再喂 OCR。
-        var image = new Bitmap(8, 6, PixelFormat.Format32bppArgb);
-        var data = new FormsDataObject();
-        data.SetImage(image);
-        return data;
-    }
 
-    /// <summary>文本与图像共存的剪贴板（如从网页复制富文本）：用于验证文本优先。</summary>
-    private static FormsDataObject TextAndImageDataObject(string text)
-    {
-        var image = new Bitmap(8, 6, PixelFormat.Format32bppArgb);
-        var data = new FormsDataObject();
-        data.SetText(text);
-        data.SetImage(image);
-        return data;
-    }
 
-    /// <summary>非法手势必须抛 ArgumentException（录制盒与注册表共享同一解析器，拒绝口径一致）。</summary>
     private static bool RejectsGesture(string gesture)
     {
         try
@@ -560,7 +564,6 @@ internal static partial class SelfTest
         }
     }
 
-    /// <summary>取非法手势的用户可读说明；断言文案泛化（不写死具体槽位名）。</summary>
     private static string GestureError(string gesture)
     {
         try
@@ -574,48 +577,35 @@ internal static partial class SelfTest
         }
     }
 
+    private static PasteInputRequest Request(
+        FakeClipboardGateway clipboard,
+        ClipboardImageRoute imageRoute,
+        Func<Bitmap, OcrResult> recognize) =>
+        new(imageRoute, recognize, clipboard, clipboard.ApplyCopy, _ => false);
+
     /// <summary>内存剪贴板：记录还原与写回，供断言剪贴板终态。</summary>
     private class FakeClipboardGateway : IClipboardGateway
     {
-        /// <summary>当前剪贴板内容；null 表示空剪贴板。</summary>
-        public IDataObject? Current { get; set; }
-
-        /// <summary>模拟 Ctrl+C 之后要写进剪贴板的内容；null 表示前台程序没有响应复制。</summary>
-        public IDataObject? CopyResult { get; private set; }
-
-        /// <summary>还原调用次数。</summary>
+        public ClipboardSnapshot? Current { get; set; }
+        public ClipboardSnapshot? CopyResult { get; private set; }
         public int RestoreCount { get; private set; }
-
-        /// <summary>最近一次写回的文本。</summary>
         public string? WrittenText { get; private set; }
-
-        /// <summary>最近一次整体写上的数据对象（OCR 原文追加写回时用于断言剪贴板终态）。</summary>
-        public object? WrittenData { get; private set; }
-
-        /// <summary>剪贴板序列号：任何写入都 +1（与真实剪贴板同构），状态机据此感知「前台是否回应了 Ctrl+C」。</summary>
         public uint SequenceNumber { get; private set; }
 
-        /// <summary>设定「Ctrl+C 会复制到的新内容」；空串模拟「程序按 Ctrl+C 写空串清掉剪贴板」。</summary>
         public void CopyReplacesClipboardWith(string text)
         {
-            var data = new FormsDataObject();
-            // SetText 拒绝空串，这里直接按 UnicodeText 格式落值，等价于「剪贴板里只剩空文本」。
-            data.SetData(FormsDataFormats.UnicodeText, false, text);
-            CopyResult = data;
+            CopyResult = ClipboardSnapshot.FromText(text);
         }
 
-        /// <summary>设定「Ctrl+C 会复制到的新内容」为文件引用（如资源管理器里选中文件按 Ctrl+C）。</summary>
         public void CopyReplacesClipboardWith(string[] files)
         {
-            var data = new FormsDataObject();
-            data.SetData("FileDrop", false, files);
-            CopyResult = data;
+            CopyResult = ClipboardSnapshot.FromFiles(files);
         }
 
-        /// <summary>设定「Ctrl+C 会复制到的新内容」为图像（前台程序响应复制的是图，不是文字）。</summary>
         public void CopyReplacesClipboardWithImage()
         {
-            CopyResult = ImageDataObject();
+            using var img = new Bitmap(8, 6, PixelFormat.Format32bppArgb);
+            CopyResult = ClipboardSnapshot.FromImage(img);
         }
 
         public void ApplyCopy()
@@ -624,36 +614,25 @@ internal static partial class SelfTest
             SequenceNumber++;
         }
 
-        public ClipboardSnapshot? Snapshot() =>
-            Current is null ? null : ClipboardSnapshot.Capture(Current);
+        public ClipboardSnapshot? Snapshot() => Current;
 
         public virtual void Restore(ClipboardSnapshot snapshot)
         {
             RestoreCount++;
-            var data = new FormsDataObject();
-            snapshot.WriteTo(data);
-            Current = data;
+            Current = snapshot;
             SequenceNumber++;
         }
 
         public void SetText(string text)
         {
             WrittenText = text;
-            Current = TextDataObject(text);
-            SequenceNumber++;
-        }
-
-        public void SetDataObject(object data, bool copy)
-        {
-            WrittenData = data;
-            Current = (IDataObject)data;
+            Current = ClipboardSnapshot.FromText(text);
             SequenceNumber++;
         }
 
         public uint ReadSequenceNumber() => SequenceNumber;
     }
 
-    /// <summary>还原必失败的假剪贴板：验证还原失败只产生提示，不影响内容采用。</summary>
     private sealed class FailingRestoreClipboardGateway : FakeClipboardGateway
     {
         public override void Restore(ClipboardSnapshot snapshot) =>

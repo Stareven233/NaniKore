@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="NaniKore.App.Controls.TrayNotificationWindow"
+        Title="NaniKoreNotification"
+        WindowDecorations="None"
+        ShowInTaskbar="False"
+        Topmost="True"
+        CanResize="False"
+        ShowActivated="False"
+        WindowStartupLocation="Manual"
+        Background="Transparent"
+        SizeToContent="WidthAndHeight"
+        MinWidth="320"
+        MaxWidth="440">
+    <Border Background="{DynamicResource Brush.Card.Background}"
+            BorderBrush="{DynamicResource Brush.Card.Border}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Padding="14,12"
+            Margin="8">
+        <Grid ColumnDefinitions="Auto,*">
+            <TextBlock Grid.Column="0"
+                       Text="&#xE7BA;"
+                       FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                       FontSize="20"
+                       Foreground="{DynamicResource Brush.Warning}"
+                       VerticalAlignment="Top"
+                       Margin="0,2,12,0" />
+            <StackPanel Grid.Column="1" Spacing="4">
+                <TextBlock Text="NaniKore"
+                           FontWeight="SemiBold"
+                           FontSize="14"
+                           Foreground="{DynamicResource Brush.Text.Primary}" />
+                <TextBlock x:Name="MessageBlock"
+                           FontSize="13"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource Brush.Text.Secondary}" />
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

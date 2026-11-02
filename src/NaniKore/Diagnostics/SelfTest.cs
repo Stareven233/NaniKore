@@ -27,7 +27,7 @@ internal static partial class SelfTest
 
         RunOcrTests();
         RunConfigTests();
-        // RunInputTests() 待 P2 引入 Win32 平台输入网关后重接
+        RunInputTests();
         RunTranslationTests();
         RunPhoneticsTests();
         RunExplanationTests();

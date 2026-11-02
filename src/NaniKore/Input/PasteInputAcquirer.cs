@@ -1,12 +1,9 @@
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using NaniKore.Imaging;
+using NaniKore.Interop;
 using NaniKore.Ocr;
-using FormsDataObject = System.Windows.Forms.DataObject;
-using FormsDataFormats = System.Windows.Forms.DataFormats;
-using IDataObject = System.Windows.Forms.IDataObject;
 using NativeInput = NaniKore.Interop.NativeMethods.NativeInput;
 
 namespace NaniKore.Input;
@@ -74,7 +71,7 @@ internal sealed record PasteInputRequest(
 internal delegate bool PollTick(int attempt);
 
 /// <summary>
-/// 剪贴板读写抽象：状态机只认这个接口，运行期用 WinForms 真实剪贴板，自测用内存 DataObject。
+/// 剪贴板读写抽象：状态机只认这个接口，运行期用纯 Win32 原生剪贴板网关，自测用内存实现。
 /// </summary>
 internal interface IClipboardGateway
 {
@@ -89,195 +86,94 @@ internal interface IClipboardGateway
 
     /// <summary>
     /// 读系统剪贴板序列号：任何写入（文本/图像/文件引用/空串）都会让它 +1，只读不改变它，
-    /// 且不打开剪贴板——并发写入下读取也零异常（实测），是「前台是否回应了 Ctrl+C」最可靠的信号。
+    /// 且不打开剪贴板——并发写入下读取也零异常，是「前台是否回应了 Ctrl+C」最可靠的信号。
     /// </summary>
     uint ReadSequenceNumber();
-
-    /// <summary>把数据对象整体写上剪贴板（OCR 原文追加：原图与识别文本一起进剪贴板）。</summary>
-    void SetDataObject(object data, bool copy);
 }
 
 /// <summary>单个剪贴板格式的自持副本。</summary>
 /// <param name="Format">注册的格式名（UnicodeText、Bitmap 或自定义名）。</param>
-/// <param name="Data">该格式的托管数据；读不出来的格式根本不会进快照。</param>
-internal sealed record ClipboardFormat(string Format, object Data);
+/// <param name="Data">该格式的托管字节数组。</param>
+/// <param name="StandardFormatId">标准 Win32 格式 ID（若为标准格式）。</param>
+internal sealed record ClipboardFormat(string Format, byte[] Data, uint? StandardFormatId = null);
 
 /// <summary>
-/// 剪贴板快照：按格式把内容搬进进程自持内存。
-/// 之所以不直接持有 <see cref="System.Windows.Forms.Clipboard.GetDataObject"/> 返回的 DataObject：
-/// 那个对象背后是剪贴板的 COM 代理，别的程序一改写剪贴板，代理指向的数据就可能被释放，
-/// 还原出来是垃圾甚至抛异常——快照必须在改写发生前落地成自持数据。
+/// 剪贴板快照：按格式把内容搬进进程自持内存，彻底脱离 COM 代理与短命句柄生命周期。
 /// </summary>
 internal sealed class ClipboardSnapshot
 {
-    private readonly IReadOnlyList<ClipboardFormat> _formats;
+    private readonly List<ClipboardFormat> _formats;
     private readonly Bitmap? _image;
 
-    private ClipboardSnapshot(IReadOnlyList<ClipboardFormat> formats, string? text, Bitmap? image)
+    public ClipboardSnapshot(List<ClipboardFormat> formats, string? text, Bitmap? image)
     {
         _formats = formats;
         Text = text;
         _image = image;
     }
 
-    /// <summary>快照里的文本（Unicode 优先，其次 ANSI）；没有文本为 null。</summary>
+    /// <summary>快照里的文本（Unicode 优先）；没有文本为 null。</summary>
     public string? Text { get; }
 
-    /// <summary>快照覆盖到的剪贴板格式名，按注册名原样保留（自测用于核对多格式完整性）。</summary>
-    public IReadOnlyList<string> FormatNames => _formats.Select(entry => entry.Format).ToArray();
+    /// <summary>快照覆盖到的剪贴板格式名。</summary>
+    public IReadOnlyList<string> FormatNames => _formats.Select(entry => entry.Format).ToList();
 
-    /// <summary>快照里有没有图像（<see cref="DetachImage"/> 的非破坏性版本，供核对完整性用）。</summary>
+    /// <summary>格式明细。</summary>
+    public IReadOnlyList<ClipboardFormat> Formats => _formats;
+
+    /// <summary>快照里有没有图像。</summary>
     public bool HasImage => _image is not null;
 
     /// <summary>
-    /// 按格式搬走 <paramref name="data"/> 的内容；什么都读不到时返回 null（无可还原内容）。
-    /// <paramref name="textFallback"/>／<paramref name="imageFallback"/> 是系统剪贴板的 Win32 地面真值，
-    /// 仅当 WinForms 通道读不到对应内容时按它修正——issue 021 实测两个通道都会偶发坏样本
-    /// （文本读成空串、图像读成 null，而系统剪贴板上内容完好，连续多次读取都读不出）。
+    /// 取出快照里的图像副本，所有权转移给调用方，用毕负责释放。
     /// </summary>
-    public static ClipboardSnapshot? Capture(IDataObject data, string? textFallback = null, Bitmap? imageFallback = null)
-    {
-        // 文本先按产品口径读一遍：GetData(format, false) 在剪贴板代理上偶发返回空串——issue 021
-        // 实测出现过「同一次读取里 ReadText 拿到了原文、条目却是空串」，照它还原用户的文本就没了；
-        // ReadText 走的 autoConvert 通道稳得多，条目读到空串时按它修正。真值兜底再挡一层：
-        // ReadText 本身也可能读成空串（Win32 直读却显示原文完好），此时按调用方给的真值修正。
-        var text = ClipboardPayloads.ReadText(data);
-        if (text is not { Length: > 0 } && textFallback is { Length: > 0 })
-        {
-            text = textFallback;
-        }
-        var formats = new List<ClipboardFormat>();
-        foreach (var format in data.GetFormats(autoConvert: false))
-        {
-            try
-            {
-                if (data.GetData(format, autoConvert: false) is { } value)
-                {
-                    if (value is string { Length: 0 } && text is { Length: > 0 } robust && IsTextFormat(format))
-                    {
-                        value = robust;
-                    }
-
-                    formats.Add(new ClipboardFormat(format, value));
-                }
-            }
-            catch (Exception exception) when (exception is ExternalException or ArgumentException or NotSupportedException)
-            {
-                // 个别格式读不出来（延迟渲染/专有格式）就放弃它，绝不影响其余格式进快照。
-            }
-        }
-
-        // 图像额外自持一份副本：COM 代理背后的 HBITMAP 不归我们所有，剪贴板一改写就可能失效。
-        Bitmap? image = null;
-        try
-        {
-            image = ClipboardPayloads.ReadImage(data) is { } source ? new Bitmap(source) : null;
-        }
-        catch (ExternalException)
-        {
-            image = null;
-        }
-
-        if (image is null && imageFallback is not null)
-        {
-            // 强类型通道也没读到（坏样本），按 Win32 真值的位图副本兜底。
-            try
-            {
-                image = new Bitmap(imageFallback);
-            }
-            catch (ArgumentException)
-            {
-                image = null;
-            }
-        }
-
-        if (image is not null && !formats.Any(entry => entry.Data is Bitmap))
-        {
-            // 图像必须留下格式条目：还原只写 _formats，没有条目就没有图。两种情况会走到这里——
-            // 外来剪贴板只有标准 CF_BITMAP（TYMED_GDI，非 autoConvert 的按格式读取取不到值：
-            // issue 021 实测用户从浏览器/截图工具复制的图，还原后 CF_BITMAP 整个消失、图粘不出来）；
-            // 私有格式条目读成 null 的坏样本。补一条标准 Bitmap 条目（写回时 autoConvert:true 出 CF_BITMAP），
-            // 保证还原后画图/浏览器/Word 这些只认标准格式的程序粘得出图。
-            try
-            {
-                formats.Add(new ClipboardFormat(FormsDataFormats.Bitmap, new Bitmap(image)));
-            }
-            catch (ArgumentException)
-            {
-                // 位图不可克隆就放弃条目：_image 仍在，本次采用不受影响。
-            }
-        }
-
-        if (formats.Count == 0 && image is null)
-        {
-            return null;
-        }
-
-        return new ClipboardSnapshot(formats, text, image);
-    }
-
-    /// <summary>剪贴板上的两种文本格式名（条目读到空串时按产品口径修正）。</summary>
-    private static bool IsTextFormat(string format) =>
-        string.Equals(format, FormsDataFormats.UnicodeText, StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(format, FormsDataFormats.Text, StringComparison.OrdinalIgnoreCase);
+    public Bitmap? DetachImage() => _image is not null ? new Bitmap(_image) : null;
 
     /// <summary>
-    /// 取出快照里的图像；这是与 <see cref="_formats"/> 相互独立的一份副本，所有权整个转移给调用方，
-    /// 用毕负责释放，不会影响还原用的那份。没有图像返回 null。
+    /// 基于当前快照生成附加文本的新快照（用于 OCR 原文写回：保留原图与原格式，附加识别文本）。
     /// </summary>
-    public Bitmap? DetachImage() => _image;
-
-    /// <summary>把自持内容按原格式写进 <paramref name="target"/>；真实剪贴板与自测假剪贴板共用这一份。</summary>
-    public void WriteTo(FormsDataObject target)
+    public ClipboardSnapshot WithText(string newText)
     {
-        ArgumentNullException.ThrowIfNull(target);
-        foreach (var entry in _formats)
-        {
-            try
-            {
-                // 位图条目必须带 autoConvert 写回：DataStore 只把「可转换」条目的别名格式报给剪贴板，
-                // System.Drawing.Bitmap 带上它才会同时提供 Bitmap（CF_BITMAP）。一律 autoConvert: false
-                // 还原出来的 DataObject 只报 .NET 私有格式名，系统剪贴板上没有 CF_BITMAP，
-                // 画图/浏览器/Word 这些只认标准格式的程序就粘不出图——019 的「绝不冲掉用户内容」
-                // 在图像上被打破（issue 021 实测：还原后 Win32 枚举只剩 System.Drawing.Bitmap）。
-                // 其余格式按原样精确写回，不多报别名，保持快照的格式集合不变。
-                target.SetData(entry.Format, autoConvert: entry.Data is Bitmap, entry.Data);
-            }
-            catch (Exception exception) when (exception is ExternalException or ArgumentException or NotSupportedException)
-            {
-                // 同一格式写不回去（极少见）就跳过，保证其余格式仍能还原。
-            }
-        }
-    }
-}
-
-/// <summary>
-/// DataObject 取值口径（真实剪贴板与自测假剪贴板共用同一份，避免两套判断漂移）：
-/// 文本优先 Unicode，其次 ANSI；图像只认标准位图格式。
-/// </summary>
-internal static class ClipboardPayloads
-{
-    public static string? ReadText(IDataObject data)
-    {
-        if (data.GetDataPresent(FormsDataFormats.UnicodeText))
-        {
-            return data.GetData(FormsDataFormats.UnicodeText) as string;
-        }
-
-        return data.GetDataPresent(FormsDataFormats.Text)
-            ? data.GetData(FormsDataFormats.Text) as string
-            : null;
+        var newFormats = new List<ClipboardFormat>(_formats.Where(f => !IsTextFormat(f.Format)));
+        var textBytes = System.Text.Encoding.Unicode.GetBytes(newText + "\0");
+        newFormats.Add(new ClipboardFormat("UnicodeText", textBytes, NativeMethods.CF_UNICODETEXT));
+        return new ClipboardSnapshot(newFormats, newText, _image is not null ? new Bitmap(_image) : null);
     }
 
-    public static Bitmap? ReadImage(IDataObject data)
+    public static bool IsTextFormat(string format) =>
+        string.Equals(format, "UnicodeText", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(format, "Text", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(format, "System.String", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(format, "13", StringComparison.Ordinal) ||
+        string.Equals(format, "1", StringComparison.Ordinal);
+
+    public static ClipboardSnapshot FromText(string text)
     {
-        // 走「按类型取」的强类型通道，且类型参数必须落在 Bitmap 而不是 Image 上。剪贴板上的图像
-        // 有三种存在形态：CF_BITMAP（真实程序复制来的，TYMED_GDI，非强类型读取要求 TYMED_HGLOBAL
-        // 直接取不到）；.NET 私有格式 System.Drawing.Bitmap 的序列化副本（还原写回的产物，反序列化
-        // 根类型是 Bitmap，按 Image 取会被 Nrbf 的根类型校验挡下）；两者并存。
-        // TryGetData<Bitmap> 对 CF_BITMAP 直接 Image.FromHbitmap，对序列化副本按 Bitmap 反序列化，
-        // 三条路都通；GetDataPresent + GetData 的老口径在 CF_BITMAP 形态下图就在眼前也读不出来。
-        return data.TryGetData<Bitmap>(FormsDataFormats.Bitmap, autoConvert: true, out var image) ? image : null;
+        var bytes = System.Text.Encoding.Unicode.GetBytes(text + "\0");
+        var formats = new List<ClipboardFormat>
+        {
+            new("UnicodeText", bytes, NativeMethods.CF_UNICODETEXT)
+        };
+        return new ClipboardSnapshot(formats, text, null);
+    }
+
+    public static ClipboardSnapshot FromImage(Bitmap image)
+    {
+        var copy = new Bitmap(image);
+        var formats = new List<ClipboardFormat>
+        {
+            new("Bitmap", [], NativeMethods.CF_BITMAP)
+        };
+        return new ClipboardSnapshot(formats, null, copy);
+    }
+
+    public static ClipboardSnapshot FromFiles(string[] files)
+    {
+        var formats = new List<ClipboardFormat>
+        {
+            new("FileDrop", System.Text.Encoding.UTF8.GetBytes(string.Join("\n", files)))
+        };
+        return new ClipboardSnapshot(formats, null, null);
     }
 }
 
@@ -296,9 +192,9 @@ internal static class PasteInputAcquirer
     /// <summary>轮询总预算：超过即认为前台窗口没有响应复制，转而采用剪贴板现有内容。</summary>
     internal static readonly TimeSpan PollTimeout = TimeSpan.FromMilliseconds(600);
 
-    /// <summary>只算「文本类」格式：前台回应只剩空文本时，剪贴板等同于被清空（实测原生空文本的格式名集合）。</summary>
+    /// <summary>只算「文本类」格式：前台回应只剩空文本时，剪贴板等同于被清空。</summary>
     private static readonly HashSet<string> TextFormats =
-        [FormsDataFormats.UnicodeText, FormsDataFormats.Text, FormsDataFormats.OemText, "System.String", "Locale"];
+        ["UnicodeText", "Text", "OEMText", "System.String", "Locale", "13", "1", "7"];
 
     public static PasteInputOutcome Acquire(PasteInputRequest request)
     {
@@ -306,14 +202,10 @@ internal static class PasteInputAcquirer
 
         // 先全量快照再读序列号基准：Ctrl+C 可能写空串清掉用户剪贴板，快照是唯一的兜底来源。
         var snapshot = request.Clipboard.Snapshot();
-        // 轮询基准用剪贴板序列号而不是文本：任何写入都会让它 +1（实测：文本——含与原文一模一样的文本、
-        // 图像、文件引用、空串），读它不打开剪贴板、并发写入下也零异常。只读文本的探测器对图像彻底瞎眼：
-        // 前台复制图像时会误判「没选中」，超时后的还原又把刚复制到的图像冲掉，最后翻的是旧剪贴板图像。
         var baselineSequence = request.Clipboard.ReadSequenceNumber();
         var sawResponse = false;
 
         // 取「前台对 Ctrl+C 的回应」：序列号一动就说明剪贴板被写过，把内容搬进自持内存再判定。
-        // 返回 null 表示这一轮没有可用回应（没回应，或回应是读不了的内容），交给轮询继续。
         PasteInputOutcome? TakeResponse()
         {
             if (request.Clipboard.ReadSequenceNumber() == baselineSequence)
@@ -325,25 +217,21 @@ internal static class PasteInputAcquirer
             ClipboardSnapshot? response = null;
             try
             {
-                // COM 代理活不过下一次写入，判定必须在自持内存上进行。
                 response = request.Clipboard.Snapshot();
             }
             catch (ExternalException)
             {
-                // 剪贴板被别的程序短暂占用：这一轮读不到，下一轮序列号仍显示有回应，会再试。
+                // 剪贴板被短暂占用：下一轮序列号仍显示有回应，会再试。
             }
 
             if (response?.Text is { Length: > 0 } selection)
             {
-                // 序列号一动就说明前台真的写了东西，与原有文本相同也同样是新复制到的选区。
-                // 同时释放自持图像副本：文本优先，这份克隆没人会再用，不能拖到 GC 终结。
                 response.DetachImage()?.Dispose();
                 return new PasteInputOutcome { Kind = PasteInputKind.SelectionText, Text = selection };
             }
 
             if (response?.DetachImage() is { } selectionImage)
             {
-                // 选区图像：程序自己 Ctrl+C 复制的，剪贴板保持原样（018 终态规则）。
                 var sequenceAtRead = request.Clipboard.ReadSequenceNumber();
                 return TranslateImage(selectionImage, request, response, notice: null, sequenceAtRead, programOwnCopy: true);
             }
@@ -366,7 +254,6 @@ internal static class PasteInputAcquirer
             }
         }
 
-        // 收工前再抓一次：复制可能正好落在最后一次轮询的睡眠里，漏掉它就会被还原冲掉。
         if (TakeResponse() is { } lastOutcome)
         {
             return lastOutcome;
@@ -382,7 +269,7 @@ internal static class PasteInputAcquirer
             };
         }
 
-        // 超时（或前台只回了空文本/空剪贴板）：还原快照，之后只从快照（进程自持内存）取内容。
+        // 超时（或前台只回了空文本/空剪贴板）：还原快照，之后只从快照取内容。
         var notice = RestoreSnapshot(request.Clipboard, snapshot);
         if (snapshot is null)
         {
@@ -391,7 +278,6 @@ internal static class PasteInputAcquirer
 
         if (snapshot.Text is { Length: > 0 } text)
         {
-            // 剪贴板文本：还原即回到原内容，读写幂等，不做任何额外写入。
             snapshot.DetachImage()?.Dispose();
             return new PasteInputOutcome { Kind = PasteInputKind.ClipboardText, Text = text, Notice = notice };
         }
@@ -401,15 +287,10 @@ internal static class PasteInputAcquirer
             return new PasteInputOutcome { Kind = PasteInputKind.Empty, Notice = notice };
         }
 
-        // 还原本身就是一次写入：写回防覆盖校验的基准必须取还原之后的序列号。
         var sequenceAfterRestore = request.Clipboard.ReadSequenceNumber();
         return TranslateImage(image, request, snapshot, notice, sequenceAfterRestore, programOwnCopy: false);
     }
 
-    /// <summary>
-    /// 前台回应了却只留下空文本/空剪贴板时为 true——那等于毁了用户旧内容却没给回任何东西，
-    /// 走还原兜底；文件引用、私有格式等真实内容为 false，必须原样保留（用户刚复制的东西不能被我们冲掉）。
-    /// </summary>
     private static bool LeftClipboardEmpty(IClipboardGateway clipboard)
     {
         try
@@ -419,21 +300,10 @@ internal static class PasteInputAcquirer
         }
         catch (ExternalException)
         {
-            // 读不动时按空处理：还原兜底，与旧行为一致。
             return true;
         }
     }
 
-    /// <summary>
-    /// 图像输入的去向（issue 019 裁决）：管线优先，能力不符明确停下，绝不静默改道。
-    /// </summary>
-    /// <param name="image">取自持快照的图像副本，所有权已转移给本方法，用毕即释。</param>
-    /// <param name="source">图像所在的快照：追加写回时按它的自持内容重建剪贴板，不再回头读剪贴板。</param>
-    /// <param name="notice">剪贴板还原失败等异状，随结论透传给面板状态栏。</param>
-    /// <param name="sequenceAtRead">读到这份图像时的剪贴板序列号。OCR 要跑几百毫秒，写回前用它确认
-    /// 剪贴板没被用户动过，绝不覆盖期间新复制的内容。</param>
-    /// <param name="programOwnCopy">true＝程序自己 Ctrl+C 复制的（选区图像）→ OCR 原文直接替换；
-    /// false＝主人手动复制的（剪贴板图像）→ 原文以「图像 + 文本」附加写回，原图必须保住。</param>
     private static PasteInputOutcome TranslateImage(
         Bitmap image,
         PasteInputRequest request,
@@ -446,13 +316,11 @@ internal static class PasteInputAcquirer
         {
             if (request.ImageRoute == ClipboardImageRoute.UnsupportedVision)
             {
-                // 能力不符时明确停下：不直喂（provider 只会报错），也不偷偷 OCR（用户会困惑两把热键为何行为不同）。
                 return new PasteInputOutcome { Kind = PasteInputKind.VisionUnsupported, Notice = notice };
             }
 
             if (request.ImageRoute == ClipboardImageRoute.DirectFeed)
             {
-                // 视觉直喂：PNG 原样编码后交给 provider，剪贴板保持不动。
                 return new PasteInputOutcome
                 {
                     Kind = programOwnCopy ? PasteInputKind.SelectionImage : PasteInputKind.ClipboardImage,
@@ -461,11 +329,9 @@ internal static class PasteInputAcquirer
                 };
             }
 
-            // local_ocr：本地 OCR 识别成文本。
-            // 铺白产物是本次调用的临时位图，用毕即释，不拖到 GC 终结。
-            using var flattened = FlattenTransparency(image);
-            var result = request.Recognize(flattened);
-            if (result.Lines.Count == 0)
+            using var opaque = WhiteMatte(image);
+            var result = request.Recognize(opaque);
+            if (result.Lines.Count == 0 || string.IsNullOrWhiteSpace(result.Text))
             {
                 return new PasteInputOutcome
                 {
@@ -476,19 +342,14 @@ internal static class PasteInputAcquirer
 
             if (request.Clipboard.ReadSequenceNumber() == sequenceAtRead)
             {
-                // OCR 写回口径（issue 019 第二轮裁决）：按图像的来路分流。
                 if (programOwnCopy)
                 {
-                    // 选区图像是程序自己 Ctrl+C 复制的：识别原文直接替换，没人要那张图。
                     request.Clipboard.SetText(result.Text);
                 }
                 else
                 {
-                    // 剪贴板图像是主人手动复制的：原图必须保住，原文以附加格式写回。
-                    var appended = new FormsDataObject();
-                    source.WriteTo(appended);
-                    appended.SetText(result.Text);
-                    request.Clipboard.SetDataObject(appended, copy: true);
+                    // 剪贴板图像是主人手动复制的：原图保住，原文以附加格式写回
+                    request.Clipboard.Restore(source.WithText(result.Text));
                 }
             }
 
@@ -503,7 +364,15 @@ internal static class PasteInputAcquirer
         }
     }
 
-    /// <summary>还原剪贴板快照；失败时返回可展示的说明（面板状态栏告知），不影响后续从快照取内容。</summary>
+    private static Bitmap WhiteMatte(Bitmap source)
+    {
+        var target = new Bitmap(source.Width, source.Height, System.Drawing.Imaging.PixelFormat.Format32bppRgb);
+        using var graphics = Graphics.FromImage(target);
+        graphics.Clear(Color.White);
+        graphics.DrawImage(source, 0, 0, source.Width, source.Height);
+        return target;
+    }
+
     private static string? RestoreSnapshot(IClipboardGateway clipboard, ClipboardSnapshot? snapshot)
     {
         if (snapshot is null)
@@ -518,353 +387,275 @@ internal static class PasteInputAcquirer
         }
         catch (ExternalException exception)
         {
-            // 剪贴板被其他程序持有（CLIPBRD_E_CANT_OPEN）时还原失败：内容仍从快照采用。
-            return $"剪贴板还原失败：{exception.Message}";
+            return $"剪贴板还原失败（{exception.Message}）；你的原剪贴板可能已被修改。";
         }
-    }
-
-    /// <summary>
-    /// 透明区域铺白后再喂 OCR：剪贴板位图常带 alpha（截图工具/浏览器复制），
-    /// PP-OCR 的检测与识别都按不透明纹理处理，直接喂入会把透明区当黑块吞掉文字。
-    /// </summary>
-    private static Bitmap FlattenTransparency(Bitmap source)
-    {
-        var flattened = new Bitmap(source.Width, source.Height, PixelFormat.Format24bppRgb);
-        using (var graphics = Graphics.FromImage(flattened))
-        {
-            graphics.Clear(Color.White);
-            graphics.DrawImageUnscaled(source, 0, 0);
-        }
-
-        return flattened;
     }
 }
 
-/// <summary>WinForms 真实剪贴板网关：必须运行在 STA 线程上（见 <see cref="ClipboardInputSource"/>）。</summary>
-internal sealed class WinFormsClipboardGateway : IClipboardGateway
+/// <summary>
+/// 纯 Win32 真实剪贴板网关：直接通过 OpenClipboard / GetClipboardData / SetClipboardData 读写，
+/// 彻底摆脱 WinForms Clipboard 与 STA 线程生命周期绑定。
+/// </summary>
+internal sealed class Win32ClipboardGateway : IClipboardGateway
 {
-    [DllImport("user32.dll")]
-    static extern uint GetClipboardSequenceNumber();
+    private const int OpenAttempts = 5;
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromMilliseconds(25);
 
-    [DllImport("user32.dll")]
-    static extern bool OpenClipboard(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    static extern bool CloseClipboard();
-
-    [DllImport("user32.dll", SetLastError = true)]
-    static extern uint EnumClipboardFormats(uint format);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    static extern uint GetClipboardFormatName(uint id, System.Text.StringBuilder buffer, int max);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    static extern IntPtr GetClipboardData(uint format);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern IntPtr GlobalLock(IntPtr handle);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool GlobalUnlock(IntPtr handle);
-
-    private const uint FormatBitmap = 2;
-    private const uint FormatDib = 15;
-    private const uint FormatDibV5 = 16;
-    private const uint FormatUnicodeText = 13;
-
-    /// <summary>WinForms 自报的 .NET 私有位图格式名：还原写回的产物，反序列化后根类型是 Bitmap。</summary>
-    private const string PrivateBitmapFormat = "System.Drawing.Bitmap";
-
-    /// <summary>
-    /// 写入核对重试上限：Windows 在 SetClipboardData 失败时（别的程序此刻正开着剪贴板）会静默
-    /// 丢掉该格式而 SetDataObject 照返回成功——格式名可能留个坏壳、数据整个不见（issue 021
-    /// 实测：96 次还原里 2 次整个格式组悄无声息消失），只能靠写入后把内容读回来核对才发现。
-    /// </summary>
-    private const int WriteAttempts = 3;
-
-    /// <summary>重试间隔：剪贴板被占用是瞬时状态，稍让一步即可，不值得按 WinForms 内部那套 100ms 量级等待。</summary>
-    private static readonly TimeSpan WriteRetryDelay = TimeSpan.FromMilliseconds(50);
-
-    /// <summary>
-    /// 读取重试上限：刚写完的剪贴板会偶发「格式名在位、按格式读不出值」的坏样本（issue 021 实测：
-    /// 自定义格式条目整个消失，而同一份内容毫秒后重读就正常——坏样本与好样本只差一次重新读取）。
-    /// 多取几份、留更全的那份，别让一次坏读取把用户的内容吞掉。
-    /// </summary>
-    private const int ReadAttempts = 3;
-
-    /// <summary>重试间隔：坏样本是瞬时状态，稍让一步即可。</summary>
-    private static readonly TimeSpan ReadRetryDelay = TimeSpan.FromMilliseconds(20);
+    public uint ReadSequenceNumber() => NativeMethods.GetClipboardSequenceNumber();
 
     public ClipboardSnapshot? Snapshot()
     {
-        ClipboardSnapshot? best = null;
-        for (var attempt = 1; ; attempt++)
+        if (!TryOpenClipboard())
         {
-            var data = System.Windows.Forms.Clipboard.GetDataObject();
-            var snapshot = CaptureBestEffort(data, out var complete);
-            if (snapshot is null)
+            return null;
+        }
+
+        try
+        {
+            string? text = null;
+            Bitmap? image = null;
+            var formats = new List<ClipboardFormat>();
+
+            // 1. 读 Unicode 文本
+            if (NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_UNICODETEXT))
             {
-                // 剪贴板读不到、或里面没有可捕内容：没有重取的意义。
+                var hData = NativeMethods.GetClipboardData(NativeMethods.CF_UNICODETEXT);
+                if (hData != 0)
+                {
+                    var ptr = NativeMethods.GlobalLock(hData);
+                    if (ptr != 0)
+                    {
+                        try
+                        {
+                            text = Marshal.PtrToStringUni(ptr);
+                            if (text is not null)
+                            {
+                                var size = (int)NativeMethods.GlobalSize(hData);
+                                var bytes = new byte[size];
+                                Marshal.Copy(ptr, bytes, 0, bytes.Length);
+                                formats.Add(new ClipboardFormat("UnicodeText", bytes, NativeMethods.CF_UNICODETEXT));
+                            }
+                        }
+                        finally
+                        {
+                            NativeMethods.GlobalUnlock(hData);
+                        }
+                    }
+                }
+            }
+
+            // 2. 读位图
+            if (NativeMethods.IsClipboardFormatAvailable(NativeMethods.CF_BITMAP))
+            {
+                var hBmp = NativeMethods.GetClipboardData(NativeMethods.CF_BITMAP);
+                if (hBmp != 0)
+                {
+                    try
+                    {
+                        image = Image.FromHbitmap(hBmp);
+                        formats.Add(new ClipboardFormat("Bitmap", [], NativeMethods.CF_BITMAP));
+                    }
+                    catch
+                    {
+                        image = null;
+                    }
+                }
+            }
+
+            // 3. 枚举自定义格式
+            uint formatId = 0;
+            var nameBuffer = new char[256];
+            while ((formatId = NativeMethods.EnumClipboardFormats(formatId)) != 0)
+            {
+                if (formatId >= 0xC000)
+                {
+                    var len = NativeMethods.GetClipboardFormatNameW(formatId, nameBuffer, nameBuffer.Length);
+                    if (len > 0)
+                    {
+                        var name = new string(nameBuffer, 0, len);
+                        var hData = NativeMethods.GetClipboardData(formatId);
+                        if (hData != 0)
+                        {
+                            var ptr = NativeMethods.GlobalLock(hData);
+                            if (ptr != 0)
+                            {
+                                try
+                                {
+                                    var size = (int)NativeMethods.GlobalSize(hData);
+                                    var data = new byte[size];
+                                    Marshal.Copy(ptr, data, 0, size);
+                                    formats.Add(new ClipboardFormat(name, data, formatId));
+                                }
+                                finally
+                                {
+                                    NativeMethods.GlobalUnlock(hData);
+                                }
+                            }
+                        }
+                    }
+                }
+                else if (formatId == 15 /* CF_HDROP */)
+                {
+                    formats.Add(new ClipboardFormat("FileDrop", []));
+                }
+            }
+
+            if (formats.Count == 0 && text is null && image is null)
+            {
                 return null;
             }
 
-            if (best is null || snapshot.FormatNames.Count > best.FormatNames.Count || (snapshot.HasImage && !best.HasImage))
-            {
-                best = snapshot;
-            }
-
-            if (complete || attempt == ReadAttempts)
-            {
-                return best;
-            }
-
-            Thread.Sleep(ReadRetryDelay);
-        }
-    }
-
-    /// <summary>
-    /// 带地面真值兜底的捕获。WinForms 通道读到空文本/没图时，按 Win32 直读的系统真值重捕一次：
-    /// issue 021 实测两个通道都会偶发坏样本（文本读成空串、图像读成 null，而 Win32 真值显示
-    /// 内容完好、连续多次读取都读不出），只信 WinForms 会把用户的内容吞成空。
-    /// <paramref name="complete"/> 表示这份快照是否已拿全——含按 Win32 真值核对：系统上明明
-    /// 有图/有文本却没进快照，即坏样本，交给调用方重取。
-    /// </summary>
-    private static ClipboardSnapshot? CaptureBestEffort(IDataObject? data, out bool complete)
-    {
-        complete = false;
-        if (data is null)
-        {
-            return null;
-        }
-
-        var snapshot = ClipboardSnapshot.Capture(data);
-        if (snapshot is null)
-        {
-            return null;
-        }
-
-        if (snapshot.Text is { Length: > 0 } && snapshot.HasImage)
-        {
-            complete = IsComplete(snapshot, data);
-            return snapshot;
-        }
-
-        var truth = ReadSystemTruth();
-        try
-        {
-            var betterText = snapshot.Text is { Length: > 0 } ? null : truth.text;
-            var betterImage = snapshot.HasImage ? null : truth.image;
-            if (betterText is { Length: > 0 } || betterImage is not null)
-            {
-                if (ClipboardSnapshot.Capture(data, betterText, betterImage) is { } recaptured)
-                {
-                    snapshot = recaptured;
-                }
-            }
-
-            // 真值说「有」而快照「没有」＝坏样本（读通道偶发把完好内容读成空）；
-            // 真值读不到（null＝剪贴板打不开）按无信号处理，绝不提前收工。
-            var truthSaysImageMissing = truth.hasImage == true && !snapshot.HasImage;
-            var truthSaysTextMissing = truth.text is { Length: > 0 } && snapshot.Text is not { Length: > 0 };
-            complete = IsComplete(snapshot, data) && !truthSaysImageMissing && !truthSaysTextMissing;
-            return snapshot;
+            return new ClipboardSnapshot(formats, text, image);
         }
         finally
         {
-            truth.image?.Dispose();
+            NativeMethods.CloseClipboard();
         }
-    }
-
-    /// <summary>
-    /// Win32 地面真值一次性读回：系统剪贴板上有没有图像格式（CF_BITMAP/CF_DIB/CF_DIBV5 或
-    /// .NET 私有位图格式；打不开剪贴板时 hasImage 为 null＝无信号，绝不能当成「没有图」）、
-    /// CF_UNICODETEXT 的实际内容、CF_BITMAP 的位图副本（FromHbitmap 在剪贴板打开期间完成拷贝）。
-    /// 返回的位图由调用方负责释放。
-    /// </summary>
-    private static (bool? hasImage, string? text, Bitmap? image) ReadSystemTruth()
-    {
-        if (!OpenClipboard(IntPtr.Zero))
-        {
-            return (null, null, null);
-        }
-
-        try
-        {
-            bool? hasImage = null;
-            string? text = null;
-            Bitmap? image = null;
-            var format = 0u;
-            while ((format = EnumClipboardFormats(format)) != 0)
-            {
-                if (format is FormatBitmap or FormatDib or FormatDibV5)
-                {
-                    hasImage = true;
-                }
-                else if (format >= 0xC000)
-                {
-                    var name = new System.Text.StringBuilder(256);
-                    _ = GetClipboardFormatName(format, name, name.Capacity);
-                    if (string.Equals(name.ToString(), PrivateBitmapFormat, StringComparison.Ordinal))
-                    {
-                        hasImage = true;
-                    }
-                }
-                else if (format == FormatUnicodeText && text is null)
-                {
-                    text = ReadClipboardUnicodeText();
-                }
-            }
-
-            hasImage ??= false;
-            var bitmapHandle = GetClipboardData(FormatBitmap);
-            if (bitmapHandle != IntPtr.Zero)
-            {
-                try
-                {
-                    image = Image.FromHbitmap(bitmapHandle);
-                }
-                catch (Exception exception) when (exception is ExternalException or ArgumentException)
-                {
-                    image = null;
-                }
-            }
-
-            return (hasImage, text, image);
-        }
-        finally
-        {
-            CloseClipboard();
-        }
-    }
-
-    /// <summary>剪贴板打开期间读 CF_UNICODETEXT 的托管字符串；句柄锁不上时返回 null。</summary>
-    private static string? ReadClipboardUnicodeText()
-    {
-        var handle = GetClipboardData(FormatUnicodeText);
-        if (handle == IntPtr.Zero)
-        {
-            return null;
-        }
-
-        var locked = GlobalLock(handle);
-        if (locked == IntPtr.Zero)
-        {
-            return null;
-        }
-
-        try
-        {
-            return Marshal.PtrToStringUni(locked) ?? string.Empty;
-        }
-        finally
-        {
-            GlobalUnlock(handle);
-        }
-    }
-
-    /// <summary>位图别名组的两个名字：按格式核对时整组视同一个图像，图像的「在不在」由内容核对负责。</summary>
-    private static bool IsImageAlias(string format) =>
-        string.Equals(format, FormsDataFormats.Bitmap, StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(format, PrivateBitmapFormat, StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// 快照是否把剪贴板上的内容拿全了：每个格式都有条目（位图别名组除外——外来剪贴板只有标准
-    /// CF_BITMAP，TYMED_GDI 让非 autoConvert 的按格式读取取不到值，快照按标准 Bitmap 条目兜底），
-    /// 文本与图像按产品口径互相印证。刚写完的剪贴板会偶发坏样本（issue 021 实测：自定义格式
-    /// 条目整个消失、图像读成 null、文本条目读成空串，而同一份内容毫秒后重读就正常），
-    /// 拿不全就重取，别让一次坏读取吞掉用户内容。
-    /// </summary>
-    private static bool IsComplete(ClipboardSnapshot snapshot, IDataObject data)
-    {
-        var formats = data.GetFormats(autoConvert: false);
-        if (formats.Any(format =>
-                !IsImageAlias(format) &&
-                !snapshot.FormatNames.Contains(format, StringComparer.OrdinalIgnoreCase)))
-        {
-            return false;
-        }
-
-        return (ClipboardPayloads.ReadText(data) is not { Length: > 0 } || snapshot.Text is { Length: > 0 })
-            && HasReadableImage(data) == snapshot.HasImage;
-    }
-
-
-    /// <summary>按产品口径把图像读一遍看它到底在不在：读出的位图随即释放，这里只要「读不读得到」这个信号。</summary>
-    private static bool HasReadableImage(IDataObject data)
-    {
-        using var image = ClipboardPayloads.ReadImage(data);
-        return image is not null;
     }
 
     public void Restore(ClipboardSnapshot snapshot)
     {
-        for (var attempt = 1; ; attempt++)
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (!TryOpenClipboard())
         {
-            var data = new FormsDataObject();
-            snapshot.WriteTo(data);
-            // copy: true 让数据整体落到系统剪贴板，设置它的 STA 线程随后退出也不会丢内容。
-            System.Windows.Forms.Clipboard.SetDataObject(data, copy: true);
-            if (attempt == WriteAttempts || Landed(data))
-            {
-                return;
-            }
-
-            Thread.Sleep(WriteRetryDelay);
+            throw new ExternalException("无法打开系统剪贴板进行还原。");
         }
-    }
 
-    public void SetText(string text) => System.Windows.Forms.Clipboard.SetText(text);
-
-    public uint ReadSequenceNumber() => GetClipboardSequenceNumber();
-
-    public void SetDataObject(object data, bool copy)
-    {
-        // 追加写回同走 SetDataObject，同样可能被别的程序瞬时占用剪掉一块，一并核对重试。
-        for (var attempt = 1; ; attempt++)
-        {
-            System.Windows.Forms.Clipboard.SetDataObject(data, copy);
-            if (attempt == WriteAttempts || Landed((IDataObject)data))
-            {
-                return;
-            }
-
-            Thread.Sleep(WriteRetryDelay);
-        }
-    }
-
-    /// <summary>
-    /// 核对刚写上去的内容在系统剪贴板上读得回来：每个格式名都在，且文本与图像按产品口径真读得到。
-    /// 只核对名字不够——Windows 会留下渲染失败的格式名（数据是坏壳），必须把内容读一遍。
-    /// 读不动剪贴板（正被别的程序占用）按没写成功处理：那正是写入会丢格式的时刻，重试就是了。
-    /// </summary>
-    private static bool Landed(IDataObject written)
-    {
         try
         {
-            var data = System.Windows.Forms.Clipboard.GetDataObject();
-            if (data is null)
+            NativeMethods.EmptyClipboard();
+
+            // 1. 写回文本
+            if (snapshot.Text is not null)
             {
-                return false;
+                var chars = (snapshot.Text + "\0").ToCharArray();
+                var bytesNeeded = (nuint)(chars.Length * sizeof(char));
+                var hMem = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, bytesNeeded);
+                if (hMem != 0)
+                {
+                    var ptr = NativeMethods.GlobalLock(hMem);
+                    if (ptr != 0)
+                    {
+                        Marshal.Copy(chars, 0, ptr, chars.Length);
+                        NativeMethods.GlobalUnlock(hMem);
+                        NativeMethods.SetClipboardData(NativeMethods.CF_UNICODETEXT, hMem);
+                    }
+                    else
+                    {
+                        NativeMethods.GlobalFree(hMem);
+                    }
+                }
             }
 
-            var present = data.GetFormats(autoConvert: false);
-            if (!written.GetFormats(autoConvert: false).All(format => present.Contains(format, StringComparer.OrdinalIgnoreCase)))
+            // 2. 写回图像
+            using var image = snapshot.DetachImage();
+            if (image is not null)
             {
-                return false;
+                var hBitmap = image.GetHbitmap();
+                if (hBitmap != 0)
+                {
+                    NativeMethods.SetClipboardData(NativeMethods.CF_BITMAP, hBitmap);
+                }
             }
 
-            return ClipboardPayloads.ReadText(data) == ClipboardPayloads.ReadText(written)
-                && HasReadableImage(data) == HasReadableImage(written)
-                // 写了图像就必须让标准格式在位：只核对「按产品口径读得回图」不够——.NET 私有格式
-                // System.Drawing.Bitmap 的序列化副本能让 TryGetData&lt;Bitmap&gt; 成功，而系统剪贴板上
-                // 没有 CF_BITMAP，画图/浏览器/Word 这些只认标准格式的程序就粘不出图（issue 021
-                // 实测：还原偶发只剩私有格式名，旧口径放行了它）。故写了图就点名要求 Bitmap 视图在位。
-                && (!HasReadableImage(written) || present.Contains(FormsDataFormats.Bitmap, StringComparer.OrdinalIgnoreCase));
+            // 3. 写回自定义格式
+            foreach (var format in snapshot.Formats)
+            {
+                if (format.Format is "UnicodeText" or "Bitmap" or "FileDrop")
+                {
+                    continue;
+                }
+
+                if (format.Data.Length == 0)
+                {
+                    continue;
+                }
+
+                var customId = (format.StandardFormatId.HasValue && format.StandardFormatId.Value >= 0xC000)
+                    ? format.StandardFormatId.Value
+                    : NativeMethods.RegisterClipboardFormatW(format.Format);
+
+                if (customId != 0)
+                {
+                    var hMem = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (nuint)format.Data.Length);
+                    if (hMem != 0)
+                    {
+                        var ptr = NativeMethods.GlobalLock(hMem);
+                        if (ptr != 0)
+                        {
+                            Marshal.Copy(format.Data, 0, ptr, format.Data.Length);
+                            NativeMethods.GlobalUnlock(hMem);
+                            NativeMethods.SetClipboardData(customId, hMem);
+                        }
+                        else
+                        {
+                            NativeMethods.GlobalFree(hMem);
+                        }
+                    }
+                }
+            }
         }
-        catch (ExternalException)
+        finally
         {
-            return false;
+            NativeMethods.CloseClipboard();
         }
+    }
+
+    public void SetText(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+
+        if (!TryOpenClipboard())
+        {
+            throw new ExternalException("无法打开系统剪贴板写入文本。");
+        }
+
+        try
+        {
+            NativeMethods.EmptyClipboard();
+
+            var chars = (text + "\0").ToCharArray();
+            var bytesNeeded = (nuint)(chars.Length * sizeof(char));
+            var hMem = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, bytesNeeded);
+            if (hMem == 0)
+            {
+                throw new ExternalException("分配全局内存失败。");
+            }
+
+            var ptr = NativeMethods.GlobalLock(hMem);
+            if (ptr == 0)
+            {
+                NativeMethods.GlobalFree(hMem);
+                throw new ExternalException("锁定全局内存失败。");
+            }
+
+            Marshal.Copy(chars, 0, ptr, chars.Length);
+            NativeMethods.GlobalUnlock(hMem);
+
+            if (NativeMethods.SetClipboardData(NativeMethods.CF_UNICODETEXT, hMem) == 0)
+            {
+                NativeMethods.GlobalFree(hMem);
+                throw new ExternalException("设置剪贴板数据失败。");
+            }
+        }
+        finally
+        {
+            NativeMethods.CloseClipboard();
+        }
+    }
+
+    private static bool TryOpenClipboard()
+    {
+        for (var i = 0; i < OpenAttempts; i++)
+        {
+            if (NativeMethods.OpenClipboard(0))
+            {
+                return true;
+            }
+            Thread.Sleep(RetryDelay);
+        }
+        return false;
     }
 }
 
@@ -876,10 +667,6 @@ internal sealed class SendInputCopySimulator
     private const ushort VirtualKeyControl = 0x11;
     private const ushort VirtualKeyC = 0x43;
 
-    /// <summary>
-    /// x64 对齐下 Win32 INPUT 为 40 字节、联合体自偏移 8 起（type 4 + 填充 4 + 联合 32）。
-    /// 架构一旦变化，SendInput 不会报错，只会把按键静默发成垃圾——宁可在此早失败，也不放行。
-    /// </summary>
     static SendInputCopySimulator()
     {
         if (Marshal.SizeOf<NativeInput>() != 40 || Marshal.OffsetOf<NativeInput>(nameof(NativeInput.Keyboard)).ToInt64() != 8)
@@ -892,40 +679,35 @@ internal sealed class SendInputCopySimulator
     {
         NativeInput[] presses =
         [
-            Interop.NativeMethods.KeyboardEvent(VirtualKeyControl, keyUp: false),
-            Interop.NativeMethods.KeyboardEvent(VirtualKeyC, keyUp: false),
-            Interop.NativeMethods.KeyboardEvent(VirtualKeyC, keyUp: true),
-            Interop.NativeMethods.KeyboardEvent(VirtualKeyControl, keyUp: true),
+            NativeMethods.KeyboardEvent(VirtualKeyControl, keyUp: false),
+            NativeMethods.KeyboardEvent(VirtualKeyC, keyUp: false),
+            NativeMethods.KeyboardEvent(VirtualKeyC, keyUp: true),
+            NativeMethods.KeyboardEvent(VirtualKeyControl, keyUp: true),
         ];
 
         var size = Marshal.SizeOf<NativeInput>();
-        if (Interop.NativeMethods.SendInput((uint)presses.Length, presses, size) == presses.Length)
+        if (NativeMethods.SendInput((uint)presses.Length, presses, size) == presses.Length)
         {
             return;
         }
 
-        // 注入被拦（UIPI/提权窗口）或只注入了一部分：补发抬起事件，绝不把 Ctrl 留在按下态。
-        // 之后轮询自然超时，链路按「剪贴板现有内容」回落，不额外报错打断用户。
         NativeInput[] releases =
         [
-            Interop.NativeMethods.KeyboardEvent(VirtualKeyC, keyUp: true),
-            Interop.NativeMethods.KeyboardEvent(VirtualKeyControl, keyUp: true),
+            NativeMethods.KeyboardEvent(VirtualKeyC, keyUp: true),
+            NativeMethods.KeyboardEvent(VirtualKeyControl, keyUp: true),
         ];
-        _ = Interop.NativeMethods.SendInput((uint)releases.Length, releases, size);
+        _ = NativeMethods.SendInput((uint)releases.Length, releases, size);
     }
 }
 
 /// <summary>
-/// 运行期输入获取入口：把整个状态机搬到专用 STA 线程上跑完再回主线程。
-/// 剪贴板的 OLE 读写要求单线程单元，且 <c>OleSetClipboard</c> 的数据归设置它的线程所有——
-/// 线程必须活到本次操作（含还原 / OCR 文本写回）全部完成再退出，不能借用线程池的短命线程。
+/// 运行期输入获取入口：在后台线程上安全跑完剪贴板获取流程。
 /// </summary>
 internal static class ClipboardInputSource
 {
     public static PasteInputOutcome Acquire(ClipboardImageRoute imageRoute, Func<Bitmap, OcrResult> recognize)
     {
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        // 运行期节拍器：每 100ms 轮询一次剪贴板，累计达到 600ms 预算即告知状态机收工。
         bool Tick(int _)
         {
             if (stopwatch.Elapsed >= PasteInputAcquirer.PollTimeout)
@@ -940,14 +722,14 @@ internal static class ClipboardInputSource
         var request = new PasteInputRequest(
             imageRoute,
             recognize,
-            new WinFormsClipboardGateway(),
+            new Win32ClipboardGateway(),
             SendInputCopySimulator.Default.SendCopy,
             Tick);
 
-        return RunOnStaThread(request);
+        return RunOnWorkerThread(request);
     }
 
-    private static PasteInputOutcome RunOnStaThread(PasteInputRequest request)
+    private static PasteInputOutcome RunOnWorkerThread(PasteInputRequest request)
     {
         PasteInputOutcome? outcome = null;
         Exception? failure = null;
@@ -966,13 +748,11 @@ internal static class ClipboardInputSource
             IsBackground = true,
             Name = "NaniKore clipboard input",
         };
-        thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
         thread.Join();
 
         if (failure is not null)
         {
-            // 保留原始堆栈：STA 线程里抛出的异常不应在 Task.Run 外层只剩一层包装。
             ExceptionDispatchInfo.Capture(failure).Throw();
         }
 

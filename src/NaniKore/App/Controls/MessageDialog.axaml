@@ -1,0 +1,35 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="NaniKore.App.Controls.MessageDialog"
+        Title="NaniKore"
+        SizeToContent="WidthAndHeight"
+        MinWidth="380"
+        MaxWidth="520"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource Brush.Window.Background}">
+    <Border Padding="20">
+        <Grid RowDefinitions="Auto,Auto">
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="14">
+                <TextBlock x:Name="GlyphText"
+                           FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                           FontSize="22"
+                           VerticalAlignment="Top"
+                           Margin="0,2,0,0" />
+                <StackPanel MaxWidth="420" Spacing="6">
+                    <TextBlock x:Name="HeadlineText" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock x:Name="BodyText"
+                               FontSize="13"
+                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0" Spacing="8">
+                <Button x:Name="ConfirmButton" MinWidth="88" Click="OnConfirmClick" />
+                <Button x:Name="CancelButton" MinWidth="88" Content="取消" Click="OnCancelClick" />
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

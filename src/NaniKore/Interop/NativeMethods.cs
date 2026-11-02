@@ -2,8 +2,19 @@ using System.Runtime.InteropServices;
 
 namespace NaniKore.Interop;
 
-internal static partial class NativeMethods
+/// <summary>
+/// 集中声明平台 Win32 P/Invoke 接口，供捕获、热键、浮层、剪贴板和托盘等平台服务共用。
+/// 全部使用 .NET 10 的 LibraryImport 源生成，确保 NativeAOT 裁剪下零警告。
+/// </summary>
+internal static unsafe partial class NativeMethods
 {
+    #region 系统指标与控制台
+
+    public const int SM_XVIRTUALSCREEN = 76;
+    public const int SM_YVIRTUALSCREEN = 77;
+    public const int SM_CXVIRTUALSCREEN = 78;
+    public const int SM_CYVIRTUALSCREEN = 79;
+
     [LibraryImport("kernel32.dll", EntryPoint = "GetModuleHandleW", StringMarshalling = StringMarshalling.Utf16)]
     internal static partial nint GetModuleHandle(string? moduleName);
 
@@ -13,6 +24,228 @@ internal static partial class NativeMethods
 
     internal const int AttachParentProcess = -1;
 
+    [LibraryImport("user32.dll")]
+    public static partial int GetSystemMetrics(int nIndex);
+
+    [LibraryImport("user32.dll")]
+    internal static partial short GetKeyState(int virtualKey);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint GetForegroundWindow();
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetForegroundWindow(nint hWnd);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetCursorPos(out POINT lpPoint);
+
+    #endregion
+
+    #region GDI 与屏幕捕获
+
+    public const uint SRCCOPY = 0x00CC0020;
+    public const uint CAPTUREBLT = 0x40000000;
+    public const uint DIB_RGB_COLORS = 0;
+    public const uint BI_RGB = 0;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BITMAPINFOHEADER
+    {
+        public uint biSize;
+        public int biWidth;
+        public int biHeight;
+        public ushort biPlanes;
+        public ushort biBitCount;
+        public uint biCompression;
+        public uint biSizeImage;
+        public int biXPelsPerMeter;
+        public int biYPelsPerMeter;
+        public uint biClrUsed;
+        public uint biClrImportant;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BITMAPINFO
+    {
+        public BITMAPINFOHEADER bmiHeader;
+        public uint bmiColors;
+    }
+
+    [LibraryImport("user32.dll")]
+    public static partial nint GetDC(nint hWnd);
+
+    [LibraryImport("gdi32.dll", EntryPoint = "CreateDCW", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial nint CreateDC(string lpszDriver, string? lpszDevice, string? lpszOutput, nint lpInitData);
+
+    [LibraryImport("user32.dll")]
+    public static partial int ReleaseDC(nint hWnd, nint hDC);
+
+    [LibraryImport("gdi32.dll")]
+    public static partial nint CreateCompatibleDC(nint hDC);
+
+    [LibraryImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DeleteDC(nint hDC);
+
+    [LibraryImport("gdi32.dll")]
+    public static partial nint CreateCompatibleBitmap(nint hDC, int cx, int cy);
+
+    [LibraryImport("gdi32.dll")]
+    public static partial nint SelectObject(nint hDC, nint h);
+
+    [LibraryImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DeleteObject(nint ho);
+
+    [LibraryImport("gdi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool BitBlt(
+        nint hdcDest,
+        int nXDest,
+        int nYDest,
+        int nWidth,
+        int nHeight,
+        nint hdcSrc,
+        int nXSrc,
+        int nYSrc,
+        uint dwRop);
+
+    [LibraryImport("gdi32.dll", SetLastError = true)]
+    public static partial int GetDIBits(
+        nint hdc,
+        nint hbm,
+        uint start,
+        uint cLines,
+        void* lpvBits,
+        BITMAPINFO* lpbmi,
+        uint usage);
+
+    #endregion
+
+    #region 窗口、样式与消息循环
+
+    public const int WM_DESTROY = 0x0002;
+    public const int WM_CLOSE = 0x0010;
+    public const int WM_HOTKEY = 0x0312;
+
+    public const uint MOD_ALT = 0x0001;
+    public const uint MOD_CONTROL = 0x0002;
+    public const uint MOD_SHIFT = 0x0004;
+    public const uint MOD_WIN = 0x0008;
+    public const uint MOD_NOREPEAT = 0x4000;
+
+    public const nint HWND_TOP = 0;
+    public const nint HWND_TOPMOST = -1;
+    public const nint HWND_NOTOPMOST = -2;
+    public const nint HWND_MESSAGE = -3;
+
+    public const uint SWP_NOSIZE = 0x0001;
+    public const uint SWP_NOMOVE = 0x0002;
+    public const uint SWP_NOZORDER = 0x0004;
+    public const uint SWP_NOACTIVATE = 0x0010;
+    public const uint SWP_SHOWWINDOW = 0x0040;
+
+    public const int GWL_EXSTYLE = -20;
+    public const nint WS_EX_TOPMOST = 0x00000008;
+    public const nint WS_EX_TOOLWINDOW = 0x00000080;
+    public const nint WS_EX_NOACTIVATE = 0x08000000;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+
+        public int Width => Right - Left;
+        public int Height => Bottom - Top;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MSG
+    {
+        public nint hwnd;
+        public uint message;
+        public nint wParam;
+        public nint lParam;
+        public uint time;
+        public POINT pt;
+        public uint lPrivate;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct WNDCLASSEXW
+    {
+        public uint cbSize;
+        public uint style;
+        public delegate* unmanaged[Stdcall]<nint, uint, nint, nint, nint> lpfnWndProc;
+        public int cbClsExtra;
+        public int cbWndExtra;
+        public nint hInstance;
+        public nint hIcon;
+        public nint hCursor;
+        public nint hbrBackground;
+        public char* lpszMenuName;
+        public char* lpszClassName;
+        public nint hIconSm;
+    }
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial ushort RegisterClassExW(in WNDCLASSEXW lpwcx);
+
+    [LibraryImport("user32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool UnregisterClassW(string lpClassName, nint hInstance);
+
+    [LibraryImport("user32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    public static partial nint CreateWindowExW(
+        uint dwExStyle,
+        string lpClassName,
+        string lpWindowName,
+        uint dwStyle,
+        int X,
+        int Y,
+        int nWidth,
+        int nHeight,
+        nint hWndParent,
+        nint hMenu,
+        nint hInstance,
+        nint lpParam);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool DestroyWindow(nint hWnd);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint DefWindowProcW(nint hWnd, uint msg, nint wParam, nint lParam);
+
+    [LibraryImport("user32.dll")]
+    public static partial int GetMessageW(out MSG lpMsg, nint hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool TranslateMessage(in MSG lpMsg);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint DispatchMessageW(in MSG lpMsg);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool PostMessageW(nint hWnd, uint msg, nint wParam, nint lParam);
+
+    [LibraryImport("user32.dll")]
+    public static partial void PostQuitMessage(int nExitCode);
+
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool RegisterHotKey(nint windowHandle, int id, uint modifiers, uint virtualKey);
@@ -21,12 +254,9 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool UnregisterHotKey(nint windowHandle, int id);
 
-    /// <summary>Win 键不在 WinForms 的 ModifierKeys 里，热键录制需要直接查询实时按键状态。</summary>
-    [LibraryImport("user32.dll")]
-    internal static partial short GetKeyState(int virtualKey);
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    internal static partial bool GetWindowRect(nint windowHandle, out NativeRect rectangle);
+    internal static partial bool GetWindowRect(nint windowHandle, out RECT rectangle);
 
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -39,14 +269,105 @@ internal static partial class NativeMethods
         int height,
         uint flags);
 
-    /// <summary>标题栏不属于 WPF 客户区；深色主题必须通过 DWM 属性同步，否则会出现白色标题栏。</summary>
+    [LibraryImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+    public static partial nint GetWindowLongPtr(nint hWnd, int nIndex);
+
+    [LibraryImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+    public static partial nint SetWindowLongPtr(nint hWnd, int nIndex, nint dwNewLong);
+
     [LibraryImport("dwmapi.dll")]
     internal static partial int DwmSetWindowAttribute(nint window, int attribute, ref int value, int size);
+
+    #endregion
+
+    #region 剪贴板与全局内存
+
+    public const uint CF_TEXT = 1;
+    public const uint CF_BITMAP = 2;
+    public const uint CF_DIB = 8;
+    public const uint CF_UNICODETEXT = 13;
+    public const uint CF_DIBV5 = 17;
+
+    public const uint GMEM_FIXED = 0x0000;
+    public const uint GMEM_MOVEABLE = 0x0002;
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool OpenClipboard(nint hWndNewOwner);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool CloseClipboard();
+
+    [LibraryImport("user32.dll")]
+    public static partial uint GetClipboardSequenceNumber();
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool EmptyClipboard();
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial nint GetClipboardData(uint uFormat);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial nint SetClipboardData(uint uFormat, nint hMem);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial uint EnumClipboardFormats(uint format);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsClipboardFormatAvailable(uint format);
+
+    [LibraryImport("user32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int GetClipboardFormatNameW(uint format, [Out] char[] lpszFormatName, int cchMaxCount);
+
+    [LibraryImport("user32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    public static partial uint RegisterClipboardFormatW(string lpszFormat);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial nint GlobalAlloc(uint uFlags, nuint dwBytes);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial nint GlobalFree(nint hMem);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial nint GlobalLock(nint hMem);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GlobalUnlock(nint hMem);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial nuint GlobalSize(nint hMem);
+
+    #endregion
+
+    #region 任务栏与 AppBar
+
+    public const uint ABM_GETTASKBARPOS = 0x00000005;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct APPBARDATA
+    {
+        public uint cbSize;
+        public nint hWnd;
+        public uint uCallbackMessage;
+        public uint uEdge;
+        public RECT rc;
+        public nint lParam;
+    }
+
+    [LibraryImport("shell32.dll", SetLastError = false)]
+    public static partial nuint SHAppBarMessage(uint dwMessage, ref APPBARDATA pData);
+
+    #endregion
+
+    #region 模拟输入 (SendInput)
 
     private const uint InputKeyboard = 1;
     private const uint KeyEventKeyUp = 0x0002;
 
-    /// <summary>合成输入（模拟 Ctrl+C）：Win32 推荐入口，比已废弃的 keybd_event 更可靠。</summary>
     [LibraryImport("user32.dll", SetLastError = true)]
     internal static partial uint SendInput(uint count, [MarshalAs(UnmanagedType.LPArray)] NativeInput[] inputs, int size);
 
@@ -79,7 +400,6 @@ internal static partial class NativeMethods
         public ushort ParameterHigh;
     }
 
-    /// <summary>Win32 INPUT 的托管形态：type + 三成员联合体，偏移 8 起为联合数据（x64 对齐）。</summary>
     [StructLayout(LayoutKind.Explicit)]
     internal struct NativeInput
     {
@@ -102,12 +422,5 @@ internal static partial class NativeMethods
         },
     };
 
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct NativeRect
-    {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
-    }
+    #endregion
 }

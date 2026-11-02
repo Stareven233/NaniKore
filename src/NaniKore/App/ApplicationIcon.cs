@@ -1,29 +1,26 @@
-using System.Drawing;
 using System.Reflection;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
+using Avalonia.Controls;
 
 namespace NaniKore.App;
 
-/// <summary>统一从嵌入资源加载应用图标，避免托盘、WinForms 和 WPF 窗口使用不同图标。</summary>
+/// <summary>
+/// 统一从嵌入资源加载应用图标，供 Avalonia 窗口与系统托盘使用。
+/// 彻底摆脱 System.Drawing.Icon 与 WPF ImageSource 历史依赖。
+/// </summary>
 internal static class ApplicationIcon
 {
     private const string ResourceName = "NaniKore.Assets.nanikore.ico";
 
-    public static Icon LoadWinForms()
+    /// <summary>
+    /// 加载 Avalonia 统一使用的 WindowIcon。
+    /// </summary>
+    public static WindowIcon Load()
     {
         using var stream = OpenResource();
-        using var icon = new Icon(stream);
-        // 克隆后再释放资源流，避免 NotifyIcon 或 Form 继续使用图标时依赖已关闭的流。
-        return (Icon)icon.Clone();
+        return new WindowIcon(stream);
     }
 
-    public static ImageSource LoadWpf()
-    {
-        using var stream = OpenResource();
-        return BitmapFrame.Create(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-    }
-
-    private static Stream OpenResource() => Assembly.GetExecutingAssembly().GetManifestResourceStream(ResourceName)
+    private static Stream OpenResource() =>
+        Assembly.GetExecutingAssembly().GetManifestResourceStream(ResourceName)
         ?? throw new InvalidOperationException($"应用图标资源不存在：{ResourceName}");
 }

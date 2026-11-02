@@ -82,30 +82,21 @@
     </EmbeddedResource>
   </ItemGroup>
 
-  <!-- 待 P2–P4 批次逐步替换为 Avalonia/Win32 的旧 WPF/WinForms 界面代码 -->
+  <!-- 待 P3–P5 批次逐步替换为 Avalonia 的旧 WPF 界面代码 -->
   <ItemGroup>
     <Compile Remove="App\Controls\ExplanationCardView.xaml.cs" />
     <Compile Remove="App\Controls\HotkeyRecorderBox.cs" />
     <Compile Remove="App\Controls\InfoBar.cs" />
-    <Compile Remove="App\Controls\MessageDialog.xaml.cs" />
     <Compile Remove="App\Controls\NumberBox.cs" />
     <Compile Remove="App\Controls\RubyDocumentBuilder.cs" />
     <Compile Remove="App\Controls\RubyInlineControl.cs" />
     <Compile Remove="App\Controls\SelectionBubblePopup.xaml.cs" />
     <Compile Remove="App\Controls\SettingsGroup.cs" />
     <Compile Remove="App\Settings\**\*.cs" />
-    <Compile Remove="App\ApplicationIcon.cs" />
     <Compile Remove="App\NaniKoreApp.cs" />
     <Compile Remove="App\OcrProgressWindow.xaml.cs" />
     <Compile Remove="App\OcrResultWindow.xaml.cs" />
     <Compile Remove="App\ResultPanelWindow.xaml.cs" />
-    <Compile Remove="App\TrayIconHost.cs" />
-    <Compile Remove="Capture\DesktopCapturer.cs" />
-    <Compile Remove="Imaging\PngEncoder.cs" />
-    <Compile Remove="Input\GlobalHotkeyWindow.cs" />
-    <Compile Remove="Input\PasteInputAcquirer.cs" />
-    <Compile Remove="Overlay\SelectionForm.cs" />
-    <Compile Remove="Diagnostics\SelfTest.Input.cs" />
     <Compile Remove="Diagnostics\SelfTest.Ui.ResultPanel.cs" />
     <Compile Remove="Diagnostics\SelfTest.Ui.Settings.cs" />
     <None Remove="**\*.xaml" />
