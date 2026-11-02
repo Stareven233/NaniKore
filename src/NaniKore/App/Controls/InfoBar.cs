@@ -1,78 +1,141 @@
-using System.Windows;
-using System.Windows.Controls;
-using Control = System.Windows.Controls.Control;
+using System;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Color = Avalonia.Media.Color;
 
 namespace NaniKore.App.Controls;
 
-/// <summary>状态提示语义；决定 <see cref="InfoBar"/> 的图标与配色。</summary>
-internal enum InfoSeverity
-{
-    /// <summary>中性说明或进行中。</summary>
-    Neutral,
-
-    Success,
-
-    Warning,
-
-    Error,
-}
-
 /// <summary>
-/// 内联提示条：替代校验失败时的模态 MessageBox，也承载「测试连接」的三态反馈。
-/// 提示留在页面里而不是弹窗，用户不必先关弹窗才能改错。
+/// 内联状态提示条：替代校验失败或状态反馈的弹窗，将提示留在页面内。
+/// 支持四种状态语义配色，并在消息为空时自动折叠。
 /// </summary>
-internal sealed class InfoBar : Control
+internal sealed class InfoBar : Border
 {
-    public static readonly DependencyProperty MessageProperty = DependencyProperty.Register(
-        nameof(Message),
-        typeof(string),
-        typeof(InfoBar),
-        new PropertyMetadata(string.Empty, OnMessageChanged));
+    public static readonly StyledProperty<string> MessageProperty =
+        AvaloniaProperty.Register<InfoBar, string>(nameof(Message), string.Empty);
 
-    public static readonly DependencyProperty SeverityProperty = DependencyProperty.Register(
-        nameof(Severity),
-        typeof(InfoSeverity),
-        typeof(InfoBar),
-        new PropertyMetadata(InfoSeverity.Neutral));
+    public static readonly StyledProperty<InfoSeverity> SeverityProperty =
+        AvaloniaProperty.Register<InfoBar, InfoSeverity>(nameof(Severity), InfoSeverity.Neutral);
 
-    /// <summary>消息为空时自动折叠，避免留下一条空白色块。</summary>
-    public static readonly DependencyProperty IsOpenProperty = DependencyProperty.Register(
-        nameof(IsOpen),
-        typeof(bool),
-        typeof(InfoBar),
-        new PropertyMetadata(false));
+    public static readonly StyledProperty<bool> IsOpenProperty =
+        AvaloniaProperty.Register<InfoBar, bool>(nameof(IsOpen), false);
 
-    static InfoBar() => DefaultStyleKeyProperty.OverrideMetadata(
-        typeof(InfoBar),
-        new FrameworkPropertyMetadata(typeof(InfoBar)));
+    private readonly TextBlock _iconBlock;
+    private readonly TextBlock _messageBlock;
 
     public string Message
     {
-        get => (string)GetValue(MessageProperty);
+        get => GetValue(MessageProperty);
         set => SetValue(MessageProperty, value);
     }
 
     public InfoSeverity Severity
     {
-        get => (InfoSeverity)GetValue(SeverityProperty);
+        get => GetValue(SeverityProperty);
         set => SetValue(SeverityProperty, value);
     }
 
     public bool IsOpen
     {
-        get => (bool)GetValue(IsOpenProperty);
-        private set => SetValue(IsOpenProperty, value);
+        get => GetValue(IsOpenProperty);
+        set => SetValue(IsOpenProperty, value);
     }
 
-    /// <summary>一次性设置文案与语义，调用方不必分别赋值两个属性。</summary>
+    public InfoBar()
+    {
+        CornerRadius = new CornerRadius(6);
+        BorderThickness = new Thickness(1);
+        Padding = new Thickness(10, 6);
+        IsVisible = false;
+
+        _iconBlock = new TextBlock
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 8, 0),
+            FontSize = 13,
+            FontWeight = FontWeight.Bold,
+        };
+
+        _messageBlock = new TextBlock
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 13,
+        };
+
+        Child = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Children = { _iconBlock, _messageBlock },
+        };
+
+        UpdateVisuals();
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+
+        if (change.Property == MessageProperty)
+        {
+            var msg = change.GetNewValue<string>();
+            _messageBlock.Text = msg;
+            IsOpen = !string.IsNullOrWhiteSpace(msg);
+        }
+        else if (change.Property == SeverityProperty)
+        {
+            UpdateVisuals();
+        }
+        else if (change.Property == IsOpenProperty)
+        {
+            IsVisible = change.GetNewValue<bool>();
+        }
+    }
+
+    /// <summary>一次性设置文案与语义并展示。</summary>
     public void Show(string message, InfoSeverity severity)
     {
         Severity = severity;
         Message = message;
     }
 
+    /// <summary>清空文案并收起提示条。</summary>
     public void Clear() => Message = string.Empty;
 
-    private static void OnMessageChanged(DependencyObject sender, DependencyPropertyChangedEventArgs e) =>
-        ((InfoBar)sender).IsOpen = !string.IsNullOrWhiteSpace((string)e.NewValue);
+    private void UpdateVisuals()
+    {
+        switch (Severity)
+        {
+            case InfoSeverity.Success:
+                _iconBlock.Text = "✔";
+                _iconBlock.Foreground = new SolidColorBrush(Color.FromRgb(0x4E, 0xC9, 0x90));
+                Background = new SolidColorBrush(Color.FromArgb(0x22, 0x4E, 0xC9, 0x90));
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x66, 0x4E, 0xC9, 0x90));
+                break;
+
+            case InfoSeverity.Warning:
+                _iconBlock.Text = "⚠";
+                _iconBlock.Foreground = new SolidColorBrush(Color.FromRgb(0xFA, 0xAD, 0x14));
+                Background = new SolidColorBrush(Color.FromArgb(0x22, 0xFA, 0xAD, 0x14));
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x66, 0xFA, 0xAD, 0x14));
+                break;
+
+            case InfoSeverity.Error:
+                _iconBlock.Text = "✖";
+                _iconBlock.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+                Background = new SolidColorBrush(Color.FromArgb(0x22, 0xEF, 0x44, 0x44));
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x66, 0xEF, 0x44, 0x44));
+                break;
+
+            case InfoSeverity.Neutral:
+            default:
+                _iconBlock.Text = "ℹ";
+                _iconBlock.Foreground = new SolidColorBrush(Color.FromRgb(0x95, 0xCA, 0x00));
+                Background = new SolidColorBrush(Color.FromArgb(0x18, 0x95, 0xCA, 0x00));
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x55, 0x95, 0xCA, 0x00));
+                break;
+        }
+    }
 }

@@ -1,185 +1,192 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
-using WpfApplication = System.Windows.Application;
-using WpfBrush = System.Windows.Media.Brush;
-using WpfBrushes = System.Windows.Media.Brushes;
-using WpfClipboard = System.Windows.Clipboard;
-using WpfContextMenu = System.Windows.Controls.ContextMenu;
-using WpfCursors = System.Windows.Input.Cursors;
-using WpfFontFamily = System.Windows.Media.FontFamily;
-using WpfHorizontalAlignment = System.Windows.HorizontalAlignment;
-using WpfMenuItem = System.Windows.Controls.MenuItem;
-using WpfPoint = System.Windows.Point;
+using System;
+using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Input.Platform;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Brushes = Avalonia.Media.Brushes;
+using Point = Avalonia.Point;
 
 namespace NaniKore.App.Controls;
 
 /// <summary>
-/// 注音内联排版控件：上行小字注音（振假名 / 拼音 / 音标），下行正文底字，
-/// 支持读音/底字独立复制与快捷右键菜单。措辞按 <see cref="RubyReadingKind"/> 自适应，
-/// 免得英语词元上也说「假名」。
+/// 复制格式枚举：纯正文、带方括号注音文本、纯读音假名。
+/// </summary>
+internal enum RubyCopyKind
+{
+    /// <summary>纯正文（例如：“ここは通れないよ”）。</summary>
+    Plain,
+
+    /// <summary>带注音方括号（例如：“ここは通[とお]れないよ”）。</summary>
+    Annotated,
+
+    /// <summary>纯读音（例如：“ここはとおれないよ”、IPA 音标）。</summary>
+    ReadingOnly,
+}
+
+/// <summary>
+/// Avalonia 版本的注音两行堆叠内联控件：
+/// 上行注音（假名/拼音/音标），下行底字，
+/// 支持独立悬停高亮、单击复制读音、右键上下文菜单。
 /// </summary>
 internal sealed class RubyInlineControl : Grid
 {
-    private WpfPoint _rubyMouseDownPoint;
     private bool _isRubyPressed;
 
-    /// <summary>通知宿主面板展示操作状态文本的静态事件。</summary>
-    public static event Action<string>? StatusNotificationRequested;
-
+    /// <summary>底字正文。</summary>
     public string BaseText { get; }
 
+    /// <summary>注音读音。</summary>
     public string RubyText { get; }
 
-    /// <summary>注音种类（由注音文本自身判定），决定控件内的假名/拼音/音标措辞。</summary>
+    /// <summary>注音种类（假名/拼音/音标/通用）。</summary>
     public RubyReadingKind ReadingKind { get; }
+
+    /// <summary>状态栏文本通知请求事件。</summary>
+    public static event Action<string>? StatusNotificationRequested;
 
     public RubyInlineControl(string baseText, string rubyText, double baseFontSize = 14)
     {
         BaseText = baseText;
         RubyText = rubyText;
         ReadingKind = RubyReadingTerms.Detect(rubyText);
+
         var readingNoun = RubyReadingTerms.Reading(ReadingKind);
         var baseNoun = RubyReadingTerms.Base(ReadingKind);
 
         Focusable = false;
-        IsHitTestVisible = true; // 允许子元素接收鼠标悬停、单独点击与右键上下文菜单
-        Background = WpfBrushes.Transparent; // 确保透明区域也能正确命中鼠标交互
         VerticalAlignment = VerticalAlignment.Bottom;
         Margin = new Thickness(1.5, 0, 1.5, 0);
 
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        var defaultSecondaryBrush = WpfApplication.Current?.TryFindResource("Brush.Text.Secondary") as WpfBrush ?? WpfBrushes.Gray;
-        var hoverAccentBrush = WpfApplication.Current?.TryFindResource("Brush.Accent") as WpfBrush ?? WpfBrushes.DodgerBlue;
-
-        // 1. 上行假名注音：手型光标、悬停提示、左键单击独立复制
+        // 1. 上行注音
         var rubyBlock = new TextBlock
         {
             Text = rubyText,
             FontSize = Math.Max(9, baseFontSize * 0.68),
-            FontFamily = WpfApplication.Current?.TryFindResource("Font.Ui") as WpfFontFamily ?? new WpfFontFamily("Microsoft YaHei UI, Segoe UI"),
-            Foreground = defaultSecondaryBrush,
-            HorizontalAlignment = WpfHorizontalAlignment.Center,
+            Foreground = Brushes.Gray,
+            HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
             Margin = new Thickness(0, 0, 0, 0.5),
-            Cursor = WpfCursors.Hand,
-            ToolTip = $"点击复制{readingNoun}: {rubyText}\r\n右键查看更多选项",
+            Cursor = new Cursor(StandardCursorType.Hand),
         };
+        ToolTip.SetTip(rubyBlock, $"点击复制{readingNoun}: {rubyText}\r\n右键查看更多选项");
 
-        rubyBlock.MouseEnter += (_, _) => rubyBlock.Foreground = hoverAccentBrush;
-        rubyBlock.MouseLeave += (_, _) => rubyBlock.Foreground = defaultSecondaryBrush;
-        rubyBlock.PreviewMouseLeftButtonDown += (_, e) =>
+        // 悬停高亮反馈
+        rubyBlock.PointerEntered += (_, _) => rubyBlock.Foreground = Brushes.DodgerBlue;
+        rubyBlock.PointerExited += (_, _) => rubyBlock.Foreground = Brushes.Gray;
+
+        // 单击复制读音（拦截事件，避免触发外层 SelectableTextBlock 拖选）
+        rubyBlock.PointerPressed += (sender, e) =>
         {
-            _isRubyPressed = true;
-            _rubyMouseDownPoint = e.GetPosition(rubyBlock);
-            rubyBlock.CaptureMouse();
-            // 阻止事件穿透给 FlowDocumentScrollViewer 的 TextEditor，避免其抢占鼠标捕获导致 Up 事件丢失
-            e.Handled = true;
-        };
-        rubyBlock.PreviewMouseLeftButtonUp += (_, e) =>
-        {
-            if (!_isRubyPressed)
+            if (e.GetCurrentPoint(rubyBlock).Properties.IsLeftButtonPressed)
             {
-                return;
-            }
-
-            _isRubyPressed = false;
-            rubyBlock.ReleaseMouseCapture();
-            e.Handled = true;
-
-            var currentPoint = e.GetPosition(rubyBlock);
-            var hitBox = new Rect(new WpfPoint(0, 0), rubyBlock.RenderSize);
-            hitBox.Inflate(16, 16); // 允许微弱抖动与手势误差
-            if (hitBox.Contains(currentPoint))
-            {
-                CopyReading();
+                _isRubyPressed = true;
+                e.Handled = true;
             }
         };
-        rubyBlock.LostMouseCapture += (_, _) => _isRubyPressed = false;
 
-        SetRow(rubyBlock, 0);
+        rubyBlock.PointerReleased += async (sender, e) =>
+        {
+            if (_isRubyPressed)
+            {
+                _isRubyPressed = false;
+                e.Handled = true;
+
+                var currentPoint = e.GetPosition(rubyBlock);
+                var bounds = new Rect(new Point(0, 0), rubyBlock.Bounds.Size).Inflate(16);
+                if (bounds.Contains(currentPoint))
+                {
+                    await CopyReadingAsync(TopLevel.GetTopLevel(this)?.Clipboard);
+                }
+            }
+        };
+
+        rubyBlock.PointerCaptureLost += (_, _) => _isRubyPressed = false;
+
+        Grid.SetRow(rubyBlock, 0);
         Children.Add(rubyBlock);
 
-        // 2. 下行汉字底字：悬停提示、允许原生拖选与双击编辑
+        // 2. 下行底字
         var baseBlock = new TextBlock
         {
             Text = baseText,
             FontSize = baseFontSize,
-            FontFamily = WpfApplication.Current?.TryFindResource("Font.Ui") as WpfFontFamily ?? new WpfFontFamily("Microsoft YaHei UI, Segoe UI"),
-            Foreground = WpfApplication.Current?.TryFindResource("Brush.Text.Primary") as WpfBrush ?? WpfBrushes.Black,
-            HorizontalAlignment = WpfHorizontalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
-            ToolTip = $"{baseNoun}: {baseText} ({readingNoun}: {rubyText})\r\n右键查看更多选项",
         };
-        SetRow(baseBlock, 1);
+        ToolTip.SetTip(baseBlock, $"{baseNoun}: {baseText} ({readingNoun}: {rubyText})\r\n右键查看更多选项");
+
+        Grid.SetRow(baseBlock, 1);
         Children.Add(baseBlock);
 
-        // 3. 专属右键菜单：直达复制底字、读音与带注音文本
+        // 3. 右键专属复制菜单
         ContextMenu = CreateContextMenu();
     }
 
-    public void CopyReading()
+    /// <summary>异步将文本写入剪贴板。</summary>
+    public static async Task SetClipboardTextAsync(IClipboard? clipboard, string text)
     {
-        _ = TrySetClipboard(RubyText);
+        if (clipboard is null)
+        {
+            return;
+        }
+
+        var transfer = new DataTransfer();
+        transfer.Add(DataTransferItem.CreateText(text));
+        await clipboard.SetDataAsync(transfer);
+    }
+
+    /// <summary>复制读音到剪贴板并激发通知。</summary>
+    public async Task CopyReadingAsync(IClipboard? clipboard)
+    {
+        await SetClipboardTextAsync(clipboard, RubyText);
         StatusNotificationRequested?.Invoke($"已复制{RubyReadingTerms.Reading(ReadingKind)}到剪贴板：{RubyText}");
     }
 
-    public void CopyBaseText()
+    /// <summary>复制底字到剪贴板并激发通知。</summary>
+    public async Task CopyBaseTextAsync(IClipboard? clipboard)
     {
-        _ = TrySetClipboard(BaseText);
+        await SetClipboardTextAsync(clipboard, BaseText);
         StatusNotificationRequested?.Invoke($"已复制{RubyReadingTerms.Base(ReadingKind)}到剪贴板：{BaseText}");
     }
 
-    public void CopyAnnotated()
+    /// <summary>复制带注音文本到剪贴板并激发通知。</summary>
+    public async Task CopyAnnotatedAsync(IClipboard? clipboard)
     {
         var text = $"{BaseText}[{RubyText}]";
-        _ = TrySetClipboard(text);
+        await SetClipboardTextAsync(clipboard, text);
         StatusNotificationRequested?.Invoke($"已复制带注音文本到剪贴板：{text}");
     }
 
-    private static bool TrySetClipboard(string text)
+    /// <summary>构建右键菜单项。</summary>
+    private ContextMenu CreateContextMenu()
     {
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            try
-            {
-                WpfClipboard.SetText(text);
-                return true;
-            }
-            catch
-            {
-                System.Threading.Thread.Sleep(50);
-            }
-        }
+        var menu = new ContextMenu();
 
-        return false;
-    }
-
-    private WpfContextMenu CreateContextMenu()
-    {
-        var menu = new WpfContextMenu();
-
-        var copyBaseItem = new WpfMenuItem
+        var copyBaseItem = new MenuItem
         {
             Header = $"复制{RubyReadingTerms.Base(ReadingKind)} \"{BaseText}\"",
         };
-        copyBaseItem.Click += (_, _) => CopyBaseText();
+        copyBaseItem.Click += async (_, _) => await CopyBaseTextAsync(TopLevel.GetTopLevel(this)?.Clipboard);
         menu.Items.Add(copyBaseItem);
 
-        var copyRubyItem = new WpfMenuItem
+        var copyRubyItem = new MenuItem
         {
             Header = $"复制{RubyReadingTerms.Reading(ReadingKind)} \"{RubyText}\"",
         };
-        copyRubyItem.Click += (_, _) => CopyReading();
+        copyRubyItem.Click += async (_, _) => await CopyReadingAsync(TopLevel.GetTopLevel(this)?.Clipboard);
         menu.Items.Add(copyRubyItem);
 
-        var copyAnnotatedItem = new WpfMenuItem
+        var copyAnnotatedItem = new MenuItem
         {
             Header = $"复制带注音 \"{BaseText}[{RubyText}]\"",
         };
-        copyAnnotatedItem.Click += (_, _) => CopyAnnotated();
+        copyAnnotatedItem.Click += async (_, _) => await CopyAnnotatedAsync(TopLevel.GetTopLevel(this)?.Clipboard);
         menu.Items.Add(copyAnnotatedItem);
 
         return menu;

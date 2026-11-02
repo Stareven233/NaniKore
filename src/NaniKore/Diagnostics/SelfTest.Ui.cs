@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Color = Avalonia.Media.Color;
@@ -19,6 +20,7 @@ internal static partial class SelfTest
         TestThemeResourcesResolve();
         TestContrastRatiosAndReadability();
         TestThemeVariantHotSwitching();
+        RunResultPanelUiTests();
     }
 
     /// <summary>
@@ -164,4 +166,10 @@ internal static partial class SelfTest
             return val <= 0.03928 ? val / 12.92 : Math.Pow((val + 0.055) / 1.055, 2.4);
         }
     }
+
+    private static T? Find<T>(Avalonia.Controls.Control parent, string name) where T : Avalonia.Controls.Control =>
+        parent.FindControl<T>(name);
+
+    private static void RaiseClick(Avalonia.Controls.Button button) =>
+        button.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Avalonia.Controls.Button.ClickEvent));
 }

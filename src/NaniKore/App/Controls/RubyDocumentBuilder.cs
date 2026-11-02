@@ -1,67 +1,38 @@
+using System;
 using System.Text;
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Documents;
-using System.Windows.Media;
+using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using NaniKore.Translation;
-using WpfApplication = System.Windows.Application;
-using WpfBrush = System.Windows.Media.Brush;
-using WpfBrushes = System.Windows.Media.Brushes;
-using WpfFontFamily = System.Windows.Media.FontFamily;
 
 namespace NaniKore.App.Controls;
 
 /// <summary>
-/// 复制格式枚举：纯正文、带方括号注音文本、纯读音假名。
-/// </summary>
-internal enum RubyCopyKind
-{
-    Plain,       // 纯正文（例如：“ここは通れないよ”）
-    Annotated,   // 带注音方括号（例如：“ここは通[とお]れないよ”）
-    ReadingOnly, // 纯读音（例如：“ここはとおれないよ”、IPA 音标）
-}
-
-/// <summary>
-/// 振假名/注音 FlowDocument 构建与选区文本提取工具。
+/// 针对 Avalonia SelectableTextBlock 的注音内联构建与精准选区文本提取工具。
 /// </summary>
 internal static class RubyDocumentBuilder
 {
     /// <summary>
-    /// 将带注音文本解析并构建为包含振假名内联组件的 FlowDocument。
+    /// 将带注音文本解析并构建为包含振假名内联组件的 Avalonia Inlines 集合。
     /// </summary>
-    public static FlowDocument Build(string? annotatedText, double fontSize = 14)
+    public static InlineCollection BuildInlines(string? annotatedText, double fontSize = 14)
     {
-        var document = new FlowDocument
-        {
-            PagePadding = new Thickness(0),
-            FontFamily = WpfApplication.Current?.TryFindResource("Font.Ui") as WpfFontFamily ?? new WpfFontFamily("Microsoft YaHei UI, Segoe UI"),
-            FontSize = fontSize,
-            Foreground = WpfApplication.Current?.TryFindResource("Brush.Text.Primary") as WpfBrush ?? WpfBrushes.Black,
-            Background = WpfBrushes.Transparent,
-            IsHyphenationEnabled = false,
-            TextAlignment = TextAlignment.Left,
-        };
-
+        var inlines = new InlineCollection();
         if (string.IsNullOrEmpty(annotatedText))
         {
-            return document;
+            return inlines;
         }
 
         var lines = annotatedText.Split(["\r\n", "\n"], StringSplitOptions.None);
         for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
         {
             var line = lines[lineIndex];
-            var paragraph = new Paragraph
+            if (lineIndex > 0)
             {
-                Margin = new Thickness(0, 0, 0, lineIndex == lines.Length - 1 ? 0 : 4),
-                LineStackingStrategy = LineStackingStrategy.MaxHeight,
-            };
+                inlines.Add(new LineBreak());
+            }
 
             if (line.Length == 0)
             {
-                // 空行保留段落高度
-                paragraph.Inlines.Add(new Run(" "));
-                document.Blocks.Add(paragraph);
                 continue;
             }
 
@@ -70,108 +41,123 @@ internal static class RubyDocumentBuilder
             {
                 if (!segment.IsRuby)
                 {
-                    paragraph.Inlines.Add(new Run(segment.Text));
+                    inlines.Add(new Run(segment.Text));
                 }
                 else
                 {
                     var control = new RubyInlineControl(segment.Text, segment.Ruby!, fontSize);
-                    var container = new InlineUIContainer(control)
-                    {
-                        BaselineAlignment = BaselineAlignment.TextBottom,
-                    };
-                    paragraph.Inlines.Add(container);
+                    var container = new InlineUIContainer(control);
+                    inlines.Add(container);
                 }
             }
-
-            document.Blocks.Add(paragraph);
         }
 
-        return document;
+        return inlines;
     }
 
     /// <summary>
-    /// 从选区中提取指定格式的文本（自动处理 InlineUIContainer 中的注音与底字）。
+    /// 从 SelectableTextBlock 中提取指定格式的文本。
+    /// 若有选区则提取选区，若无选区则提取全文。
+    /// Avalonia 中 InlineUIContainer 在字符流中精准占据 1 个 U+FFFC 字符位置，
+    /// 据此实现完全确定性的偏移量映射。
     /// </summary>
-    public static string ExtractFromSelection(TextRange? range, RubyCopyKind kind)
+    public static string ExtractText(SelectableTextBlock block, RubyCopyKind kind)
     {
-        if (range is null || range.IsEmpty)
+        var inlines = block.Inlines;
+        if (inlines is null || inlines.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        int selStart = Math.Min(block.SelectionStart, block.SelectionEnd);
+        int selEnd = Math.Max(block.SelectionStart, block.SelectionEnd);
+
+        // 无选区时默认提取全量
+        bool hasSelection = selStart != selEnd;
+        if (!hasSelection)
+        {
+            selStart = 0;
+            selEnd = int.MaxValue;
+        }
+
+        return ExtractFromInlines(inlines, selStart, selEnd, kind);
+    }
+
+    /// <summary>
+    /// 根据给定的字符流选区范围从 Inlines 集合中提取指定格式文本。
+    /// </summary>
+    public static string ExtractFromInlines(InlineCollection inlines, int selStart, int selEnd, RubyCopyKind kind)
+    {
+        if (inlines is null || inlines.Count == 0 || selStart >= selEnd)
         {
             return string.Empty;
         }
 
         var sb = new StringBuilder();
-        var pointer = range.Start;
-        var visitedRubies = new HashSet<RubyInlineControl>();
+        int currentOffset = 0;
 
-        while (pointer is not null && pointer.CompareTo(range.End) < 0)
+        foreach (var inline in inlines)
         {
-            var context = pointer.GetPointerContext(LogicalDirection.Forward);
-
-            switch (context)
+            if (inline is Run run)
             {
-                case TextPointerContext.Text:
-                    var text = pointer.GetTextInRun(LogicalDirection.Forward);
-                    var next = pointer.GetNextContextPosition(LogicalDirection.Forward);
-                    if (next is not null && next.CompareTo(range.End) > 0)
-                    {
-                        var runLength = pointer.GetOffsetToPosition(range.End);
-                        sb.Append(text[..Math.Min(text.Length, Math.Max(0, runLength))]);
-                        return sb.ToString().TrimEnd('\r', '\n');
-                    }
-                    sb.Append(text);
-                    break;
+                var text = run.Text ?? string.Empty;
+                int runLen = text.Length;
+                int runStart = currentOffset;
+                int runEnd = currentOffset + runLen;
 
-                case TextPointerContext.ElementStart:
-                    // WPF 中遍历至 InlineUIContainer 起始处时 context 为 ElementStart
-                    var elementStart = pointer.GetAdjacentElement(LogicalDirection.Forward);
-                    if (elementStart is InlineUIContainer { Child: RubyInlineControl rubyFromContainer } &&
-                        visitedRubies.Add(rubyFromContainer))
-                    {
-                        AppendRubyText(sb, rubyFromContainer, kind);
-                    }
-                    break;
+                int overlapStart = Math.Max(selStart, runStart);
+                int overlapEnd = Math.Min(selEnd, runEnd);
 
-                case TextPointerContext.EmbeddedElement:
-                    // 容器内部相邻的子元素直接为 RubyInlineControl 实例
-                    var element = pointer.GetAdjacentElement(LogicalDirection.Forward);
-                    if (element is RubyInlineControl rubyDirect && visitedRubies.Add(rubyDirect))
-                    {
-                        AppendRubyText(sb, rubyDirect, kind);
-                    }
-                    else if (element is InlineUIContainer { Child: RubyInlineControl rubyInner } &&
-                             visitedRubies.Add(rubyInner))
-                    {
-                        AppendRubyText(sb, rubyInner, kind);
-                    }
-                    break;
+                if (overlapStart < overlapEnd)
+                {
+                    int relStart = overlapStart - runStart;
+                    int relLen = overlapEnd - overlapStart;
+                    sb.Append(text.AsSpan(relStart, relLen));
+                }
 
-                case TextPointerContext.ElementEnd:
-                    if (pointer.Parent is Paragraph && sb.Length > 0 && !sb.ToString().EndsWith('\n'))
-                    {
-                        sb.AppendLine();
-                    }
-                    break;
+                currentOffset += runLen;
             }
+            else if (inline is LineBreak)
+            {
+                int lbStart = currentOffset;
+                int lbEnd = currentOffset + 1;
 
-            pointer = pointer.GetNextContextPosition(LogicalDirection.Forward);
+                if (selStart <= lbStart && selEnd >= lbEnd)
+                {
+                    sb.Append(Environment.NewLine);
+                }
+
+                currentOffset += 1;
+            }
+            else if (inline is InlineUIContainer container)
+            {
+                int uicPos = currentOffset;
+                if (selStart <= uicPos && selEnd > uicPos)
+                {
+                    if (container.Child is RubyInlineControl ruby)
+                    {
+                        switch (kind)
+                        {
+                            case RubyCopyKind.Plain:
+                                sb.Append(ruby.BaseText);
+                                break;
+                            case RubyCopyKind.Annotated:
+                                sb.Append(ruby.BaseText);
+                                sb.Append('[');
+                                sb.Append(ruby.RubyText);
+                                sb.Append(']');
+                                break;
+                            case RubyCopyKind.ReadingOnly:
+                                sb.Append(ruby.RubyText);
+                                break;
+                        }
+                    }
+                }
+
+                currentOffset += 1; // InlineUIContainer 占 1 字符 (U+FFFC)
+            }
         }
 
-        return sb.ToString().TrimEnd('\r', '\n');
-    }
-
-    private static void AppendRubyText(StringBuilder sb, RubyInlineControl ruby, RubyCopyKind kind)
-    {
-        switch (kind)
-        {
-            case RubyCopyKind.Plain:
-                sb.Append(ruby.BaseText);
-                break;
-            case RubyCopyKind.Annotated:
-                sb.Append(ruby.BaseText).Append('[').Append(ruby.RubyText).Append(']');
-                break;
-            case RubyCopyKind.ReadingOnly:
-                sb.Append(ruby.RubyText);
-                break;
-        }
+        return sb.ToString();
     }
 }

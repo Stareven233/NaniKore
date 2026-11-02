@@ -1,0 +1,131 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="using:NaniKore.App.Controls"
+             x:Class="NaniKore.App.Controls.ExplanationCardView"
+             x:CompileBindings="True"
+             x:DataType="controls:ExplanationCardView">
+    <Grid>
+        <!-- 结构化卡片渲染视图 -->
+        <ScrollViewer x:Name="CardsScrollViewer"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Focusable="False">
+            <StackPanel x:Name="CardsPanel" Margin="0,2,0,4" Spacing="10">
+                <!-- 重点词汇与短语分组 -->
+                <StackPanel x:Name="VocabularyGroup" Spacing="6" IsVisible="False">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="📖" FontSize="13" VerticalAlignment="Center" />
+                        <TextBlock Text="重点词汇与短语" Classes="title" FontSize="13" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <ItemsControl x:Name="VocabularyItemsControl" ItemsSource="{Binding VocabularyItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="controls:VocabularyCardViewModel">
+                                <Border Classes="card" Padding="10,7" Margin="0,0,0,6">
+                                    <Grid RowDefinitions="Auto,Auto">
+                                        <!-- 顶部行：词汇标题“单词（读音）” + 词性徽章 + 收藏按钮 -->
+                                        <DockPanel Grid.Row="0">
+                                            <Button DockPanel.Dock="Right"
+                                                    Classes="icon"
+                                                    VerticalAlignment="Center"
+                                                    Width="28" Height="28"
+                                                    Tag="{Binding}"
+                                                    Click="OnVocabularyFavoriteClick"
+                                                    ToolTip.Tip="{Binding FavoriteTooltip}">
+                                                <TextBlock Text="{Binding FavoriteIcon}"
+                                                           FontSize="14"
+                                                           Foreground="{Binding FavoriteBrush}" />
+                                            </Button>
+                                            <WrapPanel VerticalAlignment="Center" Margin="0,0,8,0">
+                                                <SelectableTextBlock Text="{Binding DisplayTitle}"
+                                                                     FontSize="14"
+                                                                     FontWeight="SemiBold"
+                                                                     VerticalAlignment="Center"
+                                                                     Margin="0,0,8,0" />
+                                                <Border Classes="badge" IsVisible="{Binding RoleVisible}" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding RoleBadgeText}" FontSize="11" />
+                                                </Border>
+                                            </WrapPanel>
+                                        </DockPanel>
+
+                                        <!-- 释义与语境分析 -->
+                                        <SelectableTextBlock Grid.Row="1"
+                                                             Text="{Binding Meaning}"
+                                                             FontSize="12"
+                                                             Classes="secondary"
+                                                             TextWrapping="Wrap"
+                                                             Margin="0,5,0,0"
+                                                             IsVisible="{Binding MeaningVisible}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- 语法与句型分组 -->
+                <StackPanel x:Name="GrammarGroup" Spacing="6" IsVisible="False">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="🧩" FontSize="13" VerticalAlignment="Center" />
+                        <TextBlock Text="语法与句型" Classes="title" FontSize="13" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <ItemsControl x:Name="GrammarItemsControl" ItemsSource="{Binding GrammarItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="controls:GrammarCardViewModel">
+                                <Border Classes="card" Padding="10,7" Margin="0,0,0,6">
+                                    <Grid RowDefinitions="Auto,Auto">
+                                        <DockPanel Grid.Row="0">
+                                            <Button DockPanel.Dock="Right"
+                                                    Classes="icon"
+                                                    VerticalAlignment="Center"
+                                                    Width="28" Height="28"
+                                                    Tag="{Binding}"
+                                                    Click="OnGrammarFavoriteClick"
+                                                    ToolTip.Tip="{Binding FavoriteTooltip}">
+                                                <TextBlock Text="{Binding FavoriteIcon}"
+                                                           FontSize="14"
+                                                           Foreground="{Binding FavoriteBrush}" />
+                                            </Button>
+                                            <SelectableTextBlock Text="{Binding Pattern}"
+                                                                 FontSize="14"
+                                                                 FontWeight="SemiBold"
+                                                                 VerticalAlignment="Center"
+                                                                 Margin="0,0,8,0" />
+                                        </DockPanel>
+
+                                        <SelectableTextBlock Grid.Row="1"
+                                                             Text="{Binding Meaning}"
+                                                             FontSize="12"
+                                                             Classes="secondary"
+                                                             TextWrapping="Wrap"
+                                                             Margin="0,5,0,0" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- 语境与地道表达分组 -->
+                <StackPanel x:Name="ContextGroup" Spacing="6" IsVisible="False">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="💬" FontSize="13" VerticalAlignment="Center" />
+                        <TextBlock Text="语境与地道表达" Classes="title" FontSize="13" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <Border Classes="control" Padding="10,8">
+                        <SelectableTextBlock x:Name="ContextExplanationTextBox"
+                                             FontSize="12"
+                                             TextWrapping="Wrap" />
+                    </Border>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- 降级纯文本渲染框：大模型未遵循结构化协议时无缝展示原始 Markdown -->
+        <TextBox x:Name="FallbackTextBox"
+                 Classes="control"
+                 IsReadOnly="True"
+                 TextWrapping="Wrap"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 IsVisible="False" />
+    </Grid>
+</UserControl>

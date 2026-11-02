@@ -82,22 +82,17 @@
     </EmbeddedResource>
   </ItemGroup>
 
-  <!-- 待 P3–P5 批次逐步替换为 Avalonia 的旧 WPF 界面代码 -->
+  <!-- 待 P4–P5 批次逐步替换为 Avalonia 的旧 WPF 界面代码 -->
   <ItemGroup>
-    <Compile Remove="App\Controls\ExplanationCardView.xaml.cs" />
     <Compile Remove="App\Controls\HotkeyRecorderBox.cs" />
-    <Compile Remove="App\Controls\InfoBar.cs" />
     <Compile Remove="App\Controls\NumberBox.cs" />
-    <Compile Remove="App\Controls\RubyDocumentBuilder.cs" />
-    <Compile Remove="App\Controls\RubyInlineControl.cs" />
-    <Compile Remove="App\Controls\SelectionBubblePopup.xaml.cs" />
     <Compile Remove="App\Controls\SettingsGroup.cs" />
     <Compile Remove="App\Settings\**\*.cs" />
+    <Compile Include="App\Settings\LanguageChoices.cs" />
+    <Compile Include="App\Settings\SettingsTab.cs" />
     <Compile Remove="App\NaniKoreApp.cs" />
     <Compile Remove="App\OcrProgressWindow.xaml.cs" />
     <Compile Remove="App\OcrResultWindow.xaml.cs" />
-    <Compile Remove="App\ResultPanelWindow.xaml.cs" />
-    <Compile Remove="Diagnostics\SelfTest.Ui.ResultPanel.cs" />
     <Compile Remove="Diagnostics\SelfTest.Ui.Settings.cs" />
     <None Remove="**\*.xaml" />
   </ItemGroup>
