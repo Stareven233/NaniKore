@@ -1,15 +1,28 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Threading;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Threading;
 using NaniKore.App.Controls;
 using NaniKore.App.Theme;
 using NaniKore.Config;
 using NaniKore.Favorites;
 using NaniKore.Input;
-using FontFamily = System.Windows.Media.FontFamily;
-using Orientation = System.Windows.Controls.Orientation;
 
 namespace NaniKore.App.Settings;
+
+/// <summary>
+/// 导航列表项视图模型，完全兼容编译绑定。
+/// </summary>
+internal sealed class NavigationItem(ISettingsPage page)
+{
+    public ISettingsPage Page { get; } = page;
+    public string Title => Page.Title;
+    public string Glyph => Page.Glyph;
+}
 
 /// <summary>非模态设置宿主；所有页面在配置副本上编辑，保存后一次性热应用。</summary>
 internal sealed partial class SettingsWindow : Window
@@ -24,13 +37,14 @@ internal sealed partial class SettingsWindow : Window
     private readonly AppConfig _working;
     private readonly Action<AppConfig> _save;
     private readonly List<ISettingsPage> _pages;
+    private readonly List<NavigationItem> _navItems;
     private readonly TranslationPage _translationPage;
     private readonly DispatcherTimer _successStatusTimer;
 
     /// <summary>业务配置是否已成功落盘；决定关闭时尺寸记录克隆哪份副本。</summary>
     private bool _settingsSaved;
 
-    /// <summary>尺寸比较容差：吸收不同 DPI 下 Actual* 的取整漂移，偏差小于该值视为未变化。</summary>
+    /// <summary>尺寸比较容差：吸收不同 DPI 下 Bounds 的取整漂移，偏差小于该值视为未变化。</summary>
     private const double SizeEpsilon = 1.0;
 
     public SettingsWindow(
@@ -46,11 +60,9 @@ internal sealed partial class SettingsWindow : Window
     {
         ArgumentNullException.ThrowIfNull(current);
         InitializeComponent();
-        Icon = ApplicationIcon.LoadWpf();
+        Icon = ApplicationIcon.Load();
         ThemeManager.ApplyWindowChrome(this);
 
-        // 打开时取一份快照作为编辑副本；实时提供者保留下来，关闭时的尺寸回写
-        // 必须以当前最新配置为基础，不能用打开时的快照（见 _currentConfig 注释）。
         var snapshot = current();
         ArgumentNullException.ThrowIfNull(snapshot);
         _currentConfig = current;
@@ -70,14 +82,21 @@ internal sealed partial class SettingsWindow : Window
         // 收藏页读应用级收藏服务（SQLite 持久化），不参与 AppConfig 编辑副本。
         var favorites = new FavoritesPage(favoriteService);
         _pages = [general, _translationPage, hotkeys, favorites, about];
+        _navItems = _pages.Select(page => new NavigationItem(page)).ToList();
+
+        NavigationList.ItemsSource = _navItems;
+        NavigationList.SelectionChanged += OnNavigationChanged;
 
         foreach (var page in _pages)
         {
-            NavigationList.Items.Add(CreateNavigationItem(page));
             page.Load(_working);
         }
 
+        SaveButton.Click += (_, _) => Save();
+        CancelButton.Click += (_, _) => Close();
+
         SelectTab(initialTab);
+
         // 关闭时记录窗口尺寸（仅在实际改变过尺寸时才写盘）；尺寸走独立副本，不携带尚未保存的页面编辑。
         Closed += (_, _) =>
         {
@@ -90,45 +109,23 @@ internal sealed partial class SettingsWindow : Window
     public void SelectTab(SettingsTab tab)
     {
         var targetIndex = (int)tab;
-        if (targetIndex >= 0 && targetIndex < NavigationList.Items.Count)
+        if (targetIndex >= 0 && targetIndex < _navItems.Count)
         {
             NavigationList.SelectedIndex = targetIndex;
         }
     }
 
-    /// <summary>导航项：图标 + 标题，图标用 Segoe Fluent Icons 字形，不引入图片资源。</summary>
-    private static FrameworkElement CreateNavigationItem(ISettingsPage page)
+    private void OnNavigationChanged(object? sender, SelectionChangedEventArgs e)
     {
-        var layout = new StackPanel { Orientation = Orientation.Horizontal, Tag = page };
-        var glyph = new TextBlock
-        {
-            Text = page.Glyph,
-            FontFamily = new System.Windows.Media.FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
-            FontSize = 15,
-            Width = 24,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        glyph.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Text.Secondary");
-        layout.Children.Add(glyph);
-        layout.Children.Add(new TextBlock { Text = page.Title, VerticalAlignment = VerticalAlignment.Center });
-        return layout;
-    }
-
-    private void OnNavigationChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (NavigationList.SelectedItem is not FrameworkElement { Tag: ISettingsPage page })
+        if (NavigationList.SelectedItem is not NavigationItem navItem)
         {
             return;
         }
 
-        PageTitle.Text = page.Title;
-        PageHost.Content = page.View;
+        PageTitle.Text = navItem.Title;
+        PageHost.Content = navItem.Page.View;
         FooterStatus.Clear();
     }
-
-    private void OnSaveClick(object sender, RoutedEventArgs e) => Save();
-
-    private void OnCancelClick(object sender, RoutedEventArgs e) => Close();
 
     private void Save()
     {
@@ -212,11 +209,8 @@ internal sealed partial class SettingsWindow : Window
         // （其内容已随保存落盘，只叠加尺寸）；没保存过时 _working 里只有未保存的页面编辑，
         // 必须改用实时配置——打开时的快照可能已被其他入口改写，整份写回会静默回滚。
         var baseline = ResolveCloseWriteBackBaseline(_settingsSaved, _working, _currentConfig());
-        if (ResolvePersistedSize(baseline.Windows, ActualWidth, ActualHeight, MinWidth, MinHeight) is not { } size)
+        if (ResolvePersistedSize(baseline.Windows, Bounds.Width, Bounds.Height, MinWidth, MinHeight) is not { } size)
         {
-            // 尺寸与基线一致（或取不到可信尺寸）时完全不写盘：保存过说明业务配置和
-            // 当前尺寸已经落盘，没保存过说明用户什么都没改——“进设置窗口逛一圈直接
-            // 关掉”不该重写 config.yaml（丢注释、~ 被规范化成 '' 等副作用）。
             return;
         }
 
@@ -236,8 +230,7 @@ internal sealed partial class SettingsWindow : Window
     /// <summary>
     /// 关闭时尺寸回写的基线决策：已保存过业务配置时以编辑副本 <paramref name="working"/> 为准
     /// （其内容已随保存落盘，只叠加尺寸）；未保存时必须取 <paramref name="latest"/> 实时配置，
-    /// 避免打开时的快照覆盖其他入口（结果卡 AutoExplainChanged → NaniKoreApp.ApplySettings
-    /// → AtomicWrite）期间的写盘。未保存的页面编辑只存在于 <paramref name="working"/>，
+    /// 避免打开时的快照覆盖其他入口期间的写盘。未保存的页面编辑只存在于 <paramref name="working"/>，
     /// 选用 <paramref name="latest"/> 即可天然丢弃，不夹带任何业务字段。
     /// </summary>
     internal static AppConfig ResolveCloseWriteBackBaseline(bool settingsSaved, AppConfig working, AppConfig latest)
@@ -249,8 +242,7 @@ internal sealed partial class SettingsWindow : Window
 
     /// <summary>
     /// 尺寸记忆的纯决策：返回需要写回的窗口尺寸，没有任何变化时返回 null 表示不必写盘。
-    /// 尺寸不可信（布局尚未完成、窗口从未显示）或与基线一致时跳过；
-    /// WPF 的 ActualWidth 与 Width 严格相等（已实测多轮开关零漂移），故 1px 容差足够。
+    /// 尺寸不可信（布局尚未完成、窗口从未显示）或与基线一致时跳过。
     /// </summary>
     internal static (double Width, double Height)? ResolvePersistedSize(
         WindowConfig baseline, double actualWidth, double actualHeight, double minWidth, double minHeight)
@@ -261,7 +253,7 @@ internal sealed partial class SettingsWindow : Window
             return null;
         }
 
-        // 以 XAML 声明的最小尺寸为下限，防止异常 DPI 数据把窗口缩到不可操作。
+        // 以声明的最小尺寸为下限，防止异常数据把窗口缩到不可操作。
         var width = Math.Max(minWidth, actualWidth);
         var height = Math.Max(minHeight, actualHeight);
         if (Math.Abs(baseline.SettingsWidth - width) < SizeEpsilon &&

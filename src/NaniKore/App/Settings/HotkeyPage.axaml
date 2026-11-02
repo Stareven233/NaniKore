@@ -1,9 +1,10 @@
-<UserControl x:Class="NaniKore.App.Settings.HotkeyPage"
-             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:NaniKore.App.Controls"
-             x:ClassModifier="internal">
-    <StackPanel>
+             xmlns:local="clr-namespace:NaniKore.App.Settings"
+             x:Class="NaniKore.App.Settings.HotkeyPage"
+             x:DataType="local:HotkeyPage">
+    <StackPanel Spacing="0">
         <controls:SettingsGroup Header="全局热键">
             <StackPanel>
                 <controls:SettingsRow Header="截图翻译"
@@ -11,11 +12,11 @@
                                       ContentWidth="190">
                     <controls:HotkeyRecorderBox x:Name="CaptureRecorder" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
-                <!-- 录制状态仅用于说明，使用普通文本以便窄窗口下自然换行。 -->
+                <Border Classes="divider-row" />
                 <TextBlock x:Name="CaptureRecorderStatus"
-                           Style="{DynamicResource Text.Caption}"
-                           Margin="12,10"
+                           FontSize="12"
+                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                           Margin="14,10"
                            TextWrapping="Wrap" />
                 <controls:SettingsRow Header="选取翻译"
                                       Description="按优先级取选区文本、剪贴板文本或剪贴板图像；按 Esc 可解除绑定（留空即关闭）。"
@@ -24,15 +25,19 @@
                                                 AllowUnbind="True"
                                                 EmptyHint="未绑定（Esc 解绑）" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
+                <Border Classes="divider-row" />
                 <TextBlock x:Name="PasteRecorderStatus"
-                           Style="{DynamicResource Text.Caption}"
-                           Margin="12,10"
+                           FontSize="12"
+                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                           Margin="14,10"
                            TextWrapping="Wrap" />
             </StackPanel>
         </controls:SettingsGroup>
 
-        <TextBlock Style="{DynamicResource Text.Caption}" Margin="4,0,0,0"
+        <TextBlock FontSize="12"
+                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                   Margin="4,0,0,0"
+                   TextWrapping="Wrap"
                    Text="录制期间全局热键会临时注销，因此可以安全地重新录制当前正在生效的组合。F1–F12 可单独绑定为单键热键，它会全局接管该键，请谨慎选择。" />
     </StackPanel>
 </UserControl>

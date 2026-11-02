@@ -1,35 +1,31 @@
-<UserControl x:Class="NaniKore.App.Settings.GeneralPage"
-             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:NaniKore.App.Controls"
-             x:ClassModifier="internal">
-    <!--
-        页面内一律使用 DynamicResource 引用主题资源：
-        自测进程会在没有 Application 资源的情况下直接构造页面做逻辑断言，
-        StaticResource 在那种场景会直接抛异常。
-    -->
-    <StackPanel>
+             xmlns:local="clr-namespace:NaniKore.App.Settings"
+             x:Class="NaniKore.App.Settings.GeneralPage"
+             x:DataType="local:GeneralPage">
+    <StackPanel Spacing="0">
         <controls:SettingsGroup Header="翻译">
             <StackPanel>
                 <controls:SettingsRow Header="翻译目标语言"
                                       Description="译文语言会直接写入模型提示词。"
                                       ContentWidth="220">
-                    <ComboBox x:Name="TargetLanguageBox" />
+                    <ComboBox x:Name="TargetLanguageBox" Width="220" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
+                <Border Classes="divider-row" />
                 <controls:SettingsRow Header="OCR 后自动翻译"
                                       Description="关闭时由结果卡的「翻译」按钮显式触发。">
-                    <ToggleButton x:Name="AutoTranslateToggle" Style="{DynamicResource ToggleSwitch}" />
+                    <ToggleSwitch x:Name="AutoTranslateToggle" OnContent="" OffContent="" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
+                <Border Classes="divider-row" />
                 <controls:SettingsRow Header="选取后自动翻译"
                                       Description="选取翻译热键（选区/剪贴板）读到内容后立即翻译；关闭时只呈现原文，由「翻译」按钮显式触发。">
-                    <ToggleButton x:Name="PasteAutoTranslateToggle" Style="{DynamicResource ToggleSwitch}" />
+                    <ToggleSwitch x:Name="PasteAutoTranslateToggle" OnContent="" OffContent="" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
+                <Border Classes="divider-row" />
                 <controls:SettingsRow Header="翻译后自动精讲"
                                       Description="阶段 1 翻译完成后自动触发深度语法精讲并展开。">
-                    <ToggleButton x:Name="AutoExplainToggle" Style="{DynamicResource ToggleSwitch}" />
+                    <ToggleSwitch x:Name="AutoExplainToggle" OnContent="" OffContent="" />
                 </controls:SettingsRow>
             </StackPanel>
         </controls:SettingsGroup>
@@ -37,18 +33,16 @@
         <controls:SettingsGroup Header="识别流程">
             <StackPanel>
                 <controls:SettingsRow Header="翻译流程" ContentWidth="220">
-                    <ComboBox x:Name="PipelineModeBox"
-                              SelectionChanged="OnPipelineModeChanged" />
+                    <ComboBox x:Name="PipelineModeBox" Width="220" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
-                <!-- 两条流程各占一行说明，替代旧版挤在一行的长句。 -->
-                <StackPanel Margin="12,10">
-                    <TextBlock Style="{DynamicResource Text.Caption}">
-                        <Run FontWeight="SemiBold" Text="local_ocr" />
+                <Border Classes="divider-row" />
+                <StackPanel Margin="14,10" Spacing="4">
+                    <TextBlock FontSize="12" Foreground="{DynamicResource Brush.Text.Secondary}">
+                        <Run FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text.Primary}" Text="local_ocr" />
                         <Run Text="：本地 PP-OCR 识别后再交给模型翻译，隐私更好、无图像上传。" />
                     </TextBlock>
-                    <TextBlock Style="{DynamicResource Text.Caption}" Margin="0,4,0,0">
-                        <Run FontWeight="SemiBold" Text="vision_oneshot" />
+                    <TextBlock FontSize="12" Foreground="{DynamicResource Brush.Text.Secondary}">
+                        <Run FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text.Primary}" Text="vision_oneshot" />
                         <Run Text="：直接把选区图像交给支持图像输入的模型，一次完成识别与翻译。" />
                     </TextBlock>
                 </StackPanel>
@@ -59,45 +53,38 @@
             <StackPanel>
                 <controls:SettingsRow Header="原文注音"
                                       Description="本地引擎给原文标注振假名 / 国际音标 / 拼音，不经过模型；关闭后原文区为纯文本，翻译不受影响。">
-                    <ToggleButton x:Name="PhoneticsEnabledToggle" Style="{DynamicResource ToggleSwitch}" />
+                    <ToggleSwitch x:Name="PhoneticsEnabledToggle" OnContent="" OffContent="" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
+                <Border Classes="divider-row" />
                 <controls:SettingsRow Header="仅注难词"
                                       Description="开启时停用词、高频词与常用字（日语常用漢字表 / 简体一级字表）不注；关闭时全文注音。可注音的单词不足 10 个时视为短语，始终全部注音。">
-                    <ToggleButton x:Name="PhoneticsRareOnlyToggle" Style="{DynamicResource ToggleSwitch}" />
+                    <ToggleSwitch x:Name="PhoneticsRareOnlyToggle" OnContent="" OffContent="" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
-                <!--
-                    三语词典按语言独立管理：状态即按钮文案（下载 / 更新 / 已就绪），
-                    点击后经 ModelScope 直链下载并做 SHA-256 校验；已存在且相符的文件自动跳过。
-                -->
+                <Border Classes="divider-row" />
                 <controls:SettingsRow Header="日本語词典"
                                       Description="IPAdic 形态素词典（编译态，约 53 MB）"
                                       ContentWidth="96">
                     <Button x:Name="PhoneticsDownloadJa"
                             Tag="ja"
-                            Style="{DynamicResource Button.Secondary}"
-                            Click="OnDownloadPhoneticsClick" />
+                            Width="96" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
+                <Border Classes="divider-row" />
                 <controls:SettingsRow Header="English 词典"
                                       Description="CMUdict 转译 IPA 词典（约 4 MB）"
                                       ContentWidth="96">
                     <Button x:Name="PhoneticsDownloadEn"
                             Tag="en"
-                            Style="{DynamicResource Button.Secondary}"
-                            Click="OnDownloadPhoneticsClick" />
+                            Width="96" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
+                <Border Classes="divider-row" />
                 <controls:SettingsRow Header="中文（简体）词典"
                                       Description="CC-CEDICT 转译 MeCab 词典（约 10 MB）"
                                       ContentWidth="96">
                     <Button x:Name="PhoneticsDownloadZh"
                             Tag="zh"
-                            Style="{DynamicResource Button.Secondary}"
-                            Click="OnDownloadPhoneticsClick" />
+                            Width="96" />
                 </controls:SettingsRow>
-                <controls:InfoBar x:Name="PhoneticsStatus" Margin="12,0,12,12" />
+                <controls:InfoBar x:Name="PhoneticsStatus" Margin="14,0,14,12" />
             </StackPanel>
         </controls:SettingsGroup>
 
@@ -107,10 +94,9 @@
                                       Description="下载到当前程序目录的 deps 文件夹；程序不会在后台自动联网。"
                                       ContentWidth="96">
                     <Button x:Name="DownloadDependenciesButton"
-                            Style="{DynamicResource Button.Secondary}"
-                            Click="OnDownloadDependenciesClick" />
+                            Width="96" />
                 </controls:SettingsRow>
-                <controls:InfoBar x:Name="DependencyStatus" Margin="12,0,12,12" />
+                <controls:InfoBar x:Name="DependencyStatus" Margin="14,0,14,12" />
             </StackPanel>
         </controls:SettingsGroup>
     </StackPanel>

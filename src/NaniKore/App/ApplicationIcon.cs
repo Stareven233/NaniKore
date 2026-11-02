@@ -20,6 +20,15 @@ internal static class ApplicationIcon
         return new WindowIcon(stream);
     }
 
+    /// <summary>
+    /// 加载 Avalonia 统一使用的 Bitmap 图标（供 Image 控件显示）。
+    /// </summary>
+    public static Avalonia.Media.Imaging.Bitmap LoadBitmap()
+    {
+        using var stream = OpenResource();
+        return new Avalonia.Media.Imaging.Bitmap(stream);
+    }
+
     private static Stream OpenResource() =>
         Assembly.GetExecutingAssembly().GetManifestResourceStream(ResourceName)
         ?? throw new InvalidOperationException($"应用图标资源不存在：{ResourceName}");

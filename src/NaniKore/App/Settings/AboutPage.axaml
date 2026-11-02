@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:NaniKore.App.Controls"
+             xmlns:local="clr-namespace:NaniKore.App.Settings"
+             x:Class="NaniKore.App.Settings.AboutPage"
+             x:DataType="local:AboutPage">
+    <StackPanel Spacing="0">
+        <controls:SettingsGroup>
+            <StackPanel Margin="14,16">
+                <StackPanel Orientation="Horizontal" Spacing="14">
+                    <Image Source="{Binding AppIconBitmap}"
+                           Width="40"
+                           Height="40"
+                           VerticalAlignment="Top" />
+                    <StackPanel VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="NaniKore" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text.Primary}" />
+                        <TextBlock x:Name="VersionText" FontSize="12" Foreground="{DynamicResource Brush.Text.Secondary}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <TextBlock x:Name="DescriptionText"
+                           FontSize="12"
+                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                           Margin="0,14,0,0"
+                           TextWrapping="Wrap" />
+
+                <!-- 版本差提示：仅提示，没有按钮、没有自动动作 -->
+                <controls:InfoBar x:Name="VersionMismatchBar" Margin="0,10,0,0" />
+            </StackPanel>
+        </controls:SettingsGroup>
+
+        <controls:SettingsGroup Header="隐私">
+            <StackPanel Margin="14,12" Spacing="6">
+                <TextBlock FontSize="12"
+                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                           TextWrapping="Wrap"
+                           Text="API Key 仅以当前 Windows 用户的 DPAPI 密文保存在本机 .data\keys.bin，不会写入 config.yaml，也不会随配置模板提交。" />
+                <TextBlock FontSize="12"
+                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                           TextWrapping="Wrap"
+                           Text="local_ocr 流程下选区图像只在内存中传给本地模型；vision_oneshot 流程会把选区图像上传给所选服务商。" />
+            </StackPanel>
+        </controls:SettingsGroup>
+    </StackPanel>
+</UserControl>

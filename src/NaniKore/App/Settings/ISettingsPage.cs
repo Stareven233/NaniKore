@@ -1,4 +1,4 @@
-using System.Windows;
+using Avalonia.Controls;
 using NaniKore.Config;
 
 namespace NaniKore.App.Settings;
@@ -11,8 +11,8 @@ internal interface ISettingsPage
     /// <summary>导航项图标（Segoe Fluent Icons 字形）。</summary>
     string Glyph { get; }
 
-    /// <summary>页面视图；WPF 化后由各页面自己提供根元素。</summary>
-    FrameworkElement View { get; }
+    /// <summary>页面视图根元素。</summary>
+    Control View { get; }
 
     void Load(AppConfig config);
 

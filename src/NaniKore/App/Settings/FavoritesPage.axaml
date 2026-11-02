@@ -1,0 +1,158 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:NaniKore.App.Controls"
+             xmlns:local="clr-namespace:NaniKore.App.Settings"
+             x:Class="NaniKore.App.Settings.FavoritesPage"
+             x:DataType="local:FavoritesPage">
+    <UserControl.DataTemplates>
+        <!-- 展示态模板 -->
+        <DataTemplate x:DataType="local:FavoriteDisplayViewModel">
+            <Border Classes="card" Margin="0,0,0,8" Padding="12,10">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Spacing="4">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Border Classes="badge">
+                                <TextBlock Text="{Binding Item.Category}" FontSize="12" />
+                            </Border>
+                            <TextBlock Text="{Binding Item.Content}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Brush.Text.Primary}"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding Item.Note}"
+                                   IsVisible="{Binding Item.Note, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding FormattedCreatedAt}"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource Brush.Text.Disabled}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="4"
+                                VerticalAlignment="Top">
+                        <Button Classes="icon"
+                                ToolTip.Tip="编辑此条"
+                                Tag="{Binding}"
+                                Click="OnEditItemClick">
+                            <TextBlock Text="&#xE70F;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" />
+                        </Button>
+                        <Button Classes="icon"
+                                ToolTip.Tip="复制此条"
+                                Tag="{Binding}"
+                                Click="OnCopyItemClick">
+                            <TextBlock Text="&#xE8C8;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" />
+                        </Button>
+                        <Button Classes="icon-danger"
+                                ToolTip.Tip="删除此条"
+                                Tag="{Binding}"
+                                Click="OnDeleteItemClick">
+                            <TextBlock Text="&#xE74D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- 编辑态模板 -->
+        <DataTemplate x:DataType="local:FavoriteEditViewModel">
+            <Border Classes="card"
+                    BorderBrush="{DynamicResource Brush.Accent}"
+                    Margin="0,0,0,8"
+                    Padding="12,10">
+                <StackPanel Spacing="6">
+                    <TextBox Text="{Binding EditContent}"
+                             LostFocus="OnEditFieldLostFocus"
+                             KeyDown="OnEditFieldKeyDown"
+                             AttachedToVisualTree="OnEditContentAttached" />
+                    <TextBox Text="{Binding EditNote}"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             MinHeight="48"
+                             PlaceholderText="备注：可留空；Enter 正常换行"
+                             LostFocus="OnEditFieldLostFocus" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <ComboBox Width="110"
+                                  ItemsSource="{Binding CategoryOptions}"
+                                  SelectedItem="{Binding EditCategory}"
+                                  LostFocus="OnEditFieldLostFocus" />
+                        <ComboBox Width="140"
+                                  ItemsSource="{Binding LanguageOptions}"
+                                  SelectedItem="{Binding EditLanguage}"
+                                  LostFocus="OnEditFieldLostFocus" />
+                    </StackPanel>
+                    <TextBlock FontSize="12"
+                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                               Text="失焦自动保存；Esc 取消还原，Enter 提交。" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </UserControl.DataTemplates>
+
+    <StackPanel Spacing="0">
+        <!-- 顶部横向过滤导航栏 -->
+        <Border Classes="card" Padding="10,8">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+                <ComboBox x:Name="CategoryBox"
+                          Grid.Column="0"
+                          Width="96"
+                          Margin="0,0,8,0"
+                          ToolTip.Tip="按类别筛选" />
+                <ComboBox x:Name="LanguageBox"
+                          Grid.Column="1"
+                          Width="120"
+                          Margin="0,0,8,0"
+                          ToolTip.Tip="按语言筛选" />
+                <TextBox x:Name="SearchBox"
+                         Grid.Column="2"
+                         Margin="0,0,8,0"
+                         PlaceholderText="关键词搜索..."
+                         ToolTip.Tip="关键词：同时匹配核心文本与备注，忽略大小写" />
+                <Button x:Name="RefreshButton"
+                        Grid.Column="3"
+                        Content="刷新"
+                        MinWidth="60"
+                        Margin="0,0,8,0" />
+                <Button x:Name="CopyAllButton"
+                        Grid.Column="4"
+                        Content="复制全部"
+                        MinWidth="72" />
+            </Grid>
+        </Border>
+
+        <!-- 数据库路径单行 -->
+        <StackPanel Orientation="Horizontal" Spacing="6" Margin="4,8,4,0" VerticalAlignment="Center">
+            <TextBlock x:Name="DatabasePathText"
+                       FontSize="12"
+                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                       TextTrimming="CharacterEllipsis"
+                       VerticalAlignment="Center"
+                       ToolTip.Tip="收藏保存在数据目录 .data 下的 collections.db：绿色便携，覆盖升级不丢数据。点击右侧按钮可复制该路径。" />
+            <Button x:Name="CopyPathButton"
+                    Classes="icon"
+                    Width="26"
+                    Height="26"
+                    ToolTip.Tip="复制数据库路径">
+                <TextBlock Text="&#xE8C8;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12" />
+            </Button>
+        </StackPanel>
+
+        <TextBlock x:Name="CountText"
+                   FontSize="12"
+                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                   Margin="4,10,4,0" />
+        <controls:InfoBar x:Name="Status" Margin="4,6,4,0" />
+        <TextBlock x:Name="EmptyHint"
+                   FontSize="12"
+                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                   Margin="4,10,4,0"
+                   TextWrapping="Wrap"
+                   Text="还没有收藏条目：在结果卡精讲卡片或正文划词气泡中点击 ★ 即可收藏。"
+                   IsVisible="False" />
+
+        <ItemsControl x:Name="FavoriteList" Margin="0,10,0,0" />
+    </StackPanel>
+</UserControl>

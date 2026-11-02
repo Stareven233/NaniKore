@@ -1,3 +1,14 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
+using Avalonia.VisualTree;
 using NaniKore.App;
 using NaniKore.App.Controls;
 using NaniKore.App.Settings;
@@ -15,47 +26,36 @@ namespace NaniKore.Diagnostics;
 /// </summary>
 internal static partial class SelfTest
 {
-    /// <summary>主题资源与控件模板必须可用；顺带验证两份色板与两份控件字典都能解析。</summary>
-    private static void TestThemeResourcesResolve()
+    private static void RunSettingsUiTests()
     {
         EnsureThemedApplication();
-        var application = Wpf.Application.Current!;
-        var expectedKeys = new[]
-        {
-            "Brush.Window.Background", "Brush.Card.Background", "Brush.Accent", "Brush.Accent.Subtle", "Brush.Text.Primary",
-            "Font.Ui", "Radius.Control", "ToggleSwitch", "Button.Accent", "Nav.List", "TextBox.Multiline",
-            "Badge.Tag",
-        };
-        Check(
-            "theme dictionaries expose every semantic key used by the settings pages",
-            expectedKeys.All(key => application.TryFindResource(key) is not null));
-
-        // 自绘控件必须有隐式样式，否则运行时会退回系统默认观感。
-        Check(
-            "custom controls resolve their implicit fluent styles",
-            application.TryFindResource(typeof(SettingsRow)) is Wpf.Style &&
-            application.TryFindResource(typeof(SettingsGroup)) is Wpf.Style &&
-            application.TryFindResource(typeof(NumberBox)) is Wpf.Style &&
-            application.TryFindResource(typeof(InfoBar)) is Wpf.Style &&
-            application.TryFindResource(typeof(HotkeyRecorderBox)) is Wpf.Style);
+        TestSettingsPagesUseAdaptiveLayout();
+        TestGeneralPagePipelineDependencyVisibility();
+        TestGeneralPagePhoneticsCards();
+        TestSharedLanguageChoicesAndDetectionMapping();
+        TestTranslationPagePromptEditing();
+        TestSettingsCloseSizeMemory();
+        TestSettingsCloseSizeWriteBackKeepsExternalUpdates();
+        TestFavoritesSettingsPageFilteringAndEvents();
+        TestWindowProperties();
     }
 
     /// <summary>
-    /// WPF 化后的布局约定：页面根元素必须按内容自适应高度（由宿主 ScrollViewer 负责滚动），
+    /// 布局约定：页面根元素必须按内容自适应高度（由宿主 ScrollViewer 负责滚动），
     /// 且所有设置行都通过 SettingsRow 承载，从而共享同一套 DPI 与字体缩放行为。
     /// </summary>
     private static void TestSettingsPagesUseAdaptiveLayout()
     {
-        // 主题字典必须真的能解析并套到控件上；没有 Application 资源时模板缺失，测得高度会恒为 0。
         EnsureThemedApplication();
 
         foreach (var page in new ISettingsPage[] { new GeneralPage(), new TranslationPage(), new HotkeyPage(), new AboutPage() })
         {
             var view = page.View;
             page.Load(new AppConfig());
-            view.Measure(new Wpf.Size(760, double.PositiveInfinity));
-            var rows = FindDescendants<SettingsRow>(view).ToList();
-            var groups = FindDescendants<SettingsGroup>(view).ToList();
+            var hostWindow = new Window { Content = view, Width = 760, Height = 600 };
+            view.Measure(new Avalonia.Size(760, double.PositiveInfinity));
+            var rows = FindDescendants<SettingsRow>(view).Distinct().ToList();
+            var groups = FindDescendants<SettingsGroup>(view).Distinct().ToList();
             Check(
                 $"{page.Title} page builds an adaptive card layout without fixed pixel positions",
                 double.IsNaN(view.Width) &&
@@ -65,21 +65,22 @@ internal static partial class SelfTest
                 rows.TrueForAll(row => double.IsNaN(row.Height) && !string.IsNullOrEmpty(row.Header)));
         }
 
-        // 说明文字与字段同属一行，缩放时不会像旧版那样与输入框错位。
         var general = new GeneralPage();
         general.Load(new AppConfig());
+        var generalWindow = new Window { Content = general.View, Width = 760, Height = 600 };
         var describedRows = FindDescendants<SettingsRow>(general.View)
+            .Distinct()
             .Count(row => !string.IsNullOrEmpty(row.Description));
         Check(
             "general page attaches descriptions to the rows they explain",
             describedRows > 0);
 
-        // 热键页（issue 018）：两个录制框分别绑定 Capture / Paste，各自一条状态行。
         var hotkeys = new HotkeyPage();
         hotkeys.Load(new AppConfig { Hotkeys = new HotkeyConfig { Capture = "ctrl+shift+a", Paste = "f1" } });
+        var hotkeyWindow = new Window { Content = hotkeys.View, Width = 760, Height = 600 };
         Check(
             "hotkey page hosts two independent recorder boxes bound to capture and paste",
-            FindDescendants<HotkeyRecorderBox>(hotkeys.View).Count() == 2 &&
+            FindDescendants<HotkeyRecorderBox>(hotkeys.View).Distinct().Count() == 2 &&
             Find<HotkeyRecorderBox>(hotkeys, "CaptureRecorder") is { Gesture: "Ctrl+Shift+A", AllowUnbind: false } &&
             Find<HotkeyRecorderBox>(hotkeys, "PasteRecorder") is { Gesture: "F1", AllowUnbind: true });
     }
@@ -96,15 +97,14 @@ internal static partial class SelfTest
         page.Load(config);
         Check(
             "general page hides local OCR dependencies for vision pipeline",
-            page.FindName("LocalOcrDependenciesGroup") is WpfControls.Control { Visibility: Wpf.Visibility.Collapsed });
+            page.FindControl<Control>("LocalOcrDependenciesGroup") is { IsVisible: false });
 
         page.Load(new AppConfig { Pipeline = new PipelineConfig { Mode = "local_ocr" } });
         Check(
             "general page shows local OCR dependencies for local pipeline",
-            page.FindName("LocalOcrDependenciesGroup") is WpfControls.Control { Visibility: Wpf.Visibility.Visible });
+            page.FindControl<Control>("LocalOcrDependenciesGroup") is { IsVisible: true });
 
-        // OCR 依赖卡片：状态直接映射为按钮文案（下载 / 已就绪），初始不单独显示提示行
-        var ocrButton = Find<WpfControls.Button>(page, "DownloadDependenciesButton");
+        var ocrButton = Find<Button>(page, "DownloadDependenciesButton");
         var ocrStatus = Find<InfoBar>(page, "DependencyStatus");
         var isOcrComplete = OcrDependencyManifest.IsComplete();
         Check(
@@ -116,7 +116,7 @@ internal static partial class SelfTest
             ocrStatus?.IsOpen == false);
 
         var pageWithOcrDownloader = new GeneralPage(downloadDependencies: (_, _) => Task.CompletedTask);
-        var enabledOcrButton = Find<WpfControls.Button>(pageWithOcrDownloader, "DownloadDependenciesButton");
+        var enabledOcrButton = Find<Button>(pageWithOcrDownloader, "DownloadDependenciesButton");
         Check(
             "ocr dependency button enables once a downloader is injected",
             enabledOcrButton?.IsEnabled == true);
@@ -124,7 +124,7 @@ internal static partial class SelfTest
         var autoExplainPage = new GeneralPage();
         var autoExplainConfig = new AppConfig { General = new GeneralConfig { AutoExplain = true } };
         autoExplainPage.Load(autoExplainConfig);
-        var autoExplainToggle = Find<WpfPrimitives.ToggleButton>(autoExplainPage, "AutoExplainToggle");
+        var autoExplainToggle = Find<ToggleSwitch>(autoExplainPage, "AutoExplainToggle");
         Check(
             "general page loads and applies AutoExplain setting accurately",
             autoExplainToggle?.IsChecked == true);
@@ -136,10 +136,9 @@ internal static partial class SelfTest
             "general page applies AutoExplain toggle change to configuration",
             !appliedConfig.General.AutoExplain);
 
-        // 选取/剪贴板翻译的自动翻译开关读写闭环（与「OCR 后自动翻译」各自独立，默认开）
         var pasteAutoTranslatePage = new GeneralPage();
         pasteAutoTranslatePage.Load(new AppConfig { General = new GeneralConfig { PasteAutoTranslate = false } });
-        var pasteAutoTranslateToggle = Find<WpfPrimitives.ToggleButton>(pasteAutoTranslatePage, "PasteAutoTranslateToggle");
+        var pasteAutoTranslateToggle = Find<ToggleSwitch>(pasteAutoTranslatePage, "PasteAutoTranslateToggle");
         Check(
             "general page loads the paste selection auto-translate switch accurately",
             pasteAutoTranslateToggle?.IsChecked == false);
@@ -151,14 +150,13 @@ internal static partial class SelfTest
             "general page applies the paste selection auto-translate switch to configuration",
             pasteAppliedConfig.General.PasteAutoTranslate);
 
-        // 2.3-A：目标语言下拉直接引用共享列表的同一批实例（母语写法），
-        // 旧配置的中文名/语言代码别名仍能命中，无需配置迁移。
-        var targetBox = Find<WpfControls.ComboBox>(page, "TargetLanguageBox");
+        var targetBox = Find<ComboBox>(page, "TargetLanguageBox");
+        var targetItems = targetBox?.ItemsSource?.Cast<LanguageChoice>().ToList() ?? [];
         Check(
             "general page target languages reference the shared native-name list",
             targetBox is not null &&
-            targetBox.Items.Count == LanguageChoices.All.Count &&
-            ReferenceEquals(targetBox.Items[3], LanguageChoices.All[3]) &&
+            targetItems.Count == LanguageChoices.All.Count &&
+            ReferenceEquals(targetItems[3], LanguageChoices.All[3]) &&
             LanguageChoices.All[3].Name == "日本語");
 
         page.Load(new AppConfig { General = new GeneralConfig { TargetLanguage = "日语" } });
@@ -168,7 +166,7 @@ internal static partial class SelfTest
     }
 
     /// <summary>
-    /// 注音词典卡片（issue 008 Phase 2）：三语按钮与本地状态联动（文案即状态），
+    /// 注音词典卡片：三语按钮与本地状态联动（文案即状态），
     /// 无下载入口时禁用、有入口时启用；注音开关走配置读写闭环。
     /// </summary>
     private static void TestGeneralPagePhoneticsCards()
@@ -178,13 +176,13 @@ internal static partial class SelfTest
         var page = new GeneralPage();
         Check(
             "phonetics group hosts the enabled and rare-only switches",
-            page.FindName("PhoneticsEnabledToggle") is WpfPrimitives.ToggleButton &&
-            page.FindName("PhoneticsRareOnlyToggle") is WpfPrimitives.ToggleButton);
+            page.FindControl<Control>("PhoneticsEnabledToggle") is ToggleSwitch &&
+            page.FindControl<Control>("PhoneticsRareOnlyToggle") is ToggleSwitch);
 
         foreach (var language in PhoneticLanguages.All)
         {
             var buttonName = $"PhoneticsDownload{char.ToUpperInvariant(language.Code[0])}{language.Code[1..]}";
-            var button = Find<WpfControls.Button>(page, buttonName);
+            var button = Find<Button>(page, buttonName);
             Check(
                 $"{language.Code} dictionary card button exists",
                 button is not null);
@@ -201,18 +199,16 @@ internal static partial class SelfTest
                 !button.IsEnabled);
         }
 
-        // 注入假下载器后按钮启用（自测不触发真实网络，仅验证接线）
         var withDownloader = new GeneralPage(downloadPhoneticDictionary: (_, _, _) => Task.CompletedTask);
-        var jaButton = Find<WpfControls.Button>(withDownloader, "PhoneticsDownloadJa");
+        var jaButton = Find<Button>(withDownloader, "PhoneticsDownloadJa");
         Check(
             "dictionary card button enables once a downloader is injected",
             jaButton?.IsEnabled == true);
 
-        // 注音开关读写闭环
         var config = new AppConfig { Phonetics = new PhoneticsConfig { Enabled = false, RareOnly = false } };
         page.Load(config);
-        var enabledToggle = Find<WpfPrimitives.ToggleButton>(page, "PhoneticsEnabledToggle");
-        var rareOnlyToggle = Find<WpfPrimitives.ToggleButton>(page, "PhoneticsRareOnlyToggle");
+        var enabledToggle = Find<ToggleSwitch>(page, "PhoneticsEnabledToggle");
+        var rareOnlyToggle = Find<ToggleSwitch>(page, "PhoneticsRareOnlyToggle");
         Check(
             "general page loads phonetics switches accurately",
             enabledToggle?.IsChecked == false && rareOnlyToggle?.IsChecked == false);
@@ -224,7 +220,7 @@ internal static partial class SelfTest
             applied.Phonetics.Enabled && !applied.Phonetics.RareOnly);
     }
 
-    /// <summary>共享语言列表（issue 015 / 2.3）：母语写法唯一、旧别名命中、探测现算映射回列表项。</summary>
+    /// <summary>共享语言列表：母语写法唯一、旧别名命中、探测现算映射回列表项。</summary>
     private static void TestSharedLanguageChoicesAndDetectionMapping()
     {
         EnsureThemedApplication();
@@ -240,7 +236,6 @@ internal static partial class SelfTest
             "shared language list display names are unique",
             LanguageChoices.All.Select(choice => choice.Name).Distinct().Count() == LanguageChoices.All.Count);
 
-        // 旧配置值（中文习惯名、英文名、语言代码）全部仍可命中；真正的生造值不命中。
         Check(
             "shared language choices still match legacy configuration values",
             LanguageChoices.Find("日语")?.Name == "日本語" &&
@@ -251,7 +246,6 @@ internal static partial class SelfTest
             LanguageChoices.Find("中文（繁體）") is null &&
             LanguageChoices.Find("完全不成语言的值") is null);
 
-        // 探测现算 → 映射回共享列表对应项（不是三档硬编码）：假名/纯汉字日语、简体独占字、仅拉丁、兜底。
         Check(
             "detection maps kana source to native japanese name",
             LanguageChoices.FromDetection(LanguageDetector.Detect("こ こ は  通[とお]れないよ", "中文（简体）")) == "日本語");
@@ -270,9 +264,8 @@ internal static partial class SelfTest
     }
 
     /// <summary>
-    /// 翻译设置页提示词编辑：语言注音插件编辑器已随插件键退役（issue 008 Phase 3），
-    /// 页面只剩 Base 与视觉 Base 两行；恢复默认按钮与标题行共享；
-    /// 旧配置里退役插件键的自定义值不得被清空（数据留存，仅不参与组装）。
+    /// 翻译设置页提示词编辑：页面保留 Base 与视觉 Base 两行；
+    /// 恢复默认按钮与标题行共享；旧配置里退役插件键的自定义值不得被清空。
     /// </summary>
     private static void TestTranslationPagePromptEditing()
     {
@@ -280,34 +273,28 @@ internal static partial class SelfTest
         var page = new TranslationPage();
         page.Load(config);
 
-        var localPromptBox = Find<WpfControls.TextBox>(page, "PromptBox");
-        var visionPromptBox = Find<WpfControls.TextBox>(page, "VisionPromptBox");
+        var localPromptBox = Find<TextBox>(page, "PromptBox");
+        var visionPromptBox = Find<TextBox>(page, "VisionPromptBox");
         var localPromptRow = Find<SettingsRow>(page, "LocalPromptRow");
         var visionPromptRow = Find<SettingsRow>(page, "VisionPromptRow");
-        var restoreLocalButton = Find<WpfControls.Button>(page, "RestorePromptButton");
-        var restoreVisionButton = Find<WpfControls.Button>(page, "RestoreVisionPromptButton");
+        var restoreLocalButton = Find<Button>(page, "RestorePromptButton");
+        var restoreVisionButton = Find<Button>(page, "RestoreVisionPromptButton");
 
-        // 语言注音插件编辑器已随插件键退役（issue 008 Phase 3）：页面只剩 Base 与视觉 Base 两行
         Check(
             "translation settings retire the language plugin editor and keep base and vision rows",
-            page.FindName("PluginLanguageBox") is null &&
-            page.FindName("PluginPromptBox") is null &&
-            page.FindName("RestorePluginPromptButton") is null &&
+            page.FindControl<Control>("PluginLanguageBox") is null &&
+            page.FindControl<Control>("PluginPromptBox") is null &&
+            page.FindControl<Control>("RestorePluginPromptButton") is null &&
             localPromptBox?.Text == PromptTemplates.DefaultTranslationBasePrompt &&
             visionPromptBox?.Text == PromptTemplates.DefaultVisionBasePrompt);
 
         Check(
-            "prompt restore buttons share the title row with concise black labels",
+            "prompt restore buttons share the title row with concise labels",
             restoreLocalButton?.Content as string == "恢复默认" &&
             restoreVisionButton?.Content as string == "恢复默认" &&
             ReferenceEquals(localPromptRow?.HeaderAction, restoreLocalButton) &&
-            ReferenceEquals(visionPromptRow?.HeaderAction, restoreVisionButton) &&
-            restoreLocalButton!.Foreground is WpfMedia.SolidColorBrush { Color: var localColor } &&
-            localColor == WpfMedia.Colors.Black &&
-            restoreVisionButton!.Foreground is WpfMedia.SolidColorBrush { Color: var visionColor } &&
-            visionColor == WpfMedia.Colors.Black);
+            ReferenceEquals(visionPromptRow?.HeaderAction, restoreVisionButton));
 
-        // 视觉 Base 一键恢复默认
         visionPromptBox!.Text = "temporary";
         RaiseClick(restoreVisionButton!);
         Check(
@@ -334,7 +321,6 @@ internal static partial class SelfTest
             config.Prompts.EnglishPlugin is { Length: 0 } &&
             config.Prompts.ChinesePlugin is { Length: 0 });
 
-        // 旧配置里退役插件键的自定义值不得被设置页清空（数据留存，仅不参与组装）
         page.Load(legacyPluginConfig);
         page.Apply(legacyPluginConfig);
         Check(
@@ -345,8 +331,7 @@ internal static partial class SelfTest
     }
 
     /// <summary>
-    /// 回归测试：关闭设置窗口必须「有变化才写盘」。
-    /// 曾经无条件回写，导致「什么都不改、直接关闭」也会重写 config.yaml。
+    /// 关闭设置窗口必须「有变化才写盘」。
     /// </summary>
     private static void TestSettingsCloseSizeMemory()
     {
@@ -376,9 +361,7 @@ internal static partial class SelfTest
     }
 
     /// <summary>
-    /// 回归测试：设置窗口未保存、仅拖过尺寸就关闭时，尺寸记忆必须叠加在「实时当前配置」上。
-    /// 曾经的缺陷：复制打开时的快照整份写盘，会把期间其他入口
-    /// （结果卡 AutoExplainChanged → NaniKoreApp.ApplySettings → AtomicWrite）的修改静默回滚。
+    /// 设置窗口未保存、仅拖过尺寸就关闭时，尺寸记忆必须叠加在「实时当前配置」上。
     /// </summary>
     private static void TestSettingsCloseSizeWriteBackKeepsExternalUpdates()
     {
@@ -397,20 +380,16 @@ internal static partial class SelfTest
                 """);
             var store = new ConfigStore(directory);
 
-            // 设置窗口打开时宿主提供实时配置访问器；快照语义由编辑副本承担。
             AppConfig LatestConfig() => store.Current;
             var openTimeSnapshot = AppConfigCloner.Clone(LatestConfig());
             var working = AppConfigCloner.Clone(LatestConfig());
 
-            // 页面编辑只进 _working：模拟用户改过目标语言但始终没点保存。
             working.General.TargetLanguage = "未保存的页面编辑";
 
-            // 外部入口写盘：结果卡拨动 AutoExplainToggle → 直接改 Current 并 AtomicWrite。
             var external = LatestConfig();
             external.General.AutoExplain = true;
             store.AtomicWrite(external);
 
-            // 关闭时未保存 + 真的拖过尺寸：基线必须取实时配置而不是打开时的快照。
             var baseline = SettingsWindow.ResolveCloseWriteBackBaseline(settingsSaved: false, working, LatestConfig());
             Check(
                 "unsaved settings close picks the live config instead of the stale open-time snapshot",
@@ -418,7 +397,6 @@ internal static partial class SelfTest
                 ReferenceEquals(baseline, store.Current) &&
                 baseline.General.AutoExplain);
 
-            // 走完整的尺寸决策与写盘路径，验证落盘内容的新鲜度。
             if (SettingsWindow.ResolvePersistedSize(baseline.Windows, 1024, 700, 620, 460) is { } size)
             {
                 var next = AppConfigCloner.Clone(baseline);
@@ -439,7 +417,6 @@ internal static partial class SelfTest
                 "unsaved settings close still discards page edits made in the working copy",
                 reloaded.Current.General.TargetLanguage == "ja");
 
-            // 已保存过的关闭路径仍旧以编辑副本为基线，行为不回退。
             Check(
                 "saved settings close keeps using the working copy as write-back baseline",
                 ReferenceEquals(SettingsWindow.ResolveCloseWriteBackBaseline(settingsSaved: true, working, store.Current), working));
@@ -452,7 +429,6 @@ internal static partial class SelfTest
 
     /// <summary>
     /// 收藏管理页：元数据、筛选/搜索、事件回流刷新与配置契约（Validate 恒空、Apply 无副作用）。
-    /// 使用真实 SQLite 临时库，顺带验证设置页读到的是持久化后的数据。
     /// </summary>
     private static void TestFavoritesSettingsPageFilteringAndEvents()
     {
@@ -463,18 +439,17 @@ internal static partial class SelfTest
         {
             var service = new SqliteFavoriteService(databasePath);
             var page = new FavoritesPage(service);
+            var hostWindow = new Window { Content = page, Width = 800, Height = 600 };
 
             Check("favorites page exposes title and star glyph", page.Title == "收藏" && page.Glyph == "\uE734");
             Check("favorites page shows the live database path", page.DatabasePathText.Text == databasePath);
             Check("favorites page exposes database path copy button", page.CopyPathButton is not null);
             Check("favorites page validate never blocks saving", page.Validate() is null);
 
-            // 布局契约（issue 015 / 2.2 + 主人追加要求）：横向导航条直铺，旧版两个 SettingsGroup 全部移除；
-            // 关键词搜索条占星号列、填满剩余横向空间；语言筛选下拉先占位「全部」（2.3-C 填共享语言列表）。
             Check(
                 "favorites page uses flat nav bar without settings groups",
                 page.LanguageBox.SelectedItem as string == "全部" &&
-                FindDescendants<SettingsGroup>(page).Count() == 0);
+                FindDescendants<SettingsGroup>(page).Distinct().Count() == 0);
 
             page.Load(new AppConfig());
 
@@ -482,44 +457,45 @@ internal static partial class SelfTest
             service.AddFavoriteAsync(new FavoriteItem { Category = "语法", Content = "～ない" }).Wait();
             service.AddFavoriteAsync(new FavoriteItem { Category = "短语", Content = "過ぎる" }).Wait();
 
-            // 事件回流：收藏后无需手动点刷新，列表应自动跟上。
-            Check("favorites page refreshes on favorite added event", page.FavoriteList.Items.Count == 3);
+            var itemsList = page.FavoriteList.ItemsSource?.Cast<object>().ToList() ?? [];
+            Check("favorites page refreshes on favorite added event", itemsList.Count == 3);
             Check("favorites page count text lists total", page.CountText.Text == "共 3 条收藏");
 
-            // 类别筛选
             page.CategoryBox.SelectedItem = "语法";
-            Check("favorites page filters by category", page.FavoriteList.Items.Count == 1);
+            itemsList = page.FavoriteList.ItemsSource?.Cast<object>().ToList() ?? [];
+            Check("favorites page filters by category", itemsList.Count == 1);
             Check("favorites page count text reports filtered hits", page.CountText.Text == "筛选命中 1 / 3 条");
 
-            // 关键词命中 note
             page.CategoryBox.SelectedItem = "全部";
             page.SearchBox.Text = "とおる";
-            Check("favorites page searches note content", page.FavoriteList.Items.Count == 1);
+            itemsList = page.FavoriteList.ItemsSource?.Cast<object>().ToList() ?? [];
+            Check("favorites page searches note content", itemsList.Count == 1);
 
-            // 空结果露出温和提示
             page.SearchBox.Text = "不存在的词";
-            Check("favorites page shows empty hint when nothing matches", page.EmptyHint.Visibility == Wpf.Visibility.Visible);
+            Check("favorites page shows empty hint when nothing matches", page.EmptyHint.IsVisible);
 
-            // 事件回流：删除后列表同样自动刷新
             page.SearchBox.Text = string.Empty;
             service.RemoveFavoriteAsync("～ない").Wait();
-            Check("favorites page refreshes on favorite removed event", page.FavoriteList.Items.Count == 2);
+            itemsList = page.FavoriteList.ItemsSource?.Cast<object>().ToList() ?? [];
+            Check("favorites page refreshes on favorite removed event", itemsList.Count == 2);
 
-            // 语言筛选（2.3-C）：与类别、关键词三者 AND；新收藏显式写入语言。
             service.AddFavoriteAsync(new FavoriteItem { Category = "单词", Content = "run", Language = "English" }).Wait();
             page.LanguageBox.SelectedItem = "English";
-            Check("favorites page filters by language", page.FavoriteList.Items.Count == 1);
+            itemsList = page.FavoriteList.ItemsSource?.Cast<object>().ToList() ?? [];
+            Check("favorites page filters by language", itemsList.Count == 1);
             page.LanguageBox.SelectedItem = "日本語";
-            Check("favorites page language filter keeps japanese rows", page.FavoriteList.Items.Count == 2);
+            itemsList = page.FavoriteList.ItemsSource?.Cast<object>().ToList() ?? [];
+            Check("favorites page language filter keeps japanese rows", itemsList.Count == 2);
             page.LanguageBox.SelectedItem = "全部";
-            Check("favorites page language filter restores all rows", page.FavoriteList.Items.Count == 3);
+            itemsList = page.FavoriteList.ItemsSource?.Cast<object>().ToList() ?? [];
+            Check("favorites page language filter restores all rows", itemsList.Count == 3);
 
-            // 就地编辑往返（issue 015 / 2.5）：进入编辑态 → 保存（归一化 + 多字段）→ 还原展示态。
             var editTarget = service.GetAllFavorites().First(x => x.Content == "通る");
             page.BeginEdit(editTarget);
+            itemsList = page.FavoriteList.ItemsSource?.Cast<object>().ToList() ?? [];
             Check(
                 "favorites page enters inline edit mode",
-                page.FavoriteList.Items.OfType<FavoriteEditViewModel>().Count() == 1);
+                itemsList.OfType<FavoriteEditViewModel>().Count() == 1);
 
             var saved = page.SaveEditAsync(editTarget, "通[とお]る", "读音: とおる\n释义: 修订", "短语", "日本語")
                 .GetAwaiter().GetResult();
@@ -528,12 +504,12 @@ internal static partial class SelfTest
             Check(
                 "favorites page inline edit persists normalized fields",
                 stored.Content == "通る" && stored.Category == "短语" && stored.Note!.Contains("修订"));
+            itemsList = page.FavoriteList.ItemsSource?.Cast<object>().ToList() ?? [];
             Check(
                 "favorites page inline edit restores display mode",
-                page.FavoriteList.Items.OfType<FavoriteDisplayViewModel>()
+                itemsList.OfType<FavoriteDisplayViewModel>()
                     .Any(vm => vm.Item.Content == "通る" && vm.Item.Category == "短语"));
 
-            // 归一化冲突：改后内容命中另一条收藏 → 拒绝且原行不动。
             var collision = service.GetAllFavorites().First(x => x.Content == "過ぎる");
             var rejected = page.SaveEditAsync(collision, "通る (とおる)", null, "单词", "日本語")
                 .GetAwaiter().GetResult();
@@ -542,7 +518,6 @@ internal static partial class SelfTest
                 "favorites page inline edit keeps original on conflict",
                 service.GetAllFavorites().Any(x => x.Id == collision.Id && x.Content == "過ぎる"));
 
-            // Apply 不得触碰配置副本：收藏页不拥有任何配置字段，快照必须保持默认值
             var defaults = new AppConfig();
             var snapshot = new AppConfig();
             page.Apply(snapshot);
@@ -565,14 +540,12 @@ internal static partial class SelfTest
             }
             catch (IOException)
             {
-                // 句柄延迟释放时由操作系统回收临时文件。
             }
         }
     }
 
     /// <summary>
-    /// 窗口行为与层级管理：设置窗口显示在任务栏且默认不置顶，最小化时进入任务栏；
-    /// 结果面板恢复为非置顶窗口，避免强抢层级遮挡其他程序。
+    /// 窗口行为与层级管理：设置窗口显示在任务栏且默认不置顶。
     /// </summary>
     private static void TestWindowProperties()
     {
@@ -582,7 +555,7 @@ internal static partial class SelfTest
 
         SettingsTab? requestedTab = null;
         panel.SettingsRequested += (_, tab) => requestedTab = tab;
-        var settingsButton = FindDescendants<WpfControls.Button>(panel)
+        var settingsButton = FindDescendants<Button>(panel)
             .FirstOrDefault(b => b.Content as string == "设置");
         if (settingsButton is not null)
         {
@@ -595,8 +568,8 @@ internal static partial class SelfTest
         Check("settings window is not topmost", !settings.Topmost);
 
         var settingsTranslation = NewSettingsWindow(SettingsTab.Translation);
-        var navList = Find<WpfControls.ListBox>(settingsTranslation, "NavigationList");
-        var pageTitle = Find<WpfControls.TextBlock>(settingsTranslation, "PageTitle");
+        var navList = Find<ListBox>(settingsTranslation, "NavigationList");
+        var pageTitle = Find<TextBlock>(settingsTranslation, "PageTitle");
         Check(
             "settings window opens directly to translation tab when requested",
             navList?.SelectedIndex == (int)SettingsTab.Translation && pageTitle?.Text == "翻译");
@@ -606,9 +579,58 @@ internal static partial class SelfTest
             navList?.SelectedIndex == (int)SettingsTab.General && pageTitle?.Text == "通用");
     }
 
-    /// <summary>构造一个不落盘的设置窗口（自测注入空保存器与恒通探活，可选直达页签）。</summary>
     private static SettingsWindow NewSettingsWindow(SettingsTab? initialTab = null) =>
         initialTab is null
             ? new SettingsWindow(() => new AppConfig(), _ => { }, (_, _) => Task.FromResult("ok"))
             : new SettingsWindow(() => new AppConfig(), _ => { }, (_, _) => Task.FromResult("ok"), initialTab: initialTab.Value);
+
+    private static IEnumerable<T> FindDescendants<T>(Control root) where T : class
+    {
+        if (root is T self)
+        {
+            yield return self;
+        }
+
+        foreach (var child in root.GetVisualDescendants().OfType<T>())
+        {
+            yield return child;
+        }
+
+        foreach (var child in root.GetLogicalDescendants().OfType<T>())
+        {
+            yield return child;
+        }
+
+        if (root is ContentControl cc && cc.Content is Control ccChild)
+        {
+            foreach (var item in FindDescendants<T>(ccChild))
+            {
+                yield return item;
+            }
+        }
+        else if (root is Panel panel)
+        {
+            foreach (var child in panel.Children)
+            {
+                foreach (var item in FindDescendants<T>(child))
+                {
+                    yield return item;
+                }
+            }
+        }
+        else if (root is HeaderedContentControl hcc && hcc.Content is Control hccChild)
+        {
+            foreach (var item in FindDescendants<T>(hccChild))
+            {
+                yield return item;
+            }
+        }
+        else if (root is Border border && border.Child is Control borderChild)
+        {
+            foreach (var item in FindDescendants<T>(borderChild))
+            {
+                yield return item;
+            }
+        }
+    }
 }

@@ -1,119 +1,118 @@
-<UserControl x:Class="NaniKore.App.Settings.TranslationPage"
-             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:NaniKore.App.Controls"
-             x:ClassModifier="internal">
-    <StackPanel>
+             xmlns:local="clr-namespace:NaniKore.App.Settings"
+             x:Class="NaniKore.App.Settings.TranslationPage"
+             x:DataType="local:TranslationPage">
+    <StackPanel Spacing="0">
+        <!-- 配置档管理 -->
         <controls:SettingsGroup Header="配置档">
             <StackPanel>
                 <controls:SettingsRow Header="当前配置档"
                                       Description="保存后作为翻译流程使用的活动配置档。">
-                    <StackPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                         <ComboBox x:Name="ProfileBox" Width="200" />
-                        <!-- ContentPresenter 对纯字符串的字形字体继承并不稳定；显式 TextBlock 确保私有区图标不会回退为方框。 -->
-                        <Button x:Name="AddButton" Style="{DynamicResource Button.Icon}" Margin="8,0,0,0"
-                                ToolTip="新建配置档">
-                            <TextBlock Text="&#xE710;" FontFamily="Segoe MDL2 Assets" />
+                        <Button x:Name="AddButton"
+                                Classes="icon"
+                                ToolTip.Tip="新建配置档">
+                            <TextBlock Text="&#xE710;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" />
                         </Button>
-                        <Button x:Name="DuplicateButton" Style="{DynamicResource Button.Icon}" Margin="6,0,0,0"
-                                ToolTip="复制当前配置档">
-                            <TextBlock Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" />
+                        <Button x:Name="DuplicateButton"
+                                Classes="icon"
+                                ToolTip.Tip="复制当前配置档">
+                            <TextBlock Text="&#xE8C8;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" />
                         </Button>
-                        <Button x:Name="RemoveButton" Style="{DynamicResource Button.IconDanger}" Margin="6,0,0,0"
-                                ToolTip="删除当前配置档">
-                            <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" />
+                        <Button x:Name="RemoveButton"
+                                Classes="icon-danger"
+                                ToolTip.Tip="删除当前配置档">
+                            <TextBlock Text="&#xE74D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" />
                         </Button>
                     </StackPanel>
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
+                <Border Classes="divider-row" />
                 <controls:SettingsRow Header="名称" ContentWidth="280">
-                    <TextBox x:Name="NameBox" />
+                    <TextBox x:Name="NameBox" Width="280" />
                 </controls:SettingsRow>
             </StackPanel>
         </controls:SettingsGroup>
 
+        <!-- 服务商与模型参数 -->
         <controls:SettingsGroup Header="服务商">
             <StackPanel>
                 <controls:SettingsRow Header="类型" ContentWidth="200">
-                    <ComboBox x:Name="KindBox" />
+                    <ComboBox x:Name="KindBox" Width="200" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
+                <Border Classes="divider-row" />
                 <controls:SettingsRow x:Name="ApiTypeRow" Header="API 形式"
                                       Description="仅 OpenAI 类型可选；其他服务商固定使用各自的原生协议。"
                                       ContentWidth="200">
-                    <ComboBox x:Name="ApiTypeBox" />
+                    <ComboBox x:Name="ApiTypeBox" Width="200" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
+                <Border Classes="divider-row" />
                 <controls:SettingsRow Header="Base URL" ContentWidth="340">
-                    <TextBox x:Name="BaseUrlBox" />
+                    <TextBox x:Name="BaseUrlBox" Width="340" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
+                <Border Classes="divider-row" />
                 <controls:SettingsRow Header="模型" ContentWidth="280">
-                    <TextBox x:Name="ModelBox" />
+                    <TextBox x:Name="ModelBox" Width="280" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
-                <controls:SettingsRow Header="超时" ContentWidth="150">
-                    <!-- 单位独立于数字框：确保「秒」与输入框边框始终保留稳定间距。 -->
-                    <StackPanel Orientation="Horizontal">
-                        <controls:NumberBox x:Name="TimeoutBox"
-                                            Width="128"
-                                            Minimum="1"
-                                            Maximum="600"
-                                            Value="60" />
+                <Border Classes="divider-row" />
+                <controls:SettingsRow Header="超时" ContentWidth="170">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <NumericUpDown x:Name="TimeoutBox"
+                                       Width="128"
+                                       Minimum="1"
+                                       Maximum="600"
+                                       Value="60"
+                                       FormatString="0" />
                         <TextBlock Text="秒"
-                                   Margin="10,0,0,0"
                                    VerticalAlignment="Center"
                                    Foreground="{DynamicResource Brush.Text.Secondary}" />
                     </StackPanel>
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
+                <Border Classes="divider-row" />
                 <controls:SettingsRow Header="支持图像输入"
                                       Description="vision_oneshot 流程要求当前配置档声明支持图像。">
-                    <ToggleButton x:Name="SupportsVisionToggle" Style="{DynamicResource ToggleSwitch}" />
+                    <ToggleSwitch x:Name="SupportsVisionToggle" OnContent="" OffContent="" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
+                <Border Classes="divider-row" />
                 <controls:SettingsRow Header="启用思考"
                                       Description="允许具备推理能力的大模型进行深度思考（将在译文区实时展示思考动态）；默认关闭以追求极速响应与节省 Token。无论是否开启，正式正文均会自动隔离思考链。">
-                    <ToggleButton x:Name="EnableThinkingToggle" Style="{DynamicResource ToggleSwitch}" />
+                    <ToggleSwitch x:Name="EnableThinkingToggle" OnContent="" OffContent="" />
                 </controls:SettingsRow>
             </StackPanel>
         </controls:SettingsGroup>
 
+        <!-- 凭据与存储管理 -->
         <controls:SettingsGroup Header="凭据">
             <StackPanel>
                 <controls:SettingsRow Header="API Key"
                                       Description="会回显当前配置档已保存的密钥；可直接修改，留空后保存将保留原密钥。">
-                    <StackPanel Orientation="Horizontal">
-                        <PasswordBox x:Name="ApiKeyBox" Width="240" />
-                        <TextBox x:Name="ApiKeyTextBox" Width="240" Visibility="Collapsed" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBox x:Name="ApiKeyBox" Width="240" PasswordChar="•" />
+                        <TextBox x:Name="ApiKeyTextBox" Width="240" IsVisible="False" />
                         <Button x:Name="ToggleApiKeyVisibilityButton"
-                                Style="{DynamicResource Button.Icon}"
-                                Margin="8,0,0,0"
-                                ToolTip="显示 API Key">
-                            <TextBlock x:Name="ApiKeyVisibilityGlyph" Text="&#xE890;" FontFamily="Segoe MDL2 Assets" />
+                                Classes="icon"
+                                ToolTip.Tip="显示 API Key">
+                            <TextBlock x:Name="ApiKeyVisibilityGlyph" Text="&#xE890;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" />
                         </Button>
-                        <Button x:Name="TestButton" Margin="8,0,0,0" Content="测试连接" MinWidth="92" />
+                        <Button x:Name="TestButton" Content="测试连接" MinWidth="92" />
                     </StackPanel>
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
-                <!--
-                    数据目录（issue 017）：配置、密钥与收藏库全部收拢在程序目录 .data 下，位置唯一不可改。
-                    这里只做只读展示 + 一键定位 + 单档密钥清除，不再提供任何目录重定向。
-                -->
+                <Border Classes="divider-row" />
                 <controls:SettingsRow Header="数据目录"
                                       Description="配置、密钥与收藏库都保存在程序目录的 .data 下；备份整个软件只需复制该目录。">
-                    <StackPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                         <TextBox x:Name="DataDirectoryBox" Width="280" IsReadOnly="True" />
-                        <Button x:Name="OpenDataDirectoryButton" Margin="8,0,0,0" Content="打开目录" MinWidth="80" />
-                        <Button x:Name="ClearSecretButton" Margin="8,0,0,0" Content="清除当前配置档密钥" />
+                        <Button x:Name="OpenDataDirectoryButton" Content="打开目录" MinWidth="80" />
+                        <Button x:Name="ClearSecretButton" Content="清除当前配置档密钥" />
                     </StackPanel>
                 </controls:SettingsRow>
-                <StackPanel Margin="12,0,12,10">
-                    <controls:InfoBar x:Name="TestStatus" />
-                </StackPanel>
+                <controls:InfoBar x:Name="TestStatus" Margin="14,4,14,12" />
             </StackPanel>
         </controls:SettingsGroup>
 
+        <!-- 提示词工程 -->
         <controls:SettingsGroup Header="提示词">
             <StackPanel>
                 <controls:SettingsRow x:Name="LocalPromptRow"
@@ -122,33 +121,32 @@
                                       IsStacked="True">
                     <controls:SettingsRow.HeaderAction>
                         <Button x:Name="RestorePromptButton"
-                                Style="{DynamicResource Button.Subtle}"
-                                Foreground="Black"
+                                Classes="subtle"
                                 Content="恢复默认" />
                     </controls:SettingsRow.HeaderAction>
-                    <!-- 直接写在编辑器上，确保其优先级高于通用 TextBox 样式。 -->
                     <TextBox x:Name="PromptBox"
-                             Style="{DynamicResource TextBox.Multiline}"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
                              MinHeight="140"
                              MaxHeight="220"
-                             FontFamily="Yahei-Monaco-Hybrid-Font, 微软雅黑, Monaco, Consolas, Lucida Console, Cascadia Mono" />
+                             FontFamily="Cascadia Mono, Consolas, Monaco, 微软雅黑" />
                 </controls:SettingsRow>
-                <Border Style="{DynamicResource Divider.Row}" />
+                <Border Classes="divider-row" />
                 <controls:SettingsRow x:Name="VisionPromptRow"
                                       Header="视觉链路 Base 提示词"
                                       Description="{}{{target_language}} 会替换为「通用」页选择的目标语言；提示词中的 ---TRANSLATION--- 分隔纯转录与译文。该 Base 单独组装成视觉模式的完整 system prompt，注音由本地引擎叠加。留空则使用内置默认 Base。"
                                       IsStacked="True">
                     <controls:SettingsRow.HeaderAction>
                         <Button x:Name="RestoreVisionPromptButton"
-                                Style="{DynamicResource Button.Subtle}"
-                                Foreground="Black"
+                                Classes="subtle"
                                 Content="恢复默认" />
                     </controls:SettingsRow.HeaderAction>
                     <TextBox x:Name="VisionPromptBox"
-                             Style="{DynamicResource TextBox.Multiline}"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
                              MinHeight="160"
                              MaxHeight="260"
-                             FontFamily="Yahei-Monaco-Hybrid-Font, 微软雅黑, Monaco, Consolas, Lucida Console, Cascadia Mono" />
+                             FontFamily="Cascadia Mono, Consolas, Monaco, 微软雅黑" />
                 </controls:SettingsRow>
             </StackPanel>
         </controls:SettingsGroup>

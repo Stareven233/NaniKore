@@ -1,0 +1,87 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:NaniKore.App.Controls"
+        xmlns:local="clr-namespace:NaniKore.App.Settings"
+        x:Class="NaniKore.App.Settings.SettingsWindow"
+        Title="NaniKore 设置"
+        Width="760"
+        Height="620"
+        MinWidth="620"
+        MinHeight="460"
+        ShowInTaskbar="True"
+        WindowStartupLocation="CenterScreen"
+        FontSize="14"
+        Foreground="{DynamicResource Brush.Text.Primary}"
+        Background="{DynamicResource Brush.Window.Background}">
+    <Grid ColumnDefinitions="Auto,*">
+        <!-- 左侧导航栏 -->
+        <Border Grid.Column="0"
+                Width="188"
+                Background="{DynamicResource Brush.Sidebar.Background}"
+                BorderBrush="{DynamicResource Brush.Divider}"
+                BorderThickness="0,0,1,0">
+            <ListBox x:Name="NavigationList"
+                     Margin="0,12,0,12"
+                     Background="Transparent">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="local:NavigationItem">
+                        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Glyph}"
+                                       FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                       FontSize="15"
+                                       Width="20"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Title}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Border>
+
+        <!-- 右侧主内容区 -->
+        <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto">
+            <TextBlock x:Name="PageTitle"
+                       Grid.Row="0"
+                       FontSize="20"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.Text.Primary}"
+                       Margin="24,20,24,12" />
+
+            <ScrollViewer Grid.Row="1"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Padding="24,0,20,20">
+                <ContentControl x:Name="PageHost" />
+            </ScrollViewer>
+
+            <!-- 底部操作与状态条 -->
+            <Border Grid.Row="2"
+                    Background="{DynamicResource Brush.Sidebar.Background}"
+                    BorderBrush="{DynamicResource Brush.Divider}"
+                    BorderThickness="0,1,0,0"
+                    Padding="20,12">
+                <Grid ColumnDefinitions="*,Auto">
+                    <controls:InfoBar x:Name="FooterStatus"
+                                      Grid.Column="0"
+                                      Margin="0,0,16,0"
+                                      VerticalAlignment="Center" />
+
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Spacing="8">
+                        <Button x:Name="SaveButton"
+                                Classes="accent"
+                                Content="保存"
+                                MinWidth="90" />
+                        <Button x:Name="CancelButton"
+                                Content="关闭"
+                                MinWidth="90" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

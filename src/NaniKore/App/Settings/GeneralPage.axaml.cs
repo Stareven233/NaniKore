@@ -1,11 +1,13 @@
-using System.Windows;
-using System.Windows.Controls;
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+using Avalonia.Controls;
+using Avalonia.Interactivity;
 using NaniKore.App.Controls;
 using NaniKore.Config;
 using NaniKore.Ocr.Models;
 using NaniKore.Phonetics;
-using Button = System.Windows.Controls.Button;
-using UserControl = System.Windows.Controls.UserControl;
 
 namespace NaniKore.App.Settings;
 
@@ -14,7 +16,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     private readonly Func<IProgress<string>, CancellationToken, Task>? _downloadDependencies;
     private readonly Func<string, IProgress<string>, CancellationToken, Task>? _downloadPhoneticDictionary;
 
-    /// <summary>语言代码 → 该语言词典卡片的下载按钮（XAML 显式命名，此处集中装配）。</summary>
+    /// <summary>语言代码 → 该语言词典卡片的下载按钮（集中装配）。</summary>
     private readonly Dictionary<string, Button> _phoneticDownloadButtons;
 
     public GeneralPage(
@@ -23,23 +25,25 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     {
         InitializeComponent();
         _downloadDependencies = downloadDependencies;
-        RefreshOcrDependencyCard();
-
-        // 注音词典卡片：下载入口缺失（自测/托盘预览）时整组按钮禁用，状态文案仍照常刷新。
         _downloadPhoneticDictionary = downloadPhoneticDictionary;
+
         _phoneticDownloadButtons = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase)
         {
             ["ja"] = PhoneticsDownloadJa,
             ["en"] = PhoneticsDownloadEn,
             ["zh"] = PhoneticsDownloadZh,
         };
-        foreach (var language in LanguageChoices.All)
-        {
-            TargetLanguageBox.Items.Add(language);
-        }
 
-        PipelineModeBox.Items.Add("local_ocr");
-        PipelineModeBox.Items.Add("vision_oneshot");
+        TargetLanguageBox.ItemsSource = LanguageChoices.All;
+        PipelineModeBox.ItemsSource = new[] { "local_ocr", "vision_oneshot" };
+
+        PipelineModeBox.SelectionChanged += (_, _) => UpdateLocalOcrDependenciesVisibility();
+        DownloadDependenciesButton.Click += OnDownloadDependenciesClick;
+        PhoneticsDownloadJa.Click += OnDownloadPhoneticsClick;
+        PhoneticsDownloadEn.Click += OnDownloadPhoneticsClick;
+        PhoneticsDownloadZh.Click += OnDownloadPhoneticsClick;
+
+        RefreshOcrDependencyCard();
         RefreshPhoneticDictionaryCards();
         UpdateLocalOcrDependenciesVisibility();
     }
@@ -48,7 +52,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
 
     public string Glyph => "\uE713";
 
-    public FrameworkElement View => this;
+    public Control View => this;
 
     public void Load(AppConfig config)
     {
@@ -86,21 +90,18 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         config.Pipeline.Mode = PipelineModeBox.SelectedItem as string ?? "local_ocr";
     }
 
-    private void OnPipelineModeChanged(object sender, SelectionChangedEventArgs e) =>
-        UpdateLocalOcrDependenciesVisibility();
-
     private void UpdateLocalOcrDependenciesVisibility()
     {
         // 依赖下载只服务于本地 OCR，切换到视觉流程时隐藏整组设置，避免造成无关干扰。
         var isLocalOcr = string.Equals(PipelineModeBox.SelectedItem as string, "local_ocr", StringComparison.OrdinalIgnoreCase);
-        LocalOcrDependenciesGroup.Visibility = isLocalOcr ? Visibility.Visible : Visibility.Collapsed;
+        LocalOcrDependenciesGroup.IsVisible = isLocalOcr;
     }
 
-    private async void OnDownloadDependenciesClick(object sender, RoutedEventArgs e)
+    private async void OnDownloadDependenciesClick(object? sender, RoutedEventArgs e)
     {
         if (_downloadDependencies is null ||
             !MessageDialog.Confirm(
-                Window.GetWindow(this),
+                TopLevel.GetTopLevel(this) as Window,
                 "下载本地 OCR 依赖？",
                 "将从 ModelScope 下载 OCR 模型权重和 ONNX Runtime DLL，并保存到当前程序目录的 deps 文件夹。",
                 "下载",
@@ -130,7 +131,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
 
     /// <summary>
     /// 刷新本地 OCR 依赖卡片：本地状态直接映射为按钮文案（下载 / 已就绪），
-    /// 完成后文字改为就绪，不单独显示一行提示，无下载入口时按钮禁用（自测场景）但文案保持可读。
+    /// 无下载入口时按钮禁用（自测场景）但文案保持可读。
     /// </summary>
     private void RefreshOcrDependencyCard()
     {
@@ -141,12 +142,8 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     /// <summary>本地 OCR 依赖就绪状态 → 按钮文案（页面与自测共用）。</summary>
     internal static string OcrButtonLabel(bool isComplete) => isComplete ? "已就绪" : "下载";
 
-    private static LanguageChoice? FindLanguage(string configuredValue) => LanguageChoices.Find(configuredValue);
-
     /// <summary>
-    /// 按语言刷新词典卡片：本地状态直接映射为按钮文案（下载 / 更新 / 已就绪），
-    /// 无下载入口时按钮禁用（自测场景）但状态文案保持可读。「已就绪」仍允许点击——
-    /// 下载器对已存在且哈希相符的文件会自动跳过，等效于一次校验/修复动作。
+    /// 按语言刷新词典卡片：本地状态直接映射为按钮文案（下载 / 更新 / 已就绪）。
     /// </summary>
     private void RefreshPhoneticDictionaryCards()
     {
@@ -166,13 +163,13 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         _ => "不可用",
     };
 
-    private async void OnDownloadPhoneticsClick(object sender, RoutedEventArgs e)
+    private async void OnDownloadPhoneticsClick(object? sender, RoutedEventArgs e)
     {
         if (_downloadPhoneticDictionary is null ||
             sender is not Button { Tag: string languageCode } button ||
             string.IsNullOrEmpty(languageCode) ||
             !MessageDialog.Confirm(
-                Window.GetWindow(this),
+                TopLevel.GetTopLevel(this) as Window,
                 $"下载{PhoneticLanguages.DisplayName(languageCode) ?? languageCode}注音词典？",
                 "将从 ModelScope 下载该语言的注音词典并保存到当前程序目录的 deps/phonetics 文件夹，下载完成后立即生效。",
                 "下载",

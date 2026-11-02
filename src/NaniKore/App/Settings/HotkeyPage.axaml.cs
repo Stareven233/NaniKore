@@ -1,8 +1,7 @@
-using System.Windows;
-using System.Windows.Controls;
+using System;
+using Avalonia.Controls;
 using NaniKore.Config;
 using NaniKore.Input;
-using UserControl = System.Windows.Controls.UserControl;
 
 namespace NaniKore.App.Settings;
 
@@ -17,7 +16,7 @@ internal sealed partial class HotkeyPage : UserControl, ISettingsPage
         PasteRecorderStatus.Text = IdleHint;
         CaptureRecorder.StatusChanged += (_, message) => CaptureRecorderStatus.Text = message;
         PasteRecorder.StatusChanged += (_, message) => PasteRecorderStatus.Text = message;
-        // 哪个框在录制就临时注销哪个实例，另一个全局热键保持可用。
+
         CaptureRecorder.RecordingChanged += (_, recording) =>
             RecordingChanged?.Invoke(this, new HotkeyRecordingState(recording, HotkeySlot.Capture));
         PasteRecorder.RecordingChanged += (_, recording) =>
@@ -28,7 +27,7 @@ internal sealed partial class HotkeyPage : UserControl, ISettingsPage
 
     public string Glyph => "\uE765";
 
-    public FrameworkElement View => this;
+    public Control View => this;
 
     /// <summary>录制开始/结束时通知宿主临时注销、恢复对应的全局热键。</summary>
     public event EventHandler<HotkeyRecordingState>? RecordingChanged;
@@ -36,7 +35,6 @@ internal sealed partial class HotkeyPage : UserControl, ISettingsPage
     public void Load(AppConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        // 旧配置可能是 control+shift+a 等写法，读入时统一成展示用组合；非法值保持原样交给校验提示。
         CaptureRecorder.Gesture = TryNormalize(config.Hotkeys.Capture);
         PasteRecorder.Gesture = TryNormalize(config.Hotkeys.Paste);
     }
@@ -53,7 +51,6 @@ internal sealed partial class HotkeyPage : UserControl, ISettingsPage
             return "选取热键仍在录制中：请按下组合键，或按 Esc 解除绑定。";
         }
 
-        // 截图热键必须恒有值；选取热键允许留空（空串＝关闭）。
         if (ValidateGesture("截图翻译热键", CaptureRecorder.Gesture, allowEmpty: false) is { } captureError)
         {
             return captureError;

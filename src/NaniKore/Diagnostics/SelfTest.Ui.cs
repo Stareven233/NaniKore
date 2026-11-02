@@ -21,6 +21,7 @@ internal static partial class SelfTest
         TestContrastRatiosAndReadability();
         TestThemeVariantHotSwitching();
         RunResultPanelUiTests();
+        RunSettingsUiTests();
     }
 
     /// <summary>

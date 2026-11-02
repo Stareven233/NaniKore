@@ -1,5 +1,6 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:NaniKore.App.Controls">
     <!-- NaniKore 核心局部样式（Route A：精炼覆盖，零庞大冗余模板） -->
 
     <!-- 品牌 Accent 按钮 -->
@@ -61,5 +62,160 @@
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="4" />
         <Setter Property="Padding" Value="8,3" />
+    </Style>
+
+    <!-- 设置行间分割线 Border.divider-row -->
+    <Style Selector="Border.divider-row">
+        <Setter Property="Background" Value="{DynamicResource Brush.Divider}" />
+        <Setter Property="Height" Value="1" />
+        <Setter Property="Margin" Value="12,0" />
+    </Style>
+
+    <!-- 图标按钮 Button.icon / Button.icon-danger / Button.subtle -->
+    <Style Selector="Button.icon">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="6" />
+        <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="Button.icon:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource Brush.Control.BackgroundHover}" />
+    </Style>
+    <Style Selector="Button.icon-danger">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="6" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+    </Style>
+    <Style Selector="Button.icon-danger:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource Brush.Control.BackgroundHover}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+    </Style>
+    <Style Selector="Button.subtle">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="Button.subtle:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource Brush.Control.BackgroundHover}" />
+    </Style>
+
+    <!-- SettingsGroup 控件模板 -->
+    <Style Selector="controls|SettingsGroup">
+        <Setter Property="Margin" Value="0,0,0,16" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <StackPanel>
+                    <TextBlock Text="{TemplateBinding Header}"
+                               IsVisible="{TemplateBinding Header, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                               Margin="4,0,0,6" />
+                    <Border Classes="card" Padding="0">
+                        <ContentPresenter Content="{TemplateBinding Content}" />
+                    </Border>
+                </StackPanel>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+
+    <!-- SettingsRow 控件模板（普通并排模式） -->
+    <Style Selector="controls|SettingsRow">
+        <Setter Property="Padding" Value="14,10" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Padding="{TemplateBinding Padding}">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                            <TextBlock Text="{TemplateBinding Header}"
+                                       FontWeight="Medium"
+                                       Foreground="{DynamicResource Brush.Text.Primary}" />
+                            <TextBlock Text="{TemplateBinding Description}"
+                                       IsVisible="{TemplateBinding Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,3,0,0" />
+                        </StackPanel>
+                        <ContentPresenter Grid.Column="1"
+                                          Content="{TemplateBinding Content}"
+                                          Width="{TemplateBinding ContentWidth}"
+                                          VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+
+    <!-- SettingsRow 控件模板（堆叠模式 :stacked） -->
+    <Style Selector="controls|SettingsRow:stacked">
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Padding="{TemplateBinding Padding}">
+                    <StackPanel>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0"
+                                       Text="{TemplateBinding Header}"
+                                       FontWeight="Medium"
+                                       Foreground="{DynamicResource Brush.Text.Primary}"
+                                       VerticalAlignment="Center" />
+                            <ContentPresenter Grid.Column="1"
+                                              Content="{TemplateBinding HeaderAction}"
+                                              VerticalAlignment="Center" />
+                        </Grid>
+                        <TextBlock Text="{TemplateBinding Description}"
+                                   IsVisible="{TemplateBinding Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,4,0,8" />
+                        <ContentPresenter Content="{TemplateBinding Content}"
+                                          Width="{TemplateBinding ContentWidth}"
+                                          Margin="0,4,0,0" />
+                    </StackPanel>
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+
+    <!-- HotkeyRecorderBox 控件模板 -->
+    <Style Selector="controls|HotkeyRecorderBox">
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="MinWidth" Value="140" />
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="{TemplateBinding CornerRadius}"
+                        Padding="{TemplateBinding Padding}">
+                    <TextBlock Text="{TemplateBinding DisplayText}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               FontSize="13"
+                               Foreground="{TemplateBinding Foreground}" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="controls|HotkeyRecorderBox:pointerover">
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.BorderHover}" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Control.BackgroundHover}" />
+    </Style>
+    <Style Selector="controls|HotkeyRecorderBox:focus">
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+    </Style>
+    <Style Selector="controls|HotkeyRecorderBox:recording">
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Accent.Subtle}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
     </Style>
 </Styles>

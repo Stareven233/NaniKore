@@ -1,6 +1,7 @@
-using System.Windows;
-using System.Windows.Controls;
-using ContentControl = System.Windows.Controls.ContentControl;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Metadata;
+using Avalonia.Controls.Primitives;
 
 namespace NaniKore.App.Controls;
 
@@ -8,65 +9,41 @@ namespace NaniKore.App.Controls;
 /// 设置分组卡片：标题在卡片外上方，内容区自带圆角、描边与统一内边距。
 /// 用分组代替原先的一整张平铺表格，让字段有语义归属，视觉上也形成层次。
 /// </summary>
-internal sealed class SettingsGroup : HeaderedContentControl
+internal class SettingsGroup : HeaderedContentControl
 {
-    static SettingsGroup() => DefaultStyleKeyProperty.OverrideMetadata(
-        typeof(SettingsGroup),
-        new FrameworkPropertyMetadata(typeof(SettingsGroup)));
 }
 
 /// <summary>
 /// 单个设置行：左侧标题与可选说明，右侧承载输入控件。
-/// 说明文字与字段同行同块，取代旧版游离在页面底部的整段提示。
+/// 支持普通并排模式与整行堆叠模式（多行文本框等）。
 /// </summary>
-internal sealed class SettingsRow : ContentControl
+[PseudoClasses(":stacked")]
+internal class SettingsRow : ContentControl
 {
-    public static readonly DependencyProperty HeaderProperty = DependencyProperty.Register(
-        nameof(Header),
-        typeof(string),
-        typeof(SettingsRow),
-        new PropertyMetadata(string.Empty));
+    public static readonly StyledProperty<string> HeaderProperty =
+        AvaloniaProperty.Register<SettingsRow, string>(nameof(Header), string.Empty);
 
-    public static readonly DependencyProperty DescriptionProperty = DependencyProperty.Register(
-        nameof(Description),
-        typeof(string),
-        typeof(SettingsRow),
-        new PropertyMetadata(string.Empty));
+    public static readonly StyledProperty<string> DescriptionProperty =
+        AvaloniaProperty.Register<SettingsRow, string>(nameof(Description), string.Empty);
 
-    /// <summary>堆叠模式标题行右侧的可选操作，例如恢复默认；普通设置行保持为空。</summary>
-    public static readonly DependencyProperty HeaderActionProperty = DependencyProperty.Register(
-        nameof(HeaderAction),
-        typeof(object),
-        typeof(SettingsRow),
-        new PropertyMetadata(null));
+    public static readonly StyledProperty<object?> HeaderActionProperty =
+        AvaloniaProperty.Register<SettingsRow, object?>(nameof(HeaderAction));
 
-    /// <summary>字段控件的建议宽度；为 <see cref="double.NaN"/> 时占满右侧剩余宽度。</summary>
-    public static readonly DependencyProperty ContentWidthProperty = DependencyProperty.Register(
-        nameof(ContentWidth),
-        typeof(double),
-        typeof(SettingsRow),
-        new PropertyMetadata(double.NaN));
+    public static readonly StyledProperty<double> ContentWidthProperty =
+        AvaloniaProperty.Register<SettingsRow, double>(nameof(ContentWidth), double.NaN);
 
-    /// <summary>为 true 时字段换到标题下方整行显示，适合多行文本这类需要完整宽度的控件。</summary>
-    public static readonly DependencyProperty IsStackedProperty = DependencyProperty.Register(
-        nameof(IsStacked),
-        typeof(bool),
-        typeof(SettingsRow),
-        new PropertyMetadata(false));
-
-    static SettingsRow() => DefaultStyleKeyProperty.OverrideMetadata(
-        typeof(SettingsRow),
-        new FrameworkPropertyMetadata(typeof(SettingsRow)));
+    public static readonly StyledProperty<bool> IsStackedProperty =
+        AvaloniaProperty.Register<SettingsRow, bool>(nameof(IsStacked), false);
 
     public string Header
     {
-        get => (string)GetValue(HeaderProperty);
+        get => GetValue(HeaderProperty);
         set => SetValue(HeaderProperty, value);
     }
 
     public string Description
     {
-        get => (string)GetValue(DescriptionProperty);
+        get => GetValue(DescriptionProperty);
         set => SetValue(DescriptionProperty, value);
     }
 
@@ -78,13 +55,26 @@ internal sealed class SettingsRow : ContentControl
 
     public double ContentWidth
     {
-        get => (double)GetValue(ContentWidthProperty);
+        get => GetValue(ContentWidthProperty);
         set => SetValue(ContentWidthProperty, value);
     }
 
     public bool IsStacked
     {
-        get => (bool)GetValue(IsStackedProperty);
+        get => GetValue(IsStackedProperty);
         set => SetValue(IsStackedProperty, value);
+    }
+
+    static SettingsRow()
+    {
+        IsStackedProperty.Changed.AddClassHandler<SettingsRow>((row, _) =>
+        {
+            row.PseudoClasses.Set(":stacked", row.IsStacked);
+        });
+    }
+
+    public SettingsRow()
+    {
+        PseudoClasses.Set(":stacked", IsStacked);
     }
 }

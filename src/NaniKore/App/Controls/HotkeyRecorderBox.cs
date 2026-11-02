@@ -1,73 +1,79 @@
-using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Input;
+using System;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Metadata;
+using Avalonia.Controls.Primitives;
+using Avalonia.Data;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using NaniKore.Input;
-using FormsKeys = System.Windows.Forms.Keys;
-using Control = System.Windows.Controls.Control;
-using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace NaniKore.App.Controls;
 
 /// <summary>
-/// WPF 版热键录制框：点击或按 Enter/空格进入录制，按键期间实时回显规范化组合。
+/// Avalonia 版热键录制框：点击或按 Enter/空格进入录制，按键期间实时回显规范化组合。
 /// 录制规则完全复用 <see cref="HotkeyGesture"/>，避免「能录进去但注册不了」的分叉；
 /// 非法组合与仅修饰键会保留录制状态并给出提示，默认不会写出空热键。
 /// <see cref="AllowUnbind"/> 为 true 的槽位（选取翻译）额外支持 Esc 解除绑定，空串＝关闭该热键。
 /// </summary>
-internal sealed class HotkeyRecorderBox : Control
+[PseudoClasses(":recording")]
+internal sealed class HotkeyRecorderBox : TemplatedControl
 {
     private const string RecordingPrompt = "请按下快捷键，Esc 取消";
 
-    /// <summary>当前已确认的规范化组合；录制取消时会回到这个值。</summary>
-    public static readonly DependencyProperty GestureProperty = DependencyProperty.Register(
-        nameof(Gesture),
-        typeof(string),
-        typeof(HotkeyRecorderBox),
-        new FrameworkPropertyMetadata(string.Empty, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnGestureChanged, CoerceGesture));
+    public static readonly StyledProperty<string> GestureProperty =
+        AvaloniaProperty.Register<HotkeyRecorderBox, string>(nameof(Gesture), string.Empty, defaultBindingMode: BindingMode.TwoWay);
 
-    /// <summary>录制中的实时回显文本；非录制状态等于 <see cref="Gesture"/>，手势为空时回落 <see cref="EmptyHint"/>。</summary>
-    private static readonly DependencyPropertyKey DisplayTextPropertyKey = DependencyProperty.RegisterReadOnly(
-        nameof(DisplayText),
-        typeof(string),
-        typeof(HotkeyRecorderBox),
-        new PropertyMetadata(string.Empty));
+    public static readonly DirectProperty<HotkeyRecorderBox, string> DisplayTextProperty =
+        AvaloniaProperty.RegisterDirect<HotkeyRecorderBox, string>(nameof(DisplayText), o => o.DisplayText);
 
-    public static readonly DependencyProperty DisplayTextProperty = DisplayTextPropertyKey.DependencyProperty;
+    public static readonly DirectProperty<HotkeyRecorderBox, bool> IsRecordingProperty =
+        AvaloniaProperty.RegisterDirect<HotkeyRecorderBox, bool>(nameof(IsRecording), o => o.IsRecording);
 
-    /// <summary>是否正在录制；模板据此切换强调色描边与提示态。</summary>
-    private static readonly DependencyPropertyKey IsRecordingPropertyKey = DependencyProperty.RegisterReadOnly(
-        nameof(IsRecording),
-        typeof(bool),
-        typeof(HotkeyRecorderBox),
-        new PropertyMetadata(false));
+    public static readonly StyledProperty<bool> AllowUnbindProperty =
+        AvaloniaProperty.Register<HotkeyRecorderBox, bool>(nameof(AllowUnbind), false);
 
-    public static readonly DependencyProperty IsRecordingProperty = IsRecordingPropertyKey.DependencyProperty;
+    public static readonly StyledProperty<string> EmptyHintProperty =
+        AvaloniaProperty.Register<HotkeyRecorderBox, string>(nameof(EmptyHint), string.Empty);
 
-    /// <summary>
-    /// 为 true 时 Esc 解除绑定（手势置空串，空串＝关闭该热键）；
-    /// 为 false 时 Esc 只是取消录制并保留进入录制前的组合（截图热键必须恒有值）。
-    /// </summary>
-    public static readonly DependencyProperty AllowUnbindProperty = DependencyProperty.Register(
-        nameof(AllowUnbind),
-        typeof(bool),
-        typeof(HotkeyRecorderBox),
-        new PropertyMetadata(false));
-
-    /// <summary>手势为空时方框里的占位提示；留空则显示空串。</summary>
-    public static readonly DependencyProperty EmptyHintProperty = DependencyProperty.Register(
-        nameof(EmptyHint),
-        typeof(string),
-        typeof(HotkeyRecorderBox),
-        new PropertyMetadata(string.Empty, OnEmptyHintChanged));
-
+    private string _displayText = string.Empty;
+    private bool _isRecording;
     private string _gestureBeforeRecording = string.Empty;
 
-    static HotkeyRecorderBox()
+    public string Gesture
     {
-        DefaultStyleKeyProperty.OverrideMetadata(
-            typeof(HotkeyRecorderBox),
-            new FrameworkPropertyMetadata(typeof(HotkeyRecorderBox)));
-        FocusableProperty.OverrideMetadata(typeof(HotkeyRecorderBox), new FrameworkPropertyMetadata(true));
+        get => GetValue(GestureProperty);
+        set => SetValue(GestureProperty, value ?? string.Empty);
+    }
+
+    public string DisplayText
+    {
+        get => _displayText;
+        private set => SetAndRaise(DisplayTextProperty, ref _displayText, value);
+    }
+
+    public bool IsRecording
+    {
+        get => _isRecording;
+        private set
+        {
+            if (SetAndRaise(IsRecordingProperty, ref _isRecording, value))
+            {
+                PseudoClasses.Set(":recording", value);
+            }
+        }
+    }
+
+    public bool AllowUnbind
+    {
+        get => GetValue(AllowUnbindProperty);
+        set => SetValue(AllowUnbindProperty, value);
+    }
+
+    public string EmptyHint
+    {
+        get => GetValue(EmptyHintProperty);
+        set => SetValue(EmptyHintProperty, value);
     }
 
     /// <summary>录制状态变化或捕获失败时上报可展示的提示文本。</summary>
@@ -76,36 +82,29 @@ internal sealed class HotkeyRecorderBox : Control
     /// <summary>录制开始/结束；宿主借此临时注销全局热键，否则已注册的组合会被系统吞掉。</summary>
     public event EventHandler<bool>? RecordingChanged;
 
-    public string Gesture
+    static HotkeyRecorderBox()
     {
-        get => (string)GetValue(GestureProperty);
-        set => SetValue(GestureProperty, value);
+        FocusableProperty.OverrideDefaultValue<HotkeyRecorderBox>(true);
+        GestureProperty.Changed.AddClassHandler<HotkeyRecorderBox>((box, _) =>
+        {
+            if (!box.IsRecording)
+            {
+                box.DisplayText = box.ResolveDisplayText();
+            }
+        });
+        EmptyHintProperty.Changed.AddClassHandler<HotkeyRecorderBox>((box, _) =>
+        {
+            if (!box.IsRecording)
+            {
+                box.DisplayText = box.ResolveDisplayText();
+            }
+        });
     }
 
-    public string DisplayText
+    public HotkeyRecorderBox()
     {
-        get => (string)GetValue(DisplayTextProperty);
-        private set => SetValue(DisplayTextPropertyKey, value);
-    }
-
-    public bool IsRecording
-    {
-        get => (bool)GetValue(IsRecordingProperty);
-        private set => SetValue(IsRecordingPropertyKey, value);
-    }
-
-    /// <summary>见 <see cref="AllowUnbindProperty"/>。</summary>
-    public bool AllowUnbind
-    {
-        get => (bool)GetValue(AllowUnbindProperty);
-        set => SetValue(AllowUnbindProperty, value);
-    }
-
-    /// <summary>见 <see cref="EmptyHintProperty"/>。</summary>
-    public string EmptyHint
-    {
-        get => (string)GetValue(EmptyHintProperty);
-        set => SetValue(EmptyHintProperty, value);
+        DisplayText = ResolveDisplayText();
+        LostFocus += (_, _) => CancelRecording();
     }
 
     /// <summary>进入录制状态；点击显示框或聚焦后按 Enter/空格都走这里。</summary>
@@ -119,13 +118,12 @@ internal sealed class HotkeyRecorderBox : Control
         _gestureBeforeRecording = Gesture;
         IsRecording = true;
         DisplayText = RecordingPrompt;
-        if (!IsKeyboardFocusWithin)
+        if (!IsFocused)
         {
             _ = Focus();
         }
 
         RecordingChanged?.Invoke(this, true);
-        // 状态文案按槽位分流：允许解绑的框（选取翻译）告诉用户 Esc 是解绑而不是取消。
         StatusChanged?.Invoke(this, AllowUnbind
             ? "正在录制：按下新组合，或按 Esc 解除绑定。"
             : "正在录制：按下修饰键加一个普通键，Esc 取消。");
@@ -144,19 +142,21 @@ internal sealed class HotkeyRecorderBox : Control
     }
 
     /// <summary>解释录制中的一次按键；修饰键状态由调用方提供，便于自测确定性地驱动录制。</summary>
-    public void ProcessRecordingKey(FormsKeys keyCode, uint modifiers)
+    public void ProcessRecordingKey(uint keyCode, uint modifiers)
     {
         if (!IsRecording)
         {
             return;
         }
 
-        keyCode &= FormsKeys.KeyCode;
-        if (keyCode == FormsKeys.Escape)
+        const uint vkEscape = 0x1B;
+        const uint vkBack = 0x08;
+        const uint vkDelete = 0x2E;
+
+        if (keyCode == vkEscape)
         {
             if (AllowUnbind)
             {
-                // 允许留空的槽位（选取翻译）：Esc 直接解除绑定，保存后该热键关闭。
                 EndRecording(string.Empty);
                 StatusChanged?.Invoke(this, "已解除绑定：保存后该热键关闭。");
                 return;
@@ -166,9 +166,8 @@ internal sealed class HotkeyRecorderBox : Control
             return;
         }
 
-        if (keyCode is FormsKeys.Back or FormsKeys.Delete)
+        if (keyCode is vkBack or vkDelete)
         {
-            // Backspace 不能清空热键：截图翻译必须有一个可注册的组合；选取翻译用 Esc 解绑。
             StatusChanged?.Invoke(this, AllowUnbind
                 ? "请直接录制新的组合，或按 Esc 解除绑定。"
                 : "热键不能为空；请直接录制新的组合或按 Esc 取消。");
@@ -177,7 +176,6 @@ internal sealed class HotkeyRecorderBox : Control
 
         if (!HotkeyGesture.TryCapture(modifiers, keyCode, out var gesture, out var message))
         {
-            // 只按住修饰键时实时回显 Ctrl+Shift+… ，让用户看到录制确实在进行。
             ShowPreview(modifiers);
             StatusChanged?.Invoke(this, message);
             return;
@@ -187,22 +185,17 @@ internal sealed class HotkeyRecorderBox : Control
         StatusChanged?.Invoke(this, $"已录制：{gesture}。保存时会尝试向系统注册。");
     }
 
-    protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
-        base.OnMouseLeftButtonDown(e);
+        base.OnPointerPressed(e);
         BeginRecording();
         e.Handled = true;
     }
 
-    /// <summary>
-    /// 录制走 PreviewKeyDown 而不是 KeyDown：Tab、Esc、方向键会被 WPF 的焦点导航先行消费，
-    /// 只有在预览阶段拦截才能捕获完整组合。
-    /// </summary>
-    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    protected override void OnKeyDown(KeyEventArgs e)
     {
         if (!IsRecording)
         {
-            // 仅在显式操作时进入录制；不用 GotFocus 触发，否则切到热键页就会被动注销全局热键。
             if (e.Key is Key.Enter or Key.Space)
             {
                 BeginRecording();
@@ -210,33 +203,37 @@ internal sealed class HotkeyRecorderBox : Control
                 return;
             }
 
-            base.OnPreviewKeyDown(e);
+            base.OnKeyDown(e);
             return;
         }
 
-        // 系统键（带 Alt）走 SystemKey，普通键走 Key。
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
-        ProcessRecordingKey((FormsKeys)KeyInterop.VirtualKeyFromKey(key), HotkeyGesture.GetPressedModifiers());
+        var vk = ToVirtualKey(e.Key);
+        var modifiers = HotkeyGesture.GetPressedModifiers();
+        if (modifiers == 0)
+        {
+            modifiers = ToModifiers(e.KeyModifiers);
+        }
+
+        ProcessRecordingKey(vk, modifiers);
         e.Handled = true;
     }
 
-    /// <summary>修饰键释放时刷新回显，让 Ctrl+Shift+… 预览跟随实际按住的键。</summary>
-    protected override void OnPreviewKeyUp(KeyEventArgs e)
+    protected override void OnKeyUp(KeyEventArgs e)
     {
         if (IsRecording)
         {
-            ShowPreview(HotkeyGesture.GetPressedModifiers());
+            var modifiers = HotkeyGesture.GetPressedModifiers();
+            if (modifiers == 0)
+            {
+                modifiers = ToModifiers(e.KeyModifiers);
+            }
+
+            ShowPreview(modifiers);
             e.Handled = true;
             return;
         }
 
-        base.OnPreviewKeyUp(e);
-    }
-
-    protected override void OnLostKeyboardFocus(KeyboardFocusChangedEventArgs e)
-    {
-        base.OnLostKeyboardFocus(e);
-        CancelRecording();
+        base.OnKeyUp(e);
     }
 
     private void ShowPreview(uint modifiers)
@@ -253,28 +250,32 @@ internal sealed class HotkeyRecorderBox : Control
         RecordingChanged?.Invoke(this, false);
     }
 
-    /// <summary>非录制态的展示文本：空手势回落占位提示，避免方框里什么都不显示。</summary>
     private string ResolveDisplayText() => Gesture is { Length: > 0 } gesture ? gesture : EmptyHint;
 
-    private static object CoerceGesture(DependencyObject sender, object baseValue) =>
-        baseValue as string is { Length: > 0 } value && !string.IsNullOrWhiteSpace(value) ? value : string.Empty;
-
-    private static void OnGestureChanged(DependencyObject sender, DependencyPropertyChangedEventArgs e)
+    private static uint ToVirtualKey(Key key) => key switch
     {
-        var box = (HotkeyRecorderBox)sender;
-        if (!box.IsRecording)
-        {
-            box.DisplayText = box.ResolveDisplayText();
-        }
-    }
+        >= Key.A and <= Key.Z => (uint)('A' + (key - Key.A)),
+        >= Key.D0 and <= Key.D9 => (uint)('0' + (key - Key.D0)),
+        >= Key.F1 and <= Key.F24 => 0x70 + (uint)(key - Key.F1),
+        Key.Escape => 0x1B,
+        Key.Back => 0x08,
+        Key.Delete => 0x2E,
+        Key.Enter => 0x0D,
+        Key.Space => 0x20,
+        Key.LeftShift or Key.RightShift => 0x10,
+        Key.LeftCtrl or Key.RightCtrl => 0x11,
+        Key.LeftAlt or Key.RightAlt => 0x12,
+        Key.LWin or Key.RWin => 0x5B,
+        _ => 0,
+    };
 
-    private static void OnEmptyHintChanged(DependencyObject sender, DependencyPropertyChangedEventArgs e)
+    private static uint ToModifiers(KeyModifiers keyModifiers)
     {
-        var box = (HotkeyRecorderBox)sender;
-        if (!box.IsRecording)
-        {
-            box.DisplayText = box.ResolveDisplayText();
-        }
+        uint modifiers = 0;
+        if ((keyModifiers & KeyModifiers.Control) != 0) modifiers |= HotkeyGesture.ModControl;
+        if ((keyModifiers & KeyModifiers.Shift) != 0) modifiers |= HotkeyGesture.ModShift;
+        if ((keyModifiers & KeyModifiers.Alt) != 0) modifiers |= HotkeyGesture.ModAlt;
+        if ((keyModifiers & KeyModifiers.Meta) != 0) modifiers |= HotkeyGesture.ModWin;
+        return modifiers;
     }
-
 }
