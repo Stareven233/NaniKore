@@ -1,9 +1,8 @@
 param(
-    [ValidateSet('build', 'run', 'test', 'publish', 'aot')]
+    [ValidateSet('build', 'run', 'test', 'publish')]
     [string]$Command = 'build',
 
-    [ValidateSet('build', 'publish')]
-    [string]$Launch,
+    [switch]$Release,
 
     [switch]$Full,
 
@@ -120,10 +119,10 @@ function Set-NaniKoreOnnxRuntimeLinks {
 
     $runtimeDirectories = @(Get-ChildItem -LiteralPath $OutputDirectory -Recurse -Directory -Force -Filter 'runtimes')
     foreach ($runtimeDirectory in $runtimeDirectories) {
-        # 当前应用固定发布 win-x64，NuGet 附带的 arm64/Linux/Android 等 RID 资产没有保留价值。
+        # 当前应用固定发布 win-x64；注意 'win' 为架构无关的 Windows 资产（如 Microsoft.Win32.SystemEvents），必须保留。
         Get-ChildItem -LiteralPath $runtimeDirectory.FullName -Directory -Force |
-            Where-Object { $_.Name -ne 'win-x64' } |
-            Remove-Item -Recurse -Force
+            Where-Object { $_.Name -ne 'win-x64' -and $_.Name -ne 'win' } |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     foreach ($fileName in $onnxRuntimeNativeFiles) {
@@ -166,7 +165,7 @@ function Remove-NaniKoreGeneratedImportLibraries {
 
     # .lib 是 Windows 链接器导入库，应用运行时只需要 DLL；发布目录不应携带它们。
     Get-ChildItem -LiteralPath $OutputDirectory -Recurse -Force -File -Filter '*.lib' |
-        Remove-Item -Force
+        Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
 function Remove-NaniKorePackageCacheFiles {
@@ -385,28 +384,11 @@ function Start-NaniKoreExecutable {
     )
 
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        throw "$Description executable was not found: $Path. Run the corresponding build or publish command first."
+        throw "$Description executable was not found: $Path. Run the corresponding build command first."
     }
 
     # 从仓库根目录启动，确保程序可直接找到 deps/ 目录。
     Start-Process -FilePath $Path -WorkingDirectory $root
-}
-
-if ($PSBoundParameters.ContainsKey('Launch')) {
-    if ($PSBoundParameters.ContainsKey('Command')) {
-        throw '-Launch only starts an existing executable. Do not combine it with a build, run, test, or publish command.'
-    }
-
-    switch ($Launch) {
-        'build' {
-            Start-NaniKoreExecutable -Path $debugExecutable -Description 'Debug build'
-        }
-        'publish' {
-            Start-NaniKoreExecutable -Path $publishedExecutable -Description 'Published'
-        }
-    }
-
-    exit 0
 }
 
 $dotnet = Get-NaniKoreDotnetExecutable
@@ -427,39 +409,69 @@ Push-Location -LiteralPath $root
 try {
     switch ($Command) {
         'build' {
-            # 仅在源码发生变动或显式指定 -ForceBump 时递增 build 版本号，避免重复构建无谓更新配置
-            if ($ForceBump -or (Test-NaniKoreSourceChanged -OutputExecutable $debugExecutable -RootDirectory $root)) {
-                & python (Join-Path $root 'scripts\update_version.py') --bump build
-                if ($LASTEXITCODE -ne 0) {
-                    throw "Failed to update the product version."
+            if ($Release) {
+                # NativeAOT Release 编译（不打包 ZIP）：生成精简 exe 与旁置原生 DLL 到 artifacts/win-x64
+                $publishDepsLink = Join-Path $publishOutput 'deps'
+                Remove-NaniKoreJunction -Path $publishDepsLink -IncludeRealDirectory
+
+                & $dotnet publish $project --configuration Release --runtime win-x64 -p:PublishAot=true --output $publishOutput -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
+                $exitCode = $LASTEXITCODE
+                if ($exitCode -ne 0) {
+                    break
                 }
+
+                # 摘除 NuGet 附带的根目录 onnxruntime.dll（防止遮蔽 deps/），清理 .lib 与调试符号
+                Remove-Item -LiteralPath (Join-Path $publishOutput 'onnxruntime.dll'), (Join-Path $publishOutput 'onnxruntime_providers_shared.dll') -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath (Join-Path $publishOutput 'config.yaml') -Force -ErrorAction SilentlyContinue
+                Copy-Item -LiteralPath (Join-Path $root 'config.template.yaml') -Destination $publishOutput -Force
+                Copy-Item -LiteralPath (Join-Path $root 'NOTICE') -Destination $publishOutput -Force
+                Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $publishOutput
+
+                Set-NaniKoreJunction -Path $publishDepsLink -Target $dependenciesDirectory
+                Set-NaniKoreJunction -Path (Join-Path $publishOutput '.data') -Target $dataDirectory -CreateTarget
+
+                Write-Host "NativeAOT Release build succeeded: $publishOutput"
             }
             else {
-                Write-Host 'Code unchanged; skipping product version bump.'
-            }
+                # 默认 Debug 构建：快速增量编译，仅在源码变动或显式指定 -ForceBump 时递增 build 版本号
+                if ($ForceBump -or (Test-NaniKoreSourceChanged -OutputExecutable $debugExecutable -RootDirectory $root)) {
+                    & python (Join-Path $root 'scripts\update_version.py') --bump build
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "Failed to update the product version."
+                    }
+                }
+                else {
+                    Write-Host 'Code unchanged; skipping product version bump.'
+                }
 
-            & $dotnet build $solution --configuration Debug -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
-            $exitCode = $LASTEXITCODE
-            if ($exitCode -eq 0) {
-                Set-NaniKoreOnnxRuntimeLinks -OutputDirectory $buildOutputDirectory -DependenciesDirectory $dependenciesDirectory
-                Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $buildOutputDirectory
+                & $dotnet build $solution --configuration Debug -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
+                $exitCode = $LASTEXITCODE
+                if ($exitCode -eq 0) {
+                    Set-NaniKoreOnnxRuntimeLinks -OutputDirectory $buildOutputDirectory -DependenciesDirectory $dependenciesDirectory
+                    Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $buildOutputDirectory
+                }
+                # 本机数据目录单一真相（issue 017）：调试产物与发布产物都挂接仓库根 .data，
+                # 不各存一份，免得「调试版改的配置发布版看不到」。deps 同理挂到仓库 deps/。
+                Set-NaniKoreJunction -Path (Join-Path $debugOutputDirectory 'deps') -Target $dependenciesDirectory
+                Set-NaniKoreJunction -Path (Join-Path $debugOutputDirectory '.data') -Target $dataDirectory -CreateTarget
+                Set-NaniKoreJunction -Path (Join-Path $publishOutput '.data') -Target $dataDirectory -CreateTarget
             }
-            # 本机数据目录单一真相（issue 017）：调试产物与发布产物都挂接仓库根 .data，
-            # 不各存一份，免得「调试版改的配置发布版看不到」。deps 同理挂到仓库 deps/。
-            Set-NaniKoreJunction -Path (Join-Path $debugOutputDirectory 'deps') -Target $dependenciesDirectory
-            Set-NaniKoreJunction -Path (Join-Path $debugOutputDirectory '.data') -Target $dataDirectory -CreateTarget
-            Set-NaniKoreJunction -Path (Join-Path $publishOutput '.data') -Target $dataDirectory -CreateTarget
         }
         'run' {
-            & $dotnet run --project $project -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
-            $exitCode = $LASTEXITCODE
+            if ($Release) {
+                Start-NaniKoreExecutable -Path $publishedExecutable -Description 'Release'
+            }
+            else {
+                Start-NaniKoreExecutable -Path $debugExecutable -Description 'Debug build'
+            }
+            $exitCode = 0
         }
         'test' {
             & $dotnet run --project $project -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true -- --self-test
             $exitCode = $LASTEXITCODE
         }
         'publish' {
-            # 发布物固定保留在 artifacts\win-x64，避免将 EXE 与运行时 DLL 写到仓库根目录。
+            # 完整发布通道：编译 NativeAOT 并打包为 ZIP 交付物
             $stalePdb = Join-Path $publishOutput 'NaniKore.pdb'
             Remove-Item -LiteralPath $stalePdb -Force -ErrorAction SilentlyContinue
 
@@ -502,11 +514,6 @@ try {
             Set-NaniKoreJunction -Path $publishDepsLink -Target $dependenciesDirectory
             Set-NaniKoreJunction -Path (Join-Path $publishOutput '.data') -Target $dataDirectory -CreateTarget
             Write-Host "Created release archive: $archivePath"
-        }
-        'aot' {
-            # 兼容别名：epic 002 P6 起 NativeAOT 即为唯一正式发布通道
-            & $PSCommandPath -Command publish -Full:$Full
-            $exitCode = $LASTEXITCODE
         }
     }
 }

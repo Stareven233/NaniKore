@@ -17,6 +17,8 @@
   - `args: build`: 构建 Debug 版本。会自动递增config.template.yaml的版本号
   - `args: test`: 运行无 UI 自测
   - `args: run`: 启动桌面应用
-  - `args: publish (-full)`: 发布不含固定 OCR 权重和 native DLL 的（或包含完整 `deps/`的） Windows x64 ZIP
-  - `args: -Launch build|publish`: 启动已有的 Debug|发布 exe
+  - `args: build (-Release)`: 默认快速构建 Debug 版本（递增配置版本号）；加 `-Release` 编译 Native AOT 发布版
+  - `args: run (-Release)`: 启动桌面应用（默认 Debug，加 `-Release` 启动 Native AOT 发布版）
+  - `args: test`: 运行无 UI 自测
+  - `args: publish (-full)`: 编译 Native AOT 并发布不含固定 OCR 权重的（或包含完整 `deps/`的）免安装 Windows x64 ZIP
 - 本地环境有bun 1.3.14, python 3.14, node 25.2.1
