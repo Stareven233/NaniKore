@@ -247,9 +247,10 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
                         {
                             callback();
                         }
-                        catch
+                        catch (Exception ex)
                         {
-                            // 保护消息泵不受外部回调异常影响
+                            // 记录异常，绝不静默吞没，同时保护消息泵继续运行
+                            Console.Error.WriteLine($"[Win32HotkeyHost] 全局热键回调执行异常 (id={id}): {ex}");
                         }
                     });
                 }

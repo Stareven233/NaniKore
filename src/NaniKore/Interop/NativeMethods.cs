@@ -448,4 +448,22 @@ internal static unsafe partial class NativeMethods
     };
 
     #endregion
+
+    #region GDI Font Resource APIs
+
+    public const uint FR_PRIVATE = 0x10;
+
+    /// <summary>
+    /// 向当前进程私有加载外部字体文件（无需管理员权限，进程退出后自动释放）。
+    /// </summary>
+    [LibraryImport("gdi32.dll", EntryPoint = "AddFontResourceExW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    public static partial int AddFontResourceEx(string lpszFilename, uint fl, nint pdv);
+
+    /// <summary>
+    /// 从当前进程注销私有外部字体文件。
+    /// </summary>
+    [LibraryImport("gdi32.dll", EntryPoint = "RemoveFontResourceExW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+    public static partial int RemoveFontResourceEx(string lpszFilename, uint fl, nint pdv);
+
+    #endregion
 }

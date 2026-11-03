@@ -16,6 +16,7 @@ internal static class ThemeManager
     private const string PersonalizeKey = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
     private const int DwmUseImmersiveDarkMode = 20;
 
+    private static readonly List<string> LoadedFontFiles = [];
     private static bool _initialized;
 
     /// <summary>当前是否为深色主题。</summary>
@@ -34,6 +35,10 @@ internal static class ThemeManager
         }
 
         _initialized = true;
+
+        // 优先探测并加载主人指定的现代无衬线中英混排字体（私有加载无需管理员权限）
+        EnsureCustomFonts();
+
         IsDark = ReadSystemUsesDarkMode();
         application.RequestedThemeVariant = IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
 
@@ -43,12 +48,50 @@ internal static class ThemeManager
         }
     }
 
-    /// <summary>卸载事件监听。</summary>
+    /// <summary>卸载事件监听并释放私有载入的字体资源。</summary>
     public static void Shutdown()
     {
         if (OperatingSystem.IsWindows())
         {
             SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+
+            foreach (var fontPath in LoadedFontFiles)
+            {
+                try
+                {
+                    _ = NativeMethods.RemoveFontResourceEx(fontPath, NativeMethods.FR_PRIVATE, 0);
+                }
+                catch
+                {
+                }
+            }
+            LoadedFontFiles.Clear();
+        }
+    }
+
+    private static void EnsureCustomFonts()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        // 探测本地候选字体文件（优先主人机器上的 F:\t\YaHeiMonacoHybrid.ttf 以及应用 deps 目录）
+        string[] candidateFontPaths = [
+            @"F:\t\YaHeiMonacoHybrid.ttf",
+            System.IO.Path.Combine(AppContext.BaseDirectory, "deps", "fonts", "YaHeiMonacoHybrid.ttf")
+        ];
+
+        foreach (var fontPath in candidateFontPaths)
+        {
+            if (System.IO.File.Exists(fontPath) && !LoadedFontFiles.Contains(fontPath))
+            {
+                var result = NativeMethods.AddFontResourceEx(fontPath, NativeMethods.FR_PRIVATE, 0);
+                if (result > 0)
+                {
+                    LoadedFontFiles.Add(fontPath);
+                }
+            }
         }
     }
 

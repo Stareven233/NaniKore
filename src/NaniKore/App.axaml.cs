@@ -853,8 +853,21 @@ public partial class NaniKoreApp : Application
         }
     }
 
-    private Action HotkeyHandler(HotkeySlot slot) =>
-        slot == HotkeySlot.Paste ? OnPasteHotkeyPressed : OnCaptureHotkeyPressed;
+    private Action HotkeyHandler(HotkeySlot slot) => () =>
+    {
+        // 关键调度：全局热键底层消息泵在后台工作线程触发，必须调度到 Avalonia UI 线程执行窗口创建与交互
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (slot == HotkeySlot.Paste)
+            {
+                OnPasteHotkeyPressed();
+            }
+            else
+            {
+                OnCaptureHotkeyPressed();
+            }
+        });
+    };
 
     private static int HotkeyId(HotkeySlot slot) =>
         slot == HotkeySlot.Paste ? PasteHotkeyId : CaptureHotkeyId;

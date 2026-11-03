@@ -27,7 +27,51 @@
     <!-- 覆写 Avalonia FluentTheme 系统内置强调色 -->
     <Color x:Key="SystemAccentColor">#95CA00</Color>
     <Color x:Key="SystemAccentColorLight1">#C6E05B</Color>
+    <Color x:Key="SystemAccentColorLight2">#E2F492</Color>
+    <Color x:Key="SystemAccentColorLight3">#F2FAE0</Color>
     <Color x:Key="SystemAccentColorDark1">#7FA800</Color>
+    <Color x:Key="SystemAccentColorDark2">#638500</Color>
+    <Color x:Key="SystemAccentColorDark3">#496100</Color>
+
+    <!-- 覆写 Fluent 核心系统控件笔刷（浅色绿灰韵律） -->
+    <SolidColorBrush x:Key="SystemControlHighlightAccentBrush" Color="#95CA00" />
+    <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush" Color="#EDF5DA" />
+    <SolidColorBrush x:Key="SystemControlHighlightListAccentMediumBrush" Color="#E2F0C4" />
+    <SolidColorBrush x:Key="SystemControlHighlightListAccentHighBrush" Color="#D2E8A6" />
+    <SolidColorBrush x:Key="ControlFillColorDefault" Color="#F8FBF9" />
+    <SolidColorBrush x:Key="ControlFillColorSecondary" Color="#EFF5F1" />
+    <SolidColorBrush x:Key="ControlFillColorInputActive" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="ControlStrokeColorDefault" Color="#C7D8D2" />
+    <SolidColorBrush x:Key="ControlStrokeColorSecondary" Color="#DCE8E2" />
+    <SolidColorBrush x:Key="CardBackgroundFillColorDefault" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="CardStrokeColorDefault" Color="#DCE8E2" />
+
+    <!-- 覆写 Fluent 基础输入控件默认笔刷 -->
+    <SolidColorBrush x:Key="ComboBoxBackground" Color="#F8FBF9" />
+    <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#EFF5F1" />
+    <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#E8F0EB" />
+    <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#C7D8D2" />
+    <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#A9C4BC" />
+    <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#95CA00" />
+    <SolidColorBrush x:Key="ComboBoxBorderBrushFocused" Color="#95CA00" />
+    <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#DCE8E2" />
+
+    <SolidColorBrush x:Key="ToggleSwitchFillOn" Color="#95CA00" />
+    <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="#C6E05B" />
+    <SolidColorBrush x:Key="ToggleSwitchFillOnPressed" Color="#7FA800" />
+    <SolidColorBrush x:Key="ToggleSwitchStrokeOff" Color="#C7D8D2" />
+    <SolidColorBrush x:Key="ToggleSwitchStrokeOffPointerOver" Color="#A9C4BC" />
+    <SolidColorBrush x:Key="ToggleSwitchStrokeOffPressed" Color="#95CA00" />
+    <SolidColorBrush x:Key="ToggleSwitchKnobFillOn" Color="#1B2A1F" />
+    <SolidColorBrush x:Key="ToggleSwitchKnobFillOff" Color="#5C6F65" />
+
+    <SolidColorBrush x:Key="TextControlBackground" Color="#F8FBF9" />
+    <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#EFF5F1" />
+    <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="TextControlBorderBrush" Color="#C7D8D2" />
+    <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#A9C4BC" />
+    <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#95CA00" />
 
     <!-- 语义化 SolidColorBrush 映射 -->
     <SolidColorBrush x:Key="Brush.Window.Background" Color="{StaticResource Color.Window.Background}" />

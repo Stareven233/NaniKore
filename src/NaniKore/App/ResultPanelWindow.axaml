@@ -29,7 +29,7 @@
 
             <!-- 0. 原文工具栏 -->
             <DockPanel Grid.Row="0" Margin="0,0,0,8">
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <!-- 源语言口径：默认按探测，也可手动指定 -->
                     <ComboBox x:Name="SourceLanguageBox"
                               MinWidth="110"

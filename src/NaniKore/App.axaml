@@ -9,6 +9,10 @@
 
     <Application.Resources>
         <ResourceDictionary>
+            <!-- 全局无衬线现代圆润字体回退链（优先命中主人本地 YaHei Monaco Hybird 与更纱黑体） -->
+            <FontFamily x:Key="Font.Ui">YaHei Monaco Hybird, YaHei Monaco Hybrid, 更纱黑体 SC, Sarasa Gothic SC, Microsoft YaHei UI, Microsoft YaHei, PingFang SC, Segoe UI, sans-serif</FontFamily>
+            <FontFamily x:Key="Font.Mono">YaHei Monaco Hybird, YaHei Monaco Hybrid, 更纱黑体 SC, Sarasa Term SC, Consolas, Cascadia Mono, monospace</FontFamily>
+
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceInclude x:Key="Light" Source="/App/Theme/Palette.Light.axaml" />
                 <ResourceInclude x:Key="Dark" Source="/App/Theme/Palette.Dark.axaml" />
