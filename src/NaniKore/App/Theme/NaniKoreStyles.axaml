@@ -2,8 +2,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:NaniKore.App.Controls">
     <!--
-        NaniKore 全局基础样式与控件模板（多层次草地绿与墨绿沉静基调）
-        彻底剔除 Avalonia Fluent 原生生硬黑灰框，实现全控件圆润饱满质感与像素级基准对齐。
+        NaniKore 全局视觉规范与交互样式（沉静多层次草地绿与极简现代微质感）
+        - 按钮、开关、下拉框统一 Hand 悬停手型光标；
+        - 保存与强调按钮（accent）常驻鲜亮草地绿；
+        - 表单输入框（TextBox/ComboBox/NumericUpDown）平时省略边框（Transparent），仅在 Hover/Focus 时平滑浮现；
+        - 侧边栏菜单项加大点击热区与呼吸感；
+        - 严格对齐基准线，消除视觉抖动。
     -->
 
     <!-- 全局 Window 排版与基准字体 -->
@@ -19,14 +23,14 @@
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
     </Style>
 
-    <!-- 全局 Label 统一字体链 -->
+    <!-- 全局 Label 统一字体链与垂直居中 -->
     <Style Selector="Label">
         <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
 
-    <!-- 普通按钮 Button：圆润 6px、精细单像素边框、悬停与按下绿色质感 -->
+    <!-- 普通按钮 Button：圆润 6px、手型光标、交互反馈 -->
     <Style Selector="Button">
         <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
         <Setter Property="MinHeight" Value="32" />
@@ -36,6 +40,7 @@
         <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="Padding" Value="12,5" />
+        <Setter Property="Cursor" Value="Hand" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
@@ -50,12 +55,18 @@
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
     </Style>
 
-    <!-- 品牌 Accent 按钮 -->
+    <!-- 品牌 Accent 按钮（如保存按钮）：常态即为草地绿，彻底杜绝黑灰，悬停明亮，点击深沉，指针为手型 -->
     <Style Selector="Button.accent">
         <Setter Property="Background" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.OnAccent}" />
         <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.accent /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource Brush.Accent}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.OnAccent}" />
     </Style>
     <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource Brush.Accent.Hover}" />
@@ -75,6 +86,7 @@
         <Setter Property="Padding" Value="6" />
         <Setter Property="CornerRadius" Value="4" />
         <Setter Property="MinHeight" Value="28" />
+        <Setter Property="Cursor" Value="Hand" />
     </Style>
     <Style Selector="Button.icon:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource Brush.Control.BackgroundHover}" />
@@ -86,6 +98,7 @@
         <Setter Property="Padding" Value="6" />
         <Setter Property="CornerRadius" Value="4" />
         <Setter Property="MinHeight" Value="28" />
+        <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
     </Style>
     <Style Selector="Button.icon-danger:pointerover /template/ ContentPresenter">
@@ -98,22 +111,29 @@
         <Setter Property="Padding" Value="8,4" />
         <Setter Property="CornerRadius" Value="4" />
         <Setter Property="MinHeight" Value="28" />
+        <Setter Property="Cursor" Value="Hand" />
     </Style>
     <Style Selector="Button.subtle:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource Brush.Control.BackgroundHover}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
     </Style>
 
-    <!-- ComboBox 深度定制：彻底移除原生生硬黑灰描边，圆润细边，聚焦微绿光 -->
+    <!--
+        ComboBox 深度定制：
+        - 平时边框透明（Transparent），干净极简融入卡片，杜绝生硬粗框；
+        - Hover 时微光浮现，Focus/打开时草地绿高亮；
+        - 手型光标，下拉项精致圆角。
+    -->
     <Style Selector="ComboBox">
         <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
         <Setter Property="MinHeight" Value="32" />
         <Setter Property="CornerRadius" Value="6" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.Border}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="Padding" Value="10,4,8,4" />
+        <Setter Property="Cursor" Value="Hand" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="ComboBox:pointerover">
@@ -129,6 +149,7 @@
         <Setter Property="Padding" Value="10,6" />
         <Setter Property="CornerRadius" Value="4" />
         <Setter Property="Margin" Value="2,1" />
+        <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
     </Style>
     <Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter">
@@ -141,10 +162,11 @@
         <Setter Property="FontWeight" Value="Medium" />
     </Style>
 
-    <!-- ToggleSwitch 深度定制：关闭态暗墨绿微描边，开启态鲜亮草地绿 -->
+    <!-- ToggleSwitch 深度定制：开启态鲜亮草地绿，手型光标 -->
     <Style Selector="ToggleSwitch">
         <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
         <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Cursor" Value="Hand" />
     </Style>
     <Style Selector="ToggleSwitch /template/ Border#SwitchKnobBounds">
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.Border}" />
@@ -161,13 +183,17 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent.Hover}" />
     </Style>
 
-    <!-- TextBox 深度定制：圆角、细边框、聚焦高亮绿 -->
+    <!--
+        TextBox 深度定制：
+        - 平时边框透明（Transparent），不造成杂乱方格感；
+        - Hover/Focus 时高亮微光平滑显现。
+    -->
     <Style Selector="TextBox">
         <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
         <Setter Property="MinHeight" Value="32" />
         <Setter Property="CornerRadius" Value="6" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.Border}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="CaretBrush" Value="{DynamicResource Brush.Text.Primary}" />
@@ -183,13 +209,13 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
     </Style>
 
-    <!-- NumericUpDown 深度定制：对齐 TextBox 规格 -->
+    <!-- NumericUpDown 深度定制：平时省略边框，Hover/Focus 显现 -->
     <Style Selector="NumericUpDown">
         <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
         <Setter Property="MinHeight" Value="32" />
         <Setter Property="CornerRadius" Value="6" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.Border}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -201,12 +227,13 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
     </Style>
 
-    <!-- ListBoxItem 深度定制：侧边栏与列表选中高亮多层次绿 -->
+    <!-- ListBoxItem 深度定制：侧边栏与列表选中高亮多层次绿，加大内边距与呼吸感 -->
     <Style Selector="ListBoxItem">
         <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
         <Setter Property="CornerRadius" Value="6" />
-        <Setter Property="Padding" Value="12,8" />
-        <Setter Property="Margin" Value="4,2" />
+        <Setter Property="Padding" Value="14,11" />
+        <Setter Property="Margin" Value="6,3" />
+        <Setter Property="Cursor" Value="Hand" />
     </Style>
     <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource Brush.Control.BackgroundHover}" />
@@ -351,15 +378,16 @@
         </Setter>
     </Style>
 
-    <!-- HotkeyRecorderBox 控件模板 -->
+    <!-- HotkeyRecorderBox 控件模板：平时省略边框，手型光标 -->
     <Style Selector="controls|HotkeyRecorderBox">
         <Setter Property="MinHeight" Value="32" />
         <Setter Property="MinWidth" Value="140" />
         <Setter Property="CornerRadius" Value="6" />
         <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.Border}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Padding" Value="10,6" />
+        <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <ControlTemplate>
                 <Border Background="{TemplateBinding Background}"

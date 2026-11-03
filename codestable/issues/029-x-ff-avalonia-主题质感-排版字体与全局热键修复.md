@@ -82,7 +82,13 @@ updated: 2026-11-04
 
 ## 4. 验证结论
 
-- **常规构建**：`./scripts/dev.ps1 build` 0 警告 / 0 错误（2.76 秒增量生成）。
+- **常规构建**：`./scripts/dev.ps1 build` 0 警告 / 0 错误（增量生成秒级完成）。
 - **Native AOT 发布构建**：`./scripts/dev.ps1 build -Release` 顺利编译产出 `artifacts/win-x64/NaniKore.exe`。
 - **无 UI 自动化测试**：`./scripts/dev.ps1 test` 与 AOT 自测 609 项断言全部 100% PASS。
-- **真机体验**：热键即刻毫秒响应；下拉框与开关呈现原版多层次细腻绿意；字体圆润饱满且文本行严密对齐。
+- **第二轮深度打磨验证**：
+  1. 移出粗黑锯齿的 `YaHeiMonacoHybrid`，恢复微软官方 ClearType 高质量 `Microsoft YaHei UI` / `Segoe UI Variable` 现代无衬线高清晰字体链；
+  2. 保存按钮（`Button.accent`）通过深度定位 ContentPresenter，实现常态草地绿（`#95CA00`），彻底消灭平时黑色的现象；
+  3. 全局按钮、开关、下拉框、侧边栏统一赋予 `Cursor="Hand"` 手型光标；
+  4. 侧边栏字号调至 15px、图标 17px，上下 padding 加大到 `14,11`，呼吸感与点击热区大幅舒展；
+  5. 文本框、下拉框、数值框边框平时省略（`Transparent`），仅在 Hover / Focus 时平滑微光浮现，界面极简高级；
+  6. 修复 `ThemeManager.ApplyWindowChrome`，挂接 `window.Opened` 确保真实 HWND 生成后注入 `DWMWA_WINDOW_CORNER_PREFERENCE = 33`（`DWMWCP_ROUND = 2`），设置与结果面板拥有系统级优雅大圆角与柔和阴影。

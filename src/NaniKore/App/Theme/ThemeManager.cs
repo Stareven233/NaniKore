@@ -14,9 +14,10 @@ namespace NaniKore.App.Theme;
 internal static class ThemeManager
 {
     private const string PersonalizeKey = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
-    private const int DwmUseImmersiveDarkMode = 20;
+    private const int DwmwaUseImmersiveDarkMode = 20;
+    private const int DwmwaWindowCornerPreference = 33;
+    private const int DwmwcpRound = 2; // 系统大圆角偏好（Windows 11）
 
-    private static readonly List<string> LoadedFontFiles = [];
     private static bool _initialized;
 
     /// <summary>当前是否为深色主题。</summary>
@@ -35,10 +36,6 @@ internal static class ThemeManager
         }
 
         _initialized = true;
-
-        // 优先探测并加载主人指定的现代无衬线中英混排字体（私有加载无需管理员权限）
-        EnsureCustomFonts();
-
         IsDark = ReadSystemUsesDarkMode();
         application.RequestedThemeVariant = IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
 
@@ -48,54 +45,16 @@ internal static class ThemeManager
         }
     }
 
-    /// <summary>卸载事件监听并释放私有载入的字体资源。</summary>
+    /// <summary>卸载事件监听。</summary>
     public static void Shutdown()
     {
         if (OperatingSystem.IsWindows())
         {
             SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
-
-            foreach (var fontPath in LoadedFontFiles)
-            {
-                try
-                {
-                    _ = NativeMethods.RemoveFontResourceEx(fontPath, NativeMethods.FR_PRIVATE, 0);
-                }
-                catch
-                {
-                }
-            }
-            LoadedFontFiles.Clear();
         }
     }
 
-    private static void EnsureCustomFonts()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        // 探测本地候选字体文件（优先主人机器上的 F:\t\YaHeiMonacoHybrid.ttf 以及应用 deps 目录）
-        string[] candidateFontPaths = [
-            @"F:\t\YaHeiMonacoHybrid.ttf",
-            System.IO.Path.Combine(AppContext.BaseDirectory, "deps", "fonts", "YaHeiMonacoHybrid.ttf")
-        ];
-
-        foreach (var fontPath in candidateFontPaths)
-        {
-            if (System.IO.File.Exists(fontPath) && !LoadedFontFiles.Contains(fontPath))
-            {
-                var result = NativeMethods.AddFontResourceEx(fontPath, NativeMethods.FR_PRIVATE, 0);
-                if (result > 0)
-                {
-                    LoadedFontFiles.Add(fontPath);
-                }
-            }
-        }
-    }
-
-    /// <summary>让窗口标题栏跟随深浅色主题（Windows DWM）。</summary>
+    /// <summary>让窗口标题栏跟随深浅色主题，并启用 Windows 11 DWM 系统级平滑大圆角与柔和阴影。</summary>
     public static void ApplyWindowChrome(Window window)
     {
         ArgumentNullException.ThrowIfNull(window);
@@ -107,7 +66,16 @@ internal static class ThemeManager
 
         void Refresh(object? sender, EventArgs e) => ApplyTitleBar(window);
 
-        ApplyTitleBar(window);
+        // 若 HWND 已就绪立即调用；若尚未呈现则挂接 Opened 事件，确保窗口创建后 100% 获得深色标题栏与大圆角
+        if (window.TryGetPlatformHandle()?.Handle is { } handle && handle != nint.Zero)
+        {
+            ApplyTitleBar(window);
+        }
+        else
+        {
+            window.Opened += (_, _) => ApplyTitleBar(window);
+        }
+
         ThemeChanged += Refresh;
         window.Closed += (_, _) => ThemeChanged -= Refresh;
     }
@@ -125,8 +93,13 @@ internal static class ThemeManager
             return;
         }
 
+        // 深色沉浸式标题栏
         var useDark = IsDark ? 1 : 0;
-        _ = NativeMethods.DwmSetWindowAttribute(handle, DwmUseImmersiveDarkMode, ref useDark, sizeof(int));
+        _ = NativeMethods.DwmSetWindowAttribute(handle, DwmwaUseImmersiveDarkMode, ref useDark, sizeof(int));
+
+        // 显式指定 DWM 圆角偏好为优雅大圆角（DWMWCP_ROUND = 2）
+        var roundCorner = DwmwcpRound;
+        _ = NativeMethods.DwmSetWindowAttribute(handle, DwmwaWindowCornerPreference, ref roundCorner, sizeof(int));
     }
 
     private static void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
