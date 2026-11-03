@@ -51,7 +51,12 @@ internal sealed class TrayIconHost : IDisposable
         if (Application.Current is not null)
         {
             var icons = TrayIcon.GetIcons(Application.Current);
-            icons?.Add(_trayIcon);
+            if (icons is null)
+            {
+                icons = new TrayIcons();
+                TrayIcon.SetIcons(Application.Current, icons);
+            }
+            icons.Add(_trayIcon);
         }
     }
 

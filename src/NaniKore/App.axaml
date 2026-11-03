@@ -15,4 +15,8 @@
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
     </Application.Resources>
+
+    <TrayIcon.Icons>
+        <TrayIcons />
+    </TrayIcon.Icons>
 </Application>
