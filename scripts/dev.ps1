@@ -468,20 +468,27 @@ try {
             $publishDepsLink = Join-Path $publishOutput 'deps'
             Remove-NaniKoreJunction -Path $publishDepsLink -IncludeRealDirectory
 
-            & $dotnet publish $project --configuration Release --runtime win-x64 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false --output $publishOutput -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
+            # NativeAOT 发布（epic 002 P6 正式接入）：精简 exe + 随包原生 DLL 旁置；不内嵌、不走 PublishSingleFile。
+            & $dotnet publish $project --configuration Release --runtime win-x64 -p:PublishAot=true --output $publishOutput -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
             $exitCode = $LASTEXITCODE
             if ($exitCode -ne 0) {
                 break
             }
+
             # 默认发布包不携带固定的 ONNX Runtime DLL；完整包从 deps/ 原样打包。
+            # 摘除是正确性要求：NuGet 复制进根目录的 onnxruntime.dll 会被优先加载，导致 deps/ 中校验哈希的 DLL 失效。
             Remove-Item -LiteralPath (Join-Path $publishOutput 'onnxruntime.dll'), (Join-Path $publishOutput 'onnxruntime_providers_shared.dll') -Force -ErrorAction SilentlyContinue
-            # 配置模板是交付物：显式同步到发布输出。PreserveNewest 在中间产物较新时会整段跳过复制，
-            # 不能只靠 csproj 的复制项；同时清掉旧链路可能残留的运行期 config.yaml（issue 017）。
+
+            # 显式同步交付物模板与声明文件：
+            # config.template.yaml 首启按字节复制到 .data/config.yaml；同时清理可能残留的运行期 config.yaml。
             Remove-Item -LiteralPath (Join-Path $publishOutput 'config.yaml') -Force -ErrorAction SilentlyContinue
             Copy-Item -LiteralPath (Join-Path $root 'config.template.yaml') -Destination $publishOutput -Force
+            Copy-Item -LiteralPath (Join-Path $root 'NOTICE') -Destination $publishOutput -Force
+
             # NuGet 附带的 .lib 是 Windows 链接器导入库，应用运行时只需要 DLL，不进交付物。
             Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $publishOutput
-            # 运行期数据（.data/config.yaml、keys.bin、collections.db）不再进交付物；发布只带配置模板。
+
+            # 运行期数据（.data/config.yaml、keys.bin、collections.db）不再进交付物；发布只带配置模板与 NOTICE。
             $productVersion = Get-NaniKoreProductVersion -ConfigPath (Join-Path $root 'config.template.yaml')
             $archivePath = New-NaniKoreReleaseArchive `
                 -PublishOutput $publishOutput `
@@ -489,6 +496,7 @@ try {
                 -DependenciesDirectory $dependenciesDirectory `
                 -ProductVersion $productVersion `
                 -IncludeFullDependencies:$Full
+
             # 打包结束才挂本机链接：发布目录与仓库根 .data 共用同一份配置与密钥，调试版同样指向那里；
             # 交付 zip 不含 .data，解压出去的副本完全独立，用户数据不会随发布包外流。
             Set-NaniKoreJunction -Path $publishDepsLink -Target $dependenciesDirectory
@@ -496,29 +504,9 @@ try {
             Write-Host "Created release archive: $archivePath"
         }
         'aot' {
-            # NativeAOT 发布通道（epic 002 P1 基座引入，P6 正式验收）：
-            # 精简 exe + 随包原生 DLL 旁置；不内嵌、不走 PublishSingleFile。
-            $publishOutputAot = Join-Path $artifactsDirectory 'win-x64-aot'
-            $publishAotDepsLink = Join-Path $publishOutputAot 'deps'
-            Remove-NaniKoreJunction -Path $publishAotDepsLink -IncludeRealDirectory
-
-            & $dotnet publish $project --configuration Release --runtime win-x64 -p:PublishAot=true --output $publishOutputAot -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
+            # 兼容别名：epic 002 P6 起 NativeAOT 即为唯一正式发布通道
+            & $PSCommandPath -Command publish -Full:$Full
             $exitCode = $LASTEXITCODE
-            if ($exitCode -ne 0) {
-                break
-            }
-
-            # 摘除 NuGet 复制进根目录的原生 ONNX DLL（issue 003 实测：必须摘除，否则优先于 deps/ 加载）
-            Remove-Item -LiteralPath (Join-Path $publishOutputAot 'onnxruntime.dll'), (Join-Path $publishOutputAot 'onnxruntime_providers_shared.dll') -Force -ErrorAction SilentlyContinue
-            # 显式同步配置模板
-            Remove-Item -LiteralPath (Join-Path $publishOutputAot 'config.yaml') -Force -ErrorAction SilentlyContinue
-            Copy-Item -LiteralPath (Join-Path $root 'config.template.yaml') -Destination $publishOutputAot -Force
-            Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $publishOutputAot
-
-            Set-NaniKoreJunction -Path $publishAotDepsLink -Target $dependenciesDirectory
-            Set-NaniKoreJunction -Path (Join-Path $publishOutputAot '.data') -Target $dataDirectory -CreateTarget
-
-            Write-Host "NativeAOT build succeeded in $publishOutputAot."
         }
     }
 }

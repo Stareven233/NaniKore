@@ -40,6 +40,7 @@
       程序永不写本文件，用户配置与密钥全部落在 .data 下，解压覆盖碰不到它们。
     -->
     <None Include="..\..\config.template.yaml" Link="config.template.yaml" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\NOTICE" Link="NOTICE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

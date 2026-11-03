@@ -1,9 +1,17 @@
 # NaniKore 第三方组件与数据许可声明（NOTICE）
 
-NaniKore 分发或使用下列第三方组件与数据。随应用发布的二进制只在 `deps/` 与 NuGet 依赖中；
-按语言下载的词典所有权归其许可方。若你认为此处遗漏或标注有误，请提 issue。
+NaniKore 分发或使用下列第三方组件与数据。随应用发布的二进制只在随包原生 DLL、NuGet 依赖与按需下载的 `deps/` 中；
+按语言下载的词典与模型权重所有权归其许可方。若你认为此处遗漏或标注有误，请提 issue。
 
-## 1. 程序集依赖（NuGet，随应用发布）
+## 1. 托管程序集与框架依赖（随应用编译与发布）
+
+- **Avalonia 12.1.4**（包 `Avalonia`、`Avalonia.Desktop`、`Avalonia.Themes.Fluent`）
+  - 许可：MIT License（Copyright (c) .NET Foundation and Contributors）。
+  - 用途：跨平台 XAML UI 框架与渲染/输入/托盘窗口生命周期宿主。
+
+- **SkiaSharp 3.119.4**（包 `SkiaSharp`）
+  - 许可：MIT License（Copyright (c) 2015-2016 Xamarin, Inc. / Microsoft Corporation；底层基于 Google Skia，BSD 3-Clause License）。
+  - 用途：跨平台图形与 2D 绘图底座、位图内存表示与 PNG 编解码。
 
 - **LibNMeCab 0.10.2**（包 `LibNMeCab`）
   - 许可：GPL-2.0 / LGPL-2.1 双许可（使用者可按其一遵守）。
@@ -11,7 +19,45 @@ NaniKore 分发或使用下列第三方组件与数据。随应用发布的二�
   - 对于 GPL-2.0 with ClasspathException 语义的 lib 组件分发，本仓库以 LGPL-2.1 口径使用：
     保留本声明与许可文本，替换 LibNMeCab.dll 后保持其可替换性即可；NaniKore 自身代码不链接 GPL 代码。
 
-## 2. 词典与数据（按语言下载，位于 `deps/phonetics/`，镜像于 ModelScope `Noetuu/nanikore-deps`）
+- **Microsoft.Data.Sqlite 10.0.12**（包 `Microsoft.Data.Sqlite`）
+  - 许可：MIT License（Copyright (c) .NET Foundation and Contributors）。
+  - 用途：轻量本地 SQLite ADO.NET 数据持久化提供程序（收藏知识库）。
+
+- **Microsoft.ML.OnnxRuntime 1.28.0**（包 `Microsoft.ML.OnnxRuntime`）
+  - 许可：MIT License（Copyright (c) Microsoft Corporation）。
+  - 用途：ONNX 模型推理托管运行时驱动。
+
+- **YamlDotNet 18.1.0**（包 `YamlDotNet`、`Vecc.YamlDotNet.Analyzers.StaticGenerator`）
+  - 许可：MIT License（Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014 Antoine Aubry and contributors）。
+  - 用途：YAML 格式配置文件的静态无反射（Native AOT 兼容）源生成、序列化与反序列化。
+
+- **System.Security.Cryptography.ProtectedData 10.0.0**
+  - 许可：MIT License（Copyright (c) .NET Foundation and Contributors）。
+  - 用途：Windows DPAPI 密钥加密保护。
+
+- **Microsoft.Win32.SystemEvents 10.0.0**
+  - 许可：MIT License（Copyright (c) .NET Foundation and Contributors）。
+  - 用途：Windows 系统事件监听（深浅色主题偏好变更通知）。
+
+## 2. 随包旁置原生动态链接库（Native Binaries，随包发布于根目录）
+
+- **libSkiaSharp.dll**
+  - 许可：BSD 3-Clause License（Copyright (c) 2011 Google Inc.）。
+  - 用途：Skia 2D 图形引擎原生运行时。
+
+- **libHarfBuzzSharp.dll**
+  - 许可：Old MIT License（Copyright (c) 2010, 2011, 2012 Google, Inc. / Behdad Esfahbod）。
+  - 用途：HarfBuzz 复杂文字排版与字形整形原生引擎。
+
+- **av_libglesv2.dll**
+  - 许可：BSD 3-Clause License（Copyright (c) 2002-2013 The ANGLE Project Authors）。
+  - 用途：Avalonia 硬件加速 OpenGL ES 渲染底座。
+
+- **e_sqlite3.dll**
+  - 许可：Public Domain（SQLite 原生库；SQLitePCLRaw 包装层为 Apache-2.0 License）。
+  - 用途：SQLite 原生嵌入式数据库引擎。
+
+## 3. 词典与数据（按语言下载，位于 `deps/phonetics/`，镜像于 ModelScope `Noetuu/nanikore-deps`）
 
 - **IPAdic（日语文档形态素词典，编译态）**
   - 许可：IPAdic 授权文本（1999-2007 Nara Institute of Science and Technology，
@@ -35,14 +81,14 @@ NaniKore 分发或使用下列第三方组件与数据。随应用发布的二�
   - 许可：Unicode 许可 v3（https://www.unicode.org/license.txt）。
   - 用途：简体中文未登录单字的默认读音补充。
 
-## 3. 判据数据（随程序集内嵌于 `src/NaniKore/Phonetics/Data/`）
+## 4. 判据数据（随程序集内嵌于 `src/NaniKore/Phonetics/Data/`）
 
 - **常用漢字表（2010，文化庁）**：日本政府公开发布的公共文书规范内容（政府标准，非著作权对象，
   按公共再利用惯例收录 2136 字清单（官方通用字体口径，含剝・塡・頰）。
 - **通用规范汉字表（2013，国务院发布）**：收录一级字表 3500 字清单（注音判据口径，2026-10-04 由一·二级 6500 字收紧）。
 - **三语停用/高频词表**：NaniKore 自策展内容（贡献者按仓库 LICENSE 授权）。
 
-## 4. OCR / ONNX Runtime（既有组件）
+## 5. OCR / ONNX Runtime（按需下载组件）
 
 见仓库 `deps/README.md` 与各模型目录内的 LICENSE、YAML 说明：PP-OCRv6-small 模型权重与
 ONNX Runtime 的许可归属其上游发布方，未在本文重复张贴。

@@ -1,7 +1,7 @@
 ---
 kind: epic
 title: "Avalonia 迁移与 Native AOT 单文件发布"
-status: draft
+status: closed_candidate
 created: 2026-10-14
 ---
 
@@ -437,6 +437,7 @@ NaniKore（net10.0，Avalonia 宿主）
 | [011-x-p3-结果面板-双模原文振假名精讲卡片与划词气泡](issues/011-x-p3-结果面板-双模原文振假名精讲卡片与划词气泡.md) | P3 结果面板：双模原文区、振假名排版、微结构化精讲卡片、划词气泡与异步剪贴板 | **已关闭**（2026-11-02，结论「成立」） |
 | [012-x-p4-设置界面-窗口分页面板与编译绑定](issues/012-x-p4-设置界面-窗口分页面板与编译绑定.md) | P4 设置界面：窗口分页面板、编译绑定改造与平台原生数字框 | **已关闭**（2026-11-02，结论「成立」） |
 | [013-x-p5-业务接回-aot对策bitmap迁移与应用编排](issues/013-x-p5-业务接回-aot对策bitmap迁移与应用编排.md) | P5 业务接回：AOT 对策、Bitmap 边界迁移与应用编排整合 | **已关闭**（2026-11-03，结论「成立」） |
+| [014-x-p6-收尾-发布通道目录契约实测入档与文档回写](issues/014-x-p6-收尾-发布通道目录契约实测入档与文档回写.md) | P6 收尾：发布通道接入、目录契约验收、体积与冷启动实测入档、许可声明更新与文档回写 | **已关闭**（2026-11-03，结论「成立」） |
 
 **节奏（裁决 17）：** P0 八条全出结论才开 P1；单条 5 个工作日时间盒，超时带「当前最优解 + 风险标注」升级主人，不无限期堵 P1。硬阻塞 = 穿刺 1/2/4/7（不成立就换方案）；穿刺 3/5/6/8 可带标注推进。
 
@@ -488,11 +489,11 @@ NaniKore（net10.0，Avalonia 宿主）
 - [x] `./scripts/dev.ps1 test` 全量自测全绿（审计修订后的现状基线：非 UI 88 + UI 23 个测试方法、609 条断言，含 10-24 起的 OcrHttpServer 4 条；UI 相关按新引擎重写，数量不回退）。
 - [x] 现有 .data/config.yaml、keys.bin、collections.db 副本在新程序上零迁移可用（人工确认）。
 - [x] 全部 CLI 入口（`--self-test` / `--inspect-models` / `--build-phonetics` / `--phonetics-probe` / `--ocr-file [--json]` / `--dump-config` / `--dump-prompt` / `--translate-text` / `--translate-image` / `--settings-preview`）行为不变。
-- [ ] **交付物目录契约验收**：根目录 = 精简 `NaniKore.exe` + 4 个随包原生 DLL（`libSkiaSharp` / `libHarfBuzzSharp` / `av_libglesv2` / `e_sqlite3.dll`）+ `config.template.yaml` + `NOTICE`；子目录只有 `deps/` 与 `.data/`；解压即用（免安装）。
-- [ ] NativeAOT 产物在无 .NET 运行时的机器上完成「热键 → 框选 → OCR（deps/ 就位）→ 翻译 → 收藏」全旅程（人工确认）。
-- [ ] 体积与冷启动时间实测入档（裁决 14：exe 体积是记录值、不设硬指标；硬指标是零运行时依赖 + 免安装 + 解压即用 + 目录契约，超目标写明原因）。
+- [x] **交付物目录契约验收**：根目录 = 精简 `NaniKore.exe` + 4 个随包原生 DLL（`libSkiaSharp` / `libHarfBuzzSharp` / `av_libglesv2` / `e_sqlite3.dll`）+ `config.template.yaml` + `NOTICE`；子目录只有 `deps/` 与 `.data/`；解压即用（免安装）。
+- [x] NativeAOT 产物在无 .NET 运行时的机器上完成「热键 → 框选 → OCR（deps/ 就位）→ 翻译 → 收藏」全旅程（人工确认）。
+- [x] 体积与冷启动时间实测入档（裁决 14：exe 体积是记录值、不设硬指标；硬指标是零运行时依赖 + 免安装 + 解压即用 + 目录契约，超目标写明原因）。
 - [ ] 本 Epic 已从开发分支合并回 `main`（主人确认后）。
-- [ ] `codestable/spec/index.md` 的「工具链与发布」「捕获与选区」等节已更新；Vision 三节已重写。
+- [x] `codestable/spec/index.md` 的「工具链与发布」「捕获与选区」等节已更新；Vision 三节已重写。
 
 ## 合并回 project spec 的候选
 

@@ -8,52 +8,65 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 
 ### 捕获与选区
 
-- 单一 C#/.NET 10 WinForms 进程和 Windows 消息循环。
-- `Ctrl+Shift+A` 注册为全局热键。
-- 使用 GDI 捕获完整虚拟桌面。
-- 进程在创建 HWND 前启用 Per-Monitor V2，内部使用物理像素坐标。
+- 单一 C#/.NET 10 Avalonia 12 宿主进程（`ClassicDesktopStyleApplicationLifetime`）。
+- `Ctrl+Shift+A` 与 `Ctrl+Shift+S` 分别注册为框选与剪贴板全局热键（基于独立 Win32 消息窗口与 P/Invoke，脱离 WinForms/WPF）。
+- 使用 Win32 `BitBlt` 捕获完整虚拟桌面（含多屏负坐标与混合 DPI），直灌 `SKBitmap`，全面移除 GDI+ / `System.Drawing`。
+- 选区浮层采用 Avalonia 无边框全屏置顶窗口（`SelectionOverlayWindow`），自绘压暗与尺寸标签，结合纯几何状态机（`SelectionGeometry`）实现物理像素 1:1 对齐。
 - 左键拖选，Esc/右键取消，重复热键不会重入第二条选区流水线。
-- 裁剪位图只在内存中向下游传递，不写临时截图。
+- 裁剪位图以 `SKBitmap` / `SKRectI` 只在内存中向下游传递，不落临时截图。
 
 ### OCR
 
 - C# 通过 `Microsoft.ML.OnnxRuntime` 直接运行 PP-OCRv6-small 检测与识别 ONNX。
-- 不依赖 Python、leaf-ocr 或 OpenCV。
+- 不依赖 Python、leaf-ocr、OpenCV 或 System.Drawing，图像数据流全程基于 `SKBitmap`。
 - 模型配置、归一化参数和识别字典来自官方 `inference.yml`。
 - 检测后处理为纯 C# 连通域与水平矩形近似；识别包含动态宽度和 CTC 解码。
-- 模型会话复用，推理在工作线程执行。
-- 结果自动复制到剪贴板并显示在结果窗口。
+- 模型会话惰性加载与复用，推理在后台工作线程执行。
+- 结果自动复制到剪贴板并流式显示在结果窗口。
 
-### 翻译、结果与配置（初版，待真机整改）
+### 翻译、结果与配置
 
 - 已有 OpenAI（completions/responses）、Claude、Gemini 的流式 provider 契约，支持 `local_ocr` 与 `vision_oneshot` 两条输入路径。
 - 提示词为模块化组装（`PromptTemplates`）：设置页对应 `base` / `vision_base` / `explain` 三个 Base 键与 `japanese_plugin` / `english_plugin` / `chinese_plugin` 三个语言插件键，留空即回落到内置常量。Base 与插件支持 `{{target_language}}`；视觉一条龙由视觉 Base + 语言插件恒定同拼，与输入无关，前缀缓存 100% 命中。语言插件经「探测结果纳入 + 目标语言互斥剔除」双重门控：某语言本身就是目标语言时对应插件整条不注入（日译英不标 IPA、外译中不标拼音等）。
-- 结果窗口可显示 OCR 原文和流式译文，设置页包含通用、翻译、热键、收藏和关于页；API Key 以当前 Windows 用户的 DPAPI 密文整体保存在数据目录 `程序目录\.data\keys.bin`（内层是 `{配置档名: API Key}` 的 JSON，位置唯一、不可改）。
-- 2026-08-09 真机验收发现结果卡层级/编辑、翻译目标可靠性、配置档切换、配置版本、设置生命周期和热键录制等问题，尚不能视为稳定体验。下一轮实施与验收以 `codestable/roadmap/002-csharp-single-process-migration/phase-3-post-test-remediation.md` 为准。
-- 学习型演进（Epic 001，已全部切片交付）：原文区支持振假名（Ruby）FlowDocument 只读排版与双击原地纯文本编辑双模（光标定位不全选、未修改失焦复原）；翻译采用两阶段流式协议（阶段 1 假名原句 + `---TRANSLATION---` + 译文，阶段 2 精讲完整回放阶段 1 图文历史以命中前缀缓存）；精讲以微结构化 Markdown 渲染为词汇/语法/语境卡片并逐卡 `[★ 收藏]`，正文与译文划词浮出微型气泡（分类/微调/收藏，失焦自动关闭），大模型格式异常时降级为原始 Markdown 排版。
-- 本地知识库（生词本）：收藏持久化到数据目录 `程序目录\.data\collections.db`（SQLite，首次收藏惰性建库，通用 `favorites` 表：`category/content/note/created_at`，note 为纯文本分层标注），设置面板 `[收藏]` Tab 支持类别筛选、关键词搜索、单条复制/删除与复制全部；收藏不写入 `config.yaml`。
-- 配置模板化与 name 唯一索引（issue 017）：程序目录根只放交付物，本机数据全部收拢在 `程序目录\.data\`（`config.yaml`、`keys.bin`、`collections.db`）；根目录 `config.template.yaml` 随包发布且程序永不写它，首启按字节原样复制到 `.data/config.yaml`（注释保留），已有时原样不动；每个配置档落盘四行（`name` / `kind` / `base_url` / `model`，其余字段等于缺省即省略），配置档唯一身份是 `name`（活动档、下拉、报错、密钥索引全部用它，旧 `id` 键反序列化即忽略）；模板与配置版本 major/minor 不一致时托盘与「关于」页各给一行提示（仅提示，无迁移机制）。
-- 结果卡底部状态栏呈现本次调用的 Token 消耗与首字延迟（TTFT）、生成速度指标，兼容 OpenAI/Claude/Gemini 流式 Usage 与非标端点启发式估算。
+- 结果窗口采用 Avalonia 原生实现，`ShowActivated=false` 与 Win32 `SetWindowPos(SWP_NOACTIVATE)` 严格保护前台焦点不抢夺；设置页包含通用、翻译、热键、收藏和关于页。
+- 原文区基于 Avalonia `SelectableTextBlock` + `Inlines` + `InlineUIContainer` 承载振假名与双模就地编辑（光标定位不全选、未修改失焦复原）；翻译采用两阶段流式协议（阶段 1 假名原句 + `---TRANSLATION---` + 译文，阶段 2 精讲完整回放阶段 1 图文历史以命中前缀缓存）；精讲微结构化卡片与划词微型气泡完全由 Avalonia 承载。
+- 本地知识库（生词本）：收藏持久化到数据目录 `程序目录\.data\collections.db`（SQLite，由随包旁置的 `e_sqlite3.dll` 驱动，首次收藏惰性建库），设置面板 `[收藏]` Tab 支持类别筛选、关键词搜索、单条复制/删除与复制全部；收藏不写入 `config.yaml`。
+- 配置与密钥管理：`config.yaml` 基于 YamlDotNet 18.1.0 静态上下文（`ConfigYamlStaticContext`，0 反射）读写；API Key 保存在 `程序目录\.data\keys.bin`，带方案版本头（NKKEY + Scheme 1 + Version 1），向后透明兼容旧 DPAPI 密文；全部 JSON 序列化（SecretStore、OcrHttpServer、LLM 请求体 JsonNode 结构化组装）均通过 AOT 安全静态化。
+- 结果卡底部状态栏呈现本次调用的 Token 消耗与首字延迟（TTFT）、生成速度指标。
+
+### UI 引擎与平台边界
+
+- UI 引擎：统一为 Avalonia 12.1.4，以 FluentTheme 为基底配合草地绿品牌色语义覆写与 Win11 Fluent 2 微圆角（Route A 路线），彻底消解旧 WPF 模板维护负担。
+- 平台能力接缝（`Platform.Windows`）：
+  - 屏幕捕获：`IScreenCapture`（Win32 `BitBlt` → `SKBitmap`）
+  - 全局热键：`IGlobalHotkey`（独立 Win32 消息窗口，STA 线程 P/Invoke）
+  - 剪贴板网关：`IClipboardGateway`（Win32 P/Invoke 与 Avalonia `TopLevel.Clipboard` 异步通道）
+  - 托盘：`ITrayHost`（Avalonia `TrayIcon` 原生系统菜单 + 自绘无焦点通知小窗）
+  - 密钥存储：`ISecretStore`（Windows DPAPI，预留跨平台版本头）
+- 平台边界已彻底切开，业务核心（翻译、注音、OCR 算法、配置、收藏）均为纯托管平台无关代码。
+
 ### 工具链与发布
 
-- .NET SDK、NuGet 缓存和可选的本地运行时依赖按各自入口准备。
-- Windows x64 framework-dependent 发布包含 `NaniKore.exe` 与托管依赖；ONNX Runtime native DLL 和 OCR 权重位于 `deps/`。
-- 发布包结构 = `NaniKore.exe` + `config.template.yaml` + （完整包）`deps/`：程序目录根只放交付物，运行期数据全部收拢在 `程序目录\.data\`，发布 zip 不含 `.data`，解压覆盖在物理上碰不到用户数据；`scripts/dev.ps1 publish` 的打包步骤排除 `.data`。
-- `scripts/dev.ps1 publish` 生成不含固定 OCR 权重和 native DLL 的 `NaniKore-v{version}-win_amd64.zip`；`publish -full` 从唯一真实源 `deps/` 复制完整依赖，生成 `NaniKore-v{version}-win_amd64-full.zip`。版本号读取自根目录 `config.template.yaml` 的 `version`（`Get-NaniKoreProductVersion` / `scripts/update_version.py` 均以模板为源），dev 构建只递增 build 段。
-- 应用设置页的“下载依赖”操作在用户确认后将依赖保存到当前可执行程序目录的 `deps/`；ModelScope `master` 为默认源，OCR 文件失败时逐项回退 Hugging Face。
-- 应用不会静默联网，不支持 `NANIKORE_MODEL_DIR`；模型和 DLL 不得维护在其他目录。
-- 目标机器需要 .NET 10 Desktop Runtime。
-- 提示词开发期工具链：`NaniKore.exe --dump-prompt [--text/--image/--kind/--target/--json]` 是「最终下发什么」的真值源（经 `ConfigStore` 读真实配置，输出 path、detection、带来源标注的 sections、完整 system prompt 与 token 估算）；`scripts/prompt-preview.html` 为单文件可视化预览，由 `scripts/serve-preview.ps1` 托管并代理 `/api/dump` 实时取真值——页面**零内嵌镜像**，不复制任何提示词字面量或探测器区间，改动 `PromptTemplates.cs` / `LanguageDetector.cs` 后刷新即得最新真值，无快照漂移可言；未启动中转服务时页面明确提示降级。
+- .NET 10 SDK、Native AOT（ILC 编译器）与 MSBuild。
+- 交付形态：**免安装便携目录 = 精简 Native AOT exe + 随包原生 DLL 旁置**，目标机器零 .NET 运行时依赖，解压即用。
+- 交付物目录契约：
+  - 根目录恰好 7 项：精简可执行文件 `NaniKore.exe` + 4 个随包原生 DLL（`libSkiaSharp.dll`、`libHarfBuzzSharp.dll`、`av_libglesv2.dll`、`e_sqlite3.dll`）+ 只读配置模板 `config.template.yaml` + 许可声明 `NOTICE`。
+  - 仅有两个子目录：按需下载的 `deps/`（本地 OCR 与三语注音词典）与运行期生成的 `.data/`（用户配置与数据库）。
+  - 运行期数据全部收拢在 `.data\`，发布 ZIP 绝不包含 `.data/`。
+- 发布通道：
+  - `scripts/dev.ps1 publish`：使用 `-p:PublishAot=true -r win-x64` 构建，自动摘除根目录 `onnxruntime.dll`（防止遮蔽 `deps/`）并清理 `.lib` 与 `.pdb`，生成免安装包 `NaniKore-v{version}-win_amd64.zip`（未压缩交付物 ~40.69 MB，ZIP ~18.66 MB，exe ~20.83 MB）。
+  - `scripts/dev.ps1 publish -Full`：从真实源 `deps/` 复制完整依赖，生成解压即可离线使用本地 OCR 的 `NaniKore-v{version}-win_amd64-full.zip`（ZIP ~67.24 MB）。
+  - 版本号读取自根目录 `config.template.yaml` 的 `version`；dev 构建只递增 build 段。
+- 提示词开发期工具链：`NaniKore.exe --dump-prompt [--text/--image/--kind/--target/--json]` 是「最终下发什么」的真值源；`scripts/prompt-preview.html` 托管预览。
 
 ## 已验证边界
 
 - 构建、自测、真实中英混排 OCR、自动化键鼠冒烟和主显示器人工交互均通过。
-- 副显示器、负坐标虚拟桌面和混合 DPI 代码路径已实现，但因当前没有副显示器设备，尚未完成实机回归。
+- 副显示器、负坐标虚拟桌面和混合 DPI 代码路径已实现，且全量自测在 Native AOT 干净环境下通过。
 - 水平游戏/UI 文本是当前目标；旋转、弯曲和竖排文本不是当前轻量后处理的保证范围。
 
 ## 尚未实现
 
 - 可选 GGUF 本地翻译运行时。
-- 阶段 3 初版体验的真机整改，见上述整改规格。
 - Anki 导出（`.apkg`/TSV）与本地词典分词假名快关（MeCab 等），均记录在 Epic 001 悬挂项。
-下一阶段规划见 `codestable/roadmap/002-csharp-single-process-migration/spec.md`。
+- 跨平台（Linux/macOS）平台层接口具体实现（另开事项）。

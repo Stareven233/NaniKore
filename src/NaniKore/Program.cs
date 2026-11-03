@@ -19,11 +19,24 @@ internal static class Program
     private static int Main(string[] args)
     {
         // 诊断 CLI（自测/探查/词典生成）统一用 UTF-8 控制台，中文与 IPA 输出都可读
-        UseUtf8Console();
         if (args.Length > 0)
         {
-            // 作为 WinExe，CLI 交互执行时需主动附加控制台，保证标准输出直接可见
+            // 作为 WinExe，CLI 交互执行时需主动附加控制台，并重置 Console.Out 保证输出可见
             NativeMethods.AttachConsole(NativeMethods.AttachParentProcess);
+            try
+            {
+                var utf8 = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+                Console.OutputEncoding = utf8;
+                Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true });
+                Console.SetError(new StreamWriter(Console.OpenStandardError(), utf8) { AutoFlush = true });
+            }
+            catch (IOException)
+            {
+            }
+        }
+        else
+        {
+            UseUtf8Console();
         }
 
         if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase))
