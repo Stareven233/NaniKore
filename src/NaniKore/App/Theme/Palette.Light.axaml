@@ -14,30 +14,31 @@
     <Color x:Key="Color.Text.Primary">#1F2E27</Color>
     <Color x:Key="Color.Text.Secondary">#5C6F65</Color>
     <Color x:Key="Color.Text.Disabled">#A2B1A8</Color>
-    <Color x:Key="Color.Text.OnAccent">#1B2A1F</Color>
-    <Color x:Key="Color.Accent">#95CA00</Color>
-    <Color x:Key="Color.Accent.Hover">#C6E05B</Color>
-    <Color x:Key="Color.Accent.Pressed">#7FA800</Color>
-    <Color x:Key="Color.Accent.Subtle">#EDF5DA</Color>
+    <Color x:Key="Color.Text.OnAccent">#0E1B07</Color>
+    <Color x:Key="Color.Accent">#78C800</Color>
+    <Color x:Key="Color.Accent.Hover">#8FE012</Color>
+    <Color x:Key="Color.Accent.Pressed">#5EA000</Color>
+    <Color x:Key="Color.Accent.Subtle">#EDF7DA</Color>
+    <Color x:Key="Color.Selection.Highlight">#3D78C800</Color>
     <Color x:Key="Color.Success">#178A48</Color>
     <Color x:Key="Color.Warning">#9C5F00</Color>
     <Color x:Key="Color.Danger">#C42B1C</Color>
     <Color x:Key="Color.Scroll.Thumb">#B5C6BE</Color>
 
     <!-- 覆写 Avalonia FluentTheme 系统内置强调色 -->
-    <Color x:Key="SystemAccentColor">#95CA00</Color>
-    <Color x:Key="SystemAccentColorLight1">#C6E05B</Color>
-    <Color x:Key="SystemAccentColorLight2">#E2F492</Color>
-    <Color x:Key="SystemAccentColorLight3">#F2FAE0</Color>
-    <Color x:Key="SystemAccentColorDark1">#7FA800</Color>
-    <Color x:Key="SystemAccentColorDark2">#638500</Color>
-    <Color x:Key="SystemAccentColorDark3">#496100</Color>
+    <Color x:Key="SystemAccentColor">#78C800</Color>
+    <Color x:Key="SystemAccentColorLight1">#8FE012</Color>
+    <Color x:Key="SystemAccentColorLight2">#B8F25C</Color>
+    <Color x:Key="SystemAccentColorLight3">#DEF7B0</Color>
+    <Color x:Key="SystemAccentColorDark1">#5EA000</Color>
+    <Color x:Key="SystemAccentColorDark2">#477A00</Color>
+    <Color x:Key="SystemAccentColorDark3">#325700</Color>
 
     <!-- 覆写 Fluent 核心系统控件笔刷（浅色绿灰韵律） -->
-    <SolidColorBrush x:Key="SystemControlHighlightAccentBrush" Color="#95CA00" />
-    <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush" Color="#EDF5DA" />
-    <SolidColorBrush x:Key="SystemControlHighlightListAccentMediumBrush" Color="#E2F0C4" />
-    <SolidColorBrush x:Key="SystemControlHighlightListAccentHighBrush" Color="#D2E8A6" />
+    <SolidColorBrush x:Key="SystemControlHighlightAccentBrush" Color="#78C800" />
+    <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush" Color="#EDF7DA" />
+    <SolidColorBrush x:Key="SystemControlHighlightListAccentMediumBrush" Color="#DDF0BD" />
+    <SolidColorBrush x:Key="SystemControlHighlightListAccentHighBrush" Color="#CAE897" />
     <SolidColorBrush x:Key="ControlFillColorDefault" Color="#F8FBF9" />
     <SolidColorBrush x:Key="ControlFillColorSecondary" Color="#EFF5F1" />
     <SolidColorBrush x:Key="ControlFillColorInputActive" Color="#FFFFFF" />
@@ -45,6 +46,17 @@
     <SolidColorBrush x:Key="ControlStrokeColorSecondary" Color="#DCE8E2" />
     <SolidColorBrush x:Key="CardBackgroundFillColorDefault" Color="#FFFFFF" />
     <SolidColorBrush x:Key="CardStrokeColorDefault" Color="#DCE8E2" />
+
+    <!-- 覆写 Fluent 文本选区系统画刷（杜绝死黑选中，半透明鲜活草地绿） -->
+    <Color x:Key="TextControlSelectionHighlightColor">#3D78C800</Color>
+    <SolidColorBrush x:Key="TextControlSelectionHighlightBrush" Color="#3D78C800" />
+
+    <!-- 覆写 Fluent 菜单弹出层系统画刷（托盘右键与上下文菜单现代草地绿微质感） -->
+    <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPointerOver" Color="#EDF7DA" />
+    <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPressed" Color="#DDF0BD" />
+    <SolidColorBrush x:Key="MenuFlyoutItemForegroundPointerOver" Color="#1F2E27" />
+    <SolidColorBrush x:Key="MenuFlyoutPresenterBackground" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="MenuFlyoutPresenterBorderBrush" Color="#DCE8E2" />
 
     <!-- 覆写 Fluent 基础输入控件默认笔刷 -->
     <SolidColorBrush x:Key="ComboBoxBackground" Color="#F8FBF9" />
@@ -92,6 +104,7 @@
     <SolidColorBrush x:Key="Brush.Accent.Hover" Color="{StaticResource Color.Accent.Hover}" />
     <SolidColorBrush x:Key="Brush.Accent.Pressed" Color="{StaticResource Color.Accent.Pressed}" />
     <SolidColorBrush x:Key="Brush.Accent.Subtle" Color="{StaticResource Color.Accent.Subtle}" />
+    <SolidColorBrush x:Key="Brush.Selection.Highlight" Color="{StaticResource Color.Selection.Highlight}" />
     <SolidColorBrush x:Key="Brush.Success" Color="{StaticResource Color.Success}" />
     <SolidColorBrush x:Key="Brush.Warning" Color="{StaticResource Color.Warning}" />
     <SolidColorBrush x:Key="Brush.Danger" Color="{StaticResource Color.Danger}" />

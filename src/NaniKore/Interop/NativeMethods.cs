@@ -303,6 +303,18 @@ internal static unsafe partial class NativeMethods
     [LibraryImport("dwmapi.dll")]
     internal static partial int DwmSetWindowAttribute(nint window, int attribute, ref int value, int size);
 
+    [LibraryImport("gdi32.dll", SetLastError = true)]
+    internal static partial nint CreateRoundRectRgn(
+        int x1,
+        int y1,
+        int x2,
+        int y2,
+        int cx,
+        int cy);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    internal static partial int SetWindowRgn(nint hWnd, nint hRgn, [MarshalAs(UnmanagedType.Bool)] bool bRedraw);
+
     #endregion
 
     #region 剪贴板与全局内存

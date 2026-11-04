@@ -62,7 +62,7 @@ internal static partial class SelfTest
         if (darkAccent is ISolidColorBrush scbDarkAccent)
         {
             Check("Palette.Dark.AccentColorValue",
-                scbDarkAccent.Color.R == 0x95 && scbDarkAccent.Color.G == 0xCA && scbDarkAccent.Color.B == 0x00);
+                scbDarkAccent.Color.R == 0x8E && scbDarkAccent.Color.G == 0xD2 && scbDarkAccent.Color.B == 0x00);
         }
 
         // 2. 浅色色板解析
@@ -80,7 +80,7 @@ internal static partial class SelfTest
         if (lightAccent is ISolidColorBrush scbLightAccent)
         {
             Check("Palette.Light.AccentColorValue",
-                scbLightAccent.Color.R == 0x95 && scbLightAccent.Color.G == 0xCA && scbLightAccent.Color.B == 0x00);
+                scbLightAccent.Color.R == 0x78 && scbLightAccent.Color.G == 0xC8 && scbLightAccent.Color.B == 0x00);
         }
 
         // 切回默认深色

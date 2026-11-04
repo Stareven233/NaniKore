@@ -92,7 +92,9 @@ public partial class SelectionBubblePopup : UserControl
         _pendingNote = string.IsNullOrWhiteSpace(note) ? null : note;
 
         BubblePopup.PlacementTarget = target;
+        BubblePopup.PlacementRect = targetRect;
         BubblePopup.Placement = PlacementMode.Bottom;
+        BubblePopup.VerticalOffset = 6;
 
         UpdateFavoriteState();
         BubblePopup.IsOpen = true;

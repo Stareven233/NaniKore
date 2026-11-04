@@ -2,6 +2,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -58,9 +59,9 @@ internal sealed partial class SelectionOverlayWindow : Window
         Position = new PixelPoint(virtualBounds.X, virtualBounds.Y);
 
         KeyDown += OnWindowKeyDown;
-        PointerPressed += OnWindowPointerPressed;
+        AddHandler(PointerPressedEvent, OnWindowPointerPressed, RoutingStrategies.Tunnel | RoutingStrategies.Bubble);
+        AddHandler(PointerReleasedEvent, OnWindowPointerReleased, RoutingStrategies.Tunnel | RoutingStrategies.Bubble);
         PointerMoved += OnWindowPointerMoved;
-        PointerReleased += OnWindowPointerReleased;
     }
 
     /// <summary>
@@ -210,7 +211,7 @@ internal sealed partial class SelectionOverlayWindow : Window
     private void OnWindowPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         var props = e.GetCurrentPoint(this).Properties;
-        if (props.IsRightButtonPressed)
+        if (props.IsRightButtonPressed || props.PointerUpdateKind == PointerUpdateKind.RightButtonPressed)
         {
             CancelSelection();
             e.Handled = true;
@@ -230,6 +231,14 @@ internal sealed partial class SelectionOverlayWindow : Window
 
     private void OnWindowPointerMoved(object? sender, PointerEventArgs e)
     {
+        var props = e.GetCurrentPoint(this).Properties;
+        if (props.IsRightButtonPressed)
+        {
+            CancelSelection();
+            e.Handled = true;
+            return;
+        }
+
         if (!_dragging)
         {
             return;
@@ -242,6 +251,14 @@ internal sealed partial class SelectionOverlayWindow : Window
 
     private void OnWindowPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        var props = e.GetCurrentPoint(this).Properties;
+        if (e.InitialPressMouseButton == MouseButton.Right || props.PointerUpdateKind == PointerUpdateKind.RightButtonReleased)
+        {
+            CancelSelection();
+            e.Handled = true;
+            return;
+        }
+
         if (!_dragging || e.InitialPressMouseButton != MouseButton.Left)
         {
             return;

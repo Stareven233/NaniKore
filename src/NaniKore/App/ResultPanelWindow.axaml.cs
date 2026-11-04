@@ -160,6 +160,10 @@ internal sealed partial class ResultPanelWindow : Window
 
         // 监听全局指针按下：点击窗口其他区域时隐藏气泡
         AddHandler(PointerPressedEvent, OnPanelPointerPressed, RoutingStrategies.Tunnel);
+
+        // 默认未翻译时译文框静默，防止误点与光标居中闪烁
+        TranslationTextBox.IsHitTestVisible = false;
+        TranslationTextBox.PlaceholderText = "等待翻译...";
     }
 
     protected override void OnOpened(EventArgs e)
@@ -249,6 +253,8 @@ internal sealed partial class ResultPanelWindow : Window
         AnnotateSourceButton.IsEnabled = true;
         TranslateButton.Content = "翻译";
         TranslationTextBox.Clear();
+        TranslationTextBox.IsHitTestVisible = false;
+        TranslationTextBox.PlaceholderText = "等待翻译...";
         ExplanationView.Clear();
         ExplanationExpander.IsExpanded = false;
         ExplanationExpander.IsEnabled = false;
@@ -266,22 +272,12 @@ internal sealed partial class ResultPanelWindow : Window
         ErrorDetailsExpander.IsExpanded = false;
         StatusBar.Show(status, InfoSeverity.Neutral);
 
-        if (autoTranslate)
-        {
-            _isEditingSource = false;
-            SourceViewerBorder.IsVisible = true;
-            SourceTextBox.IsVisible = false;
-            SourceCaptionTextBlock.Text = "双击可编辑";
-            SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(source);
-        }
-        else
-        {
-            _isEditingSource = true;
-            SourceViewerBorder.IsVisible = false;
-            SourceTextBox.IsVisible = true;
-            SourceCaptionTextBlock.Text = "点击可编辑";
-            SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(source);
-        }
+        // 无论是否 autoTranslate，打开时均默认停留在注音渲染视图，双击才进入编辑
+        _isEditingSource = false;
+        SourceViewerBorder.IsVisible = true;
+        SourceTextBox.IsVisible = false;
+        SourceCaptionTextBlock.Text = "双击可编辑";
+        SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(source);
 
         _annotationSourcePlain = string.Empty;
         _ = AnnotateSourceAsync();
@@ -314,6 +310,8 @@ internal sealed partial class ResultPanelWindow : Window
         _savedTranslationForExplanation = null;
         ClearMetrics();
         TranslateButton.Content = "翻译";
+        TranslationTextBox.IsHitTestVisible = true;
+        TranslationTextBox.PlaceholderText = null;
         ExplanationView.Clear();
         ExplanationExpander.IsExpanded = false;
         ExplanationExpander.IsEnabled = false;
@@ -331,6 +329,8 @@ internal sealed partial class ResultPanelWindow : Window
     public void ClearTranslation()
     {
         TranslationTextBox.Clear();
+        TranslationTextBox.IsHitTestVisible = false;
+        TranslationTextBox.PlaceholderText = "等待翻译...";
         _translationInsertIndex = 0;
         _translationHasContent = false;
         _isDisplayingThinking = false;
@@ -734,8 +734,9 @@ internal sealed partial class ResultPanelWindow : Window
                 return;
             }
 
-            if (_isEditingSource && string.Equals(SourceTextBox.Text, _originalEditingText, StringComparison.Ordinal))
+            if (_isEditingSource)
             {
+                SourceTextBox.Text = _originalEditingText;
                 ExitEditMode();
                 e.Handled = true;
                 return;
@@ -856,6 +857,17 @@ internal sealed partial class ResultPanelWindow : Window
         SourceTextBox.CaretIndex = caretIndex;
         SourceTextBox.SelectionStart = caretIndex;
         SourceTextBox.SelectionEnd = caretIndex; // 严禁全选，防键盘误触清空整句
+
+        // 异步二次校准，彻底压制 Avalonia 聚焦时的默认全选行为
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_isEditingSource && SourceTextBox.IsVisible)
+            {
+                SourceTextBox.CaretIndex = caretIndex;
+                SourceTextBox.SelectionStart = caretIndex;
+                SourceTextBox.SelectionEnd = caretIndex;
+            }
+        });
     }
 
     internal void CommitEditingSourceIfActive()
@@ -896,11 +908,9 @@ internal sealed partial class ResultPanelWindow : Window
     {
         if (e.Key == Key.Escape)
         {
-            if (string.Equals(SourceTextBox.Text, _originalEditingText, StringComparison.Ordinal))
-            {
-                ExitEditMode();
-                e.Handled = true;
-            }
+            SourceTextBox.Text = _originalEditingText;
+            ExitEditMode();
+            e.Handled = true;
         }
     }
 

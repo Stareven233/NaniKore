@@ -55,12 +55,11 @@
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
     </Style>
 
-    <!-- 品牌 Accent 按钮（如保存按钮）：常态即为草地绿，彻底杜绝黑灰，悬停明亮，点击深沉，指针为手型 -->
+    <!-- 品牌 Accent 按钮（如保存按钮）：常态即为草地绿，彻底杜绝黑灰，悬停明亮，点击深沉，指针为手型，字重常规不呆板 -->
     <Style Selector="Button.accent">
         <Setter Property="Background" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.OnAccent}" />
-        <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Cursor" Value="Hand" />
     </Style>
     <Style Selector="Button.accent /template/ ContentPresenter">
@@ -197,16 +196,23 @@
         <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="CaretBrush" Value="{DynamicResource Brush.Text.Primary}" />
-        <Setter Property="SelectionBrush" Value="{DynamicResource Brush.Accent}" />
-        <Setter Property="SelectionForegroundBrush" Value="{DynamicResource Brush.Text.OnAccent}" />
+        <Setter Property="SelectionBrush" Value="{DynamicResource Brush.Selection.Highlight}" />
         <Setter Property="Padding" Value="10,5" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBox[AcceptsReturn=True]">
+        <Setter Property="VerticalContentAlignment" Value="Top" />
     </Style>
     <Style Selector="TextBox:pointerover">
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.BorderHover}" />
     </Style>
     <Style Selector="TextBox:focus">
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+    </Style>
+
+    <!-- 全局 SelectableTextBlock 统一半透明草地绿高亮，彻底消除死黑底色 -->
+    <Style Selector="SelectableTextBlock">
+        <Setter Property="SelectionBrush" Value="{DynamicResource Brush.Selection.Highlight}" />
     </Style>
 
     <!-- NumericUpDown 深度定制：平时省略边框，Hover/Focus 显现 -->
@@ -415,5 +421,89 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
         <Setter Property="Background" Value="{DynamicResource Brush.Accent.Subtle}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+    </Style>
+
+    <!--
+        全局 MenuFlyoutPresenter / ContextMenu / TrayMenu 现代极简微质感风格：
+        - 8px 圆角与柔和微阴影底框；
+        - MenuItem 移除默认图标占位导致的左偏，文字自然居中/偏左；
+        - Hover 与选中态均为精致半透明草地绿。
+    -->
+    <Style Selector="MenuFlyoutPresenter, ContextMenu">
+        <Setter Property="Background" Value="{DynamicResource Brush.Card.Background}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Card.Border}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="4" />
+        <Setter Property="MinWidth" Value="130" />
+    </Style>
+
+    <Style Selector="MenuItem">
+        <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="Padding" Value="12,7" />
+        <Setter Property="Margin" Value="2,1" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="MenuItem:pointerover /template/ Border#PART_LayoutRoot">
+        <Setter Property="Background" Value="{DynamicResource Brush.Accent.Subtle}" />
+    </Style>
+    <Style Selector="MenuItem:selected /template/ Border#PART_LayoutRoot">
+        <Setter Property="Background" Value="{DynamicResource Brush.Accent.Subtle}" />
+    </Style>
+
+    <!--
+        Expander 极简无框折叠栏（Expander.clean）：
+        - 移除突兀的灰黑矩形外框与过度 Padding；
+        - 折叠小箭头前置于标题左侧（展开时旋转为绿色）；
+        - 未就绪置灰态柔和优雅，彻底告别右侧粗暴箭头与自动开关的排版重叠。
+    -->
+    <Style Selector="Expander.clean">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <StackPanel>
+                    <ToggleButton x:Name="PART_HeaderButton"
+                                  Background="Transparent"
+                                  BorderThickness="0"
+                                  Padding="2,4"
+                                  Cursor="Hand"
+                                  HorizontalAlignment="Stretch"
+                                  HorizontalContentAlignment="Left"
+                                  IsChecked="{TemplateBinding IsExpanded, Mode=TwoWay}"
+                                  IsEnabled="{TemplateBinding IsEnabled}">
+                        <DockPanel LastChildFill="True">
+                            <TextBlock x:Name="PART_Chevron"
+                                       DockPanel.Dock="Left"
+                                       Text="▶"
+                                       FontSize="10"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,8,0"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}" />
+                            <ContentPresenter Content="{TemplateBinding Header}"
+                                              ContentTemplate="{TemplateBinding HeaderTemplate}"
+                                              VerticalAlignment="Center" />
+                        </DockPanel>
+                    </ToggleButton>
+                    <ContentPresenter x:Name="PART_ContentPresenter"
+                                      Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      IsVisible="{TemplateBinding IsExpanded}" />
+                </StackPanel>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="Expander.clean[IsExpanded=True] /template/ TextBlock#PART_Chevron">
+        <Setter Property="Text" Value="▼" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+    </Style>
+    <Style Selector="Expander.clean:disabled /template/ ToggleButton#PART_HeaderButton">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Disabled}" />
+        <Setter Property="Opacity" Value="0.65" />
     </Style>
 </Styles>

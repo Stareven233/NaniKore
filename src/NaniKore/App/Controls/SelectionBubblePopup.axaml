@@ -11,14 +11,13 @@
                 BorderBrush="{DynamicResource Brush.Card.Border}"
                 BorderThickness="1"
                 CornerRadius="8"
-                Padding="8,6"
-                BoxShadow="0 4 12 0 #30000000">
+                Padding="8,6">
             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                 <!-- 分类选择 ComboBox -->
                 <ComboBox x:Name="CategoryComboBox"
-                          Width="76"
-                          Height="28"
-                          FontSize="12"
+                          Width="80"
+                          Height="30"
+                          FontSize="13"
                           VerticalAlignment="Center"
                           SelectedIndex="0"
                           SelectionChanged="OnCategoryChanged">
@@ -30,27 +29,27 @@
 
                 <!-- 语言下拉：默认取探测语言，可改选 -->
                 <ComboBox x:Name="LanguageComboBox"
-                          Width="110"
-                          Height="28"
-                          FontSize="12"
+                          Width="116"
+                          Height="30"
+                          FontSize="13"
                           VerticalAlignment="Center"
                           SelectedIndex="0" />
 
                 <!-- 选中文本编辑微调框 -->
                 <TextBox x:Name="ContentTextBox"
-                         Height="28"
-                         MinWidth="90"
-                         MaxWidth="180"
-                         FontSize="12"
+                         Height="30"
+                         MinWidth="100"
+                         MaxWidth="200"
+                         FontSize="13"
                          VerticalContentAlignment="Center"
                          VerticalAlignment="Center"
-                         Padding="6,0"
+                         Padding="8,0"
                          TextChanged="OnContentTextChanged" />
 
                 <!-- 收藏按钮 -->
                 <Button x:Name="FavoriteButton"
-                        Height="28"
-                        MinWidth="68"
+                        Height="30"
+                        MinWidth="72"
                         Padding="8,0"
                         VerticalAlignment="Center"
                         Classes="secondary"
@@ -58,11 +57,11 @@
                     <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                         <TextBlock x:Name="FavoriteIconTextBlock"
                                    Text="☆"
-                                   FontSize="12"
+                                   FontSize="13"
                                    VerticalAlignment="Center" />
                         <TextBlock x:Name="FavoriteLabelTextBlock"
                                    Text="收藏"
-                                   FontSize="12"
+                                   FontSize="13"
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>

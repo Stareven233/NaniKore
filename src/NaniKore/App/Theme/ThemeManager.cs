@@ -65,6 +65,26 @@ internal static class ThemeManager
         }
 
         void Refresh(object? sender, EventArgs e) => ApplyTitleBar(window);
+        void OnSizeChanged(object? sender, SizeChangedEventArgs e)
+        {
+            if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+            {
+                if (window.TryGetPlatformHandle()?.Handle is { } h && h != nint.Zero)
+                {
+                    ApplyWin10RoundedCorners(window, h);
+                }
+            }
+        }
+        void OnPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+        {
+            if (e.Property == Window.WindowStateProperty && !OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+            {
+                if (window.TryGetPlatformHandle()?.Handle is { } h && h != nint.Zero)
+                {
+                    ApplyWin10RoundedCorners(window, h);
+                }
+            }
+        }
 
         // 若 HWND 已就绪立即调用；若尚未呈现则挂接 Opened 事件，确保窗口创建后 100% 获得深色标题栏与大圆角
         if (window.TryGetPlatformHandle()?.Handle is { } handle && handle != nint.Zero)
@@ -77,7 +97,14 @@ internal static class ThemeManager
         }
 
         ThemeChanged += Refresh;
-        window.Closed += (_, _) => ThemeChanged -= Refresh;
+        window.SizeChanged += OnSizeChanged;
+        window.PropertyChanged += OnPropertyChanged;
+        window.Closed += (_, _) =>
+        {
+            ThemeChanged -= Refresh;
+            window.SizeChanged -= OnSizeChanged;
+            window.PropertyChanged -= OnPropertyChanged;
+        };
     }
 
     private static void ApplyTitleBar(Window window)
@@ -97,9 +124,43 @@ internal static class ThemeManager
         var useDark = IsDark ? 1 : 0;
         _ = NativeMethods.DwmSetWindowAttribute(handle, DwmwaUseImmersiveDarkMode, ref useDark, sizeof(int));
 
-        // 显式指定 DWM 圆角偏好为优雅大圆角（DWMWCP_ROUND = 2）
-        var roundCorner = DwmwcpRound;
-        _ = NativeMethods.DwmSetWindowAttribute(handle, DwmwaWindowCornerPreference, ref roundCorner, sizeof(int));
+        // Windows 11 (22000+)：显式指定 DWM 圆角偏好为优雅大圆角（DWMWCP_ROUND = 2）
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        {
+            var roundCorner = DwmwcpRound;
+            _ = NativeMethods.DwmSetWindowAttribute(handle, DwmwaWindowCornerPreference, ref roundCorner, sizeof(int));
+        }
+        else
+        {
+            // Windows 10：DWM 不支持 DWMWA_WINDOW_CORNER_PREFERENCE，通过 SetWindowRgn 实施平滑圆角裁切
+            ApplyWin10RoundedCorners(window, handle);
+        }
+    }
+
+    /// <summary>在 Windows 10 系统上通过 Win32 Region 实施窗口圆角（兼容全屏最大化重置）。</summary>
+    private static void ApplyWin10RoundedCorners(Window window, nint handle)
+    {
+        if (window.WindowState == WindowState.Maximized)
+        {
+            // 最大化状态还原全屏直角，避免边缘内容被裁切
+            _ = NativeMethods.SetWindowRgn(handle, nint.Zero, true);
+            return;
+        }
+
+        if (NativeMethods.GetWindowRect(handle, out var rect))
+        {
+            var width = rect.Right - rect.Left;
+            var height = rect.Bottom - rect.Top;
+            if (width > 0 && height > 0)
+            {
+                // 16px 直径（8px 半径）平滑圆角矩形区域
+                var rgn = NativeMethods.CreateRoundRectRgn(0, 0, width + 1, height + 1, 16, 16);
+                if (rgn != nint.Zero)
+                {
+                    _ = NativeMethods.SetWindowRgn(handle, rgn, true);
+                }
+            }
+        }
     }
 
     private static void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)

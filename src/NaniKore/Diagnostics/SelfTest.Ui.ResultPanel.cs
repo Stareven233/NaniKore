@@ -124,13 +124,13 @@ internal static partial class SelfTest
             translateButton?.Content as string == "翻译" &&
             panel.SourceText == "こ こ は  通れないよ");
 
-        // 2. AutoTranslate == false：保持原生 TextBox 编辑态
+        // 2. AutoTranslate == false：同样保持阅读态，消除垂直居中伪编辑状态
         var panelManual = new ResultPanelWindow();
         panelManual.Reset("こ こ は  通[とお]れないよ", "OCR 完成", autoTranslate: false);
         Check(
-            "result panel with autoTranslate false displays TextBox editor and translate button",
-            Find<Border>(panelManual, "SourceViewerBorder")?.IsVisible == false &&
-            Find<TextBox>(panelManual, "SourceTextBox")?.IsVisible == true &&
+            "result panel with autoTranslate false displays SelectableTextBlock viewer initially",
+            Find<Border>(panelManual, "SourceViewerBorder")?.IsVisible == true &&
+            Find<TextBox>(panelManual, "SourceTextBox")?.IsVisible == false &&
             Find<Button>(panelManual, "TranslateButton")?.Content as string == "翻译" &&
             panelManual.SourceText == "こ こ は  通れないよ");
 
