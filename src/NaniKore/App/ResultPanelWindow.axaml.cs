@@ -71,12 +71,12 @@ internal sealed partial class ResultPanelWindow : Window
     private Point _translationGripStartPoint;
     private double _translationGripStartHeight;
 
-    private bool _isOpeningChildWindow;
     private bool _isSwitchingEditMode;
 
     public event EventHandler? TranslateRequested;
     public event EventHandler? ExplanationRequested;
     public event EventHandler<bool>? AutoExplainChanged;
+    public event EventHandler<bool>? PinChanged;
     public event EventHandler<SettingsTab>? SettingsRequested;
 
     public string SourceText => _isEditingSource
@@ -116,6 +116,7 @@ internal sealed partial class ResultPanelWindow : Window
     {
         InitializeComponent();
         Icon = ApplicationIcon.Load();
+        TitleBarIcon.Source = ApplicationIcon.LoadBitmap();
         ThemeManager.ApplyWindowChrome(this);
 
         // 监听全局注音点击复制通知
@@ -161,10 +162,10 @@ internal sealed partial class ResultPanelWindow : Window
         // 监听按键（Esc 返回或收起）
         KeyDown += OnPanelKeyDown;
 
-        // 监听失焦自动关闭面板（若未置顶）
+        // 监听失焦自动保存编辑
         Deactivated += OnPanelDeactivated;
 
-        // 监听全局指针按下：点击窗口其他区域时隐藏气泡
+        // 监听全局指针按下：点击窗口其他区域时隐藏气泡或失焦保存
         AddHandler(PointerPressedEvent, OnPanelPointerPressed, RoutingStrategies.Tunnel);
 
         // 默认未翻译时译文框静默，防止误点与光标居中闪烁
@@ -174,26 +175,15 @@ internal sealed partial class ResultPanelWindow : Window
 
     private void OnPanelDeactivated(object? sender, EventArgs e)
     {
-        // 模式切换中或编辑保护期，绝不触发关闭
-        if (_isSwitchingEditMode)
-        {
-            return;
-        }
-
-        // 若失焦时正处于编辑模式，先提交保存修改
+        // 若失焦时正处于编辑模式，提交保存修改
         if (_isEditingSource)
         {
             CommitEditingSourceIfActive();
         }
-
-        // 若处于置顶锁定态、或正在打开子窗口、或正在拖拽调节大小，则不自动关闭
-        if (Topmost || _isOpeningChildWindow || _isDraggingSourceGrip || _isDraggingTranslationGrip)
-        {
-            return;
-        }
-
-        Close();
+        // 结果面板无论置顶与否，失焦绝不自动关闭，仅由 Esc 或关闭按钮退出
     }
+
+    internal void OnPanelDeactivatedForTest() => OnPanelDeactivated(this, EventArgs.Empty);
 
     private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -203,9 +193,17 @@ internal sealed partial class ResultPanelWindow : Window
         }
     }
 
+    public void SetPinned(bool pinned)
+    {
+        PinButton.IsChecked = pinned;
+        Topmost = pinned;
+    }
+
     private void OnPinButtonCheckedChanged(object? sender, RoutedEventArgs e)
     {
-        Topmost = PinButton.IsChecked == true;
+        var pinned = PinButton.IsChecked == true;
+        Topmost = pinned;
+        PinChanged?.Invoke(this, pinned);
     }
 
     private void OnMinimizeButtonClick(object? sender, RoutedEventArgs e)
@@ -818,7 +816,7 @@ internal sealed partial class ResultPanelWindow : Window
 
             if (_isEditingSource)
             {
-                SourceTextBox.Text = _originalEditingText;
+                // 按 Esc 退出编辑模式并提交保存修改，绝不还原撤销
                 ExitEditMode();
                 e.Handled = true;
                 return;
@@ -838,6 +836,17 @@ internal sealed partial class ResultPanelWindow : Window
             if (!SelectionBubble.ContainsScreenPoint(point))
             {
                 SelectionBubble.Hide();
+            }
+        }
+
+        if (_isEditingSource && SourceTextBox.IsVisible)
+        {
+            var boxPoint = e.GetPosition(SourceTextBox);
+            var inBox = boxPoint.X >= 0 && boxPoint.X <= SourceTextBox.Bounds.Width &&
+                        boxPoint.Y >= 0 && boxPoint.Y <= SourceTextBox.Bounds.Height;
+            if (!inBox)
+            {
+                ExitEditMode();
             }
         }
     }
@@ -1014,7 +1023,7 @@ internal sealed partial class ResultPanelWindow : Window
     {
         if (e.Key == Key.Escape)
         {
-            SourceTextBox.Text = _originalEditingText;
+            // 按 Esc 退出编辑模式并提交保存修改，绝不还原撤销
             ExitEditMode();
             e.Handled = true;
         }
@@ -1068,9 +1077,7 @@ internal sealed partial class ResultPanelWindow : Window
 
     private void OnSettingsClick(object? sender, RoutedEventArgs e)
     {
-        _isOpeningChildWindow = true;
         SettingsRequested?.Invoke(this, SettingsTab.Translation);
-        DispatcherTimer.RunOnce(() => _isOpeningChildWindow = false, TimeSpan.FromSeconds(1));
     }
 
     // 拖动把手调节行高

@@ -713,6 +713,16 @@ public partial class NaniKoreApp : Application
         panel.SetFavoriteService(_favoriteService);
         panel.SetTargetLanguage(_configStore.Current.General.TargetLanguage);
         panel.SetPhoneticsOptions(_configStore.Current.Phonetics);
+        panel.SetPinned(_configStore.Current.Windows.ResultPanelPinned);
+        panel.PinChanged += (_, pinned) =>
+        {
+            var config = _configStore.Current;
+            if (config.Windows.ResultPanelPinned != pinned)
+            {
+                config.Windows.ResultPanelPinned = pinned;
+                _configStore.AtomicWrite(config);
+            }
+        };
         panel.AutoExplainChanged += (_, autoExplain) =>
         {
             var config = _configStore.Current;

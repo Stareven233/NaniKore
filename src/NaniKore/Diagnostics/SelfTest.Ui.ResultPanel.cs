@@ -38,6 +38,7 @@ internal static partial class SelfTest
         TestSelectionBubbleInteractions();
         TestSelectionBubbleFavoriteNote();
         TestRubyDocumentBuilderAndSelectionCopy();
+        TestResultPanelPolishBatch();
     }
 
     /// <summary>
@@ -711,5 +712,71 @@ internal static partial class SelfTest
         Check("copy ipa reading notifies with 音标 wording", notifiedMessage?.Contains("音标") == true);
 
         RubyInlineControl.StatusNotificationRequested -= statusHandler;
+    }
+
+    /// <summary>
+    /// 专项体验打磨回归测试：
+    /// 1. 注音按钮中性外观（Classes 包含 neutral）；
+    /// 2. PinButton 切换置顶状态并激发出 PinChanged 事件；
+    /// 3. 原文区编辑模式按 Esc 提交保存而不是还原撤销；
+    /// 4. RubyInlineControl 边距归零；
+    /// 5. 结果面板失焦（Deactivated）不自动关闭。
+    /// </summary>
+    private static void TestResultPanelPolishBatch()
+    {
+        EnsureThemedApplication();
+
+        // 1. RubyInlineControl 紧凑排版边距归零
+        var sample = new RubyInlineControl("漢", "かん");
+        Check("ruby inline control margin is zero for compact continuous layout", sample.Margin == new Thickness(0));
+
+        // 2. 结果面板初始化与按钮样式
+        var panel = new ResultPanelWindow();
+        panel.SetPinned(false);
+        var annotateBtn = Find<Avalonia.Controls.Primitives.ToggleButton>(panel, "AnnotateSourceButton");
+        var pinBtn = Find<Avalonia.Controls.Primitives.ToggleButton>(panel, "PinButton");
+        Check("annotate source button has neutral class", annotateBtn?.Classes.Contains("neutral") == true);
+        Check("pin button defaults to unpinned state", pinBtn?.IsChecked == false && !panel.Topmost);
+
+        // 3. PinChanged 事件与置顶联动
+        bool? pinChangedValue = null;
+        panel.PinChanged += (_, val) => pinChangedValue = val;
+        panel.SetPinned(true);
+        Check("set pinned updates pin button and topmost state", pinBtn?.IsChecked == true && panel.Topmost);
+
+        if (pinBtn is not null)
+        {
+            pinBtn.IsChecked = false;
+        }
+        Check("unpinning raises PinChanged with false and disables topmost", pinChangedValue == false && !panel.Topmost);
+
+        // 4. 原文编辑模式下按 Esc：保存最新编辑内容，退出编辑模式
+        panel.Reset("原始原文", "准备就绪", autoTranslate: false);
+        var sourceBox = Find<TextBox>(panel, "SourceTextBox");
+        var viewerBorder = Find<Border>(panel, "SourceViewerBorder");
+        panel.EnterEditMode();
+        Check("enters edit mode", sourceBox?.IsVisible == true && viewerBorder?.IsVisible == false);
+
+        if (sourceBox is not null)
+        {
+            sourceBox.Text = "修改后的文本内容";
+            // 模拟按 Esc 键
+            sourceBox.RaiseEvent(new KeyEventArgs
+            {
+                RoutedEvent = InputElement.KeyDownEvent,
+                Key = Key.Escape
+            });
+        }
+
+        Check("pressing escape in edit mode saves modified source instead of reverting",
+            panel.SourceText == "修改后的文本内容" &&
+            sourceBox?.IsVisible == false &&
+            viewerBorder?.IsVisible == true);
+
+        // 5. 失焦不触发关闭
+        var closed = false;
+        panel.Closed += (_, _) => closed = true;
+        panel.OnPanelDeactivatedForTest();
+        Check("deactivating result panel does not close the window", !closed);
     }
 }

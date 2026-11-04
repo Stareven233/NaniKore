@@ -58,7 +58,8 @@ internal sealed class RubyInlineControl : Grid
 
         Focusable = false;
         VerticalAlignment = VerticalAlignment.Bottom;
-        Margin = new Thickness(1.5, 0, 1.5, 0);
+        // 紧凑排版：外边距严格归零，杜绝连续中日文字符之间被拉出虚假空格切词缝隙
+        Margin = new Thickness(0);
 
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });

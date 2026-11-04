@@ -170,6 +170,9 @@ internal sealed class WindowConfig
     public double ResultPanelWidth { get; set; } = 960;
 
     public double ResultPanelHeight { get; set; } = 660;
+
+    /// <summary>结果面板是否置顶锁定（Pin 状态）；跨重启恢复，切换时实时写盘。</summary>
+    public bool ResultPanelPinned { get; set; } = false;
 }
 
 internal sealed class PromptConfig
@@ -226,6 +229,7 @@ internal static class AppConfigCloner
             SettingsHeight = source.Windows.SettingsHeight,
             ResultPanelWidth = source.Windows.ResultPanelWidth,
             ResultPanelHeight = source.Windows.ResultPanelHeight,
+            ResultPanelPinned = source.Windows.ResultPanelPinned,
         },
         Prompts = new PromptConfig
         {

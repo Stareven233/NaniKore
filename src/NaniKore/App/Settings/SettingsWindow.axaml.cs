@@ -15,13 +15,27 @@ using NaniKore.Input;
 namespace NaniKore.App.Settings;
 
 /// <summary>
-/// 导航列表项视图模型，完全兼容编译绑定。
+/// 导航列表项视图模型，完全兼容编译绑定与按需延迟加载。
 /// </summary>
-internal sealed class NavigationItem(ISettingsPage page)
+internal sealed class NavigationItem(string title, string glyph, Func<ISettingsPage> pageFactory)
 {
-    public ISettingsPage Page { get; } = page;
-    public string Title => Page.Title;
-    public string Glyph => Page.Glyph;
+    private ISettingsPage? _instance;
+
+    public string Title { get; } = title;
+    public string Glyph { get; } = glyph;
+
+    public bool IsCreated => _instance is not null;
+
+    public ISettingsPage GetOrCreatePage(AppConfig working)
+    {
+        if (_instance is null)
+        {
+            _instance = pageFactory();
+            _instance.Load(working);
+        }
+
+        return _instance;
+    }
 }
 
 /// <summary>非模态设置宿主；所有页面在配置副本上编辑，保存后一次性热应用。</summary>
@@ -36,9 +50,8 @@ internal sealed partial class SettingsWindow : Window
     private readonly Func<AppConfig> _currentConfig;
     private readonly AppConfig _working;
     private readonly Action<AppConfig> _save;
-    private readonly List<ISettingsPage> _pages;
     private readonly List<NavigationItem> _navItems;
-    private readonly TranslationPage _translationPage;
+    private readonly NavigationItem _translationNav;
     private readonly DispatcherTimer _successStatusTimer;
 
     /// <summary>业务配置是否已成功落盘；决定关闭时尺寸记录克隆哪份副本。</summary>
@@ -61,6 +74,7 @@ internal sealed partial class SettingsWindow : Window
         ArgumentNullException.ThrowIfNull(current);
         InitializeComponent();
         Icon = ApplicationIcon.Load();
+        TitleBarIcon.Source = ApplicationIcon.LoadBitmap();
         ThemeManager.ApplyWindowChrome(this);
 
         var snapshot = current();
@@ -73,24 +87,24 @@ internal sealed partial class SettingsWindow : Window
         Width = _working.Windows.SettingsWidth;
         Height = _working.Windows.SettingsHeight;
 
-        var general = new GeneralPage(downloadDependencies, downloadPhoneticDictionary);
-        _translationPage = new TranslationPage { TestConnection = testConnection };
-        var hotkeys = new HotkeyPage();
-        // 录制期间必须临时注销正在录制的那个全局热键，否则系统会把按键交给 NaniKore 自己的翻译流程。
-        hotkeys.RecordingChanged += (_, state) => suspendGlobalHotkey?.Invoke(state);
-        var about = new AboutPage { TemplateVersionProvider = templateVersion };
-        // 收藏页读应用级收藏服务（SQLite 持久化），不参与 AppConfig 编辑副本。
-        var favorites = new FavoritesPage(favoriteService);
-        _pages = [general, _translationPage, hotkeys, favorites, about];
-        _navItems = _pages.Select(page => new NavigationItem(page)).ToList();
+        // 核心性能重构：5 个 Tab 页面按需延迟加载，绝不在构造函数中全量同步初始化
+        _translationNav = new NavigationItem("翻译", "\uE8C1", () => new TranslationPage { TestConnection = testConnection });
+        _navItems =
+        [
+            new NavigationItem("通用", "\uE713", () => new GeneralPage(downloadDependencies, downloadPhoneticDictionary)),
+            _translationNav,
+            new NavigationItem("热键", "\uE765", () =>
+            {
+                var hotkeys = new HotkeyPage();
+                hotkeys.RecordingChanged += (_, state) => suspendGlobalHotkey?.Invoke(state);
+                return hotkeys;
+            }),
+            new NavigationItem("生词本", "\uE734", () => new FavoritesPage(favoriteService)),
+            new NavigationItem("关于", "\uE946", () => new AboutPage { TemplateVersionProvider = templateVersion })
+        ];
 
         NavigationList.ItemsSource = _navItems;
         NavigationList.SelectionChanged += OnNavigationChanged;
-
-        foreach (var page in _pages)
-        {
-            page.Load(_working);
-        }
 
         SaveButton.Click += (_, _) => Save();
         CancelButton.Click += (_, _) => Close();
@@ -140,15 +154,22 @@ internal sealed partial class SettingsWindow : Window
             return;
         }
 
+        var page = navItem.GetOrCreatePage(_working);
         PageTitle.Text = navItem.Title;
-        PageHost.Content = navItem.Page.View;
+        PageHost.Content = page.View;
         FooterStatus.Clear();
     }
 
     private void Save()
     {
-        foreach (var page in _pages)
+        foreach (var navItem in _navItems)
         {
+            if (!navItem.IsCreated)
+            {
+                continue;
+            }
+
+            var page = navItem.GetOrCreatePage(_working);
             if (page.Validate() is not { } error)
             {
                 continue;
@@ -160,15 +181,18 @@ internal sealed partial class SettingsWindow : Window
             return;
         }
 
-        foreach (var page in _pages)
+        foreach (var navItem in _navItems)
         {
-            page.Apply(_working);
+            if (navItem.IsCreated)
+            {
+                navItem.GetOrCreatePage(_working).Apply(_working);
+            }
         }
 
         var active = _working.Profiles.First(profile => string.Equals(profile.Name, _working.Pipeline.ActiveProfile, StringComparison.OrdinalIgnoreCase));
         if (string.Equals(_working.Pipeline.Mode, "vision_oneshot", StringComparison.OrdinalIgnoreCase) && !active.SupportsVision)
         {
-            SelectPage(_translationPage);
+            SelectTab(SettingsTab.Translation);
             FooterStatus.Show("vision_oneshot 需要当前配置档声明支持图像输入。", InfoSeverity.Warning);
             return;
         }
@@ -179,7 +203,10 @@ internal sealed partial class SettingsWindow : Window
             // 仅在业务配置落盘成功后置位：校验失败或写盘抛错时保持 false，
             // 关闭流程的尺寸记录才会退回初始快照而不是污染后的 _working。
             _settingsSaved = true;
-            _translationPage.SaveSecrets();
+            if (_translationNav.IsCreated && _translationNav.GetOrCreatePage(_working) is TranslationPage translationPage)
+            {
+                translationPage.SaveSecrets();
+            }
             ShowSavedStatus();
         }
         catch (Exception exception)
@@ -208,10 +235,13 @@ internal sealed partial class SettingsWindow : Window
 
     private void SelectPage(ISettingsPage page)
     {
-        var index = _pages.IndexOf(page);
-        if (index >= 0)
+        for (var i = 0; i < _navItems.Count; i++)
         {
-            NavigationList.SelectedIndex = index;
+            if (_navItems[i].IsCreated && ReferenceEquals(_navItems[i].GetOrCreatePage(_working), page))
+            {
+                NavigationList.SelectedIndex = i;
+                return;
+            }
         }
     }
 

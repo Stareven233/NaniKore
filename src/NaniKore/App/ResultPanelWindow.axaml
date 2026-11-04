@@ -33,6 +33,7 @@
 
                 <!-- 左侧软件标题与图标 -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" Margin="14,0,0,0" VerticalAlignment="Center">
+                    <Image x:Name="TitleBarIcon" Width="16" Height="16" VerticalAlignment="Center" />
                     <TextBlock Text="NaniKore"
                                FontSize="13"
                                FontWeight="SemiBold"
@@ -112,8 +113,9 @@
                             <Button x:Name="NormalizeSourceButton" MinWidth="68" Content="规范化"
                                     ToolTip.Tip="整理换行和空格，并补齐文字与字母、数字之间的空格"
                                     Click="OnNormalizeSourceClick" />
-                            <!-- 原文注音显示开关按钮 -->
+                            <!-- 原文注音显示开关按钮（白底黑字常规外观，悬停微调） -->
                             <ToggleButton x:Name="AnnotateSourceButton"
+                                          Classes="neutral"
                                           MinWidth="68"
                                           Content="注音"
                                           IsChecked="True"
