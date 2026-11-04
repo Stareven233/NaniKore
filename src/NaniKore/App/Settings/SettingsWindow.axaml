@@ -10,80 +10,142 @@
         MinHeight="460"
         ShowInTaskbar="True"
         WindowStartupLocation="CenterScreen"
+        WindowDecorations="None"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
         FontSize="14"
-        Foreground="{DynamicResource Brush.Text.Primary}"
-        Background="{DynamicResource Brush.Window.Background}">
-    <Grid ColumnDefinitions="Auto,*">
-        <!-- 左侧导航栏 -->
-        <Border Grid.Column="0"
-                Width="196"
-                Background="{DynamicResource Brush.Sidebar.Background}"
-                BorderBrush="{DynamicResource Brush.Divider}"
-                BorderThickness="0,0,1,0">
-            <ListBox x:Name="NavigationList"
-                     Margin="0,12,0,12"
-                     Background="Transparent">
-                <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="local:NavigationItem">
-                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding Glyph}"
-                                       FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
-                                       FontSize="17"
-                                       Width="22"
-                                       Foreground="{DynamicResource Brush.Text.Secondary}"
-                                       VerticalAlignment="Center" />
-                            <TextBlock Text="{Binding Title}"
-                                       FontSize="15"
-                                       FontWeight="Medium"
-                                       VerticalAlignment="Center" />
-                        </StackPanel>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-        </Border>
+        Foreground="{DynamicResource Brush.Text.Primary}">
+    <!-- 12px 平滑大圆角自绘卡片容器（Windows 10/11 亚像素全抗锯齿渲染） -->
+    <Border CornerRadius="12"
+            Background="{DynamicResource Brush.Window.Background}"
+            BorderBrush="{DynamicResource Brush.Card.Border}"
+            BorderThickness="1"
+            ClipToBounds="True">
+        <Grid RowDefinitions="Auto,*">
+            <!-- 顶部自定义控制栏（支持窗口拖动、最小化、关闭） -->
+            <Grid Grid.Row="0"
+                  Height="34"
+                  Background="{DynamicResource Brush.Sidebar.Background}"
+                  PointerPressed="OnTitleBarPointerPressed">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-        <!-- 右侧主内容区 -->
-        <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto">
-            <TextBlock x:Name="PageTitle"
-                       Grid.Row="0"
-                       FontSize="20"
-                       FontWeight="SemiBold"
-                       Foreground="{DynamicResource Brush.Text.Primary}"
-                       Margin="24,20,24,12" />
+                <!-- 左侧软件标题 -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" Margin="14,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="NaniKore 设置"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
 
-            <ScrollViewer Grid.Row="1"
-                          VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollBarVisibility="Disabled"
-                          Padding="24,0,20,20">
-                <ContentControl x:Name="PageHost" />
-            </ScrollViewer>
+                <!-- 中间拖动空区 -->
+                <Border Grid.Column="1" Background="Transparent" PointerPressed="OnTitleBarPointerPressed" />
 
-            <!-- 底部操作与状态条 -->
-            <Border Grid.Row="2"
-                    Background="{DynamicResource Brush.Sidebar.Background}"
-                    BorderBrush="{DynamicResource Brush.Divider}"
-                    BorderThickness="0,1,0,0"
-                    Padding="20,12">
-                <Grid ColumnDefinitions="*,Auto">
-                    <controls:InfoBar x:Name="FooterStatus"
-                                      Grid.Column="0"
-                                      Margin="0,0,16,0"
-                                      VerticalAlignment="Center" />
+                <!-- 右侧窗口控制按钮组 -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="2" Margin="0,0,8,0" VerticalAlignment="Center">
+                    <Button x:Name="MinimizeButton"
+                            Classes="icon"
+                            Width="28" Height="26"
+                            ToolTip.Tip="最小化"
+                            Click="OnMinimizeButtonClick">
+                        <TextBlock Text="&#xE921;"
+                                   FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                   FontSize="10"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Center" />
+                    </Button>
+                    <Button x:Name="CloseButton"
+                            Classes="icon close"
+                            Width="28" Height="26"
+                            ToolTip.Tip="关闭"
+                            Click="OnCloseButtonClick">
+                        <TextBlock Text="&#xE711;"
+                                   FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                   FontSize="10"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Center" />
+                    </Button>
+                </StackPanel>
+            </Grid>
 
-                    <StackPanel Grid.Column="1"
-                                Orientation="Horizontal"
-                                VerticalAlignment="Center"
-                                Spacing="8">
-                        <Button x:Name="SaveButton"
-                                Classes="accent"
-                                Content="保存"
-                                MinWidth="90" />
-                        <Button x:Name="CancelButton"
-                                Content="关闭"
-                                MinWidth="90" />
-                    </StackPanel>
+            <!-- 下方主体区域（左侧导航栏 + 右侧主内容区） -->
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,*">
+                <!-- 左侧导航栏 -->
+                <Border Grid.Column="0"
+                        Width="196"
+                        Background="{DynamicResource Brush.Sidebar.Background}"
+                        BorderBrush="{DynamicResource Brush.Divider}"
+                        BorderThickness="0,0,1,0">
+                    <ListBox x:Name="NavigationList"
+                             Margin="0,8,0,12"
+                             Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="local:NavigationItem">
+                                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Glyph}"
+                                               FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                               FontSize="17"
+                                               Width="22"
+                                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding Title}"
+                                               FontSize="15"
+                                               FontWeight="Medium"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+
+                <!-- 右侧主内容区 -->
+                <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto">
+                    <TextBlock x:Name="PageTitle"
+                               Grid.Row="0"
+                               FontSize="20"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource Brush.Text.Primary}"
+                               Margin="24,16,24,10" />
+
+                    <ScrollViewer Grid.Row="1"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  Padding="24,0,20,20">
+                        <ContentControl x:Name="PageHost" />
+                    </ScrollViewer>
+
+                    <!-- 底部操作与状态条 -->
+                    <Border Grid.Row="2"
+                            Background="{DynamicResource Brush.Sidebar.Background}"
+                            BorderBrush="{DynamicResource Brush.Divider}"
+                            BorderThickness="0,1,0,0"
+                            Padding="20,12">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <controls:InfoBar x:Name="FooterStatus"
+                                              Grid.Column="0"
+                                              Margin="0,0,16,0"
+                                              VerticalAlignment="Center" />
+
+                            <StackPanel Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        VerticalAlignment="Center"
+                                        Spacing="8">
+                                <Button x:Name="SaveButton"
+                                        Classes="accent"
+                                        Content="保存"
+                                        MinWidth="90" />
+                                <Button x:Name="CancelButton"
+                                        Content="关闭"
+                                        MinWidth="90" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
                 </Grid>
-            </Border>
+            </Grid>
         </Grid>
-    </Grid>
+    </Border>
 </Window>

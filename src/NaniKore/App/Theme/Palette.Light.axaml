@@ -51,6 +51,16 @@
     <Color x:Key="TextControlSelectionHighlightColor">#3D78C800</Color>
     <SolidColorBrush x:Key="TextControlSelectionHighlightBrush" Color="#3D78C800" />
 
+    <!-- 覆写 Fluent ToggleButton 激活态系统画刷（草地绿微光） -->
+    <SolidColorBrush x:Key="ToggleButtonBackgroundChecked" Color="#EDF7DA" />
+    <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPointerOver" Color="#DDF0BD" />
+    <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPressed" Color="#CAE897" />
+    <SolidColorBrush x:Key="ToggleButtonForegroundChecked" Color="#5EA000" />
+    <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPointerOver" Color="#477A00" />
+    <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPressed" Color="#1F2E27" />
+    <SolidColorBrush x:Key="ToggleButtonBorderBrushChecked" Color="#78C800" />
+    <SolidColorBrush x:Key="ToggleButtonBorderBrushCheckedPointerOver" Color="#5EA000" />
+
     <!-- 覆写 Fluent 菜单弹出层系统画刷（托盘右键与上下文菜单现代草地绿微质感） -->
     <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPointerOver" Color="#E4F7C8" />
     <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPressed" Color="#D2F0A5" />

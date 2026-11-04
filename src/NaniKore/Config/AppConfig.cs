@@ -45,6 +45,9 @@ internal sealed class GeneralConfig
     /// <summary>阶段 1 翻译完成后是否自动开始并展开语法深度精讲。</summary>
     public bool AutoExplain { get; set; }
 
+    /// <summary>识别完成（OCR/选取）后是否自动为原文叠加注音；关闭时原文只呈现纯文本，由面板按钮显式触发。</summary>
+    public bool AutoAnnotate { get; set; } = true;
+
     public string TargetLanguage { get; set; } = "中文（简体）";
 
     /// <summary>开发者选项：本地 OCR HTTP 监听地址（格式 host:port，如 127.0.0.1:23335 或 0.0.0.0:23335），留空不启用。</summary>

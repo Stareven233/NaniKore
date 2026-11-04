@@ -72,6 +72,7 @@ internal sealed partial class ResultPanelWindow : Window
     private double _translationGripStartHeight;
 
     private bool _isOpeningChildWindow;
+    private bool _isSwitchingEditMode;
 
     public event EventHandler? TranslateRequested;
     public event EventHandler? ExplanationRequested;
@@ -173,6 +174,12 @@ internal sealed partial class ResultPanelWindow : Window
 
     private void OnPanelDeactivated(object? sender, EventArgs e)
     {
+        // 模式切换中或编辑保护期，绝不触发关闭
+        if (_isSwitchingEditMode)
+        {
+            return;
+        }
+
         // 若失焦时正处于编辑模式，先提交保存修改
         if (_isEditingSource)
         {
@@ -224,16 +231,11 @@ internal sealed partial class ResultPanelWindow : Window
         }
 
         var showRuby = AnnotateSourceButton?.IsChecked == true;
-        SourceViewer.LineHeight = showRuby ? 38 : 26;
+        SourceViewer.LineHeight = showRuby ? 34 : 24;
 
         if (showRuby)
         {
             SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(_annotatedSource);
-            if (string.Equals(_annotatedSource, RubyTextParser.ToPlainText(_annotatedSource), StringComparison.Ordinal)
-                && !string.IsNullOrWhiteSpace(_annotatedSource))
-            {
-                _ = AnnotateSourceAsync();
-            }
         }
         else
         {
@@ -319,7 +321,7 @@ internal sealed partial class ResultPanelWindow : Window
     }
 
     /// <summary>重置面板并装载初始原文与状态。</summary>
-    public void Reset(string source, string status, bool autoTranslate = false, bool autoExplain = false)
+    public void Reset(string source, string status, bool autoTranslate = false, bool autoExplain = false, bool autoAnnotate = true)
     {
         _annotatedSource = source;
         SourceTextBox.Text = RubyTextParser.ToPlainText(source);
@@ -327,7 +329,7 @@ internal sealed partial class ResultPanelWindow : Window
         _receivedAnnotatedSource = false;
         NormalizeSourceButton.IsEnabled = true;
         AnnotateSourceButton.IsEnabled = true;
-        AnnotateSourceButton.IsChecked = true;
+        AnnotateSourceButton.IsChecked = autoAnnotate;
         TranslateButton.Content = "翻译";
         TranslationTextBox.Clear();
         TranslationTextBox.IsHitTestVisible = false;
@@ -357,7 +359,10 @@ internal sealed partial class ResultPanelWindow : Window
         UpdateSourceViewerDisplay();
 
         _annotationSourcePlain = string.Empty;
-        _ = AnnotateSourceAsync();
+        if (autoAnnotate && !string.IsNullOrWhiteSpace(source))
+        {
+            _ = AnnotateSourceAsync();
+        }
     }
 
     public void SetTranslationInProgress(bool inProgress)
@@ -918,12 +923,20 @@ internal sealed partial class ResultPanelWindow : Window
 
     internal void EnterEditMode(int caretIndex = -1)
     {
+        if (_isEditingSource)
+        {
+            return;
+        }
+
+        // 双击平滑切入编辑模式：先平息划词气泡，加装状态锁防撕裂
+        SelectionBubble.Hide();
+        _isSwitchingEditMode = true;
+
         _originalEditingText = SourceTextBox.Text ?? string.Empty;
         _isEditingSource = true;
         SourceViewerBorder.IsVisible = false;
         SourceTextBox.IsVisible = true;
         SourceCaptionTextBlock.Text = "编辑中 · 失焦自动保存";
-        SourceTextBox.Focus();
 
         var textLen = SourceTextBox.Text?.Length ?? 0;
         if (caretIndex < 0 || caretIndex > textLen)
@@ -931,20 +944,23 @@ internal sealed partial class ResultPanelWindow : Window
             caretIndex = textLen;
         }
 
+        // 同步直接精准赋初值，确保即时断言与光标定位瞬时就绪
         SourceTextBox.CaretIndex = caretIndex;
         SourceTextBox.SelectionStart = caretIndex;
-        SourceTextBox.SelectionEnd = caretIndex; // 严禁全选，防键盘误触清空整句
+        SourceTextBox.SelectionEnd = caretIndex;
 
-        // 异步二次校准，彻底压制 Avalonia 聚焦时的默认全选行为
+        // 异步一帧平滑聚焦与二次校准，避开双击鼠标抬起脉冲的瞬间竞争
         Dispatcher.UIThread.Post(() =>
         {
             if (_isEditingSource && SourceTextBox.IsVisible)
             {
+                SourceTextBox.Focus();
                 SourceTextBox.CaretIndex = caretIndex;
                 SourceTextBox.SelectionStart = caretIndex;
                 SourceTextBox.SelectionEnd = caretIndex;
             }
-        });
+            _isSwitchingEditMode = false;
+        }, DispatcherPriority.Input);
     }
 
     internal void CommitEditingSourceIfActive()
@@ -1213,6 +1229,11 @@ internal sealed partial class ResultPanelWindow : Window
 
     private void OnSourceTextBoxPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (_isSwitchingEditMode)
+        {
+            return;
+        }
+
         var selLen = Math.Abs(SourceTextBox.SelectionEnd - SourceTextBox.SelectionStart);
         if (selLen is >= 1 and <= 100)
         {

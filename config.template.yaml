@@ -3,12 +3,14 @@
 # 每个配置档只需 name / kind / base_url / model 四行；api_type / supports_vision / timeout_seconds /
 # enable_thinking 只在偏离缺省（completions / true / 30 / false）时才需要写，保存一次设置也不会反弹成更多行
 # API Key 不写在这里：以当前 Windows 用户的 DPAPI 密文整体保存在 .data/keys.bin（内部是 {配置档名: API Key} 的 JSON）。
-version: 0.6.0+28
+version: 0.6.0+31
 general:
   auto_translate: false
   # 选取/剪贴板翻译（Ctrl+Shift+S）读到内容后是否立即翻译；默认开，视觉直喂不受此约束。
   paste_auto_translate: false
   auto_explain: false
+  # 识别完成（OCR/选取）后是否自动为原文叠加注音；关闭时原文只呈现纯文本，由「注音」按钮显式触发。
+  auto_annotate: true
   target_language: 中文（简体）
   # 开发者选项：本地 OCR HTTP 监听地址（格式 host:port，如 127.0.0.1:23335 或 0.0.0.0:23335），留空表示不开启
   ocr_listen: ""

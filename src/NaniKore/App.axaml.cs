@@ -241,7 +241,7 @@ public partial class NaniKoreApp : Application
             _lastImagePng = null;
             var autoTranslate = _configStore.Current.General.AutoTranslate;
             var panel = EnsureResultPanel(selectionOnDesktop);
-            panel.Reset(result.Text, $"OCR 完成：{result.Lines.Count} 行 · {result.Elapsed.TotalMilliseconds:N0} ms", autoTranslate, autoExplain: _configStore.Current.General.AutoExplain);
+            panel.Reset(result.Text, $"OCR 完成：{result.Lines.Count} 行 · {result.Elapsed.TotalMilliseconds:N0} ms", autoTranslate, autoExplain: _configStore.Current.General.AutoExplain, autoAnnotate: _configStore.Current.General.AutoAnnotate);
             TryCopyToClipboard(result.Text);
             if (autoTranslate)
             {
@@ -327,7 +327,7 @@ public partial class NaniKoreApp : Application
 
             var autoTranslate = config.General.PasteAutoTranslate;
             var panel = EnsureResultPanel(anchor);
-            panel.Reset(outcome.Text, status, autoTranslate, autoExplain: autoExplain);
+            panel.Reset(outcome.Text, status, autoTranslate, autoExplain: autoExplain, autoAnnotate: config.General.AutoAnnotate);
             if (autoTranslate)
             {
                 _ = StartTranslationAsync(outcome.Text, null, outcome.Notice);

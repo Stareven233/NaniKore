@@ -71,7 +71,7 @@ internal sealed class RubyInlineControl : Grid
             Foreground = Brushes.Gray,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
-            Margin = new Thickness(0, 0, 0, 0.5),
+            Margin = new Thickness(0, 0, 0, -1),
             Cursor = new Cursor(StandardCursorType.Hand),
         };
         ToolTip.SetTip(rubyBlock, $"点击复制{readingNoun}: {rubyText}\r\n右键查看更多选项");

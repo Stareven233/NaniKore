@@ -23,6 +23,11 @@
                     <ToggleSwitch x:Name="PasteAutoTranslateToggle" OnContent="" OffContent="" />
                 </controls:SettingsRow>
                 <Border Classes="divider-row" />
+                <controls:SettingsRow Header="识别后自动注音"
+                                      Description="识别完成（OCR/选取）后自动叠加假名/拼音/音标；关闭时原文只呈现纯文本，由面板「注音」按钮显式触发。">
+                    <ToggleSwitch x:Name="AutoAnnotateToggle" OnContent="" OffContent="" />
+                </controls:SettingsRow>
+                <Border Classes="divider-row" />
                 <controls:SettingsRow Header="翻译后自动精讲"
                                       Description="阶段 1 翻译完成后自动触发深度语法精讲并展开。">
                     <ToggleSwitch x:Name="AutoExplainToggle" OnContent="" OffContent="" />

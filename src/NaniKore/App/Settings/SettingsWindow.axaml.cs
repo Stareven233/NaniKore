@@ -105,6 +105,24 @@ internal sealed partial class SettingsWindow : Window
         };
     }
 
+    private void OnTitleBarPointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            BeginMoveDrag(e);
+        }
+    }
+
+    private void OnMinimizeButtonClick(object? sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState.Minimized;
+    }
+
+    private void OnCloseButtonClick(object? sender, RoutedEventArgs e)
+    {
+        Close();
+    }
+
     /// <summary>按枚举切换当前选中的设置标签页。</summary>
     public void SelectTab(SettingsTab tab)
     {

@@ -2,6 +2,7 @@ using System;
 using System.Text;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
+using Avalonia.Media;
 using NaniKore.Translation;
 
 namespace NaniKore.App.Controls;
@@ -46,7 +47,10 @@ internal static class RubyDocumentBuilder
                 else
                 {
                     var control = new RubyInlineControl(segment.Text, segment.Ruby!, fontSize);
-                    var container = new InlineUIContainer(control);
+                    var container = new InlineUIContainer(control)
+                    {
+                        BaselineAlignment = BaselineAlignment.TextBottom
+                    };
                     inlines.Add(container);
                 }
             }
