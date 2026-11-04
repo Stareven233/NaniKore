@@ -52,11 +52,12 @@
     <SolidColorBrush x:Key="TextControlSelectionHighlightBrush" Color="#448ED200" />
 
     <!-- 覆写 Fluent 菜单弹出层系统画刷（托盘右键与上下文菜单现代草地绿微质感） -->
-    <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPointerOver" Color="#263821" />
-    <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPressed" Color="#32492B" />
-    <SolidColorBrush x:Key="MenuFlyoutItemForegroundPointerOver" Color="#EAF2EC" />
+    <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPointerOver" Color="#2E4626" />
+    <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPressed" Color="#3E5E33" />
+    <SolidColorBrush x:Key="MenuFlyoutItemForegroundPointerOver" Color="#8ED200" />
     <SolidColorBrush x:Key="MenuFlyoutPresenterBackground" Color="#242C27" />
-    <SolidColorBrush x:Key="MenuFlyoutPresenterBorderBrush" Color="#2F3933" />
+    <SolidColorBrush x:Key="MenuFlyoutPresenterBorderBrush" Color="#3B4740" />
+    <CornerRadius x:Key="OverlayCornerRadius">8</CornerRadius>
 
     <!-- 覆写 Fluent 基础输入控件默认笔刷 -->
     <SolidColorBrush x:Key="ComboBoxBackground" Color="#2A342E" />

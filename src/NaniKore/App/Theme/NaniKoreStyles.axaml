@@ -425,17 +425,17 @@
 
     <!--
         全局 MenuFlyoutPresenter / ContextMenu / TrayMenu 现代极简微质感风格：
-        - 8px 圆角与柔和微阴影底框；
-        - MenuItem 移除默认图标占位导致的左偏，文字自然居中/偏左；
-        - Hover 与选中态均为精致半透明草地绿。
+        - 8px 圆角与柔和底框；
+        - MenuItem 文字自然完全居中对齐，消除图标凹槽导致的左偏；
+        - Hover 与选中态均为鲜明草地绿微光背景与高亮文字。
     -->
     <Style Selector="MenuFlyoutPresenter, ContextMenu">
         <Setter Property="Background" Value="{DynamicResource Brush.Card.Background}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Card.Border}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="8" />
-        <Setter Property="Padding" Value="4" />
-        <Setter Property="MinWidth" Value="130" />
+        <Setter Property="Padding" Value="5" />
+        <Setter Property="MinWidth" Value="136" />
     </Style>
 
     <Style Selector="MenuItem">
@@ -443,16 +443,48 @@
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="CornerRadius" Value="6" />
-        <Setter Property="Padding" Value="12,7" />
+        <Setter Property="Padding" Value="12,8" />
         <Setter Property="Margin" Value="2,1" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
+    <Style Selector="MenuItem /template/ ContentPresenter#PART_HeaderPresenter">
+        <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="MenuItem /template/ ContentPresenter#PART_HeaderPresenter TextBlock">
+        <Setter Property="TextAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="MenuItem:not(:icon) /template/ ContentControl#PART_IconPresenter">
+        <Setter Property="IsVisible" Value="False" />
+        <Setter Property="Margin" Value="0" />
+    </Style>
+    <Style Selector="MenuItem /template/ ContentControl#PART_ToggleIconPresenter">
+        <Setter Property="IsVisible" Value="False" />
+        <Setter Property="Margin" Value="0" />
+    </Style>
     <Style Selector="MenuItem:pointerover /template/ Border#PART_LayoutRoot">
         <Setter Property="Background" Value="{DynamicResource Brush.Accent.Subtle}" />
     </Style>
+    <Style Selector="MenuItem:pointerover /template/ ContentPresenter#PART_HeaderPresenter TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+        <Setter Property="FontWeight" Value="Medium" />
+    </Style>
     <Style Selector="MenuItem:selected /template/ Border#PART_LayoutRoot">
         <Setter Property="Background" Value="{DynamicResource Brush.Accent.Subtle}" />
+    </Style>
+    <Style Selector="MenuItem:selected /template/ ContentPresenter#PART_HeaderPresenter TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+        <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+    <Style Selector="MenuItem:pressed /template/ Border#PART_LayoutRoot">
+        <Setter Property="Background" Value="{DynamicResource Brush.Control.BackgroundPressed}" />
+    </Style>
+
+    <Style Selector="MenuFlyoutPresenter Separator, ContextMenu Separator">
+        <Setter Property="Background" Value="{DynamicResource Brush.Divider}" />
+        <Setter Property="Height" Value="1" />
+        <Setter Property="Margin" Value="8,4" />
     </Style>
 
     <!--

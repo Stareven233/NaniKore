@@ -76,8 +76,8 @@ internal sealed class RubyInlineControl : Grid
         };
         ToolTip.SetTip(rubyBlock, $"点击复制{readingNoun}: {rubyText}\r\n右键查看更多选项");
 
-        // 悬停高亮反馈
-        rubyBlock.PointerEntered += (_, _) => rubyBlock.Foreground = Brushes.DodgerBlue;
+        // 悬停高亮反馈（优雅草地绿）
+        rubyBlock.PointerEntered += (_, _) => rubyBlock.Foreground = (IBrush?)Application.Current?.FindResource("Brush.Accent") ?? Brushes.LimeGreen;
         rubyBlock.PointerExited += (_, _) => rubyBlock.Foreground = Brushes.Gray;
 
         // 单击复制读音（拦截事件，避免触发外层 SelectableTextBlock 拖选）

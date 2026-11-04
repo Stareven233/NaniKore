@@ -71,6 +71,8 @@ internal sealed partial class ResultPanelWindow : Window
     private Point _translationGripStartPoint;
     private double _translationGripStartHeight;
 
+    private bool _isOpeningChildWindow;
+
     public event EventHandler? TranslateRequested;
     public event EventHandler? ExplanationRequested;
     public event EventHandler<bool>? AutoExplainChanged;
@@ -158,12 +160,86 @@ internal sealed partial class ResultPanelWindow : Window
         // 监听按键（Esc 返回或收起）
         KeyDown += OnPanelKeyDown;
 
+        // 监听失焦自动关闭面板（若未置顶）
+        Deactivated += OnPanelDeactivated;
+
         // 监听全局指针按下：点击窗口其他区域时隐藏气泡
         AddHandler(PointerPressedEvent, OnPanelPointerPressed, RoutingStrategies.Tunnel);
 
         // 默认未翻译时译文框静默，防止误点与光标居中闪烁
         TranslationTextBox.IsHitTestVisible = false;
         TranslationTextBox.PlaceholderText = "等待翻译...";
+    }
+
+    private void OnPanelDeactivated(object? sender, EventArgs e)
+    {
+        // 若失焦时正处于编辑模式，先提交保存修改
+        if (_isEditingSource)
+        {
+            CommitEditingSourceIfActive();
+        }
+
+        // 若处于置顶锁定态、或正在打开子窗口、或正在拖拽调节大小，则不自动关闭
+        if (Topmost || _isOpeningChildWindow || _isDraggingSourceGrip || _isDraggingTranslationGrip)
+        {
+            return;
+        }
+
+        Close();
+    }
+
+    private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            BeginMoveDrag(e);
+        }
+    }
+
+    private void OnPinButtonCheckedChanged(object? sender, RoutedEventArgs e)
+    {
+        Topmost = PinButton.IsChecked == true;
+    }
+
+    private void OnMinimizeButtonClick(object? sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState.Minimized;
+    }
+
+    private void OnCloseButtonClick(object? sender, RoutedEventArgs e)
+    {
+        Close();
+    }
+
+    private void OnRubyToggleCheckedChanged(object? sender, RoutedEventArgs e)
+    {
+        UpdateSourceViewerDisplay();
+    }
+
+    private void UpdateSourceViewerDisplay()
+    {
+        if (_isEditingSource)
+        {
+            return;
+        }
+
+        var showRuby = AnnotateSourceButton?.IsChecked == true;
+        SourceViewer.LineHeight = showRuby ? 38 : 26;
+
+        if (showRuby)
+        {
+            SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(_annotatedSource);
+            if (string.Equals(_annotatedSource, RubyTextParser.ToPlainText(_annotatedSource), StringComparison.Ordinal)
+                && !string.IsNullOrWhiteSpace(_annotatedSource))
+            {
+                _ = AnnotateSourceAsync();
+            }
+        }
+        else
+        {
+            var plain = RubyTextParser.ToPlainText(_annotatedSource);
+            SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(plain);
+        }
     }
 
     protected override void OnOpened(EventArgs e)
@@ -251,6 +327,7 @@ internal sealed partial class ResultPanelWindow : Window
         _receivedAnnotatedSource = false;
         NormalizeSourceButton.IsEnabled = true;
         AnnotateSourceButton.IsEnabled = true;
+        AnnotateSourceButton.IsChecked = true;
         TranslateButton.Content = "翻译";
         TranslationTextBox.Clear();
         TranslationTextBox.IsHitTestVisible = false;
@@ -277,7 +354,7 @@ internal sealed partial class ResultPanelWindow : Window
         SourceViewerBorder.IsVisible = true;
         SourceTextBox.IsVisible = false;
         SourceCaptionTextBlock.Text = "双击可编辑";
-        SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(source);
+        UpdateSourceViewerDisplay();
 
         _annotationSourcePlain = string.Empty;
         _ = AnnotateSourceAsync();
@@ -528,7 +605,7 @@ internal sealed partial class ResultPanelWindow : Window
 
         if (!_isEditingSource)
         {
-            SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(ruby);
+            UpdateSourceViewerDisplay();
         }
 
         SourceTextBox.Text = plain;
@@ -624,7 +701,7 @@ internal sealed partial class ResultPanelWindow : Window
 
             _annotatedSource += delta.Text;
             _annotationSourcePlain = string.Empty;
-            SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(_annotatedSource);
+            UpdateSourceViewerDisplay();
             SourceTextBox.Text = RubyTextParser.ToPlainText(_annotatedSource);
             _originalEditingText = SourceTextBox.Text;
             return;
@@ -775,7 +852,7 @@ internal sealed partial class ResultPanelWindow : Window
         SourceTextBox.CaretIndex = Math.Min(caretIndex, normalized.Length);
         _annotatedSource = normalized;
         _annotationSourcePlain = string.Empty;
-        SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(normalized);
+        UpdateSourceViewerDisplay();
 
         if (_translationHasContent)
         {
@@ -845,7 +922,7 @@ internal sealed partial class ResultPanelWindow : Window
         _isEditingSource = true;
         SourceViewerBorder.IsVisible = false;
         SourceTextBox.IsVisible = true;
-        SourceCaptionTextBlock.Text = "编辑中 · Esc/失焦还原";
+        SourceCaptionTextBlock.Text = "编辑中 · 失焦自动保存";
         SourceTextBox.Focus();
 
         var textLen = SourceTextBox.Text?.Length ?? 0;
@@ -882,14 +959,17 @@ internal sealed partial class ResultPanelWindow : Window
         SourceTextBox.IsVisible = false;
         SourceViewerBorder.IsVisible = true;
         SourceCaptionTextBlock.Text = "双击可编辑";
-        TranslateButton.Content = "翻译";
 
         if (!string.Equals(edited, _originalEditingText, StringComparison.Ordinal))
         {
             _annotatedSource = edited;
             _annotationSourcePlain = string.Empty;
             _originalEditingText = edited;
-            SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(edited);
+            UpdateSourceViewerDisplay();
+            if (_translationHasContent)
+            {
+                TranslateButton.Content = "重译";
+            }
         }
     }
 
@@ -900,6 +980,16 @@ internal sealed partial class ResultPanelWindow : Window
 
         if (wasModified)
         {
+            if (_translationHasContent)
+            {
+                TranslateButton.Content = "重译";
+                SetStatus("原文已修改，请点击“重译”。");
+            }
+            else
+            {
+                TranslateButton.Content = "翻译";
+            }
+
             _ = AnnotateSourceAsync();
         }
     }
@@ -922,6 +1012,11 @@ internal sealed partial class ResultPanelWindow : Window
         }
         else
         {
+            // 实质修改后失焦：立即同步保存事实源，杜绝丢失修改
+            var edited = SourceTextBox.Text ?? string.Empty;
+            _annotatedSource = edited;
+            _annotationSourcePlain = string.Empty;
+
             if (_translationHasContent)
             {
                 TranslateButton.Content = "重译";
@@ -955,7 +1050,12 @@ internal sealed partial class ResultPanelWindow : Window
 
     private void OnClearTranslationClick(object? sender, RoutedEventArgs e) => ClearTranslation();
 
-    private void OnSettingsClick(object? sender, RoutedEventArgs e) => SettingsRequested?.Invoke(this, SettingsTab.Translation);
+    private void OnSettingsClick(object? sender, RoutedEventArgs e)
+    {
+        _isOpeningChildWindow = true;
+        SettingsRequested?.Invoke(this, SettingsTab.Translation);
+        DispatcherTimer.RunOnce(() => _isOpeningChildWindow = false, TimeSpan.FromSeconds(1));
+    }
 
     // 拖动把手调节行高
     private void OnSourceResizePointerPressed(object? sender, PointerPressedEventArgs e)
