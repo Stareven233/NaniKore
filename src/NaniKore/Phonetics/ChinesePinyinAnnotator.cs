@@ -47,12 +47,14 @@ internal sealed class ChinesePinyinAnnotator : ITextAnnotator, IDisposable
             var start = plainText.IndexOf(surface, cursor, StringComparison.Ordinal);
             if (start < 0)
             {
-                start = cursor;
+                // 未找到词面时跳过，严禁 start = cursor 导致游标与字符错位
+                continue;
             }
 
             cursor = start + surface.Length;
 
-            if (!ContainsHanzi(surface))
+            // 严格限制底字区间只落于合法 CJK 汉字字符，严禁英文、数字、标点符号混入底字
+            if (surface.Length == 0 || !surface.All(RubyTextParser.IsCjkKanji))
             {
                 continue;
             }

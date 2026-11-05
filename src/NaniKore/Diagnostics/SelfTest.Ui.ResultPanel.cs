@@ -733,9 +733,9 @@ internal static partial class SelfTest
         // 2. 结果面板初始化与按钮样式
         var panel = new ResultPanelWindow();
         panel.SetPinned(false);
-        var annotateBtn = Find<Avalonia.Controls.Primitives.ToggleButton>(panel, "AnnotateSourceButton");
+        var annotateBtn = Find<Button>(panel, "AnnotateSourceButton");
         var pinBtn = Find<Avalonia.Controls.Primitives.ToggleButton>(panel, "PinButton");
-        Check("annotate source button has neutral class", annotateBtn?.Classes.Contains("neutral") == true);
+        Check("annotate source button is standard button and defaults to ruby visible", annotateBtn is not null && panel.IsRubyVisible);
         Check("pin button defaults to unpinned state", pinBtn?.IsChecked == false && !panel.Topmost);
 
         // 3. PinChanged 事件与置顶联动

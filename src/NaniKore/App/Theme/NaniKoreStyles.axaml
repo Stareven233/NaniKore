@@ -109,6 +109,7 @@
         <Setter Property="Padding" Value="6" />
         <Setter Property="CornerRadius" Value="4" />
         <Setter Property="MinHeight" Value="26" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -121,35 +122,9 @@
         <Setter Property="Background" Value="{DynamicResource Brush.Accent.Subtle}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
     </Style>
-
-    <!-- 中性切换按钮 ToggleButton.neutral（如原文区的注音按钮：白底黑字与常规 Button 严格一致，仅在 Hover 时微调） -->
-    <Style Selector="ToggleButton.neutral">
-        <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
-        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
-        <Setter Property="BorderBrush" Value="Transparent" />
-    </Style>
-    <Style Selector="ToggleButton.neutral:checked /template/ ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
-        <Setter Property="BorderBrush" Value="Transparent" />
-        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
-    </Style>
-    <Style Selector="ToggleButton.neutral:pointerover /template/ ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource Brush.Control.BackgroundHover}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.BorderHover}" />
-        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
-    </Style>
-    <Style Selector="ToggleButton.neutral:checked:pointerover /template/ ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource Brush.Control.BackgroundHover}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.BorderHover}" />
-        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
-    </Style>
-    <Style Selector="ToggleButton.neutral:pressed /template/ ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource Brush.Control.BackgroundPressed}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
-    </Style>
-    <Style Selector="ToggleButton.neutral:checked:pressed /template/ ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource Brush.Control.BackgroundPressed}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+    <Style Selector="ToggleButton.icon:checked:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource Brush.Accent.Subtle}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
     </Style>
 
     <!-- 品牌 Accent 按钮（如保存按钮）：常态即为草地绿，彻底杜绝黑灰，悬停明亮，点击深沉，指针为手型，字重常规不呆板 -->
@@ -532,7 +507,7 @@
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="8" />
         <Setter Property="Padding" Value="4" />
-        <Setter Property="MinWidth" Value="140" />
+        <Setter Property="MinWidth" Value="120" />
     </Style>
 
     <!-- 现代居中微质感 MenuItem：彻底移除 FluentTheme 左右不对称的 40px 图标列留白，文字绝对居中，草地绿微光 Hover -->
@@ -541,7 +516,7 @@
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="CornerRadius" Value="6" />
-        <Setter Property="Padding" Value="14,8" />
+        <Setter Property="Padding" Value="8,6" />
         <Setter Property="Margin" Value="2,1" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -617,7 +592,7 @@
                             <TextBlock x:Name="PART_Chevron"
                                        DockPanel.Dock="Left"
                                        Text="▶"
-                                       FontSize="13"
+                                       FontSize="15"
                                        FontWeight="SemiBold"
                                        VerticalAlignment="Center"
                                        Margin="2,0,8,0"
@@ -635,6 +610,10 @@
             </ControlTemplate>
         </Setter>
     </Style>
+    <Style Selector="Expander.clean /template/ ToggleButton#PART_HeaderButton /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
     <Style Selector="Expander.clean /template/ ToggleButton#PART_HeaderButton:pointerover /template/ ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource Brush.Accent.Subtle}" />
         <Setter Property="BorderBrush" Value="Transparent" />
@@ -647,13 +626,28 @@
         <Setter Property="Background" Value="{DynamicResource Brush.Accent.Subtle}" />
         <Setter Property="BorderBrush" Value="Transparent" />
     </Style>
+    <Style Selector="Expander.clean /template/ ToggleButton#PART_HeaderButton:pressed /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource Brush.Accent.Subtle}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Expander.clean /template/ ToggleButton#PART_HeaderButton:disabled /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Expander.clean /template/ ToggleButton#PART_HeaderButton:pointerover /template/ TextBlock#PART_Chevron">
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+    </Style>
     <Style Selector="Expander.clean[IsExpanded=True] /template/ TextBlock#PART_Chevron">
         <Setter Property="Text" Value="▼" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="15" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
     </Style>
     <Style Selector="Expander.clean:disabled /template/ ToggleButton#PART_HeaderButton">
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Disabled}" />
         <Setter Property="Opacity" Value="0.65" />
+    </Style>
+    <Style Selector="Expander.clean:disabled /template/ ToggleButton#PART_HeaderButton /template/ ContentPresenter">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
     </Style>
 </Styles>

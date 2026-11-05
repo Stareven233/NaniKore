@@ -106,6 +106,7 @@ internal static partial class SelfTest
 
         var ocrButton = Find<Button>(page, "DownloadDependenciesButton");
         var ocrStatus = Find<InfoBar>(page, "DependencyStatus");
+        page.RefreshDependenciesSync();
         var isOcrComplete = OcrDependencyManifest.IsComplete();
         Check(
             "ocr dependency button mirrors local manifest state and stays disabled without a downloader",
@@ -179,6 +180,7 @@ internal static partial class SelfTest
             page.FindControl<Control>("PhoneticsEnabledToggle") is ToggleSwitch &&
             page.FindControl<Control>("PhoneticsRareOnlyToggle") is ToggleSwitch);
 
+        page.RefreshDependenciesSync();
         foreach (var language in PhoneticLanguages.All)
         {
             var buttonName = $"PhoneticsDownload{char.ToUpperInvariant(language.Code[0])}{language.Code[1..]}";

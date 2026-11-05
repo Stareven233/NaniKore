@@ -23,7 +23,7 @@ internal static class RubyDocumentBuilder
             return inlines;
         }
 
-        var lines = annotatedText.Split(["\r\n", "\n"], StringSplitOptions.None);
+        var lines = annotatedText.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
         for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
         {
             var line = lines[lineIndex];

@@ -247,6 +247,19 @@ internal static partial class SelfTest
             "越界区间被安全忽略",
             AnnotatedTextFormatter.Compose(text, [new AnnotationSpan(0, 99, "x")]) == text,
             $"actual={AnnotatedTextFormatter.Compose(text, [new AnnotationSpan(0, 99, "x")])}");
+
+        // 绝对保真（Lossless Compose）断言：复杂混合文本与换行
+        var complexMixedText = "Hello 123! これは【テスト】です。\r\n薬の過剰摂取で亡くなった被害者。\nLine 3: 漢字 and symbols & % * 100%!";
+        var spansMixed = new[]
+        {
+            new AnnotationSpan(25, 1, "くすり"),
+            new AnnotationSpan(27, 4, "かじょうせっしゅ"),
+        };
+        var composedComplex = AnnotatedTextFormatter.Compose(complexMixedText, spansMixed);
+        Check(
+            "绝对保真断言：ToPlainText(Compose(text, spans)) == text 恒等",
+            RubyTextParser.ToPlainText(composedComplex) == complexMixedText,
+            $"composed={composedComplex}");
     }
 
     private static void TestEnglishPipeline()
@@ -390,6 +403,11 @@ internal static partial class SelfTest
             "送假名切分：行きます",
             ikimasu == "行[い]きます",
             $"actual={ikimasu}");
+        var ocha = Annotated(annotator, "お茶を飲む", allContext);
+        Check(
+            "前缀假名剥离：お茶 -> お茶[ちゃ]",
+            ocha.Contains("お茶[ちゃ]"),
+            $"actual={ocha}");
         var repeated = Annotated(annotator, "日本語を勉強する日本語", allContext);
         Check(
             "同篇重复词形只注首现",
@@ -434,6 +452,11 @@ internal static partial class SelfTest
             "中文多音字按词面区分",
             polyphone == "不行[bù xíng]就去银行[yín háng]",
             $"actual={polyphone}");
+        var mixedChinese = annotator.Annotate("持有300股A股股票", allContext);
+        Check(
+            "中文标注器严禁数字与英文字符混入底字区间",
+            mixedChinese.All(s => "持有300股A股股票".AsSpan(s.Start, s.Length).ToArray().All(RubyTextParser.IsCjkKanji)),
+            $"actual={AnnotatedTextFormatter.Compose("持有300股A股股票", mixedChinese)}");
     }
 
     private static void TestEnglishIpaDictionary()

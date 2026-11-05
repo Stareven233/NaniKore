@@ -643,6 +643,8 @@ internal static partial class SelfTest
                 !reloaded.Current.General.PasteAutoTranslate &&
                 AppConfigCloner.Clone(reloaded.Current).General.AutoExplain &&
                 !AppConfigCloner.Clone(reloaded.Current).General.PasteAutoTranslate &&
+                !AppConfigCloner.Clone(new AppConfig { General = new GeneralConfig { AutoAnnotate = false } }).General.AutoAnnotate &&
+                AppConfigCloner.Clone(new AppConfig { General = new GeneralConfig { OcrListen = "127.0.0.1:23335" } }).General.OcrListen == "127.0.0.1:23335" &&
                 AppConfigCloner.Clone(reloaded.Current).Profiles.Single().Name == "test" &&
                 AppConfigCloner.Clone(reloaded.Current).Prompts.JapanesePlugin == "Custom ja-JP" &&
                 AppConfigCloner.Clone(reloaded.Current).Prompts.VisionBase == "Transcribe\n\n---\n\nTranslate into {{target_language}}.");

@@ -1,4 +1,5 @@
 using System.Text;
+using NaniKore.Translation;
 
 namespace NaniKore.Phonetics;
 
@@ -46,6 +47,15 @@ internal static class AnnotatedTextFormatter
         }
 
         builder.Append(plainText, cursor, plainText.Length - cursor);
-        return builder.ToString();
+        var composed = builder.ToString();
+
+        // 绝对保真防御保障（Lossless Compose）：
+        // 提取纯文本必须与原文 100% 恒等；遇到任何异常错位即刻防御性熔断回退为原文，杜绝文字丢失与乱码。
+        if (!string.Equals(RubyTextParser.ToPlainText(composed), plainText, StringComparison.Ordinal))
+        {
+            return plainText;
+        }
+
+        return composed;
     }
 }

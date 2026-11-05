@@ -62,6 +62,12 @@ internal sealed partial class ResultPanelWindow : Window
 
     private RubyReadingKind _sourceReadingKind = RubyReadingKind.Unknown;
 
+    /// <summary>原文注音显隐状态：由注音按钮直接翻转控制，与配置项 AutoAnnotate 联动。</summary>
+    private bool _isRubyVisible = true;
+
+    /// <summary>当前注音是否可见。</summary>
+    public bool IsRubyVisible => _isRubyVisible;
+
     // 拖动把手状态记录
     private bool _isDraggingSourceGrip;
     private Point _sourceGripStartPoint;
@@ -216,11 +222,6 @@ internal sealed partial class ResultPanelWindow : Window
         Close();
     }
 
-    private void OnRubyToggleCheckedChanged(object? sender, RoutedEventArgs e)
-    {
-        UpdateSourceViewerDisplay();
-    }
-
     private void UpdateSourceViewerDisplay()
     {
         if (_isEditingSource)
@@ -228,17 +229,17 @@ internal sealed partial class ResultPanelWindow : Window
             return;
         }
 
-        var showRuby = AnnotateSourceButton?.IsChecked == true;
+        var showRuby = _isRubyVisible;
         SourceViewer.LineHeight = showRuby ? 34 : 24;
 
         if (showRuby)
         {
-            SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(_annotatedSource);
+            SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(_annotatedSource, SourceViewer.FontSize);
         }
         else
         {
             var plain = RubyTextParser.ToPlainText(_annotatedSource);
-            SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(plain);
+            SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(plain, SourceViewer.FontSize);
         }
     }
 
@@ -327,7 +328,7 @@ internal sealed partial class ResultPanelWindow : Window
         _receivedAnnotatedSource = false;
         NormalizeSourceButton.IsEnabled = true;
         AnnotateSourceButton.IsEnabled = true;
-        AnnotateSourceButton.IsChecked = autoAnnotate;
+        _isRubyVisible = autoAnnotate;
         TranslateButton.Content = "翻译";
         TranslationTextBox.Clear();
         TranslationTextBox.IsHitTestVisible = false;
@@ -402,7 +403,7 @@ internal sealed partial class ResultPanelWindow : Window
         if (string.IsNullOrEmpty(_annotatedSource) && !string.IsNullOrEmpty(SourceTextBox.Text))
         {
             _annotatedSource = SourceTextBox.Text;
-            SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(_annotatedSource);
+            UpdateSourceViewerDisplay();
         }
     }
 
@@ -604,6 +605,7 @@ internal sealed partial class ResultPanelWindow : Window
         _annotatedSource = ruby;
         _annotationSourcePlain = plain;
         _sourceReadingKind = readingKind;
+        _isRubyVisible = true;
         ApplySourceMenuWording();
 
         if (!_isEditingSource)
@@ -1070,7 +1072,23 @@ internal sealed partial class ResultPanelWindow : Window
             return;
         }
 
-        _ = AnnotateSourceAsync(manual: true);
+        if (!_phonetics.Enabled)
+        {
+            SetStatus("原文注音已在设置-通用中关闭。");
+            return;
+        }
+
+        if (_annotatedSource.Length > 0 && !string.Equals(_annotatedSource, RubyTextParser.ToPlainText(_annotatedSource), StringComparison.Ordinal))
+        {
+            _isRubyVisible = !_isRubyVisible;
+            UpdateSourceViewerDisplay();
+            SetStatus(_isRubyVisible ? "已开启原文注音显示。" : "已切换为纯文本显示。");
+        }
+        else
+        {
+            _isRubyVisible = true;
+            _ = AnnotateSourceAsync(manual: true);
+        }
     }
 
     private void OnClearTranslationClick(object? sender, RoutedEventArgs e) => ClearTranslation();

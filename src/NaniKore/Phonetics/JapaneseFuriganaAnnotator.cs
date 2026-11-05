@@ -47,7 +47,7 @@ internal sealed class JapaneseFuriganaAnnotator : ITextAnnotator, IDisposable
             var start = plainText.IndexOf(surface, cursor, StringComparison.Ordinal);
             if (start < 0)
             {
-                start = cursor;
+                continue;
             }
 
             cursor = start + surface.Length;
@@ -70,27 +70,83 @@ internal sealed class JapaneseFuriganaAnnotator : ITextAnnotator, IDisposable
                 continue;
             }
 
-            var kanaSuffix = CountKanaSuffix(surface);
-            var baseLength = kanaSuffix == 0 || reading.Length <= kanaSuffix
-                ? surface.Length
-                : surface.Length - kanaSuffix;
-            if (baseLength <= 0)
+            // 严格限制底字区间：
+            // 1. 剕离前导平假名/片假名（如“お茶” -> 前缀“お”，底字“茶”）
+            var prefixKanaCount = 0;
+            while (prefixKanaCount < surface.Length && RubyTextParser.IsKana(surface[prefixKanaCount]))
+            {
+                prefixKanaCount++;
+            }
+
+            if (prefixKanaCount > 0)
+            {
+                var prefixHiragana = KatakanaToHiragana(surface[..prefixKanaCount]);
+                if (reading.StartsWith(prefixHiragana, StringComparison.Ordinal))
+                {
+                    reading = reading[prefixHiragana.Length..];
+                }
+                else
+                {
+                    prefixKanaCount = 0;
+                }
+            }
+
+            // 2. 剕离尾随平假名/片假名送假名（如“食べた” -> 后缀“べた”，底字“食”）
+            var remainingSurface = surface[prefixKanaCount..];
+            var suffixKanaCount = 0;
+            while (suffixKanaCount < remainingSurface.Length && RubyTextParser.IsKana(remainingSurface[^(suffixKanaCount + 1)]))
+            {
+                suffixKanaCount++;
+            }
+
+            if (suffixKanaCount > 0)
+            {
+                var suffixHiragana = KatakanaToHiragana(remainingSurface[^suffixKanaCount..]);
+                if (reading.EndsWith(suffixHiragana, StringComparison.Ordinal))
+                {
+                    reading = reading[..^suffixHiragana.Length];
+                }
+                else
+                {
+                    suffixKanaCount = 0;
+                }
+            }
+
+            var baseLength = remainingSurface.Length - suffixKanaCount;
+            if (baseLength <= 0 || string.IsNullOrWhiteSpace(reading))
             {
                 continue;
             }
 
-            var baseReading = kanaSuffix == 0 ? reading : reading[..^kanaSuffix];
-            if (string.IsNullOrWhiteSpace(baseReading))
+            // 3. 校验底字部分必须为合法 CJK 字符（汉字/假名），严禁英文、数字、符号混入底字
+            var baseSpan = remainingSurface.AsSpan(0, baseLength);
+            var validBase = true;
+            var hasKanji = false;
+            for (var k = 0; k < baseSpan.Length; k++)
+            {
+                var c = baseSpan[k];
+                if (RubyTextParser.IsCjkKanji(c))
+                {
+                    hasKanji = true;
+                }
+                else if (!RubyTextParser.IsKana(c))
+                {
+                    validBase = false;
+                    break;
+                }
+            }
+
+            if (!validBase || !hasKanji)
             {
                 continue;
             }
 
-            if (!context.ShouldEmit(surface, baseReading))
+            if (!context.ShouldEmit(surface, reading))
             {
                 continue;
             }
 
-            spans.Add(new AnnotationSpan(start, baseLength, baseReading));
+            spans.Add(new AnnotationSpan(start + prefixKanaCount, baseLength, reading));
         }
 
         return spans;

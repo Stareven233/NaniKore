@@ -51,11 +51,10 @@
                                   Width="28" Height="26"
                                   ToolTip.Tip="置顶面板（置顶后点击外部不自动关闭）"
                                   IsCheckedChanged="OnPinButtonCheckedChanged">
-                        <TextBlock Text="&#xE718;"
-                                   FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
-                                   FontSize="12"
-                                   VerticalAlignment="Center"
-                                   HorizontalAlignment="Center" />
+                        <PathIcon Data="M16,12V4H17V2H7V4H8V12L6,14V16H11V22H13V16H18V14L16,12Z"
+                                  Width="13" Height="13"
+                                  VerticalAlignment="Center"
+                                  HorizontalAlignment="Center" />
                     </ToggleButton>
                     <Button x:Name="MinimizeButton"
                             Classes="icon"
@@ -113,15 +112,12 @@
                             <Button x:Name="NormalizeSourceButton" MinWidth="68" Content="规范化"
                                     ToolTip.Tip="整理换行和空格，并补齐文字与字母、数字之间的空格"
                                     Click="OnNormalizeSourceClick" />
-                            <!-- 原文注音显示开关按钮（白底黑字常规外观，悬停微调） -->
-                            <ToggleButton x:Name="AnnotateSourceButton"
-                                          Classes="neutral"
-                                          MinWidth="68"
-                                          Content="注音"
-                                          IsChecked="True"
-                                          ToolTip.Tip="开关原文注音显示（开启显示假名/拼音/音标，关闭显示纯原文）"
-                                          IsCheckedChanged="OnRubyToggleCheckedChanged"
-                                          Click="OnAnnotateSourceClick" />
+                            <!-- 原文注音显示开关按钮（纯 Button，样式与规范化、设置完全对齐） -->
+                            <Button x:Name="AnnotateSourceButton"
+                                    MinWidth="68"
+                                    Content="注音"
+                                    ToolTip.Tip="开关原文注音显示（开启显示假名/拼音/音标，关闭显示纯原文）"
+                                    Click="OnAnnotateSourceClick" />
                             <Button x:Name="TranslateButton" Classes="accent" MinWidth="68" Content="翻译"
                                     Click="OnTranslateClick" />
                         </StackPanel>

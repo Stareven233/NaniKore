@@ -210,7 +210,9 @@ internal static class AppConfigCloner
             AutoTranslate = source.General.AutoTranslate,
             PasteAutoTranslate = source.General.PasteAutoTranslate,
             AutoExplain = source.General.AutoExplain,
+            AutoAnnotate = source.General.AutoAnnotate,
             TargetLanguage = source.General.TargetLanguage,
+            OcrListen = source.General.OcrListen,
         },
         Pipeline = new PipelineConfig
         {
