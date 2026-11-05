@@ -513,10 +513,10 @@
     <!-- 现代居中微质感 MenuItem：彻底移除 FluentTheme 左右不对称的 40px 图标列留白，文字绝对居中，草地绿微光 Hover -->
     <Style Selector="MenuItem">
         <Setter Property="FontFamily" Value="{DynamicResource Font.Ui}" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="15" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
         <Setter Property="CornerRadius" Value="6" />
-        <Setter Property="Padding" Value="8,6" />
+        <Setter Property="Padding" Value="2,6" />
         <Setter Property="Margin" Value="2,1" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />

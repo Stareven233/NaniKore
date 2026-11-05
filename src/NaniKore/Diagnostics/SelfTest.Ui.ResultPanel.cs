@@ -773,6 +773,16 @@ internal static partial class SelfTest
             sourceBox?.IsVisible == false &&
             viewerBorder?.IsVisible == true);
 
+        // 5. 验证 RubyInlineControl 紧凑底字测量与行高隔离
+        var rubyWithLongReading = new RubyInlineControl("收", "おさむ", 15);
+        rubyWithLongReading.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        // 单个汉字 15px 宽度大约在 14~18px 之间，注音（3个假名）宽度在 24px+。紧凑模式下控件占位宽度必须以底字为准
+        Check("ruby inline control width matches base text width instead of being stretched by reading",
+            rubyWithLongReading.DesiredSize.Width < 22 && rubyWithLongReading.DesiredSize.Width > 0);
+        // 总高度应在 30~36px 正常双行范围，严禁继承外层 34px 行高膨胀至 60px+
+        Check("ruby inline control total height is compact without inheriting inflated line heights",
+            rubyWithLongReading.DesiredSize.Height <= 38);
+
         // 5. 失焦不触发关闭
         var closed = false;
         panel.Closed += (_, _) => closed = true;

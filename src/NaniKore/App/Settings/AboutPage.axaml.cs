@@ -39,7 +39,7 @@ internal sealed partial class AboutPage : UserControl, ISettingsPage
         var templateVersion = TemplateVersionProvider?.Invoke();
         VersionText.Text = string.IsNullOrWhiteSpace(templateVersion)
             ? $"v{config.Version}"
-            : $"v{templateVersion}({config.Version})";
+            : $"v{templateVersion} (config v{config.Version})";
         DescriptionText.Text = "本地 PP-OCRv6 检测与识别，配合可配置的云端流式翻译。截图、选区、OCR 全程在本机完成。";
 
         if (ConfigVersionComparator.IsBehind(templateVersion, config.Version))
