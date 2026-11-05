@@ -133,7 +133,80 @@ public partial class SelectionBubblePopup : UserControl
     {
         var focusManager = TopLevel.GetTopLevel(this)?.FocusManager;
         var focusedElement = focusManager?.GetFocusedElement() as Visual;
-        return focusedElement != null && (focusedElement == this || this.IsVisualAncestorOf(focusedElement));
+        if (focusedElement == null)
+        {
+            return false;
+        }
+
+        if (focusedElement == this || this.IsVisualAncestorOf(focusedElement))
+        {
+            return true;
+        }
+
+        if (BubblePopup.Child is Visual bubbleVisual &&
+            (focusedElement == bubbleVisual || bubbleVisual.IsVisualAncestorOf(focusedElement)))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 判断指定的交互指针事件是否落在气泡内容区域或其子交互组件（如下拉菜单）内部。
+    /// 优先通过可视树祖先判定，辅以跨层级几何命中测试，杜绝点击气泡选项时被误判为外部点击而撤销。
+    /// </summary>
+    public bool ContainsPointerEvent(PointerEventArgs e)
+    {
+        if (!BubblePopup.IsOpen)
+        {
+            return false;
+        }
+
+        // 1. 若下拉菜单正处于展开交互状态，绝不视为外部点击
+        if (CategoryComboBox.IsDropDownOpen || LanguageComboBox.IsDropDownOpen)
+        {
+            return true;
+        }
+
+        // 2. 检查事件源 Visual 是否属于气泡或气泡弹出内容的后代
+        if (e.Source is Visual sourceVisual)
+        {
+            if (sourceVisual == this || this.IsVisualAncestorOf(sourceVisual))
+            {
+                return true;
+            }
+
+            if (BubblePopup.Child is Visual bubbleContent &&
+                (sourceVisual == bubbleContent || bubbleContent.IsVisualAncestorOf(sourceVisual)))
+            {
+                return true;
+            }
+        }
+
+        // 3. 几何命中测试：计算指针相对气泡内容容器的本地坐标（仅在内容已具有真实尺寸时生效）
+        if (BubblePopup.Child is Visual visual && visual.IsVisible)
+        {
+            var bounds = visual.Bounds;
+            if (bounds.Width > 0 && bounds.Height > 0)
+            {
+                try
+                {
+                    var ptInBubble = e.GetPosition(visual);
+                    if (ptInBubble.X >= 0 && ptInBubble.X <= bounds.Width &&
+                        ptInBubble.Y >= 0 && ptInBubble.Y <= bounds.Height)
+                    {
+                        return true;
+                    }
+                }
+                catch
+                {
+                    // 坐标转换遭遇极端状态时安全跳过
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>判断屏幕点是否落在气泡的可视区域内。</summary>
@@ -144,10 +217,16 @@ public partial class SelectionBubblePopup : UserControl
             return false;
         }
 
-        var bounds = Bounds;
+        var visual = BubblePopup.Child as Visual ?? this;
+        var bounds = visual.Bounds;
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+        {
+            return false;
+        }
+
         try
         {
-            var topLeft = this.PointToScreen(new Point(0, 0));
+            var topLeft = visual.PointToScreen(new Point(0, 0));
             var rect = new Rect(topLeft.X, topLeft.Y, bounds.Width, bounds.Height);
             return rect.Contains(screenPoint);
         }

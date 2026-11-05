@@ -603,7 +603,51 @@ internal static partial class SelfTest
             Check("selection bubble language default follows panel detected source language",
                 panel.CurrentSourceLanguage == "日本語");
 
-            selectionBubble?.Hide();
+            // 验证选项点击放行与外部点击判定：杜绝点击气泡选项时被误判为取消划选
+            var pointer = new Pointer(0, PointerType.Mouse, true);
+            if (selectionBubble?.FavoriteBtn is { } favBtn)
+            {
+                var insideArgs = new PointerPressedEventArgs(
+                    favBtn,
+                    pointer,
+                    favBtn,
+                    new Point(5, 5),
+                    0,
+                    new PointerPointProperties(RawInputModifiers.None, PointerUpdateKind.LeftButtonPressed),
+                    KeyModifiers.None)
+                {
+                    RoutedEvent = InputElement.PointerPressedEvent
+                };
+                Check("contains pointer event recognizes click on favorite button inside bubble",
+                    selectionBubble.ContainsPointerEvent(insideArgs));
+
+                panel.OnPanelPointerPressedForTest(insideArgs);
+                Check("tunnel pointer pressed for inside bubble does not dismiss bubble",
+                    selectionBubble.PopupHost.IsOpen == true);
+
+                RaiseClick(favBtn);
+                Check("clicking favorite option inside bubble successfully favorites",
+                    favoriteService.IsFavorited("过不去"));
+            }
+
+            // 模拟在气泡外部（窗口其他区域）点击：气泡正确关闭
+            var outsideArgs = new PointerPressedEventArgs(
+                panel,
+                pointer,
+                panel,
+                new Point(10, 10),
+                0,
+                new PointerPointProperties(RawInputModifiers.None, PointerUpdateKind.LeftButtonPressed),
+                KeyModifiers.None)
+            {
+                RoutedEvent = InputElement.PointerPressedEvent
+            };
+            Check("contains pointer event correctly marks outside click as not inside bubble",
+                !selectionBubble!.ContainsPointerEvent(outsideArgs));
+
+            panel.OnPanelPointerPressedForTest(outsideArgs);
+            Check("clicking outside bubble dismisses it",
+                selectionBubble.PopupHost.IsOpen == false);
         }
     }
 

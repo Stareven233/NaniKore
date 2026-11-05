@@ -6,7 +6,7 @@
              x:DataType="controls:SelectionBubblePopup">
     <Popup x:Name="BubblePopup"
            Placement="Bottom"
-           IsLightDismissEnabled="True">
+           IsLightDismissEnabled="False">
         <Border Background="{DynamicResource Brush.Card.Background}"
                 BorderBrush="{DynamicResource Brush.Card.Border}"
                 BorderThickness="1"

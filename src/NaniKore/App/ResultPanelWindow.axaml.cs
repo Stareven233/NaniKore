@@ -191,6 +191,8 @@ internal sealed partial class ResultPanelWindow : Window
 
     internal void OnPanelDeactivatedForTest() => OnPanelDeactivated(this, EventArgs.Empty);
 
+    internal void OnPanelPointerPressedForTest(PointerPressedEventArgs e) => OnPanelPointerPressed(this, e);
+
     private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
@@ -834,12 +836,14 @@ internal sealed partial class ResultPanelWindow : Window
     {
         if (SelectionBubble.PopupHost.IsOpen)
         {
-            var point = e.GetPosition(this);
-            // 简单检测：如果在气泡外部点击则收起
-            if (!SelectionBubble.ContainsScreenPoint(point))
+            // 精准判定：若点击落在气泡内容或其下拉菜单内部，绝不收起气泡，放行气泡内所有选项点击交互
+            if (SelectionBubble.ContainsPointerEvent(e))
             {
-                SelectionBubble.Hide();
+                return;
             }
+
+            // 仅在明确点击气泡外部区域时收起气泡
+            SelectionBubble.Hide();
         }
 
         if (_isEditingSource && SourceTextBox.IsVisible)
