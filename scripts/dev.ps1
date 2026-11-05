@@ -6,7 +6,10 @@ param(
 
     [switch]$Full,
 
-    [switch]$ForceBump
+    [switch]$ForceBump,
+
+    [Alias('v', 'Verbose')]
+    [switch]$ShowPass
 )
 
 $ErrorActionPreference = 'Stop'
@@ -467,7 +470,11 @@ try {
             $exitCode = 0
         }
         'test' {
-            & $dotnet run --project $project -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true -- --self-test
+            $testArgs = @('--self-test')
+            if ($ShowPass) {
+                $testArgs += '--verbose'
+            }
+            & $dotnet run --project $project -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true -- @testArgs
             $exitCode = $LASTEXITCODE
         }
         'publish' {

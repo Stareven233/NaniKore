@@ -142,9 +142,9 @@
                                                  PointerReleased="OnSourceViewerPointerReleased">
                                 <SelectableTextBlock.ContextMenu>
                                     <ContextMenu>
-                                        <MenuItem x:Name="CopyPlainSourceMenuItem" Header="复制纯原文" Click="OnCopyPlainSourceClick" />
-                                        <MenuItem x:Name="CopyAnnotatedSourceMenuItem" Header="复制带注音文本 (汉字[读音])" Click="OnCopyAnnotatedSourceClick" />
-                                        <MenuItem x:Name="CopyReadingSourceMenuItem" Header="复制纯读音" Click="OnCopyReadingSourceClick" />
+                                        <MenuItem x:Name="CopyPlainSourceMenuItem" Header="复制原文" Click="OnCopyPlainSourceClick" />
+                                        <MenuItem x:Name="CopyReadingSourceMenuItem" Header="复制读音" Click="OnCopyReadingSourceClick" />
+                                        <MenuItem x:Name="CopyAnnotatedSourceMenuItem" Header="复制注音文本" Click="OnCopyAnnotatedSourceClick" />
                                     </ContextMenu>
                                 </SelectableTextBlock.ContextMenu>
                             </SelectableTextBlock>

@@ -41,7 +41,9 @@ internal static class Program
 
         if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase))
         {
-            return SelfTest.Run();
+            var verbose = args.Contains("--verbose", StringComparer.OrdinalIgnoreCase) ||
+                          args.Contains("-v", StringComparer.OrdinalIgnoreCase);
+            return SelfTest.Run(verbose);
         }
 
         if (args.Contains("--inspect-models", StringComparer.OrdinalIgnoreCase))

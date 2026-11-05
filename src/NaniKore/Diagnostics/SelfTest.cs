@@ -15,15 +15,20 @@ namespace NaniKore.Diagnostics;
 /// </summary>
 internal static partial class SelfTest
 {
+    private static int _passed;
     private static int _failed;
+    private static bool _verbose;
     private static readonly List<string> Failures = [];
 
     /// <summary>
     /// 执行全量无 UI 自测，返回退出码（0 表示全绿通过，非 0 表示有失败项）。
     /// </summary>
-    public static int Run()
+    public static int Run(bool verbose = false)
     {
+        _verbose = verbose;
+        _passed = 0;
         _failed = 0;
+        Failures.Clear();
 
         RunOcrTests();
         RunConfigTests();
@@ -34,9 +39,10 @@ internal static partial class SelfTest
         RunFavoritesTests();
         RunUiTests();
 
+        var total = _passed + _failed;
         Console.WriteLine(_failed == 0
-            ? "All self-tests passed."
-            : $"Self-tests failed: {_failed}");
+            ? $"All self-tests passed ({_passed} checks)."
+            : $"Self-tests failed: {_failed}, passed: {_passed} (total: {total}).");
         if (_failed > 0)
         {
             // 失败明细写 UTF-8 文件：控制台在 Windows 默认代码页下中文/IPA 会花屏
@@ -63,7 +69,11 @@ internal static partial class SelfTest
     {
         if (condition)
         {
-            Console.WriteLine($"PASS: {name}");
+            _passed++;
+            if (_verbose)
+            {
+                Console.WriteLine($"PASS: {name}");
+            }
             return;
         }
 

@@ -627,9 +627,10 @@ internal sealed partial class ResultPanelWindow : Window
     private void ApplySourceMenuWording()
     {
         var reading = RubyReadingTerms.Reading(_sourceReadingKind);
-        CopyPlainSourceMenuItem.Header = "复制纯原文";
-        CopyAnnotatedSourceMenuItem.Header = $"复制带注音文本 ({RubyReadingTerms.Base(_sourceReadingKind)}[{reading}])";
-        CopyReadingSourceMenuItem.Header = $"复制纯{reading}";
+        CopyPlainSourceMenuItem.Header = "复制原文";
+        CopyReadingSourceMenuItem.Header = $"复制{reading}";
+        // CopyAnnotatedSourceMenuItem.Header = $"复制带注音文本 ({RubyReadingTerms.Base(_sourceReadingKind)}[{reading}])";
+        CopyAnnotatedSourceMenuItem.Header = $"复制注音文本";
     }
 
     private static RubyReadingKind ReadingKindForLanguage(string? languageCode) => languageCode switch
