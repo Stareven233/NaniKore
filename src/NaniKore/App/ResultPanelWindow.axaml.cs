@@ -230,7 +230,7 @@ internal sealed partial class ResultPanelWindow : Window
         }
 
         var showRuby = _isRubyVisible;
-        SourceViewer.LineHeight = showRuby ? 34 : 24;
+        SourceViewer.LineHeight = showRuby ? 40 : 28;
 
         if (showRuby)
         {

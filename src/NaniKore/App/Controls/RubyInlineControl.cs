@@ -71,7 +71,8 @@ internal sealed class RubyInlineControl : Grid
         _rubyBlock = new TextBlock
         {
             Text = rubyText,
-            FontSize = Math.Max(8, baseFontSize * 0.55),
+            FontSize = Math.Max(10, baseFontSize * 0.61),
+            LetterSpacing = 0.4,
             LineHeight = double.NaN,
             Foreground = Brushes.Gray,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -121,6 +122,7 @@ internal sealed class RubyInlineControl : Grid
         {
             Text = baseText,
             FontSize = baseFontSize,
+            LetterSpacing = 0.8,
             LineHeight = double.NaN,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
@@ -140,9 +142,17 @@ internal sealed class RubyInlineControl : Grid
         var baseDesired = _baseBlock.DesiredSize;
         var rubyDesired = _rubyBlock.DesiredSize;
         var totalHeight = rubyDesired.Height + baseDesired.Height - 1;
-        // 关键排版决策：以底字宽度作为控件内联流占位宽度，注音文字居中并允许轻微悬挂（Overhang），
-        // 彻底根除因注音过宽而把底字拆开产生虚假空格的排版顽疾。
+
+        // 适当给底字放大字间距预留呼吸空间，让注音能够舒展对齐底字；
+        // 若注音稍宽于底字，在微小阈值（<= 4px）内平滑自适应扩展，让注音与字优雅居中对齐；
+        // 超出部分则自然轻微悬挂（Overhang），既满足对齐美感，又彻底杜绝长文本被生硬空格切碎。
         var width = baseDesired.Width > 0 ? baseDesired.Width : rubyDesired.Width;
+        if (baseDesired.Width > 0 && rubyDesired.Width > baseDesired.Width)
+        {
+            var extra = Math.Min(3.0, (rubyDesired.Width - baseDesired.Width) / 2.0);
+            width += extra * 2.0;
+        }
+
         return new Size(width, totalHeight);
     }
 
