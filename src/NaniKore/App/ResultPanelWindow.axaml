@@ -127,11 +127,12 @@
                         </StackPanel>
                     </DockPanel>
 
-                    <!-- 1. 原文区（双模切换） -->
+                    <!-- 1. 原文区（双模切换：左侧内边距扩至 14px，给最左侧悬挂注音留出充裕呼吸余量，杜绝裁切盖字） -->
                     <Grid Grid.Row="1">
                         <Border x:Name="SourceViewerBorder"
                                 Classes="control"
-                                Padding="10,8"
+                                Padding="14,8,10,8"
+                                ClipToBounds="False"
                                 Background="Transparent"
                                 DoubleTapped="OnSourceViewerDoubleTapped">
                             <SelectableTextBlock x:Name="SourceViewer"
@@ -139,6 +140,7 @@
                                                  LetterSpacing="0.8"
                                                  TextWrapping="Wrap"
                                                  LineHeight="40"
+                                                 ClipToBounds="False"
                                                  VerticalAlignment="Top"
                                                  PointerReleased="OnSourceViewerPointerReleased">
                                 <SelectableTextBlock.ContextMenu>
@@ -157,6 +159,7 @@
                                  TextWrapping="Wrap"
                                  FontSize="17.5"
                                  LetterSpacing="0.8"
+                                 Padding="14,8,10,8"
                                  VerticalContentAlignment="Top"
                                  VerticalAlignment="Stretch"
                                  IsVisible="False"

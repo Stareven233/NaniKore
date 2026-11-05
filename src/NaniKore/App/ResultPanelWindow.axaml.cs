@@ -940,8 +940,9 @@ internal sealed partial class ResultPanelWindow : Window
             return;
         }
 
-        // 双击平滑切入编辑模式：先平息划词气泡，加装状态锁防撕裂
+        // 双击平滑切入编辑模式：先平息划词气泡，清理选区防指针竞争，加装状态锁防撕裂
         SelectionBubble.Hide();
+        SourceViewer.ClearSelection();
         _isSwitchingEditMode = true;
 
         _originalEditingText = SourceTextBox.Text ?? string.Empty;
@@ -1275,20 +1276,27 @@ internal sealed partial class ResultPanelWindow : Window
 
     private void OnSourceViewerPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        var selLen = Math.Abs(SourceViewer.SelectionEnd - SourceViewer.SelectionStart);
-        if (selLen >= 1)
+        try
         {
-            var text = RubyDocumentBuilder.ExtractText(SourceViewer, RubyCopyKind.Plain)?.Trim();
-            if (!string.IsNullOrEmpty(text) && text.Length <= 100)
+            var selLen = Math.Abs(SourceViewer.SelectionEnd - SourceViewer.SelectionStart);
+            if (selLen >= 1)
             {
-                var mousePos = e.GetPosition(SourceViewer);
-                var reading = RubyDocumentBuilder.ExtractText(SourceViewer, RubyCopyKind.ReadingOnly)?.Trim();
-                var note = !string.IsNullOrEmpty(reading) && !string.Equals(reading, text, StringComparison.Ordinal)
-                    ? $"读音: {reading}"
-                    : null;
-                SelectionBubble.SetDefaultLanguage(CurrentSourceLanguage);
-                SelectionBubble.ShowAt(SourceViewer, new Rect(mousePos.X, mousePos.Y, 1, 1), text, note);
+                var text = RubyDocumentBuilder.ExtractText(SourceViewer, RubyCopyKind.Plain)?.Trim();
+                if (!string.IsNullOrEmpty(text) && text.Length <= 100)
+                {
+                    var mousePos = e.GetPosition(SourceViewer);
+                    var reading = RubyDocumentBuilder.ExtractText(SourceViewer, RubyCopyKind.ReadingOnly)?.Trim();
+                    var note = !string.IsNullOrEmpty(reading) && !string.Equals(reading, text, StringComparison.Ordinal)
+                        ? $"读音: {reading}"
+                        : null;
+                    SelectionBubble.SetDefaultLanguage(CurrentSourceLanguage);
+                    SelectionBubble.ShowAt(SourceViewer, new Rect(mousePos.X, mousePos.Y, 1, 1), text, note);
+                }
             }
+        }
+        catch
+        {
+            // 防御性安全隔离：划选松开定位与气泡呼出全程安全兜底，绝不打崩 UI 线程
         }
     }
 }

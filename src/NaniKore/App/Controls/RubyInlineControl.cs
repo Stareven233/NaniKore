@@ -82,17 +82,34 @@ internal sealed class RubyInlineControl : Grid
         };
         ToolTip.SetTip(_rubyBlock, $"点击复制{readingNoun}: {rubyText}\r\n右键查看更多选项");
 
-        // 悬停高亮反馈（优雅草地绿）
-        _rubyBlock.PointerEntered += (_, _) => _rubyBlock.Foreground = (IBrush?)Application.Current?.FindResource("Brush.Accent") ?? Brushes.LimeGreen;
+        // 悬停高亮反馈（优雅主题高亮或草地绿）：安全解析主题资源，杜绝 UnsetValue 强转异常导致进程崩溃
+        _rubyBlock.PointerEntered += (_, _) => _rubyBlock.Foreground = GetAccentBrush(this);
         _rubyBlock.PointerExited += (_, _) => _rubyBlock.Foreground = Brushes.Gray;
 
-        // 单击复制读音（拦截事件，避免触发外层 SelectableTextBlock 拖选）
+        Point rubyPressStartPos = default;
+
+        // 单击复制读音（原地轻触时拦截，按住拖拽划选时不阻断外层 SelectableTextBlock）
         _rubyBlock.PointerPressed += (sender, e) =>
         {
             if (e.GetCurrentPoint(_rubyBlock).Properties.IsLeftButtonPressed)
             {
                 _isRubyPressed = true;
+                rubyPressStartPos = e.GetPosition(_rubyBlock);
                 e.Handled = true;
+            }
+        };
+
+        _rubyBlock.PointerMoved += (sender, e) =>
+        {
+            if (_isRubyPressed)
+            {
+                var curPos = e.GetPosition(_rubyBlock);
+                var delta = curPos - rubyPressStartPos;
+                if (Math.Abs(delta.X) > 4 || Math.Abs(delta.Y) > 4)
+                {
+                    // 移动超过微小位移阈值，识别为用户意图划选文本而非单击复制注音
+                    _isRubyPressed = false;
+                }
             }
         };
 
@@ -233,5 +250,25 @@ internal sealed class RubyInlineControl : Grid
         menu.Items.Add(copyAnnotatedItem);
 
         return menu;
+    }
+
+    /// <summary>
+    /// 安全解析主题高亮色画刷：
+    /// 沿可视树优先使用 TryFindResource 查找 "Brush.Accent"，
+    /// 查不到或未命中时优雅降级为草地绿，彻底杜绝直接强转 UnsetValue 导致的 InvalidCastException 致命崩溃。
+    /// </summary>
+    internal static IBrush GetAccentBrush(Control control)
+    {
+        if (control.TryFindResource("Brush.Accent", out var res) && res is IBrush brush)
+        {
+            return brush;
+        }
+
+        if (Application.Current?.TryGetResource("Brush.Accent", out var appRes) == true && appRes is IBrush appBrush)
+        {
+            return appBrush;
+        }
+
+        return Brushes.LimeGreen;
     }
 }

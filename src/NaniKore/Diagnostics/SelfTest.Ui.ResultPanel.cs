@@ -788,5 +788,26 @@ internal static partial class SelfTest
         panel.Closed += (_, _) => closed = true;
         panel.OnPanelDeactivatedForTest();
         Check("deactivating result panel does not close the window", !closed);
+
+        // 6. 原文区左内边距与悬挂注音保护：左内边距扩充为 14px，给首字注音留足左侧外展空间不被遮盖
+        Check("source viewer border padding provides 14px left margin for hanging ruby",
+            viewerBorder?.Padding.Left >= 14 && sourceBox?.Padding.Left >= 14);
+
+        // 7. RubyInlineControl 悬停高亮安全解析：杜绝 UnsetValue 强转 InvalidCastException 致命崩溃
+        var testRuby = new RubyInlineControl("通", "とお");
+        var accentBrush = RubyInlineControl.GetAccentBrush(testRuby);
+        Check("get accent brush safely resolves a valid brush without throwing", accentBrush is not null);
+
+        // 8. 原文渲染区划选选区安全性：跨越注音控件划选与文本提取平稳无异常
+        var sourceViewer = Find<SelectableTextBlock>(panel, "SourceViewer");
+        if (sourceViewer is not null)
+        {
+            sourceViewer.SelectionStart = 0;
+            sourceViewer.SelectionEnd = sourceViewer.Inlines?.Text?.Length ?? 0;
+            var extracted = RubyDocumentBuilder.ExtractText(sourceViewer, RubyCopyKind.Plain);
+            Check("source viewer selection across inlines extracts plain text without crash",
+                extracted == "修改后的文本内容");
+            sourceViewer.ClearSelection();
+        }
     }
 }
