@@ -8,6 +8,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using NaniKore.App.Controls;
@@ -60,6 +61,10 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
         }
 
         FavoriteList.ItemsSource = _entries;
+
+        // 事件路由的隧道阶段会先于任何控件抢焦点执行：点卡片外立即提交，
+        // 不依赖后续焦点到底落到哪个控件（点列表空白、非可聚焦区域也能收起）。
+        AddHandler(PointerPressedEvent, OnPagePointerPressed, RoutingStrategies.Tunnel);
 
         Unloaded += (_, _) => DetachService();
     }
@@ -279,6 +284,54 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
 
         await CommitEditWhenFocusLeavesAsync(card);
     }
+
+    /// <summary>
+    /// 指针按下（隧道阶段）即判定去向：点在编辑卡片外就立刻提交，不依赖焦点最终落到哪个控件，
+    /// 所以点其他收藏条目、列表空白这类不可聚焦区域也能收起。
+    /// </summary>
+    private void OnPagePointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (EditCard is not { } card || e.Source is not Visual source)
+        {
+            return;
+        }
+
+        if (IsInsideCard(card, source))
+        {
+            return;
+        }
+
+        // 离开编辑框（含点其他收藏、列表空白、顶部筛选栏）→ 立即收起并保存。
+        _ = CommitEditAsync(card);
+    }
+
+    /// <summary>自测钩子：直接驱动指针去留判定，无需真实鼠标。</summary>
+    internal void OnPagePointerPressedForTest(PointerPressedEventArgs e) => OnPagePointerPressed(this, e);
+
+    /// <summary>当前处于编辑态的卡片（同一时间最多一张）。</summary>
+    private Border? EditCard =>
+        FavoriteList.GetVisualDescendants().OfType<Border>()
+            .FirstOrDefault(border => border.DataContext is FavoriteEditViewModel);
+
+    /// <summary>事件源是否落在编辑卡片内（沿可视/逻辑祖先向上，可跨 popup 边界命中徽标与输入框）。</summary>
+    private static bool IsInsideCard(Border card, Visual source)
+    {
+        // 逻辑树可能因模板化控件形成回遥，用访问集保证遍历终止。
+        var visited = new HashSet<Visual>(ReferenceEqualityComparer.Instance);
+        for (Visual? current = source; current is not null && visited.Add(current); current = NextAncestor(current))
+        {
+            if (ReferenceEquals(current, card))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>下一个祖先：popup 根节点的可视父级为空，需沿逻辑父级回到宿主控件才能命中卡片。</summary>
+    private static Visual? NextAncestor(Visual visual) =>
+        visual.GetVisualParent() ?? visual.GetLogicalParent() as Visual;
 
     /// <summary>
     /// 编辑卡片真正失去键盘焦点后才提交。

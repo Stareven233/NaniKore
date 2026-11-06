@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Avalonia.Threading;
@@ -554,6 +555,36 @@ internal static partial class SelfTest
                         .OfType<FavoriteEditViewModel>().Count() == 0);
             }
 
+            // 点击编辑卡片以外的区域必须立即收起：仅靠失焦判断会漏掉点其他收藏条目（非可聚焦控件）的情况。
+            page.BeginEdit(service.GetAllFavorites().First(x => x.Id == editTarget.Id));
+            page.Measure(new Size(900, 900));
+            page.Arrange(new Rect(0, 0, 900, 900));
+            Dispatcher.UIThread.RunJobs();
+            var pressCard = RealizeEditCard(page);
+            Check("favorites page pointer test has an active edit card", pressCard is not null);
+            if (pressCard is not null)
+            {
+                var pointer = new Pointer(0, PointerType.Mouse, true);
+                page.OnPagePointerPressedForTest(NewPointerArgs(pressCard, pressCard, pointer));
+                Dispatcher.UIThread.RunJobs();
+                Check("favorites page keeps inline edit when pressing the card itself",
+                    page.FavoriteList.ItemsSource?.Cast<object>()
+                        .OfType<FavoriteEditViewModel>().Count() == 1);
+
+                page.OnPagePointerPressedForTest(NewPointerArgs(page, page, pointer));
+                var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(2);
+                while (page.FavoriteList.ItemsSource?.Cast<object>()
+                           .OfType<FavoriteEditViewModel>().Any() == true && DateTime.UtcNow < deadline)
+                {
+                    Dispatcher.UIThread.RunJobs();
+                    System.Threading.Thread.Sleep(5);
+                }
+
+                Check("favorites page commits inline edit when pressing outside the card",
+                    page.FavoriteList.ItemsSource?.Cast<object>()
+                        .OfType<FavoriteEditViewModel>().Count() == 0);
+            }
+
             var collision = service.GetAllFavorites().First(x => x.Content == "過ぎる");
             var rejected = page.SaveEditAsync(collision, "通る (とおる)", null, "单词", "日本語")
                 .GetAwaiter().GetResult();
@@ -627,6 +658,37 @@ internal static partial class SelfTest
         initialTab is null
             ? new SettingsWindow(() => new AppConfig(), _ => { }, (_, _) => Task.FromResult("ok"))
             : new SettingsWindow(() => new AppConfig(), _ => { }, (_, _) => Task.FromResult("ok"), initialTab: initialTab.Value);
+
+    /// <summary>
+    /// 取（并强制实例化）列表里当前编辑态的卡片 Border：
+    /// 无头环境不跑完整布局流程，ItemsControl 容器可能尚未套用模板，直接查可视树会落空。
+    /// </summary>
+    private static Border? RealizeEditCard(FavoritesPage page)
+    {
+        var editVm = page.FavoriteList.ItemsSource?.Cast<object>().OfType<FavoriteEditViewModel>().FirstOrDefault();
+        if (editVm is null || page.FavoriteList.ContainerFromItem(editVm) is not Control container)
+        {
+            return null;
+        }
+
+        container.ApplyTemplate();
+        return container.GetVisualDescendants().OfType<Border>()
+            .FirstOrDefault(border => border.DataContext is FavoriteEditViewModel);
+    }
+
+    /// <summary>构造一个左键按下的指针事件，来源由测试指定。</summary>
+    private static PointerPressedEventArgs NewPointerArgs(Visual source, Visual root, Pointer pointer) =>
+        new(
+            source,
+            pointer,
+            root,
+            new Point(5, 5),
+            0,
+            new PointerPointProperties(RawInputModifiers.None, PointerUpdateKind.LeftButtonPressed),
+            KeyModifiers.None)
+        {
+            RoutedEvent = InputElement.PointerPressedEvent
+        };
 
     /// <summary>无头环境下抽干 Dispatcher 队列，直到任务完成或超时（异步失焦提交测试用）。</summary>
     private static void PumpUntil(Task task, TimeSpan timeout)
