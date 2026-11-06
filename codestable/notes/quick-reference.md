@@ -47,6 +47,11 @@ dotnet run --project src\NaniKore\NaniKore.csproj -- --ocr-file path\to\image.pn
 artifacts\win-x64\NaniKore.exe --self-test
 ```
 
+## 本地 OCR HTTP 服务
+
+默认关闭，在 `.data/config.yaml` 的 `general.ocr_listen` 填 `127.0.0.1:23335` 开启（重启生效）。
+协议（`GET /health`、`POST /ocr`）、错误码、调用示例与安全提醒见 [ocr-http-service.md](ocr-http-service.md)。
+
 ## 当前交互
 
 - `Ctrl+Shift+A`：截图并进入框选。

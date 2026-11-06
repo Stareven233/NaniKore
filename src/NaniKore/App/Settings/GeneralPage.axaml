@@ -13,23 +13,27 @@
                     <ComboBox x:Name="TargetLanguageBox" Width="220" />
                 </controls:SettingsRow>
                 <Border Classes="divider-row" />
-                <controls:SettingsRow Header="OCR 后自动翻译"
-                                      Description="关闭时由结果卡的「翻译」按钮显式触发。">
-                    <ToggleSwitch x:Name="AutoTranslateToggle" OnContent="" OffContent="" />
-                </controls:SettingsRow>
-                <Border Classes="divider-row" />
-                <controls:SettingsRow Header="选取后自动翻译"
-                                      Description="选取翻译热键（选区/剪贴板）读到内容后立即翻译；关闭时只呈现原文，由「翻译」按钮显式触发。">
-                    <ToggleSwitch x:Name="PasteAutoTranslateToggle" OnContent="" OffContent="" />
-                </controls:SettingsRow>
-                <Border Classes="divider-row" />
+                
                 <controls:SettingsRow Header="识别后自动注音"
                                       Description="识别完成（OCR/选取）后自动叠加假名/拼音/音标；关闭时原文只呈现纯文本，由面板「注音」按钮显式触发。">
                     <ToggleSwitch x:Name="AutoAnnotateToggle" OnContent="" OffContent="" />
                 </controls:SettingsRow>
                 <Border Classes="divider-row" />
+                
+                <controls:SettingsRow Header="OCR 后自动翻译"
+                                      Description="关闭时由结果卡的「翻译」按钮显式触发。">
+                    <ToggleSwitch x:Name="AutoTranslateToggle" OnContent="" OffContent="" />
+                </controls:SettingsRow>
+                <Border Classes="divider-row" />
+                
+                <controls:SettingsRow Header="选取后自动翻译"
+                                      Description="选取翻译热键（选区/剪贴板）读到内容后立即翻译；关闭时只呈现原文，由「翻译」按钮显式触发。">
+                    <ToggleSwitch x:Name="PasteAutoTranslateToggle" OnContent="" OffContent="" />
+                </controls:SettingsRow>
+                <Border Classes="divider-row" />
+                
                 <controls:SettingsRow Header="翻译后自动精讲"
-                                      Description="阶段 1 翻译完成后自动触发深度语法精讲并展开。">
+                                      Description="翻译完成自动展开深度语法精讲。">
                     <ToggleSwitch x:Name="AutoExplainToggle" OnContent="" OffContent="" />
                 </controls:SettingsRow>
             </StackPanel>

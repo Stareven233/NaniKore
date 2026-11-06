@@ -107,9 +107,20 @@ deps/                        # （仅 -full 完整包携带，或设置页按需
 # 查看 ONNX 模型输入输出元数据
 dotnet run --project src\NaniKore\NaniKore.csproj -- --inspect-models
 
-# 直接识别图片
-dotnet run --project src\NaniKore\NaniKore.csproj -- --ocr-file path\to\image.png
+# 直接识别图片（加 --json 输出与 HTTP 接口一致的 JSON）
+dotnet run --project src\NaniKore\NaniKore.csproj -- --ocr-file path\to\image.png [--json]
 ```
+
+## 本地 OCR HTTP 服务（开发者选项）
+
+本地 OCR 引擎可以通过一个极简 HTTP 接口开放给同机其他程序复用，默认关闭。在 `.data/config.yaml` 填 `general.ocr_listen`（如 `127.0.0.1:23335`）即可开启，改完保存设置立即生效，清空即停止。
+
+```http
+GET  /health          → {"status":"ok"}
+POST /ocr             → {"text":"...","elapsed_ms":42.7,"lines":[{...}]}
+```
+
+`POST /ocr` 接受原始图片二进制，或 `?path=<本机路径>`，或 JSON body `{"path":"..."}`。接口只做识别，不翻译、不鉴权、不写任何数据。完整协议、错误码、各语言调用示例与安全提醒见 **[codestable/notes/ocr-http-service.md](codestable/notes/ocr-http-service.md)**。
 
 ## 项目结构
 
