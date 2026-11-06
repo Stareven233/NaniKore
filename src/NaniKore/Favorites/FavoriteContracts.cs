@@ -22,8 +22,8 @@ public sealed class FavoriteItem
     public string Content { get; set; } = string.Empty;
 
     /// <summary>
-    /// 纯文本分层标注说明（免 Markdown 解析开销，分行易读）。
-    /// 精讲卡片收藏时包含读音、原形、释义；划词收藏时由用户自选或留空。
+    /// 纯文本备注：每行一项（如读音、词性原形、释义），不写「读音：」这类字段前缀，
+    /// 避免收藏页关键词搜索命中无意义提示词。精讲卡片收藏时自动生成，划词收藏可留空。
     /// </summary>
     public string? Note { get; set; }
 

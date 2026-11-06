@@ -25,22 +25,24 @@ public sealed class ExplanationVocabularyCard
     /// <summary>是否已被收藏（联动收藏服务字符串匹配）。</summary>
     public bool IsFavorited { get; set; }
 
-    /// <summary>转换为切片 5 SQLite 规范的标准分层纯文本备注。</summary>
+    /// <summary>
+    /// 转换为收藏备注：每行一项纯文本（读音 / 词性原形 / 释义），不写「读音：」这类字段前缀——
+    /// 前缀会让收藏页搜索「读音」「释义」等无意义提示词命中全部条目。
+    /// </summary>
     public string ToFavoriteNote()
     {
         var sb = new StringBuilder();
         if (!string.IsNullOrWhiteSpace(Reading) && Reading != "-")
         {
-            sb.AppendLine($"读音: {Reading.Trim()}");
+            sb.AppendLine(Reading.Trim());
         }
         if (!string.IsNullOrWhiteSpace(Role))
         {
-            var label = Role.Contains("原形", StringComparison.Ordinal) ? "原形" : "词性";
-            sb.AppendLine($"{label}: {Role.Trim()}");
+            sb.AppendLine(Role.Trim());
         }
         if (!string.IsNullOrWhiteSpace(Meaning))
         {
-            sb.AppendLine($"释义: {Meaning.Trim()}");
+            sb.AppendLine(Meaning.Trim());
         }
         return sb.ToString().TrimEnd();
     }
@@ -60,11 +62,11 @@ public sealed class ExplanationGrammarCard
     /// <summary>是否已被收藏（联动收藏服务字符串匹配）。</summary>
     public bool IsFavorited { get; set; }
 
-    /// <summary>转换为切片 5 SQLite 规范的标准分层纯文本备注。</summary>
+    /// <summary>转换为收藏备注：仅释义正文一行，不写「释义：」前缀（同词汇卡片口径）。</summary>
     public string ToFavoriteNote()
     {
         return !string.IsNullOrWhiteSpace(Meaning)
-            ? $"释义: {Meaning.Trim()}"
+            ? Meaning.Trim()
             : string.Empty;
     }
 }

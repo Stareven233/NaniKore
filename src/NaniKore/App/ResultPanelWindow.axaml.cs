@@ -1290,8 +1290,9 @@ internal sealed partial class ResultPanelWindow : Window
                 {
                     var mousePos = e.GetPosition(SourceViewer);
                     var reading = RubyDocumentBuilder.ExtractText(SourceViewer, RubyCopyKind.ReadingOnly)?.Trim();
+                    // 备注只存正文，不写「读音：」前缀（前缀会污染收藏页关键词搜索）
                     var note = !string.IsNullOrEmpty(reading) && !string.Equals(reading, text, StringComparison.Ordinal)
-                        ? $"读音: {reading}"
+                        ? reading
                         : null;
                     SelectionBubble.SetDefaultLanguage(CurrentSourceLanguage);
                     SelectionBubble.ShowAt(SourceViewer, new Rect(mousePos.X, mousePos.Y, 1, 1), text, note);

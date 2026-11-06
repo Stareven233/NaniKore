@@ -194,13 +194,13 @@ internal static partial class SelfTest
         {
             Category = "单词",
             Content = "Apple",
-            Note = "读音: /ˈæp.əl/\n释义: 苹果"
+            Note = "/ˈæp.əl/\n苹果"
         };
         var item2 = new FavoriteItem
         {
             Category = "语法",
             Content = "～ない",
-            Note = "释义: 否定"
+            Note = "否定"
         };
 
         service.AddFavoriteAsync(item1).GetAwaiter().GetResult();
@@ -238,9 +238,17 @@ internal static partial class SelfTest
         };
 
         var note = card.ToFavoriteNote();
-        Check("Favorites.NoteFormat.HasReading", note.Contains("读音: はしる"));
-        Check("Favorites.NoteFormat.HasRole", note.Contains("原形: 动词原形"));
-        Check("Favorites.NoteFormat.HasMeaning", note.Contains("释义: 奔跑，行进"));
+        // 备注不写字段前缀：每行一项纯文本，避免收藏页搜「读音」「释义」命中无意义提示词。
+        Check("Favorites.NoteFormat.HasReading", note.Contains("はしる"));
+        Check("Favorites.NoteFormat.HasRole", note.Contains("动词原形"));
+        Check("Favorites.NoteFormat.HasMeaning", note.Contains("奔跑，行进"));
+        Check(
+            "Favorites.NoteFormat.NoFieldPrefixes",
+            note.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+                .SequenceEqual(["はしる", "动词原形", "奔跑，行进"]) &&
+            !note.Contains("读音:") &&
+            !note.Contains("原形:") &&
+            !note.Contains("释义:"));
 
         var favoriteItem = new FavoriteItem
         {

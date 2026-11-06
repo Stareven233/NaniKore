@@ -78,15 +78,19 @@
                         <ComboBox Width="110"
                                   ItemsSource="{Binding CategoryOptions}"
                                   SelectedItem="{Binding EditCategory}"
-                                  LostFocus="OnEditFieldLostFocus" />
+                                  LostFocus="OnEditFieldLostFocus"
+                                  SelectionChanged="OnEditComboBoxSelectionChanged"
+                                  DropDownClosed="OnEditComboBoxDropDownClosed" />
                         <ComboBox Width="140"
                                   ItemsSource="{Binding LanguageOptions}"
                                   SelectedItem="{Binding EditLanguage}"
-                                  LostFocus="OnEditFieldLostFocus" />
+                                  LostFocus="OnEditFieldLostFocus"
+                                  SelectionChanged="OnEditComboBoxSelectionChanged"
+                                  DropDownClosed="OnEditComboBoxDropDownClosed" />
                     </StackPanel>
                     <TextBlock FontSize="12"
                                Foreground="{DynamicResource Brush.Text.Secondary}"
-                               Text="失焦自动保存；Esc 取消还原，Enter 提交。" />
+                               Text="离开编辑区自动保存；Esc 取消还原，Enter 提交。" />
                 </StackPanel>
             </Border>
         </DataTemplate>

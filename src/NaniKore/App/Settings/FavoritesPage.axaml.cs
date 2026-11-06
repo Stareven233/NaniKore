@@ -266,14 +266,96 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
         }
     }
 
-    private void OnEditFieldLostFocus(object? sender, RoutedEventArgs e)
+    /// <summary>编辑态失焦提交的轮询间隔与次数：等下拉展开造成的焦点漂移落定（约 1 秒封顶）。</summary>
+    private static readonly TimeSpan EditFocusSettleDelay = TimeSpan.FromMilliseconds(40);
+    private const int EditFocusSettleAttempts = 25;
+
+    private async void OnEditFieldLostFocus(object? sender, RoutedEventArgs e)
     {
         if (sender is not Control field || field.FindAncestorOfType<Border>() is not { } card)
         {
             return;
         }
 
-        Dispatcher.UIThread.Post(() => _ = CommitEditAsync(card, skipWhenFocusWithin: true), DispatcherPriority.Input);
+        await CommitEditWhenFocusLeavesAsync(card);
+    }
+
+    /// <summary>
+    /// 编辑卡片真正失去键盘焦点后才提交。
+    /// 点开类别/语言下拉时，焦点会从输入框转移到弹出列表（甚至是独立 popup 窗口），
+    /// 此时若立即提交会刷新列表并拆掉正在展开的下拉——这正是「下拉框点不开」的根因。
+    /// 因此下拉展开期间只等待不提交：焦点回到编辑区即视为仍在编辑，超时后按最终状态兜底一次。
+    /// </summary>
+    internal async Task CommitEditWhenFocusLeavesAsync(Border card)
+    {
+        for (var attempt = 0; attempt < EditFocusSettleAttempts; attempt++)
+        {
+            await Task.Delay(EditFocusSettleDelay);
+
+            if (!card.GetVisualAncestors().Any())
+            {
+                // 卡片已被刷新/替换（例如别处触发了提交），无需再处理。
+                return;
+            }
+
+            if (IsEditDropDownOpen(card))
+            {
+                continue;
+            }
+
+            if (card.IsKeyboardFocusWithin)
+            {
+                // 焦点回到编辑区（含下拉选完值后回归），保持编辑态。
+                return;
+            }
+
+            await CommitEditAsync(card);
+            return;
+        }
+
+        if (!IsEditDropDownOpen(card) && !card.IsKeyboardFocusWithin)
+        {
+            await CommitEditAsync(card);
+        }
+    }
+
+    /// <summary>编辑卡片内是否有下拉列表正处于展开状态（展开期间不得提交，否则会拆掉正在展开的下拉）。</summary>
+    internal static bool IsEditDropDownOpen(Border card) =>
+        card.GetVisualDescendants().OfType<ComboBox>().Any(box => box.IsDropDownOpen);
+
+    /// <summary>最近一次下拉是否由选中项导致收起：按 ComboBox 实例记录，用于决定是否把焦点收回下拉框本身。</summary>
+    private readonly HashSet<ComboBox> _editComboBoxSelections = [];
+
+    private void OnEditComboBoxSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        // 只有展开中的下拉发生选中才算“用户选择”；模板初次绑定 SelectedItem 时不得置位。
+        if (sender is ComboBox { IsDropDownOpen: true } box)
+        {
+            _editComboBoxSelections.Add(box);
+        }
+    }
+
+    private void OnEditComboBoxDropDownClosed(object? sender, EventArgs e)
+    {
+        if (sender is not ComboBox box || box.FindAncestorOfType<Border>() is not { } card ||
+            card.DataContext is not FavoriteEditViewModel)
+        {
+            return;
+        }
+
+        var selected = _editComboBoxSelections.Remove(box);
+
+        // 非可编辑 ComboBox 收起后不会自动归还焦点（选完项/按 Esc 后焦点会悬在已销毁的弹层里）。
+        // 仅当焦点没有落到可用的外部控件时，才把焦点收回下拉框，避免把“点到卡片外”也当成延续编辑。
+        var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Visual;
+        if (selected || focused is null || TopLevel.GetTopLevel(focused) is null)
+        {
+            box.Focus();
+        }
+
+        // 下拉收起本身可能是“点了卡片外”的收尾动作；重新盯一次焦点，
+        // 避免编辑框在下拉长时间展开、上一轮轮询超时后漏掉这次提交。
+        _ = CommitEditWhenFocusLeavesAsync(card);
     }
 
     private void OnEditFieldKeyDown(object? sender, KeyEventArgs e)
@@ -290,7 +372,7 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
         }
         else if (e.Key == Key.Enter)
         {
-            _ = CommitEditAsync(card, skipWhenFocusWithin: false);
+            _ = CommitEditAsync(card);
             e.Handled = true;
         }
     }
@@ -311,14 +393,9 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
         _entries[index] = new FavoriteDisplayViewModel(editVm.Item);
     }
 
-    private Task CommitEditAsync(Border card, bool skipWhenFocusWithin)
+    private Task CommitEditAsync(Border card)
     {
         if (card.DataContext is not FavoriteEditViewModel editVm)
-        {
-            return Task.CompletedTask;
-        }
-
-        if (skipWhenFocusWithin && card.IsKeyboardFocusWithin)
         {
             return Task.CompletedTask;
         }

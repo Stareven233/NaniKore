@@ -90,7 +90,7 @@ internal static partial class SelfTest
         WithTempDatabasePath(path =>
         {
             var service = new SqliteFavoriteService(path);
-            var added = service.AddFavoriteAsync(MakeFavorite("通る", "单词", "读音: とおる\n释义: 通过、走过。")).Result;
+            var added = service.AddFavoriteAsync(MakeFavorite("通る", "单词", "とおる\n通过、走过。")).Result;
 
             Check("SqliteFavorites.Add.ReturnsTrue", added);
             Check("SqliteFavorites.Add.FileCreated", File.Exists(path));
@@ -99,7 +99,7 @@ internal static partial class SelfTest
             Check("SqliteFavorites.Add.Count", all.Count == 1);
             Check("SqliteFavorites.Add.Content", all[0].Content == "通る");
             Check("SqliteFavorites.Add.Category", all[0].Category == "单词");
-            Check("SqliteFavorites.Add.NoteLayered", all[0].Note == "读音: とおる\n释义: 通过、走过。");
+            Check("SqliteFavorites.Add.NoteLayered", all[0].Note == "とおる\n通过、走过。");
             Check("SqliteFavorites.Add.CreatedAtRecent", Math.Abs((DateTimeOffset.Now - all[0].CreatedAt).TotalMinutes) < 5);
             Check("SqliteFavorites.Add.IdAssigned", all[0].Id > 0);
             Check("SqliteFavorites.Add.IsFavorited", service.IsFavorited("通る", "单词"));
@@ -159,15 +159,15 @@ internal static partial class SelfTest
         WithTempDatabasePath(path =>
         {
             var writer = new SqliteFavoriteService(path);
-            writer.AddFavoriteAsync(MakeFavorite("学生", "单词", "读音: がくせい")).Wait();
-            writer.AddFavoriteAsync(MakeFavorite("～たい", "语法", "释义: 表达愿望")).Wait();
+            writer.AddFavoriteAsync(MakeFavorite("学生", "单词", "がくせい")).Wait();
+            writer.AddFavoriteAsync(MakeFavorite("～たい", "语法", "表达愿望")).Wait();
 
             // 重新打开同一库文件：覆盖升级、进程重启后数据必须仍在。
             var reader = new SqliteFavoriteService(path);
             var all = reader.GetAllFavorites();
             Check("SqliteFavorites.Persist.Count", all.Count == 2);
             Check("SqliteFavorites.Persist.IsFavorited", reader.IsFavorited("学生", "单词"));
-            Check("SqliteFavorites.Persist.NoteRoundtrip", all.Any(x => x.Content == "学生" && x.Note == "读音: がくせい"));
+            Check("SqliteFavorites.Persist.NoteRoundtrip", all.Any(x => x.Content == "学生" && x.Note == "がくせい"));
         });
     }
 
@@ -176,8 +176,8 @@ internal static partial class SelfTest
         WithTempDatabasePath(path =>
         {
             var service = new SqliteFavoriteService(path);
-            service.AddFavoriteAsync(MakeFavorite("通る", "单词", "读音: とおる")).Wait();
-            service.AddFavoriteAsync(MakeFavorite(" 通る ", "单词", "读音: とおる\n原形: 通る (动词原形)\n释义: 通过、走过。")).Wait();
+            service.AddFavoriteAsync(MakeFavorite("通る", "单词", "とおる")).Wait();
+            service.AddFavoriteAsync(MakeFavorite(" 通る ", "单词", "とおる\n通る (动词原形)\n通过、走过。")).Wait();
 
             var all = service.GetAllFavorites();
             Check("SqliteFavorites.Upsert.SingleRow", all.Count == 1);

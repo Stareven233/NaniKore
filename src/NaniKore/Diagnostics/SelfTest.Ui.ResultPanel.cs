@@ -664,7 +664,7 @@ internal static partial class SelfTest
         var bubble = Find<SelectionBubblePopup>(panel, "SelectionBubble");
         bubble?.SetFavoriteService(favoriteService);
 
-        bubble?.ShowAt(panel, new Rect(0, 0, 8, 8), "通", "读音: とお");
+        bubble?.ShowAt(panel, new Rect(0, 0, 8, 8), "通", "とお");
         if (bubble?.FavoriteBtn is { } btn1)
         {
             RaiseClick(btn1);
@@ -675,7 +675,7 @@ internal static partial class SelfTest
             "favoriting a ruby word carries the reading into the note",
             withNote is not null &&
             withNote.Content == "通" &&
-            withNote.Note == "读音: とお");
+            withNote.Note == "とお");
 
         bubble?.ShowAt(panel, new Rect(0, 0, 8, 8), "食べる");
         if (bubble?.FavoriteBtn is { } btn2)

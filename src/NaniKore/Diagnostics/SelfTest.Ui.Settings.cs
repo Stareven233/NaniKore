@@ -8,6 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using NaniKore.App;
 using NaniKore.App.Controls;
@@ -455,7 +456,7 @@ internal static partial class SelfTest
 
             page.Load(new AppConfig());
 
-            service.AddFavoriteAsync(new FavoriteItem { Category = "单词", Content = "通る", Note = "读音: とおる" }).Wait();
+            service.AddFavoriteAsync(new FavoriteItem { Category = "单词", Content = "通る", Note = "とおる" }).Wait();
             service.AddFavoriteAsync(new FavoriteItem { Category = "语法", Content = "～ない" }).Wait();
             service.AddFavoriteAsync(new FavoriteItem { Category = "短语", Content = "過ぎる" }).Wait();
 
@@ -472,6 +473,11 @@ internal static partial class SelfTest
             page.SearchBox.Text = "とおる";
             itemsList = page.FavoriteList.ItemsSource?.Cast<object>().ToList() ?? [];
             Check("favorites page searches note content", itemsList.Count == 1);
+
+            // 备注不再存字段前缀：搜「读音」「释义」这类提示词不得再命中任何条目。
+            page.SearchBox.Text = "读音";
+            itemsList = page.FavoriteList.ItemsSource?.Cast<object>().ToList() ?? [];
+            Check("favorites page ignores removed note prefixes", itemsList.Count == 0);
 
             page.SearchBox.Text = "不存在的词";
             Check("favorites page shows empty hint when nothing matches", page.EmptyHint.IsVisible);
@@ -499,7 +505,7 @@ internal static partial class SelfTest
                 "favorites page enters inline edit mode",
                 itemsList.OfType<FavoriteEditViewModel>().Count() == 1);
 
-            var saved = page.SaveEditAsync(editTarget, "通[とお]る", "读音: とおる\n释义: 修订", "短语", "日本語")
+            var saved = page.SaveEditAsync(editTarget, "通[とお]る", "とおる\n修订", "短语", "日本語")
                 .GetAwaiter().GetResult();
             Check("favorites page inline edit saves successfully", saved);
             var stored = service.GetAllFavorites().Single(x => x.Id == editTarget.Id);
@@ -511,6 +517,42 @@ internal static partial class SelfTest
                 "favorites page inline edit restores display mode",
                 itemsList.OfType<FavoriteDisplayViewModel>()
                     .Any(vm => vm.Item.Content == "通る" && vm.Item.Category == "短语"));
+
+            // 编辑态下拉框：展开期间必须被判定为“仍在编辑”，否则失焦提交会刷新列表、拆掉展开的下拉。
+            page.BeginEdit(service.GetAllFavorites().First(x => x.Id == editTarget.Id));
+            page.Measure(new Size(900, 900));
+            page.Arrange(new Rect(0, 0, 900, 900));
+            var editCard = FindDescendants<Border>(page)
+                .FirstOrDefault(border => border.DataContext is FavoriteEditViewModel);
+            var editBoxes = editCard is null
+                ? []
+                : FindDescendants<ComboBox>(editCard).Distinct().ToList();
+            Check("favorites page inline edit hosts category and language drop-downs", editBoxes.Count == 2);
+            if (editCard is not null && editBoxes.Count == 2)
+            {
+                Check("favorites page inline edit is not treated as dropdown-open by default",
+                    !FavoritesPage.IsEditDropDownOpen(editCard));
+                editBoxes[0].IsDropDownOpen = true;
+                Check("favorites page inline edit detects an open drop-down",
+                    FavoritesPage.IsEditDropDownOpen(editCard));
+
+                // 下拉展开期间模拟失焦：不得提交/刷新，否则会拆掉正在展开的下拉。
+                var settle = page.CommitEditWhenFocusLeavesAsync(editCard);
+                PumpUntil(settle, TimeSpan.FromMilliseconds(200));
+                Check("favorites page keeps inline edit alive while a drop-down is open",
+                    page.FavoriteList.ItemsSource?.Cast<object>()
+                        .OfType<FavoriteEditViewModel>().Count() == 1);
+
+                editBoxes[0].IsDropDownOpen = false;
+                Check("favorites page inline edit clears the drop-down state after closing",
+                    !FavoritesPage.IsEditDropDownOpen(editCard));
+
+                // 下拉收起且焦点已离开：失焦提交才落地。
+                PumpUntil(settle, TimeSpan.FromSeconds(2));
+                Check("favorites page commits inline edit once the drop-down is closed and focus left",
+                    page.FavoriteList.ItemsSource?.Cast<object>()
+                        .OfType<FavoriteEditViewModel>().Count() == 0);
+            }
 
             var collision = service.GetAllFavorites().First(x => x.Content == "過ぎる");
             var rejected = page.SaveEditAsync(collision, "通る (とおる)", null, "单词", "日本語")
@@ -585,6 +627,19 @@ internal static partial class SelfTest
         initialTab is null
             ? new SettingsWindow(() => new AppConfig(), _ => { }, (_, _) => Task.FromResult("ok"))
             : new SettingsWindow(() => new AppConfig(), _ => { }, (_, _) => Task.FromResult("ok"), initialTab: initialTab.Value);
+
+    /// <summary>无头环境下抽干 Dispatcher 队列，直到任务完成或超时（异步失焦提交测试用）。</summary>
+    private static void PumpUntil(Task task, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (!task.IsCompleted && DateTime.UtcNow < deadline)
+        {
+            Dispatcher.UIThread.RunJobs();
+            System.Threading.Thread.Sleep(5);
+        }
+
+        Dispatcher.UIThread.RunJobs();
+    }
 
     private static IEnumerable<T> FindDescendants<T>(Control root) where T : class
     {
