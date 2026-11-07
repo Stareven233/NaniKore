@@ -35,7 +35,7 @@
 
                 <!-- 左侧软件标题与图标 -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" Margin="14,0,0,0" VerticalAlignment="Center">
-                    <Image x:Name="TitleBarIcon" Width="16" Height="16" VerticalAlignment="Center" />
+                    <Image x:Name="TitleBarIcon" Width="20" Height="20" VerticalAlignment="Center" />
                     <TextBlock Text="NaniKore 设置"
                                FontSize="13"
                                FontWeight="SemiBold"

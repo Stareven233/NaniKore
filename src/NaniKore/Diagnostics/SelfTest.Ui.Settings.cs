@@ -36,10 +36,34 @@ internal static partial class SelfTest
         TestGeneralPagePhoneticsCards();
         TestSharedLanguageChoicesAndDetectionMapping();
         TestTranslationPagePromptEditing();
+        TestAboutPageRepositoryEntry();
         TestSettingsCloseSizeMemory();
         TestSettingsCloseSizeWriteBackKeepsExternalUpdates();
         TestFavoritesSettingsPageFilteringAndEvents();
         TestWindowProperties();
+    }
+
+    /// <summary>
+    /// 关于页 GitHub 入口：图标按钮常驻在品牌卡内、命中测试可见，目标地址固定指向项目仓库；
+    /// 只验证按钮与地址常量，不真的拉起浏览器。
+    /// </summary>
+    private static void TestAboutPageRepositoryEntry()
+    {
+        EnsureThemedApplication();
+        var page = new AboutPage();
+        page.Load(new AppConfig());
+        var view = page.View;
+        _ = new Window { Content = view, Width = 760, Height = 600 };
+        view.Measure(new Avalonia.Size(760, double.PositiveInfinity));
+
+        var button = Find<Button>(view, "RepositoryButton");
+        Check(
+            "about page exposes a clickable GitHub repository button",
+            button is { IsVisible: true, IsEnabled: true } &&
+            ToolTip.GetTip(button) is string tip && tip.Contains(AboutPage.RepositoryUrl, StringComparison.Ordinal));
+        Check(
+            "about page repository button targets the project GitHub repository",
+            AboutPage.RepositoryUrl == "https://github.com/Stareven233/NaniKore");
     }
 
     /// <summary>
