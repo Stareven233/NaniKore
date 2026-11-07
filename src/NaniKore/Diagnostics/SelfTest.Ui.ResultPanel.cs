@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Point = Avalonia.Point;
 using Rect = Avalonia.Rect;
@@ -759,6 +760,47 @@ internal static partial class SelfTest
     }
 
     /// <summary>
+    /// 布置一段带注音文本，逐对比较同一行内相邻注音块的横向区间，验证它们不相交。
+    /// 以真实排版结果为准，不依赖某组具体像素值，避免字体度量差异使断言变脸。
+    /// </summary>
+    private static bool RubyReadingsDoNotOverlap(string annotated)
+    {
+        var viewer = new SelectableTextBlock
+        {
+            FontSize = 17.5,
+            TextWrapping = TextWrapping.NoWrap,
+        };
+        viewer.Inlines = RubyDocumentBuilder.BuildInlines(annotated, 17.5);
+        viewer.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        viewer.Arrange(new Rect(viewer.DesiredSize));
+
+        double? previousRight = null;
+        double? previousTop = null;
+        foreach (var ruby in viewer.Inlines.OfType<InlineUIContainer>().Select(c => c.Child).OfType<RubyInlineControl>())
+        {
+            var rubyBlock = (TextBlock)ruby.Children[0];
+            var origin = rubyBlock.TranslatePoint(new Point(0, 0), viewer);
+            if (origin is null || rubyBlock.Bounds.Width <= 0)
+            {
+                return false;
+            }
+
+            var top = origin.Value.Y;
+            var left = origin.Value.X;
+            // 换行后的首块无需与上一行比较
+            if (previousTop is { } lastTop && Math.Abs(top - lastTop) <= 1 && left < previousRight!.Value - 0.5)
+            {
+                return false;
+            }
+
+            previousTop = top;
+            previousRight = left + rubyBlock.Bounds.Width;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// 专项体验打磨回归测试：
     /// 1. 注音按钮中性外观（Classes 包含 neutral）；
     /// 2. PinButton 切换置顶状态并激发出 PinChanged 事件；
@@ -820,12 +862,31 @@ internal static partial class SelfTest
         // 5. 验证 RubyInlineControl 紧凑底字测量与行高隔离
         var rubyWithLongReading = new RubyInlineControl("收", "おさむ", 15);
         rubyWithLongReading.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        // 单个汉字 15px 宽度大约在 14~18px 之间，注音（3个假名约 30px+）。在微扩展平滑对齐后占位宽度严格收敛在 24px 以内
-        Check("ruby inline control width matches base text width instead of being stretched by reading",
-            rubyWithLongReading.DesiredSize.Width <= 24 && rubyWithLongReading.DesiredSize.Width > 0);
+        // 单字底字（15px 约 14~18px 宽）装不下三假名注音，改为就地扩宽容纳注音，不再向两侧悬挂压邻字
+        Check("ruby inline control widens its own box to host an oversized reading instead of overhanging",
+            rubyWithLongReading.DesiredSize.Width is > 24 and <= 40);
         // 总高度应在正常双行范围，严禁继承外层 40px 行高膨胀至 70px+
         Check("ruby inline control total height is compact without inheriting inflated line heights",
             rubyWithLongReading.DesiredSize.Height <= 42);
+
+        // 5.1 长注音撑开底字字间距：二字底字遇长拼音时字缝被撑开，避免相邻词的注音互相压盖
+        var rubyLongPinyin = new RubyInlineControl("已成", "yǐ chéng", 17.5);
+        rubyLongPinyin.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var rubyNoReading = new RubyInlineControl("已成", string.Empty, 17.5);
+        rubyNoReading.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        Check("long reading widens base letter spacing to host the ruby",
+            rubyLongPinyin.DesiredSize.Width > rubyNoReading.DesiredSize.Width + 3);
+        Check("single-character base keeps default letter spacing since there is no gap to widen",
+            RubyInlineControl.ComputeBaseLetterSpacing(1, 15, 40, 17.5) == 0.8);
+        // 上限兑现：注音再长，每个字缝最多只添半个底字字号的宽度
+        Check("base letter spacing widening is clamped to half an em per gap",
+            RubyInlineControl.ComputeBaseLetterSpacing(2, 30, 400, 17.5) <= 9.6);
+
+        // 5.2 几何回归：同一行内相邻词的注音矩形禁止水平相交（主人报告的“已成功 yǐ chéng gōng”重叠）
+        Check("adjacent pinyin rubies never overlap horizontally",
+            RubyReadingsDoNotOverlap("已[yǐ]成[chéng]功[gōng]"));
+        Check("adjacent kana rubies never overlap horizontally",
+            RubyReadingsDoNotOverlap("通[とお]れ[れ]ない[ない]"));
 
         // 5. 失焦不触发关闭
         var closed = false;

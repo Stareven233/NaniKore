@@ -45,11 +45,11 @@ internal sealed partial class AboutPage : UserControl, ISettingsPage
         VersionText.Text = string.IsNullOrWhiteSpace(templateVersion)
             ? $"v{config.Version}"
             : $"v{templateVersion} (config v{config.Version})";
-        DescriptionText.Text = "本地 PP-OCRv6 检测与识别，配合可配置的云端流式翻译。截图、选区、OCR 全程在本机完成。";
+        DescriptionText.Text = "如果你觉得 NaniKore 还不错，请给 GitHub 仓库点个 Star喵，这很重要喵\n本地 PP-OCRv6 检测与识别，配合可配置的云端流式翻译。截图、选区、OCR 全程在本机完成";
 
         if (ConfigVersionComparator.IsBehind(templateVersion, config.Version))
         {
-            VersionMismatchBar.Show("当前配置版本落后于模板，可对照程序目录 config.template.yaml 手动核对。", InfoSeverity.Warning);
+            VersionMismatchBar.Show("当前配置版本落后于模板，可对照程序目录 config.template.yaml 手动核对", InfoSeverity.Warning);
         }
         else
         {
@@ -72,7 +72,7 @@ internal sealed partial class AboutPage : UserControl, ISettingsPage
         }
         catch (Exception exception)
         {
-            MessageDialog.Show(TopLevel.GetTopLevel(this) as Window, "打开 GitHub 仓库失败。", exception.Message, InfoSeverity.Error);
+            MessageDialog.Show(TopLevel.GetTopLevel(this) as Window, "打开 GitHub 仓库失败", exception.Message, InfoSeverity.Error);
         }
     }
 

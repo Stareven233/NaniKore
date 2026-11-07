@@ -33,9 +33,22 @@ internal enum RubyCopyKind
 /// </summary>
 internal sealed class RubyInlineControl : Grid
 {
+    /// <summary>注音字号相对底字字号的缩放比（略大于旧版 0.61，提升拼音/假名可读性）。</summary>
+    private const double RubyFontScale = 0.66;
+
+    /// <summary>注音字间距（像素）：注音字号变小后需加点间距，避免拼音字母粘成一团。</summary>
+    private const double RubyLetterSpacing = 0.4;
+
+    /// <summary>底字基础字间距，给中日文字符留出呼吸感。</summary>
+    private const double BaseLetterSpacing = 0.8;
+
+    /// <summary>单个字缝允许额外撑开的上限（相对底字字号的倍数）。</summary>
+    private const double MaxExtraLetterSpacingRatio = 0.5;
+
     private readonly TextBlock _rubyBlock;
     private readonly TextBlock _baseBlock;
     private bool _isRubyPressed;
+    private bool _letterSpacingResolved;
 
     /// <summary>底字正文。</summary>
     public string BaseText { get; }
@@ -60,7 +73,8 @@ internal sealed class RubyInlineControl : Grid
 
         Focusable = false;
         VerticalAlignment = VerticalAlignment.Bottom;
-        // 紧凑排版：外边距与裁剪严格归零，允许注音自然悬挂，杜绝连续中日文字符之间被拉出虚假空格切词缝隙
+        // 紧凑排版：外边距严格归零，避免连续中日文字符之间被拉出虚假切词缝隙；
+        // 允许越界不裁切，注音超出自身占位时也能完整绘制
         Margin = new Thickness(0);
         ClipToBounds = false;
 
@@ -71,8 +85,8 @@ internal sealed class RubyInlineControl : Grid
         _rubyBlock = new TextBlock
         {
             Text = rubyText,
-            FontSize = Math.Max(10, baseFontSize * 0.61),
-            LetterSpacing = 0.4,
+            FontSize = Math.Max(10, baseFontSize * RubyFontScale),
+            LetterSpacing = RubyLetterSpacing,
             LineHeight = double.NaN,
             Foreground = Brushes.Gray,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -139,7 +153,7 @@ internal sealed class RubyInlineControl : Grid
         {
             Text = baseText,
             FontSize = baseFontSize,
-            LetterSpacing = 0.8,
+            LetterSpacing = BaseLetterSpacing,
             LineHeight = double.NaN,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
@@ -153,22 +167,49 @@ internal sealed class RubyInlineControl : Grid
         ContextMenu = CreateContextMenu();
     }
 
+    /// <summary>
+    /// 依据底字天然宽度与注音宽度推导底字字间距：
+    /// 注音超宽时把缺口均摊到相邻底字的字缝里，让每个字的读音与汉字上下对位（拼音/假名排版的常规做法），
+    /// 同时把整个词撑开到注音宽度，自然就不会与邻词的注音互相压盖。
+    /// 单字底字没有字缝可撑，只能靠占位宽度扩宽，因此保持基础间距。
+    /// </summary>
+    internal static double ComputeBaseLetterSpacing(int baseLength, double baseWidth, double rubyWidth, double baseFontSize)
+    {
+        var gaps = baseLength - 1;
+        if (gaps <= 0 || rubyWidth <= baseWidth)
+        {
+            return BaseLetterSpacing;
+        }
+
+        // 缺口除以字缝数即每个字缝应添的间距；上限压住半个字宽，避免极端长注音把词拉成散字
+        var extra = Math.Min((rubyWidth - baseWidth) / gaps, baseFontSize * MaxExtraLetterSpacingRatio);
+        return BaseLetterSpacing + extra;
+    }
+
     protected override Size MeasureOverride(Size availableSize)
     {
+        if (!_letterSpacingResolved)
+        {
+            // 首轮先按零字间距测出底字天然宽度，再结合注音宽度决定撑开多少；只结算一次，杜绝测量反馈震荡
+            _baseBlock.LetterSpacing = 0;
+            base.MeasureOverride(availableSize);
+            _letterSpacingResolved = true;
+            _baseBlock.LetterSpacing = ComputeBaseLetterSpacing(
+                BaseText.Length,
+                _baseBlock.DesiredSize.Width,
+                _rubyBlock.DesiredSize.Width,
+                _baseBlock.FontSize);
+        }
+
         base.MeasureOverride(availableSize);
         var baseDesired = _baseBlock.DesiredSize;
         var rubyDesired = _rubyBlock.DesiredSize;
         var totalHeight = rubyDesired.Height + baseDesired.Height - 1;
 
-        // 适当给底字放大字间距预留呼吸空间，让注音能够舒展对齐底字；
-        // 若注音稍宽于底字，在微小阈值（<= 4px）内平滑自适应扩展，让注音与字优雅居中对齐；
-        // 超出部分则自然轻微悬挂（Overhang），既满足对齐美感，又彻底杜绝长文本被生硬空格切碎。
-        var width = baseDesired.Width > 0 ? baseDesired.Width : rubyDesired.Width;
-        if (baseDesired.Width > 0 && rubyDesired.Width > baseDesired.Width)
-        {
-            var extra = Math.Min(3.0, (rubyDesired.Width - baseDesired.Width) / 2.0);
-            width += extra * 2.0;
-        }
+        // 占位宽度取底字可视宽度与注音宽度的较大值；
+        // 单字底字（或封顶后的超长注音）装不下时就地扩宽本控件，杜绝向两侧悬挂压到邻词的注音上。
+        var visualBaseWidth = Math.Max(0, baseDesired.Width - _baseBlock.LetterSpacing);
+        var width = Math.Max(visualBaseWidth, rubyDesired.Width);
 
         return new Size(width, totalHeight);
     }
@@ -178,12 +219,17 @@ internal sealed class RubyInlineControl : Grid
         var rubyDesired = _rubyBlock.DesiredSize;
         var baseDesired = _baseBlock.DesiredSize;
 
-        // 注音居中于底字上方，允许向两侧轻微溢出悬挂（Overhang），不被裁切
+        // 注音居中于底字上方；占位宽度已覆盖注音，正常不会溢出，
+        // 仅描边/字形边缘细微溢出时自然悬挂，不被裁切
         var rubyX = (finalSize.Width - rubyDesired.Width) / 2.0;
         _rubyBlock.Arrange(new Rect(rubyX, 0, rubyDesired.Width, rubyDesired.Height));
 
         var baseY = Math.Max(0, rubyDesired.Height - 1);
-        _baseBlock.Arrange(new Rect(0, baseY, finalSize.Width, baseDesired.Height));
+        // LetterSpacing 会在每个字（含末字）后追加空白，末字尾空会把底字视觉重心带偏；
+        // 按「去掉尾空后的可视宽度」居中，保证底字字面与注音同心。
+        var visualBaseWidth = baseDesired.Width - _baseBlock.LetterSpacing;
+        var baseX = (finalSize.Width - visualBaseWidth) / 2.0;
+        _baseBlock.Arrange(new Rect(baseX, baseY, baseDesired.Width, baseDesired.Height));
 
         return finalSize;
     }
