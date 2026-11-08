@@ -2,9 +2,53 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:NaniKore.App.Controls"
              xmlns:local="clr-namespace:NaniKore.App.Settings"
+             xmlns:sys="using:System"
              x:Class="NaniKore.App.Settings.GeneralPage"
              x:DataType="local:GeneralPage">
     <StackPanel Spacing="0">
+        <!-- 外观（issue 033）：字体族是运行期配置，输入框即搜索框，且以当前字体自渲染作预览 -->
+        <controls:SettingsGroup Header="外观">
+            <StackPanel>
+                <controls:SettingsRow Header="界面字体"
+                                      Description="应用于全部窗口与控件；留空则使用系统默认字体。"
+                                      ContentWidth="320">
+                    <AutoCompleteBox x:Name="UiFontBox"
+                                     Width="320"
+                                     PlaceholderText="留空 = 系统默认字体"
+                                     MinimumPrefixLength="0"
+                                     FilterMode="Contains"
+                                     IsTextCompletionEnabled="False"
+                                     MaxDropDownHeight="260">
+                        <!-- 预览字体只作用于输入区；候选固定用界面字体，保证填了任何字体时候选都可读 -->
+                        <AutoCompleteBox.ItemTemplate>
+                            <DataTemplate x:DataType="sys:String">
+                                <TextBlock Text="{Binding}" FontFamily="{DynamicResource Font.Ui}" />
+                            </DataTemplate>
+                        </AutoCompleteBox.ItemTemplate>
+                    </AutoCompleteBox>
+                </controls:SettingsRow>
+                <Border Classes="divider-row" />
+                <controls:SettingsRow Header="提示词字体"
+                                      Description="提示词编辑框使用的等宽字体；留空则使用系统默认字体。"
+                                      ContentWidth="320">
+                    <AutoCompleteBox x:Name="PromptFontBox"
+                                     Width="320"
+                                     PlaceholderText="留空 = 系统默认字体"
+                                     MinimumPrefixLength="0"
+                                     FilterMode="Contains"
+                                     IsTextCompletionEnabled="False"
+                                     MaxDropDownHeight="260">
+                        <AutoCompleteBox.ItemTemplate>
+                            <DataTemplate x:DataType="sys:String">
+                                <TextBlock Text="{Binding}" FontFamily="{DynamicResource Font.Ui}" />
+                            </DataTemplate>
+                        </AutoCompleteBox.ItemTemplate>
+                    </AutoCompleteBox>
+                </controls:SettingsRow>
+                <controls:InfoBar x:Name="FontStatus" Margin="14,0,14,12" />
+            </StackPanel>
+        </controls:SettingsGroup>
+
         <controls:SettingsGroup Header="翻译">
             <StackPanel>
                 <controls:SettingsRow Header="翻译目标语言"

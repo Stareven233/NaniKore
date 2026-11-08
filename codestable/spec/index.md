@@ -44,6 +44,7 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
   - 托盘：`ITrayHost`（Avalonia `TrayIcon` 原生系统菜单 + 自绘无焦点通知小窗）
   - 密钥存储：`ISecretStore`（Windows DPAPI，预留跨平台版本头）
 - 平台边界已彻底切开，业务核心（翻译、注音、OCR 算法、配置、收藏）均为纯托管平台无关代码。
+- 字体族为运行期配置：`config.yaml` 的 `fonts.ui` / `fonts.prompt` 经 `FontResources` 在启动与保存设置时注入应用资源（`Font.Ui` / `Font.Prompt`），代码内不保留任何字体族常量；键留空等价于 Avalonia 平台默认字体（不回落内置值），可填英文逗号分隔的回退链。随包模板默认 `ui: Microsoft YaHei UI`、`prompt: 'YaHei Monaco Hybird,Consolas'`，链尾均为所有 Windows 语言版自带的字体，首项未命中时仍有确定兜底。设置页「通用 → 外观」用内置 `AutoCompleteBox`（输入框即搜索框，候选来自本机已安装字体）直接手填或下拉点选，输入框以当前字体自渲染作预览，无独立弹窗、无新窗口；未安装的族名不阻止保存，只点名告警——保存后由 Avalonia 平台字体回退渲染，外观可能仍是其它可用字体。
 
 ### 工具链与发布
 

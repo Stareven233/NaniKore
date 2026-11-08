@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using NaniKore.App.Theme;
 using NaniKore.Interop;
 using SkiaSharp;
 using Color = Avalonia.Media.Color;
@@ -141,6 +142,12 @@ internal sealed partial class SelectionOverlayWindow : Window
         DrawSizeChip(context, selection, scaling);
     }
 
+    /// <summary>
+    /// 尺寸 chip 的 Typeface（issue 033）：跟随配置的界面字体；资源缺失时仍用平台默认，
+    /// 不让字体配置阻断选区浮层这条主路径。
+    /// </summary>
+    internal static Typeface ResolveChipTypeface() => FontResources.UiTypeface;
+
     private void DrawSizeChip(DrawingContext context, PixelRect selection, double scaling)
     {
         const double horizontalPadding = 7;
@@ -152,7 +159,7 @@ internal sealed partial class SelectionOverlayWindow : Window
             text,
             CultureInfo.InvariantCulture,
             FlowDirection.LeftToRight,
-            Typeface.Default,
+            ResolveChipTypeface(),
             12,
             Brushes.White);
 

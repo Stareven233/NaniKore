@@ -9,10 +9,10 @@
 
     <Application.Resources>
         <ResourceDictionary>
-            <!-- 全局无衬线现代圆润高清晰字体回退链（优先命中微软官方高质量 ClearType 字体，饱满平滑无锯齿） -->
-            <FontFamily x:Key="Font.Ui">Microsoft YaHei UI, Microsoft YaHei, Segoe UI Variable Text, Segoe UI, 更纱黑体 SC, Sarasa Gothic SC, PingFang SC, sans-serif</FontFamily>
-            <FontFamily x:Key="Font.Mono">Cascadia Mono, Consolas, Segoe UI Mono, 更纱黑体 SC, Sarasa Term SC, monospace</FontFamily>
-
+            <!--
+                字体族已改为运行期配置（issue 033）：Font.Ui / Font.Prompt 由 FontResources 从 config.yaml 注入，
+                此处不再声明任何静态字体族（包括已废弃的 Font.Mono）。
+            -->
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceInclude x:Key="Light" Source="/App/Theme/Palette.Light.axaml" />
                 <ResourceInclude x:Key="Dark" Source="/App/Theme/Palette.Dark.axaml" />

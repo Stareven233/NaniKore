@@ -88,6 +88,9 @@ public partial class NaniKoreApp : Application
         }
 
         _configStore = new ConfigStore(AppPaths.DataDirectory);
+        // 字体族必须在任何窗口创建之前写入应用资源（issue 033）：DynamicResource 在控件构造期允许暂缺，
+        // 但首帧就在此写入才能避免闪烁，且内置样式不再持有任何字体常量。
+        FontResources.Apply(_configStore.Current.Fonts);
         _providerFactory = new ProviderFactory(_configStore.Current, _secretStore);
 
         // 托盘宿主（点击与右键原生菜单事件联动）
@@ -820,6 +823,8 @@ public partial class NaniKoreApp : Application
     {
         var oldConfig = _configStore.Current;
         _configStore.AtomicWrite(next);
+        // 字体热刷新：DynamicResource 自动重绘已存在的控件，无需重启。
+        FontResources.Apply(next.Fonts);
         _providerFactory?.Dispose();
         _providerFactory = new ProviderFactory(next, _secretStore);
 

@@ -3,7 +3,7 @@
 # 每个配置档只需 name / kind / base_url / model 四行；api_type / supports_vision / timeout_seconds /
 # enable_thinking 只在偏离缺省（completions / true / 30 / false）时才需要写，保存一次设置也不会反弹成更多行
 # API Key 不写在这里：以当前 Windows 用户的 DPAPI 密文整体保存在 .data/keys.bin（内部是 {配置档名: API Key} 的 JSON）。
-version: 0.6.0+60
+version: 0.6.1
 general:
   auto_translate: false
   # 选取/剪贴板翻译（Ctrl+Shift+S）读到内容后是否立即翻译；默认开，视觉直喂不受此约束。
@@ -43,6 +43,13 @@ hotkeys:
 phonetics:
   enabled: true
   rare_only: true
+# 字体族槽位（issue 033）：代码内不保留任何字体族常量，这里的值就是渲染真相。
+# 两个键留空 = 使用 Avalonia 平台默认字体，不回落任何内置值（也可写 ~）。
+fonts:
+  # 界面字体：应用于全部窗口与控件。可填任意已安装字体族名；英文逗号分隔即构成回退链。
+  ui: Microsoft YaHei UI
+  # 提示词编辑框等宽字体；英文逗号分隔即构成回退链（首项未安装时依次命中后续字体）。
+  prompt: 'YaHei Monaco Hybird,Consolas'
 windows:
   settings_width: 1024
   settings_height: 700

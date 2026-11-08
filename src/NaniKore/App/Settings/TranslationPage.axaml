@@ -129,7 +129,7 @@
                              TextWrapping="Wrap"
                              MinHeight="140"
                              MaxHeight="220"
-                             FontFamily="Cascadia Mono, Consolas, Monaco, 微软雅黑" />
+                             FontFamily="{DynamicResource Font.Prompt}" />
                 </controls:SettingsRow>
                 <Border Classes="divider-row" />
                 <controls:SettingsRow x:Name="VisionPromptRow"
@@ -146,7 +146,7 @@
                              TextWrapping="Wrap"
                              MinHeight="160"
                              MaxHeight="260"
-                             FontFamily="Cascadia Mono, Consolas, Monaco, 微软雅黑" />
+                             FontFamily="{DynamicResource Font.Prompt}" />
                 </controls:SettingsRow>
             </StackPanel>
         </controls:SettingsGroup>

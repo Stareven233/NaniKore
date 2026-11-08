@@ -84,6 +84,8 @@ internal sealed class AppConfigDocument
 
     public PhoneticsConfig? Phonetics { get; set; }
 
+    public FontConfig? Fonts { get; set; }
+
     public AppConfig ToRuntime()
     {
         var config = new AppConfig
@@ -95,6 +97,7 @@ internal sealed class AppConfigDocument
             Windows = Windows ?? new WindowConfig(),
             Prompts = Prompts ?? new PromptConfig(),
             Phonetics = Phonetics ?? new PhoneticsConfig(),
+            Fonts = Fonts ?? new FontConfig(),
         };
         // 磁盘上没有 profiles 段时保留运行期缺省（三个官方默认档）；有段才逐档映射
         // （含显式空列表，交由 Normalize 兜底），与旧反序列化器「缺段保留初值」的语义一致。
@@ -120,6 +123,7 @@ internal sealed class AppConfigDocument
             Windows = config.Windows,
             Prompts = config.Prompts,
             Phonetics = config.Phonetics,
+            Fonts = config.Fonts,
         };
     }
 }

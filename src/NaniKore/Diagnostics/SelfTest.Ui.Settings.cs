@@ -9,14 +9,17 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using NaniKore.App;
 using NaniKore.App.Controls;
 using NaniKore.App.Settings;
+using NaniKore.App.Theme;
 using NaniKore.Config;
 using NaniKore.Favorites;
 using NaniKore.Ocr.Models;
+using NaniKore.Overlay;
 using NaniKore.Phonetics;
 using NaniKore.Translation;
 
@@ -40,6 +43,7 @@ internal static partial class SelfTest
         TestSettingsCloseSizeMemory();
         TestSettingsCloseSizeWriteBackKeepsExternalUpdates();
         TestFavoritesSettingsPageFilteringAndEvents();
+        TestFontsConfiguration();
         TestWindowProperties();
     }
 
@@ -356,6 +360,149 @@ internal static partial class SelfTest
             legacyPluginConfig.Prompts.JapanesePlugin == "Legacy ja-JP" &&
             legacyPluginConfig.Prompts.EnglishPlugin == "Legacy en-US" &&
             legacyPluginConfig.Prompts.ChinesePlugin == "Legacy zh-CN");
+    }
+
+    /// <summary>
+    /// 字体可配置化（issue 033）：配置→资源→控件三层的实际生效链与设置页输入控件语义。
+    /// </summary>
+    private static void TestFontsConfiguration()
+    {
+        EnsureThemedApplication();
+        if (Application.Current is not { } app)
+        {
+            Check("Fonts.ApplicationAvailable", false);
+            return;
+        }
+
+        // 1. 模板默认值进运行期配置（文本模板本体随发布包带出，直接读当前程序目录那份）
+        var templatePath = Path.Combine(AppContext.BaseDirectory, AppPaths.TemplateFileName);
+        Check("Fonts.TemplateFileShipped", File.Exists(templatePath));
+        if (File.Exists(templatePath))
+        {
+            WithTempConfigDirectory((dataDirectory, templateDirectory) =>
+            {
+                File.Copy(templatePath, Path.Combine(templateDirectory, AppPaths.TemplateFileName), overwrite: true);
+                var store = new ConfigStore(dataDirectory, templateDirectory);
+                Check(
+                    "Fonts.TemplateDefaultsReachRuntime",
+                    store.Current.Fonts.Ui == "Microsoft YaHei UI" &&
+                    store.Current.Fonts.Prompt == "YaHei Monaco Hybird,Consolas",
+                    $"ui={store.Current.Fonts.Ui}, prompt={store.Current.Fonts.Prompt}");
+
+                // 空串必须落成 ""（OmitNull 不省略空串）：清空字体不能把 fonts 段塔成 {}
+                store.Current.Fonts = new FontConfig { Ui = string.Empty, Prompt = "Consolas" };
+                store.AtomicWrite(store.Current);
+                var reloaded = new ConfigStore(dataDirectory, templateDirectory);
+                Check(
+                    "Fonts.EmptyStringRoundTrips",
+                    reloaded.Current.Fonts.Ui.Length == 0 && reloaded.Current.Fonts.Prompt == "Consolas",
+                    $"ui={reloaded.Current.Fonts.Ui}, prompt={reloaded.Current.Fonts.Prompt}");
+            });
+        }
+
+        // 2. Apply 是唯一写入口：两个键都进应用资源
+        FontResources.Apply(new FontConfig { Ui = "Consolas", Prompt = "Consolas" });
+        Check(
+            "Fonts.ApplyWritesResourceKeys",
+            app.Resources.TryGetValue(FontResources.UiKey, out var uiResource) &&
+            uiResource is FontFamily { Name: "Consolas" } &&
+            app.Resources.TryGetValue(FontResources.PromptKey, out var promptResource) &&
+            promptResource is FontFamily { Name: "Consolas" });
+
+        // 3. 提示词编辑框跟随 Font.Prompt（DynamicResource 需要挂到资源宿主上才能解析）
+        var translationPage = new TranslationPage();
+        translationPage.Load(new AppConfig());
+        _ = new Window { Content = translationPage.View, Width = 760, Height = 600 };
+        translationPage.View.Measure(new Avalonia.Size(760, 900));
+        var promptBox = Find<TextBox>(translationPage, "PromptBox");
+        var visionPromptBox = Find<TextBox>(translationPage, "VisionPromptBox");
+        Check(
+            "Fonts.PromptEditorsFollowResource",
+            promptBox?.FontFamily?.Name == "Consolas" && visionPromptBox?.FontFamily?.Name == "Consolas",
+            $"prompt={promptBox?.FontFamily?.Name}, vision={visionPromptBox?.FontFamily?.Name}");
+
+        // 4. 选区浮层的尺寸 chip 不再用 Typeface.Default
+        Check(
+            "Fonts.OverlayChipUsesUiFamily",
+            SelectionOverlayWindow.ResolveChipTypeface().FontFamily.Name == "Consolas");
+
+        // 5. 空串合法：删除资源键 = 平台默认，不回落任何内置链
+        FontResources.Apply(new FontConfig());
+        Check(
+            "Fonts.EmptyWritesNoResource",
+            !app.Resources.ContainsKey(FontResources.UiKey) && !app.Resources.ContainsKey(FontResources.PromptKey));
+
+        // 6. 未知族名：点名警告但不阻止保存
+        FontResources.WarmUpAsync().GetAwaiter().GetResult();
+        var generalPage = new GeneralPage();
+        generalPage.Load(new AppConfig { Fonts = new FontConfig { Ui = "NaniKore Missing Font 123", Prompt = "" } });
+        var fontStatus = Find<InfoBar>(generalPage, "FontStatus");
+        Check(
+            "Fonts.UnknownFamilyWarnsButSaves",
+            fontStatus is { IsOpen: true, Severity: InfoSeverity.Warning } &&
+            fontStatus.Message.Contains("回退为系统字体", StringComparison.Ordinal) &&
+            generalPage.Validate() is null,
+            fontStatus?.Message ?? "missing");
+        var savedConfig = new AppConfig();
+        generalPage.Apply(savedConfig);
+        Check("Fonts.UnknownFamilyIsPersisted", savedConfig.Fonts.Ui == "NaniKore Missing Font 123");
+
+        // 7. 候选只来自本机字体表：非空、无重复、已排序、逐项可命中
+        var families = FontResources.InstalledFamilies;
+        Check(
+            "Fonts.SuggestionsAreInstalled",
+            families.Count > 0 &&
+            families.Distinct(StringComparer.OrdinalIgnoreCase).Count() == families.Count &&
+            families.SequenceEqual(families.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)) &&
+            families.All(FontResources.IsInstalled),
+            $"count={families.Count}");
+
+        // 8. 输入框即搜索框：Contains + 空前缀显示全部
+        var filterBox = new AutoCompleteBox { FilterMode = AutoCompleteFilterMode.Contains, MinimumPrefixLength = 0 };
+        Check(
+            "Fonts.FilterIsCaseInsensitiveSubstring",
+            filterBox.MinimumPrefixLength == 0 &&
+            filterBox.TextFilter?.Invoke("yahei", "Microsoft YaHei UI") == true &&
+            filterBox.TextFilter?.Invoke("YAHEI", "Microsoft YaHei UI") == true &&
+            filterBox.TextFilter?.Invoke("mono", "Microsoft YaHei UI") == false);
+
+        // 9. 自渲染预览落在模板内 TextBox 上（不是 AutoCompleteBox 本身），空值回平台默认
+        var uiPage = new GeneralPage();
+        uiPage.Load(new AppConfig());
+        _ = new Window { Content = uiPage.View, Width = 760, Height = 900 };
+        uiPage.View.Measure(new Avalonia.Size(760, 900));
+        var uiBox = Find<AutoCompleteBox>(uiPage, "UiFontBox");
+        uiBox!.Text = "Consolas";
+        var innerInput = FindDescendants<TextBox>(uiBox).FirstOrDefault();
+        Check(
+            "Fonts.InputSelfPreviews",
+            innerInput is not null && innerInput.FontFamily?.Name == "Consolas",
+            $"inner={(innerInput is null ? "null" : innerInput.FontFamily?.Name)}");
+        uiBox.Text = string.Empty;
+        Check(
+            "Fonts.InputSelfPreviewFallsBackToPlatformDefault",
+            innerInput is not null && innerInput.FontFamily?.Name == FontFamily.Default.Name);
+
+        // 10. 候选列表钉回 Font.Ui：填了符号字体也不影响候选项可读
+        FontResources.Apply(new FontConfig { Ui = "Consolas", Prompt = "Consolas" });
+        var itemTemplate = uiBox.ItemTemplate;
+        if (itemTemplate?.Build("Microsoft YaHei UI") is Control itemView)
+        {
+            _ = new Window { Content = itemView, Width = 320, Height = 40 };
+            itemView.Measure(new Avalonia.Size(320, 40));
+            var itemText = itemView as TextBlock ?? FindDescendants<TextBlock>(itemView).FirstOrDefault();
+            Check(
+                "Fonts.SuggestionItemsIgnorePreviewFont",
+                itemText?.FontFamily?.Name == "Consolas",
+                $"item={itemText?.FontFamily?.Name}");
+        }
+        else
+        {
+            Check("Fonts.SuggestionItemsIgnorePreviewFont", false, "itemTemplate is missing");
+        }
+
+        // 收尾：把资源清回空，后续用例不继承本次注入的字体
+        FontResources.Apply(new FontConfig());
     }
 
     /// <summary>

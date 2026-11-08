@@ -28,6 +28,22 @@ internal sealed class AppConfig
 
     /// <summary>本地注音（issue 008）：开关与过滤口径；词典本体走按语言下载，不随配置分发。</summary>
     public PhoneticsConfig Phonetics { get; set; } = new();
+
+    /// <summary>字体族槽位（issue 033）：界面与提示词两条渲染链路的字体来源，代码内不再保留任何字体族常量。</summary>
+    public FontConfig Fonts { get; set; } = new();
+}
+
+/// <summary>
+/// 字体族槽位（issue 033）：两个键都允许为空，空串的唯一语义是「不写资源键」——
+/// 交给 Avalonia 平台默认字体，绝不回落到任何代码内常量。
+/// </summary>
+internal sealed class FontConfig
+{
+    /// <summary>界面字体族；可写英文逗号分隔的回退链（具体写法见 config.template.yaml 注释）。</summary>
+    public string Ui { get; set; } = string.Empty;
+
+    /// <summary>提示词编辑框等宽字体族；写法同 <see cref="Ui"/>。</summary>
+    public string Prompt { get; set; } = string.Empty;
 }
 
 internal sealed class GeneralConfig
@@ -247,6 +263,11 @@ internal static class AppConfigCloner
         {
             Enabled = source.Phonetics.Enabled,
             RareOnly = source.Phonetics.RareOnly,
+        },
+        Fonts = new FontConfig
+        {
+            Ui = source.Fonts.Ui,
+            Prompt = source.Fonts.Prompt,
         },
     };
 }

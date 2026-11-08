@@ -158,6 +158,7 @@ internal sealed class ConfigStore
         config.Hotkeys ??= new HotkeyConfig();
         config.Windows ??= new WindowConfig();
         config.Prompts ??= new PromptConfig();
+        config.Fonts ??= new FontConfig();
         config.Profiles ??= [];
 
         // YAML 的 ~ 是显式空值，反序列化得到的是 null 而不是空串。提示词与选取热键
@@ -174,6 +175,10 @@ internal sealed class ConfigStore
         config.Prompts.Explain ??= string.Empty;
         // 选取热键的 ~ 同样收敛为空串：空串＝关闭该热键，归一化绝不替用户改成默认组合。
         config.Hotkeys.Paste ??= string.Empty;
+        // 字体键（issue 033）的 ~ 收敛为空串：空串＝平台默认字体，这里不做任何字体名兜底，
+        // 否则 OmitNull 会把 fonts 段塌成 {}，与 prompts 段同一范式。
+        config.Fonts.Ui ??= string.Empty;
+        config.Fonts.Prompt ??= string.Empty;
 
         if (string.IsNullOrWhiteSpace(config.General.TargetLanguage))
         {

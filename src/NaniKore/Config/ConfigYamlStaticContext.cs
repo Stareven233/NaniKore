@@ -25,6 +25,7 @@ namespace NaniKore.Config;
 [YamlSerializable(typeof(WindowConfig))]
 [YamlSerializable(typeof(PromptConfig))]
 [YamlSerializable(typeof(PhoneticsConfig))]
+[YamlSerializable(typeof(FontConfig))]
 public partial class ConfigYamlStaticContext : StaticContext
 {
 }

@@ -1,10 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.VisualTree;
 using NaniKore.App.Controls;
+using NaniKore.App.Theme;
 using NaniKore.Config;
 using NaniKore.Ocr.Models;
 using NaniKore.Phonetics;
@@ -36,6 +41,15 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
 
         TargetLanguageBox.ItemsSource = LanguageChoices.All;
         PipelineModeBox.ItemsSource = new[] { "local_ocr", "vision_oneshot" };
+
+        // 字体输入（issue 033）：输入框即搜索框；候选源挂在展开下拉时才取，避免无意义的字体表枚举。
+        UiFontBox.DropDownOpening += OnFontDropDownOpening;
+        PromptFontBox.DropDownOpening += OnFontDropDownOpening;
+        UiFontBox.TextChanged += OnFontTextChanged;
+        PromptFontBox.TextChanged += OnFontTextChanged;
+        // 模板套用晚于 Load（无头自测甚至可能不套用）：在模板就绪时补一次自渲染预览。
+        UiFontBox.TemplateApplied += OnFontBoxTemplateApplied;
+        PromptFontBox.TemplateApplied += OnFontBoxTemplateApplied;
 
         PipelineModeBox.SelectionChanged += (_, _) => UpdateLocalOcrDependenciesVisibility();
         DownloadDependenciesButton.Click += OnDownloadDependenciesClick;
@@ -78,6 +92,14 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
             PipelineModeBox.SelectedItem = "local_ocr";
         }
 
+        // 字体键空串合法：直接写进输入框，不在此做任何默认字体兜底。
+        UiFontBox.Text = config.Fonts.Ui;
+        PromptFontBox.Text = config.Fonts.Prompt;
+        ApplyFontPreview(UiFontBox);
+        ApplyFontPreview(PromptFontBox);
+        // 字体表枚举与缺失警告放到后台：不阻塞设置页首帧，完成后回主线程刷新。
+        _ = RefreshFontWarningAsync();
+
         _ = RefreshDependenciesAsync();
         UpdateLocalOcrDependenciesVisibility();
     }
@@ -97,6 +119,92 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         config.Phonetics.RareOnly = PhoneticsRareOnlyToggle.IsChecked == true;
         config.General.TargetLanguage = ((LanguageChoice)TargetLanguageBox.SelectedItem!).Name;
         config.Pipeline.Mode = PipelineModeBox.SelectedItem as string ?? "local_ocr";
+        // 一律读 Text：手填的逗号回退链不会被选中项逻辑吞掉；空串合法（平台默认字体）。
+        config.Fonts.Ui = UiFontBox.Text ?? string.Empty;
+        config.Fonts.Prompt = PromptFontBox.Text ?? string.Empty;
+    }
+
+    private void OnFontDropDownOpening(object? sender, CancelEventArgs e)
+    {
+        if (sender is AutoCompleteBox { ItemsSource: null } box)
+        {
+            // 两个输入框共用同一份已枚举快照，只枚举一次。
+            box.ItemsSource = FontResources.InstalledFamilies;
+        }
+    }
+
+    private void OnFontTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (sender is not AutoCompleteBox box)
+        {
+            return;
+        }
+
+        ApplyFontPreview(box);
+        UpdateFontWarning();
+    }
+
+    private void OnFontBoxTemplateApplied(object? sender, TemplateAppliedEventArgs e)
+    {
+        if (sender is AutoCompleteBox box)
+        {
+            ApplyFontPreview(box);
+        }
+    }
+
+    /// <summary>
+    /// 自渲染预览（issue 033 C6）：把当前字体族直接写到模板内 TextBox 上——
+    /// 隐式 TextBox 样式的 Setter 会压掉继承值，单设 AutoCompleteBox.FontFamily 不会生效。
+    /// 候选列表不受影响（ItemTemplate 已钉回 Font.Ui）。
+    /// </summary>
+    private static void ApplyFontPreview(AutoCompleteBox box)
+    {
+        // 模板尚未套用时找不到内部 TextBox，静默跳过；TemplateApplied 会补一次。
+        if (box.GetVisualDescendants().OfType<TextBox>().FirstOrDefault() is { } input)
+        {
+            input.FontFamily = FontResources.TryCreate(box.Text) ?? FontFamily.Default;
+        }
+    }
+
+    /// <summary>
+    /// 缺失字体警告：只在本机字体表已就绪时同步判断（查内存快照，不阻塞输入）；
+    /// 未就绪则由后台预热任务完成后统一刷新。漏字不阻止保存——用户可能就想写只在本机存在的族名。
+    /// </summary>
+    private void UpdateFontWarning()
+    {
+        if (!FontResources.IsInstalledFamiliesLoaded)
+        {
+            return;
+        }
+
+        var missing = new[] { UiFontBox.Text, PromptFontBox.Text }
+            .Where(text => !FontResources.IsInstalled(text))
+            .Select(text => text!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (missing.Count == 0)
+        {
+            FontStatus.Clear();
+            return;
+        }
+
+        // 未安装的族名不阻止保存，但必须说清保存后的渲染行为：系统会回退，可能仍看起来像其它可用字体。
+        FontStatus.Show(
+            $"未在本机找到字体{string.Join("、", missing.Select(name => $"「{name}」"))}，此时由回退为系统字体",
+            InfoSeverity.Warning);
+    }
+
+    private async Task RefreshFontWarningAsync()
+    {
+        await FontResources.WarmUpAsync().ConfigureAwait(false);
+        if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
+        {
+            UpdateFontWarning();
+        }
+        else
+        {
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(UpdateFontWarning);
+        }
     }
 
     private void UpdateLocalOcrDependenciesVisibility()
