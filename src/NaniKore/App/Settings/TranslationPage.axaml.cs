@@ -24,6 +24,8 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
     public TranslationPage()
     {
         InitializeComponent();
+        TargetLanguageBox.ItemsSource = LanguageChoices.All;
+        PipelineModeBox.ItemsSource = new[] { "local_ocr", "vision_oneshot" };
         KindBox.ItemsSource = new[] { "openai", "claude", "gemini" };
         ApiTypeBox.ItemsSource = new[] { "completions", "responses" };
 
@@ -46,6 +48,8 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
 
     public Control View => this;
 
+    internal string PipelineMode => PipelineModeBox.SelectedItem as string ?? "local_ocr";
+
     /// <summary>由宿主注入，不保存临时 key，避免测试按钮把未确认输入落盘。</summary>
     public Func<ProviderProfile, string?, Task<string>>? TestConnection { get; set; }
 
@@ -58,6 +62,17 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
     {
         ArgumentNullException.ThrowIfNull(config);
         _config = config;
+        AutoTranslateToggle.IsChecked = config.General.AutoTranslate;
+        PasteAutoTranslateToggle.IsChecked = config.General.PasteAutoTranslate;
+        AutoAnnotateToggle.IsChecked = config.General.AutoAnnotate;
+        AutoExplainToggle.IsChecked = config.General.AutoExplain;
+        TargetLanguageBox.SelectedItem = LanguageChoices.Find(config.General.TargetLanguage) ?? LanguageChoices.All[0];
+        PipelineModeBox.SelectedItem = config.Pipeline.Mode;
+        if (PipelineModeBox.SelectedIndex < 0)
+        {
+            PipelineModeBox.SelectedItem = "local_ocr";
+        }
+
         PromptBox.Text = string.IsNullOrWhiteSpace(config.Prompts.Base)
             ? PromptTemplates.DefaultTranslationBasePrompt
             : config.Prompts.Base;
@@ -81,6 +96,11 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
     public string? Validate()
     {
         SaveFields();
+        if (TargetLanguageBox.SelectedItem is not LanguageChoice)
+        {
+            return "请选择翻译目标语言。";
+        }
+
         if (_config is null || _config.Profiles.Count == 0)
         {
             return "至少需要保留一个翻译配置档。";
@@ -108,6 +128,12 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
     {
         ArgumentNullException.ThrowIfNull(config);
         SaveFields();
+        config.General.AutoTranslate = AutoTranslateToggle.IsChecked == true;
+        config.General.PasteAutoTranslate = PasteAutoTranslateToggle.IsChecked == true;
+        config.General.AutoAnnotate = AutoAnnotateToggle.IsChecked == true;
+        config.General.AutoExplain = AutoExplainToggle.IsChecked == true;
+        config.General.TargetLanguage = ((LanguageChoice)TargetLanguageBox.SelectedItem!).Name;
+        config.Pipeline.Mode = PipelineMode;
         config.Pipeline.ActiveProfile = SelectedProfile?.Name ?? config.Profiles[0].Name;
         config.Prompts.Base = (PromptBox.Text ?? string.Empty).Trim();
         config.Prompts.VisionBase = (VisionPromptBox.Text ?? string.Empty).Trim();

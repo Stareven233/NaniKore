@@ -10,7 +10,8 @@
       "_todo.md": "deny"
     },
     "bash": {
-      "./scripts/dev.ps1 *": "allow"
+      "./scripts/dev.ps1 *": "allow",
+      "pwsh -NoProfile -File ./scripts/dev.ps1 *": "allow"
     },
     "mcp": {
       "*": "allow"

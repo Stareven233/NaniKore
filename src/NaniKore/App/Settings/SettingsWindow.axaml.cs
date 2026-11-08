@@ -155,6 +155,13 @@ internal sealed partial class SettingsWindow : Window
         }
 
         var page = navItem.GetOrCreatePage(_working);
+        // 页面延迟创建；返回通用页时同步尚未保存的流程选择，不重载其它编辑项。
+        if (page is GeneralPage general && _translationNav.IsCreated)
+        {
+            var translation = (TranslationPage)_translationNav.GetOrCreatePage(_working);
+            general.SetPipelineMode(translation.PipelineMode);
+        }
+
         PageTitle.Text = navItem.Title;
         PageHost.Content = page.View;
         FooterStatus.Clear();

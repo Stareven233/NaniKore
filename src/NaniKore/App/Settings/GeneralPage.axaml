@@ -49,59 +49,6 @@
             </StackPanel>
         </controls:SettingsGroup>
 
-        <controls:SettingsGroup Header="翻译">
-            <StackPanel>
-                <controls:SettingsRow Header="翻译目标语言"
-                                      Description="译文语言会直接写入模型提示词。"
-                                      ContentWidth="220">
-                    <ComboBox x:Name="TargetLanguageBox" Width="220" />
-                </controls:SettingsRow>
-                <Border Classes="divider-row" />
-                
-                <controls:SettingsRow Header="识别后自动注音"
-                                      Description="识别完成（OCR/选取）后自动叠加假名/拼音/音标；关闭时原文只呈现纯文本，由面板「注音」按钮显式触发。">
-                    <ToggleSwitch x:Name="AutoAnnotateToggle" OnContent="" OffContent="" />
-                </controls:SettingsRow>
-                <Border Classes="divider-row" />
-                
-                <controls:SettingsRow Header="OCR 后自动翻译"
-                                      Description="关闭时由结果卡的「翻译」按钮显式触发。">
-                    <ToggleSwitch x:Name="AutoTranslateToggle" OnContent="" OffContent="" />
-                </controls:SettingsRow>
-                <Border Classes="divider-row" />
-                
-                <controls:SettingsRow Header="选取后自动翻译"
-                                      Description="选取翻译热键（选区/剪贴板）读到内容后立即翻译；关闭时只呈现原文，由「翻译」按钮显式触发。">
-                    <ToggleSwitch x:Name="PasteAutoTranslateToggle" OnContent="" OffContent="" />
-                </controls:SettingsRow>
-                <Border Classes="divider-row" />
-                
-                <controls:SettingsRow Header="翻译后自动精讲"
-                                      Description="翻译完成自动展开深度语法精讲。">
-                    <ToggleSwitch x:Name="AutoExplainToggle" OnContent="" OffContent="" />
-                </controls:SettingsRow>
-            </StackPanel>
-        </controls:SettingsGroup>
-
-        <controls:SettingsGroup Header="识别流程">
-            <StackPanel>
-                <controls:SettingsRow Header="翻译流程" ContentWidth="220">
-                    <ComboBox x:Name="PipelineModeBox" Width="220" />
-                </controls:SettingsRow>
-                <Border Classes="divider-row" />
-                <StackPanel Margin="14,10" Spacing="4">
-                    <TextBlock FontSize="12" Foreground="{DynamicResource Brush.Text.Secondary}">
-                        <Run FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text.Primary}" Text="local_ocr" />
-                        <Run Text="：本地 PP-OCR 识别后再交给模型翻译，隐私更好、无图像上传。" />
-                    </TextBlock>
-                    <TextBlock FontSize="12" Foreground="{DynamicResource Brush.Text.Secondary}">
-                        <Run FontWeight="SemiBold" Foreground="{DynamicResource Brush.Text.Primary}" Text="vision_oneshot" />
-                        <Run Text="：直接把选区图像交给支持图像输入的模型，一次完成识别与翻译。" />
-                    </TextBlock>
-                </StackPanel>
-            </StackPanel>
-        </controls:SettingsGroup>
-
         <controls:SettingsGroup x:Name="PhoneticsGroup" Header="原文注音">
             <StackPanel>
                 <controls:SettingsRow Header="原文注音"

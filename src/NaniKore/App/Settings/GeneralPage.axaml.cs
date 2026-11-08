@@ -39,9 +39,6 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
             ["zh"] = PhoneticsDownloadZh,
         };
 
-        TargetLanguageBox.ItemsSource = LanguageChoices.All;
-        PipelineModeBox.ItemsSource = new[] { "local_ocr", "vision_oneshot" };
-
         // 字体输入（issue 033）：输入框即搜索框；候选源挂在展开下拉时才取，避免无意义的字体表枚举。
         UiFontBox.DropDownOpening += OnFontDropDownOpening;
         PromptFontBox.DropDownOpening += OnFontDropDownOpening;
@@ -51,7 +48,6 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         UiFontBox.TemplateApplied += OnFontBoxTemplateApplied;
         PromptFontBox.TemplateApplied += OnFontBoxTemplateApplied;
 
-        PipelineModeBox.SelectionChanged += (_, _) => UpdateLocalOcrDependenciesVisibility();
         DownloadDependenciesButton.Click += OnDownloadDependenciesClick;
         PhoneticsDownloadJa.Click += OnDownloadPhoneticsClick;
         PhoneticsDownloadEn.Click += OnDownloadPhoneticsClick;
@@ -67,7 +63,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         }
 
         _ = RefreshDependenciesAsync();
-        UpdateLocalOcrDependenciesVisibility();
+        SetPipelineMode("local_ocr");
     }
 
     public string Title => "通用";
@@ -79,18 +75,8 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     public void Load(AppConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        AutoTranslateToggle.IsChecked = config.General.AutoTranslate;
-        PasteAutoTranslateToggle.IsChecked = config.General.PasteAutoTranslate;
-        AutoAnnotateToggle.IsChecked = config.General.AutoAnnotate;
-        AutoExplainToggle.IsChecked = config.General.AutoExplain;
         PhoneticsEnabledToggle.IsChecked = config.Phonetics.Enabled;
         PhoneticsRareOnlyToggle.IsChecked = config.Phonetics.RareOnly;
-        TargetLanguageBox.SelectedItem = LanguageChoices.Find(config.General.TargetLanguage) ?? LanguageChoices.All[0];
-        PipelineModeBox.SelectedItem = config.Pipeline.Mode;
-        if (PipelineModeBox.SelectedIndex < 0)
-        {
-            PipelineModeBox.SelectedItem = "local_ocr";
-        }
 
         // 字体键空串合法：直接写进输入框，不在此做任何默认字体兜底。
         UiFontBox.Text = config.Fonts.Ui;
@@ -101,24 +87,16 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         _ = RefreshFontWarningAsync();
 
         _ = RefreshDependenciesAsync();
-        UpdateLocalOcrDependenciesVisibility();
+        SetPipelineMode(config.Pipeline.Mode);
     }
 
-    public string? Validate() => TargetLanguageBox.SelectedItem is LanguageChoice
-        ? null
-        : "请选择翻译目标语言。";
+    public string? Validate() => null;
 
     public void Apply(AppConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
-        config.General.AutoTranslate = AutoTranslateToggle.IsChecked == true;
-        config.General.PasteAutoTranslate = PasteAutoTranslateToggle.IsChecked == true;
-        config.General.AutoAnnotate = AutoAnnotateToggle.IsChecked == true;
-        config.General.AutoExplain = AutoExplainToggle.IsChecked == true;
         config.Phonetics.Enabled = PhoneticsEnabledToggle.IsChecked == true;
         config.Phonetics.RareOnly = PhoneticsRareOnlyToggle.IsChecked == true;
-        config.General.TargetLanguage = ((LanguageChoice)TargetLanguageBox.SelectedItem!).Name;
-        config.Pipeline.Mode = PipelineModeBox.SelectedItem as string ?? "local_ocr";
         // 一律读 Text：手填的逗号回退链不会被选中项逻辑吞掉；空串合法（平台默认字体）。
         config.Fonts.Ui = UiFontBox.Text ?? string.Empty;
         config.Fonts.Prompt = PromptFontBox.Text ?? string.Empty;
@@ -207,10 +185,10 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         }
     }
 
-    private void UpdateLocalOcrDependenciesVisibility()
+    internal void SetPipelineMode(string mode)
     {
         // 依赖下载只服务于本地 OCR，切换到视觉流程时隐藏整组设置，避免造成无关干扰。
-        var isLocalOcr = string.Equals(PipelineModeBox.SelectedItem as string, "local_ocr", StringComparison.OrdinalIgnoreCase);
+        var isLocalOcr = string.Equals(mode, "local_ocr", StringComparison.OrdinalIgnoreCase);
         LocalOcrDependenciesGroup.IsVisible = isLocalOcr;
     }
 

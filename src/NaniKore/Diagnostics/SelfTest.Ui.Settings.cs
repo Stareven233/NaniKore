@@ -199,7 +199,7 @@ internal static partial class SelfTest
 
     /// <summary>
     /// 通用页流水线依赖可见性：本地 OCR 依赖组只在 local_ocr 模式露出；
-    /// 依赖按钮文案直接映射本地清单状态，无下载入口时禁用；AutoExplain 读写闭环。
+    /// 依赖按钮文案直接映射本地清单状态，无下载入口时禁用；翻译页行为选项读写闭环。
     /// </summary>
     private static void TestGeneralPagePipelineDependencyVisibility()
     {
@@ -234,47 +234,67 @@ internal static partial class SelfTest
             "ocr dependency button enables once a downloader is injected",
             enabledOcrButton?.IsEnabled == true);
 
-        var autoExplainPage = new GeneralPage();
+        // 跨页切换必须反映未保存的流程选择，并保留通用页已编辑的字段。
+        var settings = NewSettingsWindow();
+        var host = Find<ContentControl>(settings, "PageHost")!;
+        var generalPage = (GeneralPage)host.Content!;
+        Find<AutoCompleteBox>(generalPage, "UiFontBox")!.Text = "Consolas";
+        settings.SelectTab(SettingsTab.Translation);
+        var translationPage = (TranslationPage)host.Content!;
+        Find<ComboBox>(translationPage, "PipelineModeBox")!.SelectedItem = "vision_oneshot";
+        settings.SelectTab(SettingsTab.General);
+        Check(
+            "returning to general reflects the unsaved vision pipeline without resetting font edits",
+            Find<Control>(generalPage, "LocalOcrDependenciesGroup") is { IsVisible: false } &&
+            Find<AutoCompleteBox>(generalPage, "UiFontBox")!.Text == "Consolas");
+        settings.SelectTab(SettingsTab.Translation);
+        Find<ComboBox>(translationPage, "PipelineModeBox")!.SelectedItem = "local_ocr";
+        settings.SelectTab(SettingsTab.General);
+        Check(
+            "returning to general restores local OCR dependencies for the local pipeline",
+            Find<Control>(generalPage, "LocalOcrDependenciesGroup") is { IsVisible: true });
+
+        var autoExplainPage = new TranslationPage();
         var autoExplainConfig = new AppConfig { General = new GeneralConfig { AutoExplain = true } };
         autoExplainPage.Load(autoExplainConfig);
         var autoExplainToggle = Find<ToggleSwitch>(autoExplainPage, "AutoExplainToggle");
         Check(
-            "general page loads and applies AutoExplain setting accurately",
+            "translation page loads and applies AutoExplain setting accurately",
             autoExplainToggle?.IsChecked == true);
 
         autoExplainToggle!.IsChecked = false;
         var appliedConfig = new AppConfig();
         autoExplainPage.Apply(appliedConfig);
         Check(
-            "general page applies AutoExplain toggle change to configuration",
+            "translation page applies AutoExplain toggle change to configuration",
             !appliedConfig.General.AutoExplain);
 
-        var pasteAutoTranslatePage = new GeneralPage();
+        var pasteAutoTranslatePage = new TranslationPage();
         pasteAutoTranslatePage.Load(new AppConfig { General = new GeneralConfig { PasteAutoTranslate = false } });
         var pasteAutoTranslateToggle = Find<ToggleSwitch>(pasteAutoTranslatePage, "PasteAutoTranslateToggle");
         Check(
-            "general page loads the paste selection auto-translate switch accurately",
+            "translation page loads the paste selection auto-translate switch accurately",
             pasteAutoTranslateToggle?.IsChecked == false);
 
         pasteAutoTranslateToggle!.IsChecked = true;
         var pasteAppliedConfig = new AppConfig();
         pasteAutoTranslatePage.Apply(pasteAppliedConfig);
         Check(
-            "general page applies the paste selection auto-translate switch to configuration",
+            "translation page applies the paste selection auto-translate switch to configuration",
             pasteAppliedConfig.General.PasteAutoTranslate);
 
-        var targetBox = Find<ComboBox>(page, "TargetLanguageBox");
+        var targetBox = Find<ComboBox>(autoExplainPage, "TargetLanguageBox");
         var targetItems = targetBox?.ItemsSource?.Cast<LanguageChoice>().ToList() ?? [];
         Check(
-            "general page target languages reference the shared native-name list",
+            "translation page target languages reference the shared native-name list",
             targetBox is not null &&
             targetItems.Count == LanguageChoices.All.Count &&
             ReferenceEquals(targetItems[3], LanguageChoices.All[3]) &&
             LanguageChoices.All[3].Name == "日本語");
 
-        page.Load(new AppConfig { General = new GeneralConfig { TargetLanguage = "日语" } });
+        autoExplainPage.Load(new AppConfig { General = new GeneralConfig { TargetLanguage = "日语" } });
         Check(
-            "general page resolves legacy chinese alias to native display name",
+            "translation page resolves legacy chinese alias to native display name",
             targetBox!.SelectedItem is LanguageChoice legacyChoice && legacyChoice.Name == "日本語");
     }
 
