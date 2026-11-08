@@ -11,7 +11,7 @@
                 <controls:SettingsRow Header="当前配置档"
                                       Description="保存后作为翻译流程使用的活动配置档。">
                     <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                        <ComboBox x:Name="ProfileBox" Width="200" />
+                        <ComboBox x:Name="ProfileBox" Width="250" />
                         <Button x:Name="AddButton"
                                 Classes="icon"
                                 ToolTip.Tip="新建配置档">
@@ -101,11 +101,11 @@
                 </controls:SettingsRow>
                 <Border Classes="divider-row" />
                 <controls:SettingsRow Header="数据目录"
-                                      Description="配置、密钥与收藏库都保存在程序目录的 .data 下；备份整个软件只需复制该目录。">
+                                      Description="配置、密钥与收藏库都保存在程序目录的 .data 下">
                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                         <TextBox x:Name="DataDirectoryBox" Width="280" IsReadOnly="True" />
                         <Button x:Name="OpenDataDirectoryButton" Content="打开目录" MinWidth="80" />
-                        <Button x:Name="ClearSecretButton" Content="清除当前配置档密钥" />
+                        <Button x:Name="ClearSecretButton" Content="清除当前密钥" />
                     </StackPanel>
                 </controls:SettingsRow>
                 <controls:InfoBar x:Name="TestStatus" Margin="14,4,14,12" />

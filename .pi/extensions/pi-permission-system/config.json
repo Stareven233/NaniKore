@@ -9,6 +9,9 @@
       "*": "allow",
       "_todo.md": "deny"
     },
+    "bash": {
+      "./scripts/dev.ps1 *": "allow"
+    },
     "mcp": {
       "*": "allow"
     },

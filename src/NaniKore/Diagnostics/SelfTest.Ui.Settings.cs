@@ -45,7 +45,89 @@ internal static partial class SelfTest
         TestFavoritesSettingsPageFilteringAndEvents();
         TestFontsConfiguration();
         TestWindowProperties();
+        TestBorderlessWindowResize();
     }
+
+    /// <summary>
+    /// 无边框窗口缩放：设置窗与结果面板都是自绘边框（<c>WindowDecorations="None"</c>），
+    /// 关掉系统装饰就一并失去系统缩放边框，必须由 <see cref="WindowResizeGrip"/> 补齐四边/四角拖拽；
+    /// 同时验证握柄摆位与缩放纯决策（只改被拖方向、按最小/最大尺寸收敛、西/北边反向位移保持对边不动）。
+    /// </summary>
+    private static void TestBorderlessWindowResize()
+    {
+        EnsureThemedApplication();
+
+        // 1. 两个自绘边框窗口都必须挂上握柄层，否则窗口回退成「只能移动、不能改尺寸」
+        Check(
+            "borderless result panel hosts the window resize grip layer",
+            FindDescendants<WindowResizeGrip>(new ResultPanelWindow()).Any());
+        Check(
+            "borderless settings window hosts the window resize grip layer",
+            FindDescendants<WindowResizeGrip>(NewSettingsWindow()).Any());
+
+        // 2. 八向命中区：四角等于握柄厚度，四边铺满剩余长度，中间留空不遮挡内容
+        var grip = new WindowResizeGrip();
+        grip.Measure(new Size(800, 600));
+        grip.Arrange(new Rect(0, 0, 800, 600));
+        var zones = grip.Children.Select(child => child.Bounds).ToList();
+        Check(
+            "resize grip splits the window edges into eight corner and side zones",
+            zones.Count == 8 &&
+            IsSameRect(zones[0], new Rect(0, 0, 12, 12)) &&
+            IsSameRect(zones[1], new Rect(12, 0, 776, 6)) &&
+            IsSameRect(zones[2], new Rect(788, 0, 12, 12)) &&
+            IsSameRect(zones[3], new Rect(0, 12, 6, 576)) &&
+            IsSameRect(zones[4], new Rect(794, 12, 6, 576)) &&
+            IsSameRect(zones[5], new Rect(0, 588, 12, 12)) &&
+            IsSameRect(zones[6], new Rect(12, 594, 776, 6)) &&
+            IsSameRect(zones[7], new Rect(788, 588, 12, 12)),
+            string.Join(";", zones));
+        Check(
+            "resize grip zones carry distinct cursors",
+            grip.Children.All(child => child.Cursor is not null) &&
+            grip.Children.Select(child => child.Tag).OfType<WindowEdge>().Distinct().Count() == 8);
+
+        // 3. 缩放纯决策：只有被拖动的方向参与计算，对边保持不动
+        const double infinite = double.PositiveInfinity;
+        Check(
+            "dragging the east edge grows width only",
+            WindowResizeGrip.ResolveSize(WindowEdge.East, 960, 660, 40, 25, 440, 300, infinite, infinite) == (1000, 660));
+        Check(
+            "dragging the south edge grows height only",
+            WindowResizeGrip.ResolveSize(WindowEdge.South, 960, 660, 40, 25, 440, 300, infinite, infinite) == (960, 685));
+        Check(
+            "dragging the north west corner grows both directions inversely",
+            WindowResizeGrip.ResolveSize(WindowEdge.NorthWest, 960, 660, -40, -25, 440, 300, infinite, infinite) == (1000, 685));
+
+        // 4. 最小/最大尺寸收敛：拖过头不会把窗口压成不可操作
+        Check(
+            "resize respects the declared minimum size",
+            WindowResizeGrip.ResolveSize(WindowEdge.SouthEast, 960, 660, -5000, -5000, 440, 300, infinite, infinite) == (440, 300));
+        Check(
+            "resize respects the declared maximum size",
+            WindowResizeGrip.ResolveSize(WindowEdge.SouthEast, 960, 660, 5000, 5000, 440, 300, 1280, 800) == (1280, 800));
+
+        // 5. 西/北边缩放时窗口位置反向位移，让对边（右/下）钉在原处；东/南边不动位置
+        Check(
+            "dragging the west edge pins the opposite edge by moving the window",
+            WindowResizeGrip.ResolvePosition(WindowEdge.West, new PixelPoint(100, 100), 960, 660, 920, 660, 1) == new PixelPoint(140, 100));
+        Check(
+            "dragging the north edge pins the opposite edge by moving the window",
+            WindowResizeGrip.ResolvePosition(WindowEdge.North, new PixelPoint(100, 100), 960, 660, 960, 690, 1) == new PixelPoint(100, 70));
+        Check(
+            "dragging the east edge leaves the window position untouched",
+            WindowResizeGrip.ResolvePosition(WindowEdge.East, new PixelPoint(100, 100), 960, 660, 1000, 660, 1) == new PixelPoint(100, 100));
+        Check(
+            "west edge window shift converts logical size to physical pixels",
+            WindowResizeGrip.ResolvePosition(WindowEdge.West, new PixelPoint(100, 100), 960, 660, 940, 660, 1.5) == new PixelPoint(130, 100));
+    }
+
+    /// <summary>Rect 比较走亚像素容差，避免布局取整差异误报。</summary>
+    private static bool IsSameRect(Rect actual, Rect expected) =>
+        Math.Abs(actual.X - expected.X) < 0.01 &&
+        Math.Abs(actual.Y - expected.Y) < 0.01 &&
+        Math.Abs(actual.Width - expected.Width) < 0.01 &&
+        Math.Abs(actual.Height - expected.Height) < 0.01;
 
     /// <summary>
     /// 关于页 GitHub 入口：图标按钮常驻在品牌卡内、命中测试可见，目标地址固定指向项目仓库；

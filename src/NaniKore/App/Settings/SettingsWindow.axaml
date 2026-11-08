@@ -147,6 +147,9 @@
                     </Border>
                 </Grid>
             </Grid>
+
+            <!-- 无边框窗口失去系统缩放边框：由握柄层补齐四边/四角缩放（尺寸关闭时记住，见 windows.settings_*） -->
+            <controls:WindowResizeGrip Grid.RowSpan="2" />
         </Grid>
     </Border>
 </Window>
