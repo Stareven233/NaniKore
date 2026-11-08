@@ -22,6 +22,13 @@
             BorderThickness="1"
             ClipToBounds="True">
         <Grid RowDefinitions="Auto,*">
+            <!-- 只对背景图片施加效果；正文、控件及窗口命中区不受影响。 -->
+            <Image Grid.RowSpan="2"
+                   Source="{DynamicResource WindowBackground.Image}"
+                   Stretch="UniformToFill"
+                   Opacity="{DynamicResource WindowBackground.Opacity}"
+                   Effect="{DynamicResource WindowBackground.Blur}"
+                   IsHitTestVisible="False" />
             <!-- 顶部自定义控制栏（支持窗口拖动、最小化、关闭） -->
             <Grid Grid.Row="0"
                   Height="34"

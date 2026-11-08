@@ -272,6 +272,21 @@ internal sealed class ConfigStore
         // Paste 刻意不做空值兜底：空串就是「关闭该热键」的显式表达；配置段缺失时
         // 反序列化会保留 HotkeyConfig 的代码默认（Ctrl+Shift+S），无需在这里补写。
 
+        // 背景路径只收敛空值与首尾空白，不依赖本机文件是否存在。
+        config.Windows.BackgroundImage = config.Windows.BackgroundImage?.Trim() ?? string.Empty;
+        // 非有限数与越界值统一恢复默认，避免把非法参数带入背景渲染。
+        if (!double.IsFinite(config.Windows.BackgroundBlur) || config.Windows.BackgroundBlur is < 0 or > 100)
+        {
+            config.Windows.BackgroundBlur = 0;
+            normalized = true;
+        }
+
+        if (!double.IsFinite(config.Windows.BackgroundOpacity) || config.Windows.BackgroundOpacity is < 0 or > 1)
+        {
+            config.Windows.BackgroundOpacity = 1;
+            normalized = true;
+        }
+
         // 防止手工配置、损坏文件或异常 DPI 数据把设置窗口恢复成不可用的尺寸。
         if (double.IsNaN(config.Windows.SettingsWidth) || double.IsInfinity(config.Windows.SettingsWidth) ||
             config.Windows.SettingsWidth is < 620 or > 3840)

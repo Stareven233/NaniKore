@@ -37,6 +37,7 @@ internal static partial class SelfTest
         TestSettingsPagesUseAdaptiveLayout();
         TestGeneralPagePipelineDependencyVisibility();
         TestGeneralPagePhoneticsCards();
+        TestWindowBackgroundConfiguration();
         TestSharedLanguageChoicesAndDetectionMapping();
         TestTranslationPagePromptEditing();
         TestAboutPageRepositoryEntry();
@@ -352,6 +353,142 @@ internal static partial class SelfTest
         Check(
             "general page applies phonetics switch changes to configuration",
             applied.Phonetics.Enabled && !applied.Phonetics.RareOnly);
+    }
+
+    /// <summary>背景设置读写与真实解码校验；临时图片同时验证两个已创建窗口的动态资源热更新。</summary>
+    private static void TestWindowBackgroundConfiguration()
+    {
+        WithTempConfigDirectory((directory, _) =>
+        {
+            var imagePath = Path.Combine(directory, "背景 image.png");
+            // 1×1 PNG：真实解码不依赖仓库素材、网络或用户配置。
+            File.WriteAllBytes(imagePath, Convert.FromBase64String(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
+            var relativePath = Path.Combine("images", "..", "背景 image.png");
+            Check(
+                "background relative paths resolve against the application directory",
+                WindowBackgroundResources.ResolvePath("  " + relativePath + "  ") ==
+                Path.Combine(AppContext.BaseDirectory, "背景 image.png"));
+            Check(
+                "background absolute paths remain absolute after trimming",
+                WindowBackgroundResources.ResolvePath("  " + imagePath + "  ") == imagePath);
+
+            var page = new GeneralPage();
+            page.Load(new AppConfig
+            {
+                Windows = new WindowConfig
+                {
+                    BackgroundImage = relativePath,
+                    BackgroundBlur = 24.5,
+                    BackgroundOpacity = 0.35,
+                },
+            });
+            var pathBox = Find<TextBox>(page, "BackgroundImageBox")!;
+            var blurBox = Find<NumericUpDown>(page, "BackgroundBlurBox")!;
+            var opacityBox = Find<NumericUpDown>(page, "BackgroundOpacityBox")!;
+            Check(
+                "general page loads the background path, blur and opacity percentage",
+                pathBox.Text == relativePath && blurBox.Value == 24.5m && opacityBox.Value == 35m);
+            // 临时目录与程序可能分属不同盘符；解码校验使用绝对路径，路径基准单独断言。
+            pathBox.Text = imagePath;
+            Check("general page accepts a decodable background image", page.Validate() is null);
+
+            pathBox.Text = "  " + imagePath + "  ";
+            blurBox.Value = 12.5m;
+            opacityBox.Value = 62.5m;
+            var applied = new AppConfig();
+            page.Apply(applied);
+            Check(
+                "general page trims background paths and converts opacity percentage when applying",
+                applied.Windows.BackgroundImage == imagePath &&
+                applied.Windows.BackgroundBlur == 12.5 && applied.Windows.BackgroundOpacity == 0.625);
+            Check("general page accepts an absolute background image", page.Validate() is null);
+
+            pathBox.Text = Path.Combine(directory, "missing.png");
+            Check("general page rejects a missing background image", !string.IsNullOrEmpty(page.Validate()));
+            var corruptPath = Path.Combine(directory, "corrupt.png");
+            File.WriteAllText(corruptPath, "not an image");
+            pathBox.Text = corruptPath;
+            Check("general page rejects a corrupt background image", !string.IsNullOrEmpty(page.Validate()));
+
+            pathBox.Text = "   ";
+            Check("general page accepts clearing the background path", page.Validate() is null);
+            page.Apply(applied);
+            Check(
+                "general page clears an existing background without resetting blur or opacity",
+                applied.Windows.BackgroundImage == string.Empty &&
+                applied.Windows.BackgroundBlur == 12.5 && applied.Windows.BackgroundOpacity == 0.625);
+            blurBox.Value = null;
+            Check("general page rejects an empty background blur", !string.IsNullOrEmpty(page.Validate()));
+            blurBox.Value = 0;
+            opacityBox.Value = null;
+            Check("general page rejects an empty background opacity", !string.IsNullOrEmpty(page.Validate()));
+            opacityBox.Value = 0;
+            Check("general page accepts zero blur and fully transparent background", page.Validate() is null);
+
+            TestSharedWindowBackgroundResources(imagePath);
+        });
+    }
+
+    /// <summary>直接检查窗口图片层，确保资源变化确实传到现有控件，且效果不施加到正文。</summary>
+    private static void TestSharedWindowBackgroundResources(string imagePath)
+    {
+        WindowBackgroundResources.Apply(new WindowConfig());
+        var settings = NewSettingsWindow();
+        var result = new ResultPanelWindow();
+        // 背景是根内容网格的首层，避免误取标题栏图标而掩盖绑定回归。
+        var layers = new[] { settings, (Window)result }
+            .Select(window => ((Grid)((Border)window.Content!).Child!).Children.OfType<Image>().Single())
+            .ToArray();
+        try
+        {
+            Check("both windows initially have no background image", layers.All(image => image.Source is null));
+            var config = new WindowConfig
+            {
+                BackgroundImage = imagePath,
+                BackgroundBlur = 18.5,
+                BackgroundOpacity = 0.35,
+            };
+            WindowBackgroundResources.Apply(config);
+            Dispatcher.UIThread.RunJobs();
+            var source = layers[0].Source;
+            Check(
+                "existing settings and result windows share one decoded background image",
+                source is Avalonia.Media.Imaging.Bitmap bitmap && bitmap.PixelSize == new PixelSize(1, 1) &&
+                ReferenceEquals(source, layers[1].Source));
+            Check(
+                "both background image layers receive blur and opacity without intercepting input",
+                layers.All(image => image.Opacity == 0.35 && image.Effect is BlurEffect { Radius: 18.5 } &&
+                                    image.Stretch == Stretch.UniformToFill && !image.IsHitTestVisible));
+            Check(
+                "background effects leave window content opacity and effects unchanged",
+                new[] { settings, (Window)result }.All(window =>
+                    window.Opacity == 1 && window.Effect is null &&
+                    window.Content is Border { Opacity: 1, Effect: null }));
+
+            config.BackgroundBlur = 0;
+            config.BackgroundOpacity = 0.625;
+            WindowBackgroundResources.Apply(config);
+            Dispatcher.UIThread.RunJobs();
+            Check(
+                "background appearance hot updates reuse the shared image without recreating windows",
+                layers.All(image => ReferenceEquals(image.Source, source) && image.Opacity == 0.625 &&
+                                    image.Effect is BlurEffect { Radius: 0 }));
+
+            config.BackgroundImage = string.Empty;
+            WindowBackgroundResources.Apply(config);
+            Dispatcher.UIThread.RunJobs();
+            Check(
+                "clearing the background hot removes images from both existing windows",
+                layers.All(image => image.Source is null));
+        }
+        finally
+        {
+            // 释放共享位图，避免临时目录清理与后续 UI 自测继承本例资源。
+            WindowBackgroundResources.Apply(new WindowConfig());
+            settings.Close();
+            result.Close();
+        }
     }
 
     /// <summary>共享语言列表：母语写法唯一、旧别名命中、探测现算映射回列表项。</summary>

@@ -46,6 +46,31 @@
                     </AutoCompleteBox>
                 </controls:SettingsRow>
                 <controls:InfoBar x:Name="FontStatus" Margin="14,0,14,12" />
+                <Border Classes="divider-row" />
+                <controls:SettingsRow Header="背景图片"
+                                      Description="设置与结果面板共用；支持绝对路径或相对程序目录的路径，留空恢复默认背景。"
+                                      ContentWidth="320">
+                    <Grid Width="320" ColumnDefinitions="*,Auto">
+                        <TextBox x:Name="BackgroundImageBox" MinWidth="0"
+                                 PlaceholderText="例如 images/background.png" />
+                        <Button Grid.Column="1" Margin="8,0,0,0" Content="浏览…"
+                                Click="OnBrowseBackgroundImageClick" />
+                    </Grid>
+                </controls:SettingsRow>
+                <Border Classes="divider-row" />
+                <controls:SettingsRow Header="图片模糊"
+                                      Description="模糊半径 0–100；0 为不模糊，仅作用于图片。"
+                                      ContentWidth="160">
+                    <NumericUpDown x:Name="BackgroundBlurBox" Width="160"
+                                   Minimum="0" Maximum="100" Increment="1" FormatString="0" />
+                </controls:SettingsRow>
+                <Border Classes="divider-row" />
+                <controls:SettingsRow Header="图片不透明度"
+                                      Description="0% 完全透明，100% 完全显示；文字与控件不受影响。"
+                                      ContentWidth="160">
+                    <NumericUpDown x:Name="BackgroundOpacityBox" Width="160"
+                                   Minimum="0" Maximum="100" Increment="5" FormatString="0'%'" />
+                </controls:SettingsRow>
             </StackPanel>
         </controls:SettingsGroup>
 

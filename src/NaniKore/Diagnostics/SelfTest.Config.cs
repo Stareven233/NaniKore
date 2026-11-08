@@ -55,6 +55,8 @@ internal static partial class SelfTest
     {
         TestConfigRoundTrip();
         TestResultPanelSizeConfigRoundTrip();
+        TestSharedBackgroundConfigRoundTrip();
+        TestSharedBackgroundConfigNormalization();
         TestEmptyPromptKeysSurviveRewrite();
         TestPasteHotkeyNormalization();
         TestLegacyVisionOneshotKeyIsIgnored();
@@ -70,6 +72,139 @@ internal static partial class SelfTest
         // TestAboutPageDisplaysTemplateAndConfigVersions(); // 待 P4 关于页迁移至 Avalonia 后接回
         TestFavoritesDefaultDatabasePath();
         // TestApplicationIconResource(); // 待 P2 平台服务迁移至 Avalonia 后接回
+    }
+
+    /// <summary>共用背景配置：缺省、路径修整、独立克隆与写盘往返均保留约定。</summary>
+    private static void TestSharedBackgroundConfigRoundTrip()
+    {
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
+        {
+            var configPath = Path.Combine(dataDirectory, "config.yaml");
+            File.WriteAllText(configPath, "windows: {}\n");
+            var defaults = new ConfigStore(dataDirectory, templateDirectory);
+            Check(
+                "missing background fields use empty image, zero blur and full image opacity",
+                defaults.Current.Windows.BackgroundImage == string.Empty &&
+                defaults.Current.Windows.BackgroundBlur == 0 &&
+                defaults.Current.Windows.BackgroundOpacity == 1 &&
+                defaults.LoadWarning is null);
+
+            File.WriteAllText(configPath, """
+                windows:
+                  background_image: '  images/背景 image.png  '
+                  background_blur: 24.5
+                  background_opacity: 0.35
+                """);
+            var store = new ConfigStore(dataDirectory, templateDirectory);
+            var windows = store.Current.Windows;
+            Check(
+                "background fields load with a trimmed path and fractional values",
+                windows.BackgroundImage == "images/背景 image.png" &&
+                windows.BackgroundBlur == 24.5 && windows.BackgroundOpacity == 0.35 &&
+                store.LoadWarning is null);
+
+            var clone = AppConfigCloner.Clone(store.Current);
+            Check(
+                "background clone preserves all fields in a separate window config",
+                !ReferenceEquals(clone.Windows, windows) &&
+                clone.Windows.BackgroundImage == windows.BackgroundImage &&
+                clone.Windows.BackgroundBlur == windows.BackgroundBlur &&
+                clone.Windows.BackgroundOpacity == windows.BackgroundOpacity);
+            clone.Windows.BackgroundImage = "  other/image.png  ";
+            clone.Windows.BackgroundBlur = 75.25;
+            clone.Windows.BackgroundOpacity = 0.625;
+            Check(
+                "editing cloned background fields leaves the original config intact",
+                windows.BackgroundImage == "images/背景 image.png" &&
+                windows.BackgroundBlur == 24.5 && windows.BackgroundOpacity == 0.35);
+            store.AtomicWrite(clone);
+            var reloaded = new ConfigStore(dataDirectory, templateDirectory);
+            var yaml = File.ReadAllText(configPath);
+            Check(
+                "background fields persist under snake-case keys and normalize on write",
+                reloaded.Current.Windows.BackgroundImage == "other/image.png" &&
+                reloaded.Current.Windows.BackgroundBlur == 75.25 &&
+                reloaded.Current.Windows.BackgroundOpacity == 0.625 &&
+                reloaded.LoadWarning is null &&
+                yaml.Contains("background_image:", StringComparison.Ordinal) &&
+                yaml.Contains("background_blur:", StringComparison.Ordinal) &&
+                yaml.Contains("background_opacity:", StringComparison.Ordinal));
+        });
+    }
+
+    /// <summary>空路径与数值边界可往返；读写两端的越界、NaN 和无穷值都恢复默认。</summary>
+    private static void TestSharedBackgroundConfigNormalization()
+    {
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
+        {
+            var configPath = Path.Combine(dataDirectory, "config.yaml");
+            foreach (var image in new[] { "~", "''", "'   '" })
+            {
+                File.WriteAllText(configPath, $"windows:\n  background_image: {image}\n");
+                var store = new ConfigStore(dataDirectory, templateDirectory);
+                store.AtomicWrite(store.Current);
+                var reloaded = new ConfigStore(dataDirectory, templateDirectory);
+                Check(
+                    $"background image {image} normalizes to a persisted empty string",
+                    store.Current.Windows.BackgroundImage == string.Empty &&
+                    reloaded.Current.Windows.BackgroundImage == string.Empty &&
+                    File.ReadAllText(configPath).Contains("background_image: ''", StringComparison.Ordinal));
+            }
+
+            var writable = new ConfigStore(dataDirectory, templateDirectory);
+            foreach (var (blur, opacity) in new[] { (0d, 0d), (100d, 1d) })
+            {
+                writable.Current.Windows.BackgroundBlur = blur;
+                writable.Current.Windows.BackgroundOpacity = opacity;
+                writable.AtomicWrite(writable.Current);
+                var reloaded = new ConfigStore(dataDirectory, templateDirectory);
+                Check(
+                    $"background range endpoints {blur}/{opacity} survive persistence",
+                    reloaded.Current.Windows.BackgroundBlur == blur &&
+                    reloaded.Current.Windows.BackgroundOpacity == opacity &&
+                    reloaded.LoadWarning is null);
+            }
+
+            // YAML 与内存写入分别覆盖，避免只验证读盘或只验证保存的一侧。
+            foreach (var (yamlBlur, yamlOpacity, blur, opacity) in new[]
+            {
+                ("-0.1", "-0.1", -0.1, -0.1),
+                ("100.1", "1.1", 100.1, 1.1),
+                (".nan", ".nan", double.NaN, double.NaN),
+                (".inf", ".inf", double.PositiveInfinity, double.PositiveInfinity),
+                ("-.inf", "-.inf", double.NegativeInfinity, double.NegativeInfinity),
+            })
+            {
+                File.WriteAllText(configPath, $"""
+                    windows:
+                      background_image: keep.png
+                      background_blur: {yamlBlur}
+                      background_opacity: {yamlOpacity}
+                    """);
+                var loaded = new ConfigStore(dataDirectory, templateDirectory);
+                Check(
+                    $"invalid YAML background values {yamlBlur}/{yamlOpacity} reset without losing other fields",
+                    loaded.Current.Windows.BackgroundImage == "keep.png" &&
+                    loaded.Current.Windows.BackgroundBlur == 0 &&
+                    loaded.Current.Windows.BackgroundOpacity == 1 &&
+                    loaded.LoadWarning == "config.yaml 中的非法配置已回落到默认值。");
+
+                loaded.Current.Windows.BackgroundImage = null!;
+                loaded.Current.Windows.BackgroundBlur = blur;
+                loaded.Current.Windows.BackgroundOpacity = opacity;
+                loaded.AtomicWrite(loaded.Current);
+                var reloaded = new ConfigStore(dataDirectory, templateDirectory);
+                Check(
+                    $"invalid in-memory background values {yamlBlur}/{yamlOpacity} persist as defaults",
+                    loaded.Current.Windows.BackgroundImage == string.Empty &&
+                    loaded.Current.Windows.BackgroundBlur == 0 &&
+                    loaded.Current.Windows.BackgroundOpacity == 1 &&
+                    reloaded.Current.Windows.BackgroundImage == string.Empty &&
+                    reloaded.Current.Windows.BackgroundBlur == 0 &&
+                    reloaded.Current.Windows.BackgroundOpacity == 1 &&
+                    reloaded.LoadWarning is null);
+            }
+        });
     }
 
     /// <summary>

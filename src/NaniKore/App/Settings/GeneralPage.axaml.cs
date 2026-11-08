@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
 using NaniKore.App.Controls;
 using NaniKore.App.Theme;
@@ -75,6 +76,9 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     public void Load(AppConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
+        BackgroundImageBox.Text = config.Windows.BackgroundImage;
+        BackgroundBlurBox.Value = (decimal)config.Windows.BackgroundBlur;
+        BackgroundOpacityBox.Value = (decimal)(config.Windows.BackgroundOpacity * 100);
         PhoneticsEnabledToggle.IsChecked = config.Phonetics.Enabled;
         PhoneticsRareOnlyToggle.IsChecked = config.Phonetics.RareOnly;
 
@@ -90,16 +94,68 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         SetPipelineMode(config.Pipeline.Mode);
     }
 
-    public string? Validate() => null;
+    public string? Validate()
+    {
+        if (BackgroundBlurBox.Value is not (>= 0 and <= 100) ||
+            BackgroundOpacityBox.Value is not (>= 0 and <= 100))
+        {
+            return "图片模糊和不透明度必须在 0–100 之间。";
+        }
+
+        if (!string.IsNullOrWhiteSpace(BackgroundImageBox.Text))
+        {
+            try
+            {
+                // 保存前真实解码，避免把不存在的路径或非图片文件静默保存为有效背景。
+                using var image = WindowBackgroundResources.LoadImage(BackgroundImageBox.Text);
+            }
+            catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+            {
+                return $"无法读取背景图片：{exception.Message}";
+            }
+        }
+
+        return null;
+    }
 
     public void Apply(AppConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
+        config.Windows.BackgroundImage = BackgroundImageBox.Text?.Trim() ?? string.Empty;
+        config.Windows.BackgroundBlur = (double)(BackgroundBlurBox.Value ?? 0);
+        config.Windows.BackgroundOpacity = (double)(BackgroundOpacityBox.Value ?? 100) / 100;
         config.Phonetics.Enabled = PhoneticsEnabledToggle.IsChecked == true;
         config.Phonetics.RareOnly = PhoneticsRareOnlyToggle.IsChecked == true;
         // 一律读 Text：手填的逗号回退链不会被选中项逻辑吞掉；空串合法（平台默认字体）。
         config.Fonts.Ui = UiFontBox.Text ?? string.Empty;
         config.Fonts.Prompt = PromptFontBox.Text ?? string.Empty;
+    }
+
+    private async void OnBrowseBackgroundImageClick(object? sender, RoutedEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is not { } topLevel)
+        {
+            return;
+        }
+
+        try
+        {
+            var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "选择背景图片",
+                AllowMultiple = false,
+                FileTypeFilter = [FilePickerFileTypes.ImageAll],
+            });
+            // 系统选择器返回本地绝对路径；取消时保留输入内容，仍由「保存」统一校验并应用。
+            if (files.Count > 0 && files[0].TryGetLocalPath() is { } path)
+            {
+                BackgroundImageBox.Text = path;
+            }
+        }
+        catch (Exception exception)
+        {
+            MessageDialog.Show(topLevel as Window, "无法选择背景图片", exception.Message, InfoSeverity.Error);
+        }
     }
 
     private void OnFontDropDownOpening(object? sender, CancelEventArgs e)

@@ -174,6 +174,15 @@ internal sealed class HotkeyConfig
 
 internal sealed class WindowConfig
 {
+    /// <summary>窗口共用背景图路径；空串表示不使用背景图，读写时去除首尾空白。</summary>
+    public string BackgroundImage { get; set; } = string.Empty;
+
+    /// <summary>背景图模糊程度，允许 0～100；非有限数或越界值回退为 0。</summary>
+    public double BackgroundBlur { get; set; } = 0;
+
+    /// <summary>仅背景图的不透明度，允许 0～1；非有限数或越界值回退为 1。</summary>
+    public double BackgroundOpacity { get; set; } = 1;
+
     /// <summary>设置窗口上次关闭时的客户区宽度与高度；无效值由配置加载阶段回退。</summary>
     public double SettingsWidth { get; set; } = 760;
 
@@ -243,6 +252,9 @@ internal static class AppConfigCloner
         },
         Windows = new WindowConfig
         {
+            BackgroundImage = source.Windows.BackgroundImage,
+            BackgroundBlur = source.Windows.BackgroundBlur,
+            BackgroundOpacity = source.Windows.BackgroundOpacity,
             SettingsWidth = source.Windows.SettingsWidth,
             SettingsHeight = source.Windows.SettingsHeight,
             ResultPanelWidth = source.Windows.ResultPanelWidth,
