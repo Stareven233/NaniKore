@@ -255,7 +255,7 @@ OCR 文本
    - 运行时根目录惰性建库（SQLite），实现通用的 `favorites` 增删查；
    - 在设置面板中搭建轻量管理 Tab（类别过滤、搜索、删除、复制）。
 6. **切片 6：显示 LLM Token 开销与首字延迟（TTFT）指标**（已完成，见 issue 003）
-   - 在结果卡底部状态栏指标区呈现本次调用的 Token 消耗与性能指标（如 `Input: 320 tokens · Output: 45 tokens · TTFT: 680ms · 生成速度: 42 t/s`）；
+   - 在结果卡底部状态栏指标区呈现本次调用的 Token 消耗与性能指标（如 `Input: 320 tokens · Output: 45 tokens · TTFT: 680ms · TPS: 42 t/s`）；
    - 支持 OpenAI、Claude、Gemini 的流式 Usage 提取与非标端点启发式估算兜底。
 
 ### 暂不推进 / 悬挂项

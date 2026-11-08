@@ -232,7 +232,8 @@ internal static partial class SelfTest
     /// <summary>
     /// 独立分区高度调节契约：原文框与译文框各有一个底边调节把手，
     /// 拖动某把手只增减对应框的像素高度，互不影响；
-    /// 整个页面由 ScrollViewer 承载，超出视口整页滚动。
+    /// 精讲区不设把手，展开时独占窗口剩余高度（星号行），折叠时回 Auto 不撑页面；
+    /// 页面不足一屏时用 MinHeight 撑满滚动视口，超出整页滚动。
     /// </summary>
     private static void TestResultPanelViewportLayout()
     {
@@ -278,6 +279,69 @@ internal static partial class SelfTest
             "dragging the translation grip resizes only the translation pane, source untouched",
             Math.Abs(page.RowDefinitions[4].Height.Value - (translationBefore + 60)) < 0.5 &&
             Math.Abs(page.RowDefinitions[1].Height.Value - sourceAfterSourceDrag) < 0.5);
+
+        // 精讲区：折叠不占位，展开即独吞剩余高度；页面 MinHeight 绑定滚动视口
+        var expander = Find<Expander>(panel, "ExplanationExpander");
+        Check(
+            "collapsed explanation row keeps Auto height so no blank space stretches the page",
+            page.RowDefinitions[6].Height.GridUnitType == GridUnitType.Auto);
+
+        expander!.IsExpanded = true;
+        Check(
+            "expanding explanation turns its row into the single star row claiming all leftover height",
+            page.RowDefinitions[6].Height.GridUnitType == GridUnitType.Star &&
+            page.RowDefinitions[6].Height.Value == 1 &&
+            page.RowDefinitions.Count(row => row.Height.IsStar) == 1 &&
+            page.RowDefinitions[1].Height.GridUnitType == GridUnitType.Pixel &&
+            page.RowDefinitions[4].Height.GridUnitType == GridUnitType.Pixel);
+
+        expander.IsExpanded = false;
+        Check(
+            "collapsing explanation returns its row to Auto again",
+            page.RowDefinitions[6].Height.GridUnitType == GridUnitType.Auto &&
+            page.MinHeight >= 0);
+
+        // 真实布局：窗口越高，精讲区拿到的剩余高度越大（前两段仍锁像素高度）
+        var explanationView = Find<ExplanationCardView>(panel, "ExplanationView")!;
+        expander.IsExpanded = true;
+        var tallHeight = MeasureExplanationHeight(panel, page, explanationView, 900, 1100);
+        var shortHeight = MeasureExplanationHeight(panel, page, explanationView, 900, 1000);
+        Check(
+            "explanation area grows with the window while source and translation keep their pixel heights",
+            tallHeight > 150 &&
+            tallHeight - shortHeight is > 50 and < 150 &&
+            Math.Abs(page.RowDefinitions[1].Height.Value - (sourceBefore + 60)) < 0.5,
+            $"tall={tallHeight:F0} short={shortHeight:F0}");
+
+        // 长精讲也必须保持窗口分配的高度，超出的正文留在内部滚动。
+        explanationView.SetText("## 语境\n" + string.Join("\n\n", Enumerable.Repeat("这是一段用于验证精讲内部滚动的长文本。", 100)));
+        var longContentHeight = MeasureExplanationHeight(panel, page, explanationView, 900, 1000);
+        Check(
+            "long explanation stays within the allocated region",
+            Math.Abs(longContentHeight - shortHeight) < 1,
+            $"short={shortHeight:F0} long={longContentHeight:F0}");
+        // 小窗口或把手拉高时保留最小精讲高度，通过整页滚动访问底部。
+        var compactHeight = MeasureExplanationHeight(panel, page, explanationView, 900, 400);
+        Check(
+            "small viewport keeps explanation readable and allows whole-page scrolling",
+            compactHeight >= explanationView.MinHeight && page.Bounds.Height > 400,
+            $"explanation={compactHeight:F0} page={page.Bounds.Height:F0}");
+
+        expander.IsExpanded = false;
+        MeasureExplanationHeight(panel, page, explanationView, 900, 1000);
+        Check(
+            "collapsed explanation releases the viewport minimum height",
+            page.MinHeight == 0 && page.RowDefinitions[6].Height.IsAuto);
+    }
+
+    /// <summary>模拟滚动视口完成页面测量/排列，返回精讲卡片实际高度。</summary>
+    private static double MeasureExplanationHeight(ResultPanelWindow panel, Grid page, ExplanationCardView view, double width, double height)
+    {
+        panel.ApplyPageMinHeight(height);
+        // 模拟纵向滚动器：无限高度测量；页面顶端对齐，由内容或最小高度决定尺寸。
+        page.Measure(new Size(width, double.PositiveInfinity));
+        page.Arrange(new Rect(0, 0, width, page.DesiredSize.Height));
+        return view.Bounds.Height;
     }
 
     /// <summary>
@@ -297,7 +361,7 @@ internal static partial class SelfTest
         var normalizeButton = Find<Button>(panel, "NormalizeSourceButton");
         var translateButton = Find<Button>(panel, "TranslateButton");
         var viewerBorder = Find<Border>(panel, "SourceViewerBorder");
-        var statusBar = Find<InfoBar>(panel, "StatusBar");
+        var statusBar = Find<TextBlock>(panel, "StatusTextBlock");
 
         // 工具栏顺序契约：规范化 → 注音 → 翻译
         Check(
@@ -346,7 +410,7 @@ internal static partial class SelfTest
 
         Check(
             "annotate with empty source shows a gentle hint instead of failing",
-            statusBar?.Message == "没有可注音的原文。");
+            statusBar?.Text == "没有可注音的原文。");
 
         // 总开关关闭：软降级并提示
         panel.Reset("彼は躊躇なく答えた。", "OCR 完成", autoTranslate: false);
@@ -358,7 +422,7 @@ internal static partial class SelfTest
 
         Check(
             "annotate with phonetics disabled degrades gracefully with a settings hint",
-            statusBar?.Message.Contains("设置-通用") == true &&
+            statusBar?.Text?.Contains("设置-通用") == true &&
             string.Equals(panel.SourceText, "彼は躊躇なく答えた。", StringComparison.Ordinal));
     }
 
@@ -408,8 +472,23 @@ internal static partial class SelfTest
         EnsureThemedApplication();
 
         var panel = new ResultPanelWindow();
-        var metricsBar = Find<Border>(panel, "MetricsBar");
+        var metricsBar = Find<TextBlock>(panel, "MetricsTextBlock");
         var metricsBlock = Find<TextBlock>(panel, "MetricsTextBlock");
+        var statusBlock = Find<TextBlock>(panel, "StatusTextBlock")!;
+        var footer = Find<Grid>(panel, "FooterGrid")!;
+        Check(
+            "footer places plain metrics on the left and status on the right outside the scrolling page",
+            metricsBlock?.Parent == footer && statusBlock.Parent == footer &&
+            Grid.GetColumn(metricsBlock!) == 0 && Grid.GetColumn(statusBlock) == 1 &&
+            Grid.GetRow(footer) == 2 && footer.Parent == Find<ScrollViewer>(panel, "ContentScrollViewer")?.Parent);
+        panel.SetError("服务暂不可用", "完整错误信息");
+        Check("footer preserves error emphasis and details",
+            statusBlock.Text == "服务暂不可用" && statusBlock.Classes.Contains("status-error") &&
+            Find<Expander>(panel, "ErrorDetailsExpander")?.IsVisible == true);
+        panel.SetStatus(string.Empty);
+        Check("empty status hides text and clears error details",
+            !statusBlock.IsVisible && !statusBlock.Classes.Contains("status-error") &&
+            Find<Expander>(panel, "ErrorDetailsExpander")?.IsVisible == false);
         Check(
             "metrics bar is initially collapsed",
             metricsBar?.IsVisible == false);
@@ -418,7 +497,7 @@ internal static partial class SelfTest
         Check(
             "set metrics displays formatted summary and makes metrics bar visible",
             metricsBar?.IsVisible == true &&
-            metricsBlock?.Text == "Input: 320 tokens · Output: 45 tokens · TTFT: 680ms · 生成速度: 42 t/s");
+            metricsBlock?.Text == "Input: 320 tokens · Output: 45 tokens · TTFT: 680ms · TPS: 42 t/s");
 
         panel.BeginTranslation();
         Check(

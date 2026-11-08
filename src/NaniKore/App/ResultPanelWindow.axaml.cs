@@ -39,6 +39,7 @@ internal sealed partial class ResultPanelWindow : Window
 
     private const int SourceRegionRow = 1;
     private const int TranslationRegionRow = 4;
+    private const int ExplanationRegionRow = 6;
 
     private nint _windowHandle;
     private int _translationInsertIndex;
@@ -78,6 +79,9 @@ internal sealed partial class ResultPanelWindow : Window
     private double _translationGripStartHeight;
 
     private bool _isSwitchingEditMode;
+
+    /// <summary>精讲区是否展开：展开时第 6 行切为星号行，独享窗口剩余高度。</summary>
+    private bool _isExplanationExpanded;
 
     public event EventHandler? TranslateRequested;
     public event EventHandler? ExplanationRequested;
@@ -131,9 +135,13 @@ internal sealed partial class ResultPanelWindow : Window
         // 监听精讲展开事件
         ExplanationExpander.PropertyChanged += (sender, e) =>
         {
-            if (e.Property == Expander.IsExpandedProperty && e.GetNewValue<bool>())
+            if (e.Property == Expander.IsExpandedProperty)
             {
-                OnExplanationExpanderExpanded(ExplanationExpander, null!);
+                ApplyExplanationRowSizing(e.GetNewValue<bool>());
+                if (e.GetNewValue<bool>())
+                {
+                    OnExplanationExpanderExpanded(ExplanationExpander, null!);
+                }
             }
         };
 
@@ -177,6 +185,36 @@ internal sealed partial class ResultPanelWindow : Window
         // 默认未翻译时译文框静默，防止误点与光标居中闪烁
         TranslationTextBox.IsHitTestVisible = false;
         TranslationTextBox.PlaceholderText = "等待翻译...";
+
+        // 页面不足一屏时撑满滚动视口，星号行才有真实剩余空间可分配
+        ContentScrollViewer.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == ScrollViewer.ViewportProperty)
+            {
+                SyncPageMinHeight();
+            }
+        };
+    }
+
+    /// <summary>把页面最小高度对齐视口扣除内边距后的尺寸，分配窗口剩余空间。</summary>
+    private void SyncPageMinHeight() => ApplyPageMinHeight(ContentScrollViewer.Viewport.Height);
+
+    /// <summary>按内容视口高度更新页面下限，忽略尚未完成布局的无效尺寸。</summary>
+    internal void ApplyPageMinHeight(double viewportHeight)
+    {
+        if (!double.IsFinite(viewportHeight) || viewportHeight <= 0)
+        {
+            return;
+        }
+
+        // ScrollContentPresenter 的 Viewport 包含 Padding，页面需扣除上下内边距。
+        var available = _isExplanationExpanded
+            ? Math.Max(0, viewportHeight - ContentScrollViewer.Padding.Top - ContentScrollViewer.Padding.Bottom)
+            : 0;
+        if (Math.Abs(PageGrid.MinHeight - available) > 0.5)
+        {
+            PageGrid.MinHeight = available;
+        }
     }
 
     private void OnPanelDeactivated(object? sender, EventArgs e)
@@ -232,7 +270,7 @@ internal sealed partial class ResultPanelWindow : Window
         }
 
         var showRuby = _isRubyVisible;
-        SourceViewer.LineHeight = showRuby ? 40 : 28;
+        SourceViewer.LineHeight = showRuby ? 36 : 26;
 
         if (showRuby)
         {
@@ -305,7 +343,7 @@ internal sealed partial class ResultPanelWindow : Window
         }
 
         MetricsTextBlock.Text = metrics.FormatSummary();
-        MetricsBar.IsVisible = true;
+        MetricsTextBlock.IsVisible = true;
     }
 
     /// <summary>清空并折叠本次指标栏。</summary>
@@ -318,7 +356,7 @@ internal sealed partial class ResultPanelWindow : Window
         }
 
         MetricsTextBlock.Text = string.Empty;
-        MetricsBar.IsVisible = false;
+        MetricsTextBlock.IsVisible = false;
     }
 
     /// <summary>重置面板并装载初始原文与状态。</summary>
@@ -350,7 +388,7 @@ internal sealed partial class ResultPanelWindow : Window
         ErrorDetailsTextBox.Clear();
         ErrorDetailsExpander.IsVisible = false;
         ErrorDetailsExpander.IsExpanded = false;
-        StatusBar.Show(status, InfoSeverity.Neutral);
+        SetStatus(status);
 
         // 无论是否 autoTranslate，打开时均默认停留在注音渲染视图，双击才进入编辑
         _isEditingSource = false;
@@ -797,7 +835,10 @@ internal sealed partial class ResultPanelWindow : Window
             ErrorDetailsExpander.IsExpanded = false;
         }
 
-        StatusBar.Show(status, isError ? InfoSeverity.Error : InfoSeverity.Neutral);
+        StatusTextBlock.Text = status;
+        StatusTextBlock.IsVisible = !string.IsNullOrWhiteSpace(status);
+        // 常规提示使用次要文字色，仅错误提示强调颜色。
+        StatusTextBlock.Classes.Set("status-error", isError);
     }
 
     public void SetError(string summary, string details)
@@ -805,7 +846,7 @@ internal sealed partial class ResultPanelWindow : Window
         ErrorDetailsTextBox.Text = details;
         ErrorDetailsExpander.IsVisible = !string.IsNullOrWhiteSpace(details);
         ErrorDetailsExpander.IsExpanded = false;
-        StatusBar.Show(summary, InfoSeverity.Error);
+        SetStatus(summary, isError: true);
     }
 
     private void OnPanelKeyDown(object? sender, KeyEventArgs e)
@@ -1158,6 +1199,31 @@ internal sealed partial class ResultPanelWindow : Window
             _isDraggingTranslationGrip = false;
             e.Pointer.Capture(null);
             e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// 精讲区高度策略：原文/译文由各自把手控制像素高度，窗口纵向伸缩带来的剩余空间全部让给精讲。
+    /// 展开时第 6 行切为星号行（Auto + 星号并存时星号独占剩余空间），折叠时回到 Auto 避免空白撑着页面。
+    /// </summary>
+    private void ApplyExplanationRowSizing(bool expanded)
+    {
+        if (_isExplanationExpanded == expanded)
+        {
+            return;
+        }
+
+        _isExplanationExpanded = expanded;
+        var row = PageGrid.RowDefinitions[ExplanationRegionRow];
+        row.Height = expanded ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+        // 折叠时释放页面下限；展开时立即使用现有视口，不等待下一次窗口缩放。
+        if (!expanded)
+        {
+            PageGrid.MinHeight = 0;
+        }
+        else
+        {
+            SyncPageMinHeight();
         }
     }
 

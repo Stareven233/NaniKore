@@ -610,7 +610,7 @@ public partial class NaniKoreApp : Application
                 {
                     panel.CompleteExplanation(receivedOutput);
                     panel.SetStatus(
-                        receivedOutput ? "精讲解析完成。" : "精讲服务返回空内容。",
+                        receivedOutput ? "精讲解析完成" : "精讲服务返回空内容",
                         isError: !receivedOutput);
 
                     if (receivedOutput)

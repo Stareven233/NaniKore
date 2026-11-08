@@ -9,7 +9,7 @@ updated: 2026-09-19
 
 # 显示 LLM Token 开销与首字延迟（TTFT）指标
 
-> **读者：** 负责流式 Token 提取、TTFT 度量、生成速度计算以及面板状态呈现的开发者。  
+> **读者：** 负责流式 Token 提取、TTFT 度量、TPS计算以及面板状态呈现的开发者。  
 > **归属：** `codestable/epics/001-o-学习型演进-精讲假名与生词库/spec.md` 切片 6。  
 > **关联代码落点：**  
 > - `src/NaniKore/Translation/UnderstandContracts.cs`  
@@ -25,9 +25,9 @@ updated: 2026-09-19
 
 ## 做成以后是什么样
 
-1. **统一输入/输出 Token、TTFT 与生成速度指标感知**：
+1. **统一输入/输出 Token、TTFT 与TPS指标感知**：
    - 结果卡底部在翻译完成时优雅呈现本次调用的性能与开销指标行：
-     `Input: 320 tokens · Output: 45 tokens · TTFT: 680ms · 生成速度: 42 t/s`；
+     `Input: 320 tokens · Output: 45 tokens · TTFT: 680ms · TPS: 42 t/s`；
    - 收到首个非空文本 Token 时，状态栏即时反馈首字响应延迟（如 `首字响应 TTFT: 680ms · 正在流式接收…`）。
 2. **多模型服务商流式 Usage 全覆盖**：
    - **OpenAI**：为 `chat/completions` 声明 `stream_options: { include_usage: true }`，并在流中捕获 `usage`；支持 `responses` API 的 `response.done` / `usage` 提取；
@@ -53,7 +53,7 @@ updated: 2026-09-19
   - `TokenEstimator.cs`：新建轻量 CJK/英文/多模态图像估算器；
   - `OpenAiProvider.cs`、`ClaudeProvider.cs`、`GeminiProvider.cs`：在流式 SSE 解析中提取各自的输入/输出 Token，并在结束时产出带 `Usage` 的 delta；
   - `ResultPanelWindow.xaml` / `.xaml.cs`：新增 `MetricsBar`，暴露 `TranslationText`、`SetMetrics`、`ClearMetrics`，并在重置/新翻译时自动折叠；
-  - `NaniKoreApp.cs`：使用 `Stopwatch` 统计 TTFT 与总耗时，计算 `tokens/s` 生成速度，并调度下发给面板。
+  - `NaniKoreApp.cs`：使用 `Stopwatch` 统计 TTFT 与总耗时，计算 `tokens/s` TPS，并调度下发给面板。
 - **验了哪些**：
   - 运行 `./scripts/dev.ps1 test`，所有翻译与 UI 相关测试用例全部 PASS。
 

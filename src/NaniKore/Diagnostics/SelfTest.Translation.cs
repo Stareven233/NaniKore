@@ -879,7 +879,7 @@ internal static partial class SelfTest
             TokensPerSecond: 42.1);
         Check(
             "TranslationMetrics formats summary matching Input / Output / TTFT / t/s structure",
-            metrics.FormatSummary() == "Input: 320 tokens · Output: 45 tokens · TTFT: 680ms · 生成速度: 42 t/s");
+            metrics.FormatSummary() == "Input: 320 tokens · Output: 45 tokens · TTFT: 680ms · TPS: 42 t/s");
 
         var estimatedMetrics = new TranslationMetrics(
             InputTokens: 320,
@@ -890,7 +890,7 @@ internal static partial class SelfTest
             IsEstimated: true);
         Check(
             "TranslationMetrics formats estimated summary with tilde prefix",
-            estimatedMetrics.FormatSummary() == "Input: ~320 tokens · Output: ~45 tokens · TTFT: 680ms · 生成速度: 42 t/s");
+            estimatedMetrics.FormatSummary() == "Input: ~320 tokens · Output: ~45 tokens · TTFT: 680ms · TPS: 42 t/s");
     }
 
     private static async Task<List<SseEvent>> ReadSseAsync(Stream stream)

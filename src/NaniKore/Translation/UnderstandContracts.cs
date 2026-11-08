@@ -55,7 +55,7 @@ internal readonly record struct TranslationMetrics(
         var inputPrefix = IsEstimated ? "~" : string.Empty;
         var outputPrefix = IsEstimated ? "~" : string.Empty;
         var speedText = TokensPerSecond > 0 ? $"{TokensPerSecond:F0}" : "0";
-        return $"Input: {inputPrefix}{InputTokens} tokens · Output: {outputPrefix}{OutputTokens} tokens · TTFT: {TimeToFirstTokenMs}ms · 生成速度: {speedText} t/s";
+        return $"Input: {inputPrefix}{InputTokens} tokens · Output: {outputPrefix}{OutputTokens} tokens · TTFT: {TimeToFirstTokenMs}ms · TPS: {speedText} t/s";
     }
 }
 

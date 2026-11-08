@@ -32,7 +32,7 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 - 原文区基于 Avalonia `SelectableTextBlock` + `Inlines` + `InlineUIContainer` 承载振假名与双模就地编辑（光标定位不全选、未修改失焦复原）；翻译采用两阶段流式协议（阶段 1 假名原句 + `---TRANSLATION---` + 译文，阶段 2 精讲完整回放阶段 1 图文历史以命中前缀缓存）；精讲微结构化卡片与划词微型气泡完全由 Avalonia 承载。
 - 本地知识库（生词本）：收藏持久化到数据目录 `程序目录\.data\collections.db`（SQLite，由随包旁置的 `e_sqlite3.dll` 驱动，首次收藏惰性建库），设置面板 `[收藏]` Tab 支持类别筛选、关键词搜索、单条复制/删除与复制全部；收藏不写入 `config.yaml`。
 - 配置与密钥管理：`config.yaml` 基于 YamlDotNet 18.1.0 静态上下文（`ConfigYamlStaticContext`，0 反射）读写；API Key 保存在 `程序目录\.data\keys.bin`，带方案版本头（NKKEY + Scheme 1 + Version 1），向后透明兼容旧 DPAPI 密文；全部 JSON 序列化（SecretStore、OcrHttpServer、LLM 请求体 JsonNode 结构化组装）均通过 AOT 安全静态化。
-- 结果卡底部状态栏呈现本次调用的 Token 消耗与首字延迟（TTFT）、生成速度指标。
+- 结果卡底部状态栏呈现本次调用的 Token 消耗与首字延迟（TTFT）、TPS指标。
 
 ### UI 引擎与平台边界
 

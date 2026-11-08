@@ -27,12 +27,14 @@
                                             <Button DockPanel.Dock="Right"
                                                     Classes="icon"
                                                     VerticalAlignment="Center"
-                                                    Width="28" Height="28"
+                                                    Width="28" Height="28" Padding="0"
+                                                    HorizontalContentAlignment="Center"
+                                                    VerticalContentAlignment="Center"
                                                     Tag="{Binding}"
                                                     Click="OnVocabularyFavoriteClick"
                                                     ToolTip.Tip="{Binding FavoriteTooltip}">
                                                 <TextBlock Text="{Binding FavoriteIcon}"
-                                                           FontSize="14"
+                                                           FontSize="24" LineHeight="28"
                                                            Foreground="{Binding FavoriteBrush}" />
                                             </Button>
                                             <WrapPanel VerticalAlignment="Center" Margin="0,0,8,0">

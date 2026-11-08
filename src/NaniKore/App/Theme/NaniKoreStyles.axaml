@@ -575,10 +575,20 @@
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Padding" Value="0" />
+        <!-- 对齐方式回到 Stretch：Fluent 默认的居中会让展开内容拿不到星号行的剩余高度 -->
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
         <Setter Property="Template">
             <ControlTemplate>
-                <StackPanel>
+                <!--
+                    Grid 而非 StackPanel：内容放在星号行，折叠栏被放进星号/固定高度的父容器时
+                    （如结果面板的精讲区）能纵向撑满；放在 Auto 行时星号行退化为内容自身高度，行为不变。
+                -->
+                <Grid RowDefinitions="Auto,*">
                     <ToggleButton x:Name="PART_HeaderButton"
+                                  Grid.Row="0"
                                   Background="Transparent"
                                   BorderThickness="0"
                                   CornerRadius="6"
@@ -603,10 +613,13 @@
                         </DockPanel>
                     </ToggleButton>
                     <ContentPresenter x:Name="PART_ContentPresenter"
+                                      Grid.Row="1"
                                       Content="{TemplateBinding Content}"
                                       ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                      VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
                                       IsVisible="{TemplateBinding IsExpanded}" />
-                </StackPanel>
+                </Grid>
             </ControlTemplate>
         </Setter>
     </Style>
