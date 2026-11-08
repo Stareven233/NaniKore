@@ -264,6 +264,7 @@ internal sealed partial class ResultPanelWindow : Window
 
     private void UpdateSourceViewerDisplay()
     {
+        UpdateDetectedSourceLanguage();
         if (_isEditingSource)
         {
             return;
@@ -326,6 +327,34 @@ internal sealed partial class ResultPanelWindow : Window
 
         SourceLanguageBox.SelectedIndex = 0;
         _loadingSourceLanguages = false;
+    }
+
+    /// <summary>自动模式显示本轮探测结果，保留空语言代码，避免把探测结果变成手动锁定。</summary>
+    private void UpdateDetectedSourceLanguage()
+    {
+        var plain = RubyTextParser.ToPlainText(_annotatedSource);
+        var displayName = string.IsNullOrWhiteSpace(plain)
+            ? "自动探测"
+            : $"{PhoneticLanguages.DisplayName(DetectSourceLanguageCode(plain))}（自动）";
+        if (SourceLanguageBox.Items[0] is SourceLanguageChoice choice && choice.DisplayName == displayName)
+        {
+            return;
+        }
+
+        // 替换选项会触发 SelectionChanged；刷新标签期间不重注音，也不改变用户手选。
+        _loadingSourceLanguages = true;
+        try
+        {
+            SourceLanguageBox.Items[0] = new SourceLanguageChoice(null, displayName);
+            if (_selectedSourceLanguage is null)
+            {
+                SourceLanguageBox.SelectedIndex = 0;
+            }
+        }
+        finally
+        {
+            _loadingSourceLanguages = false;
+        }
     }
 
     private sealed record SourceLanguageChoice(string? LanguageCode, string DisplayName)
@@ -710,6 +739,7 @@ internal sealed partial class ResultPanelWindow : Window
         }
 
         _selectedSourceLanguage = (SourceLanguageBox.SelectedItem as SourceLanguageChoice)?.LanguageCode;
+        UpdateDetectedSourceLanguage();
         _ = AnnotateSourceAsync(manual: true);
     }
 

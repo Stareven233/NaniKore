@@ -29,6 +29,7 @@ internal static partial class SelfTest
     private static void RunResultPanelUiTests()
     {
         TestResultPanelSourceAnnotation();
+        TestResultPanelDetectedSourceLanguage();
         TestResultPanelRubyDualModeAndTranslationFlow();
         TestResultPanelViewportLayout();
         TestResultPanelAnnotateButton();
@@ -102,6 +103,40 @@ internal static partial class SelfTest
         Check(
             "disabling annotation degrades the source view back to plain text",
             string.Equals(panel.AnnotatedSourceText, source, StringComparison.Ordinal));
+    }
+
+    /// <summary>自动探测标签随原文更新，独立于注音开关，并保持手选语言的粘性。</summary>
+    private static void TestResultPanelDetectedSourceLanguage()
+    {
+        EnsureThemedApplication();
+        var panel = new ResultPanelWindow();
+        panel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = false });
+        var languageBox = Find<ComboBox>(panel, "SourceLanguageBox")!;
+
+        panel.Reset("こんにちは", "test", autoAnnotate: false);
+        Check("auto language displays detected Japanese even with annotation disabled",
+            languageBox.SelectedIndex == 0 && languageBox.SelectedItem?.ToString() == "日本語（自动）");
+
+        panel.Reset("Hello world", "test", autoAnnotate: false);
+        Check("auto language detects new source instead of pinning the previous result",
+            languageBox.SelectedIndex == 0 && languageBox.SelectedItem?.ToString() == "English（自动）");
+
+        languageBox.SelectedIndex = 3;
+        panel.Reset("こんにちは", "test", autoAnnotate: false);
+        Check("source changes preserve the manually selected language",
+            languageBox.SelectedIndex == 3 && languageBox.SelectedItem?.ToString() == "中文（简体）");
+
+        languageBox.SelectedIndex = 0;
+        Check("switching back to auto displays the current detection",
+            languageBox.SelectedItem?.ToString() == "日本語（自动）");
+
+        panel.Reset(string.Empty, "test", autoAnnotate: false);
+        Check("empty source clears the previous detected language",
+            languageBox.SelectedIndex == 0 && languageBox.SelectedItem?.ToString() == "自动探测");
+
+        panel.Append(new UnderstandDelta(DeltaChannel.SourceText, "Hello world"));
+        Check("streamed transcription updates the detected source language",
+            languageBox.SelectedIndex == 0 && languageBox.SelectedItem?.ToString() == "English（自动）");
     }
 
     /// <summary>
