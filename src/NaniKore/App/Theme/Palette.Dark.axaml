@@ -96,6 +96,14 @@
     <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#4E5C54" />
     <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#95CA00" />
 
+    <!-- 图片窗口专用底色画刷：仅改变底色透明度，保留主题颜色和文字清晰度。 -->
+    <SolidColorBrush x:Key="Brush.Panel.Sidebar" Color="{StaticResource Color.Sidebar.Background}"
+                     Opacity="{DynamicResource WindowBackground.PanelOpacity}" />
+    <SolidColorBrush x:Key="Brush.Panel.Card" Color="{StaticResource Color.Card.Background}"
+                     Opacity="{DynamicResource WindowBackground.PanelOpacity}" />
+    <SolidColorBrush x:Key="Brush.Panel.Control" Color="{StaticResource Color.Control.Background}"
+                     Opacity="{DynamicResource WindowBackground.PanelOpacity}" />
+
     <!-- 语义化 SolidColorBrush 映射 -->
     <SolidColorBrush x:Key="Brush.Window.Background" Color="{StaticResource Color.Window.Background}" />
     <SolidColorBrush x:Key="Brush.Sidebar.Background" Color="{StaticResource Color.Sidebar.Background}" />

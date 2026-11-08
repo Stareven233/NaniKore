@@ -183,6 +183,9 @@ internal sealed class WindowConfig
     /// <summary>仅背景图的不透明度，允许 0～1；非有限数或越界值回退为 1。</summary>
     public double BackgroundOpacity { get; set; } = 1;
 
+    /// <summary>仅有有效背景图时控制面板背景不透明度，允许 0～1；默认 1 保持现状，非有限数或越界值恢复默认。</summary>
+    public double PanelBackgroundOpacity { get; set; } = 1;
+
     /// <summary>设置窗口上次关闭时的客户区宽度与高度；无效值由配置加载阶段回退。</summary>
     public double SettingsWidth { get; set; } = 760;
 
@@ -255,6 +258,7 @@ internal static class AppConfigCloner
             BackgroundImage = source.Windows.BackgroundImage,
             BackgroundBlur = source.Windows.BackgroundBlur,
             BackgroundOpacity = source.Windows.BackgroundOpacity,
+            PanelBackgroundOpacity = source.Windows.PanelBackgroundOpacity,
             SettingsWidth = source.Windows.SettingsWidth,
             SettingsHeight = source.Windows.SettingsHeight,
             ResultPanelWidth = source.Windows.ResultPanelWidth,

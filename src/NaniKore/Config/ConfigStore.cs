@@ -287,6 +287,12 @@ internal sealed class ConfigStore
             normalized = true;
         }
 
+        if (!double.IsFinite(config.Windows.PanelBackgroundOpacity) || config.Windows.PanelBackgroundOpacity is < 0 or > 1)
+        {
+            config.Windows.PanelBackgroundOpacity = 1;
+            normalized = true;
+        }
+
         // 防止手工配置、损坏文件或异常 DPI 数据把设置窗口恢复成不可用的尺寸。
         if (double.IsNaN(config.Windows.SettingsWidth) || double.IsInfinity(config.Windows.SettingsWidth) ||
             config.Windows.SettingsWidth is < 620 or > 3840)

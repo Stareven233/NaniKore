@@ -340,6 +340,17 @@
         <Setter Property="CornerRadius" Value="6" />
     </Style>
 
+    <!-- 仅图片窗口的内容底色共用透明度；菜单、通知及文字不受影响。 -->
+    <Style Selector="Window.image-background Border.card, Window.image-background controls|SettingsGroup /template/ Border.card">
+        <Setter Property="Background" Value="{DynamicResource Brush.Panel.Card}" />
+    </Style>
+    <Style Selector="Window.image-background Border.control">
+        <Setter Property="Background" Value="{DynamicResource Brush.Panel.Control}" />
+    </Style>
+    <Style Selector="Window.image-background TextBox, Window.image-background NumericUpDown, Window.image-background ComboBox, Window.image-background AutoCompleteBox, Window.image-background controls|HotkeyRecorderBox">
+        <Setter Property="Background" Value="{DynamicResource Brush.Panel.Control}" />
+    </Style>
+
     <!-- 类别徽章 Border.badge -->
     <Style Selector="Border.badge">
         <Setter Property="Background" Value="{DynamicResource Brush.Accent.Subtle}" />

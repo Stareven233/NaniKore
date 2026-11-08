@@ -83,10 +83,11 @@ internal static partial class SelfTest
             File.WriteAllText(configPath, "windows: {}\n");
             var defaults = new ConfigStore(dataDirectory, templateDirectory);
             Check(
-                "missing background fields use empty image, zero blur and full image opacity",
+                "missing background fields use empty image, zero blur and full image/panel opacity",
                 defaults.Current.Windows.BackgroundImage == string.Empty &&
                 defaults.Current.Windows.BackgroundBlur == 0 &&
                 defaults.Current.Windows.BackgroundOpacity == 1 &&
+                defaults.Current.Windows.PanelBackgroundOpacity == 1 &&
                 defaults.LoadWarning is null);
 
             File.WriteAllText(configPath, """
@@ -94,6 +95,7 @@ internal static partial class SelfTest
                   background_image: '  images/背景 image.png  '
                   background_blur: 24.5
                   background_opacity: 0.35
+                  panel_background_opacity: 0.45
                 """);
             var store = new ConfigStore(dataDirectory, templateDirectory);
             var windows = store.Current.Windows;
@@ -101,6 +103,7 @@ internal static partial class SelfTest
                 "background fields load with a trimmed path and fractional values",
                 windows.BackgroundImage == "images/背景 image.png" &&
                 windows.BackgroundBlur == 24.5 && windows.BackgroundOpacity == 0.35 &&
+                windows.PanelBackgroundOpacity == 0.45 &&
                 store.LoadWarning is null);
 
             var clone = AppConfigCloner.Clone(store.Current);
@@ -109,14 +112,17 @@ internal static partial class SelfTest
                 !ReferenceEquals(clone.Windows, windows) &&
                 clone.Windows.BackgroundImage == windows.BackgroundImage &&
                 clone.Windows.BackgroundBlur == windows.BackgroundBlur &&
-                clone.Windows.BackgroundOpacity == windows.BackgroundOpacity);
+                clone.Windows.BackgroundOpacity == windows.BackgroundOpacity &&
+                clone.Windows.PanelBackgroundOpacity == windows.PanelBackgroundOpacity);
             clone.Windows.BackgroundImage = "  other/image.png  ";
             clone.Windows.BackgroundBlur = 75.25;
             clone.Windows.BackgroundOpacity = 0.625;
+            clone.Windows.PanelBackgroundOpacity = 0.75;
             Check(
                 "editing cloned background fields leaves the original config intact",
                 windows.BackgroundImage == "images/背景 image.png" &&
-                windows.BackgroundBlur == 24.5 && windows.BackgroundOpacity == 0.35);
+                windows.BackgroundBlur == 24.5 && windows.BackgroundOpacity == 0.35 &&
+                windows.PanelBackgroundOpacity == 0.45);
             store.AtomicWrite(clone);
             var reloaded = new ConfigStore(dataDirectory, templateDirectory);
             var yaml = File.ReadAllText(configPath);
@@ -125,10 +131,12 @@ internal static partial class SelfTest
                 reloaded.Current.Windows.BackgroundImage == "other/image.png" &&
                 reloaded.Current.Windows.BackgroundBlur == 75.25 &&
                 reloaded.Current.Windows.BackgroundOpacity == 0.625 &&
+                reloaded.Current.Windows.PanelBackgroundOpacity == 0.75 &&
                 reloaded.LoadWarning is null &&
                 yaml.Contains("background_image:", StringComparison.Ordinal) &&
                 yaml.Contains("background_blur:", StringComparison.Ordinal) &&
-                yaml.Contains("background_opacity:", StringComparison.Ordinal));
+                yaml.Contains("background_opacity:", StringComparison.Ordinal) &&
+                yaml.Contains("panel_background_opacity:", StringComparison.Ordinal));
         });
     }
 
@@ -156,12 +164,14 @@ internal static partial class SelfTest
             {
                 writable.Current.Windows.BackgroundBlur = blur;
                 writable.Current.Windows.BackgroundOpacity = opacity;
+                writable.Current.Windows.PanelBackgroundOpacity = opacity;
                 writable.AtomicWrite(writable.Current);
                 var reloaded = new ConfigStore(dataDirectory, templateDirectory);
                 Check(
                     $"background range endpoints {blur}/{opacity} survive persistence",
                     reloaded.Current.Windows.BackgroundBlur == blur &&
                     reloaded.Current.Windows.BackgroundOpacity == opacity &&
+                    reloaded.Current.Windows.PanelBackgroundOpacity == opacity &&
                     reloaded.LoadWarning is null);
             }
 
@@ -180,6 +190,7 @@ internal static partial class SelfTest
                       background_image: keep.png
                       background_blur: {yamlBlur}
                       background_opacity: {yamlOpacity}
+                      panel_background_opacity: {yamlOpacity}
                     """);
                 var loaded = new ConfigStore(dataDirectory, templateDirectory);
                 Check(
@@ -187,11 +198,13 @@ internal static partial class SelfTest
                     loaded.Current.Windows.BackgroundImage == "keep.png" &&
                     loaded.Current.Windows.BackgroundBlur == 0 &&
                     loaded.Current.Windows.BackgroundOpacity == 1 &&
+                    loaded.Current.Windows.PanelBackgroundOpacity == 1 &&
                     loaded.LoadWarning == "config.yaml 中的非法配置已回落到默认值。");
 
                 loaded.Current.Windows.BackgroundImage = null!;
                 loaded.Current.Windows.BackgroundBlur = blur;
                 loaded.Current.Windows.BackgroundOpacity = opacity;
+                loaded.Current.Windows.PanelBackgroundOpacity = opacity;
                 loaded.AtomicWrite(loaded.Current);
                 var reloaded = new ConfigStore(dataDirectory, templateDirectory);
                 Check(
@@ -199,9 +212,11 @@ internal static partial class SelfTest
                     loaded.Current.Windows.BackgroundImage == string.Empty &&
                     loaded.Current.Windows.BackgroundBlur == 0 &&
                     loaded.Current.Windows.BackgroundOpacity == 1 &&
+                    loaded.Current.Windows.PanelBackgroundOpacity == 1 &&
                     reloaded.Current.Windows.BackgroundImage == string.Empty &&
                     reloaded.Current.Windows.BackgroundBlur == 0 &&
                     reloaded.Current.Windows.BackgroundOpacity == 1 &&
+                    reloaded.Current.Windows.PanelBackgroundOpacity == 1 &&
                     reloaded.LoadWarning is null);
             }
         });

@@ -10,6 +10,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using NaniKore.App;
@@ -381,14 +382,17 @@ internal static partial class SelfTest
                     BackgroundImage = relativePath,
                     BackgroundBlur = 24.5,
                     BackgroundOpacity = 0.35,
+                    PanelBackgroundOpacity = 0.45,
                 },
             });
             var pathBox = Find<TextBox>(page, "BackgroundImageBox")!;
             var blurBox = Find<NumericUpDown>(page, "BackgroundBlurBox")!;
             var opacityBox = Find<NumericUpDown>(page, "BackgroundOpacityBox")!;
+            var panelOpacityBox = Find<NumericUpDown>(page, "PanelBackgroundOpacityBox")!;
             Check(
-                "general page loads the background path, blur and opacity percentage",
-                pathBox.Text == relativePath && blurBox.Value == 24.5m && opacityBox.Value == 35m);
+                "general page loads background settings and both opacity percentages",
+                pathBox.Text == relativePath && blurBox.Value == 24.5m &&
+                opacityBox.Value == 35m && panelOpacityBox.Value == 45m);
             // 临时目录与程序可能分属不同盘符；解码校验使用绝对路径，路径基准单独断言。
             pathBox.Text = imagePath;
             Check("general page accepts a decodable background image", page.Validate() is null);
@@ -396,12 +400,14 @@ internal static partial class SelfTest
             pathBox.Text = "  " + imagePath + "  ";
             blurBox.Value = 12.5m;
             opacityBox.Value = 62.5m;
+            panelOpacityBox.Value = 27.5m;
             var applied = new AppConfig();
             page.Apply(applied);
             Check(
                 "general page trims background paths and converts opacity percentage when applying",
                 applied.Windows.BackgroundImage == imagePath &&
-                applied.Windows.BackgroundBlur == 12.5 && applied.Windows.BackgroundOpacity == 0.625);
+                applied.Windows.BackgroundBlur == 12.5 && applied.Windows.BackgroundOpacity == 0.625 &&
+                applied.Windows.PanelBackgroundOpacity == 0.275);
             Check("general page accepts an absolute background image", page.Validate() is null);
 
             pathBox.Text = Path.Combine(directory, "missing.png");
@@ -415,15 +421,29 @@ internal static partial class SelfTest
             Check("general page accepts clearing the background path", page.Validate() is null);
             page.Apply(applied);
             Check(
-                "general page clears an existing background without resetting blur or opacity",
+                "general page clears an existing background without resetting blur or either opacity",
                 applied.Windows.BackgroundImage == string.Empty &&
-                applied.Windows.BackgroundBlur == 12.5 && applied.Windows.BackgroundOpacity == 0.625);
+                applied.Windows.BackgroundBlur == 12.5 && applied.Windows.BackgroundOpacity == 0.625 &&
+                applied.Windows.PanelBackgroundOpacity == 0.275);
             blurBox.Value = null;
             Check("general page rejects an empty background blur", !string.IsNullOrEmpty(page.Validate()));
             blurBox.Value = 0;
             opacityBox.Value = null;
             Check("general page rejects an empty background opacity", !string.IsNullOrEmpty(page.Validate()));
             opacityBox.Value = 0;
+            panelOpacityBox.Value = null;
+            Check("general page rejects an empty panel background opacity", !string.IsNullOrEmpty(page.Validate()));
+            // 保留控件自身的范围限制，验证用户可输入的两个端点及百分比落盘。
+            Check("panel background opacity editor exposes the full percentage range",
+                panelOpacityBox.Minimum == 0 && panelOpacityBox.Maximum == 100);
+            foreach (var percent in new[] { 0m, 100m })
+            {
+                panelOpacityBox.Value = percent;
+                Check($"general page accepts panel background opacity at {percent}%", page.Validate() is null);
+                page.Apply(applied);
+                Check($"general page applies panel background opacity at {percent}%",
+                    applied.Windows.PanelBackgroundOpacity == (double)percent / 100);
+            }
             Check("general page accepts zero blur and fully transparent background", page.Validate() is null);
 
             TestSharedWindowBackgroundResources(imagePath);
@@ -433,7 +453,9 @@ internal static partial class SelfTest
     /// <summary>直接检查窗口图片层，确保资源变化确实传到现有控件，且效果不施加到正文。</summary>
     private static void TestSharedWindowBackgroundResources(string imagePath)
     {
-        WindowBackgroundResources.Apply(new WindowConfig());
+        var app = Application.Current!;
+        var originalTheme = app.RequestedThemeVariant;
+        WindowBackgroundResources.Apply(new WindowConfig { PanelBackgroundOpacity = 0.2 });
         var settings = NewSettingsWindow();
         var result = new ResultPanelWindow();
         // 背景是根内容网格的首层，避免误取标题栏图标而掩盖绑定回归。
@@ -443,11 +465,40 @@ internal static partial class SelfTest
         try
         {
             Check("both windows initially have no background image", layers.All(image => image.Source is null));
+            Check("both existing background layers stretch to fill their windows",
+                layers.All(image => image.Stretch == Stretch.Fill));
+
+            var page = (GeneralPage)Find<ContentControl>(settings, "PageHost")!.Content!;
+            page.Measure(new Size(760, double.PositiveInfinity));
+            // 必须找到实际 SettingsGroup 模板的卡片，防止只验证资源而漏掉模板选择器失效。
+            var groups = FindDescendants<SettingsGroup>(page).Distinct().ToArray();
+            foreach (var group in groups)
+            {
+                group.ApplyTemplate();
+            }
+            var cards = groups.SelectMany(group => group.GetVisualDescendants().OfType<Border>()
+                .Where(border => ReferenceEquals(border.TemplatedParent, group) && border.Classes.Contains("card")))
+                .ToArray();
+            Check("background test realizes real settings group cards", groups.Length > 0 && cards.Length == groups.Length);
+            var sidebar = Find<ListBox>(settings, "NavigationList")!.Parent as Border;
+            Check("background test locates the real settings sidebar", sidebar is not null);
+            var titleBars = layers.Select(image => ((Grid)image.Parent!).Children.OfType<Grid>()
+                .Single(grid => Grid.GetRow(grid) == 0)).ToArray();
+            var inputs = new[]
+            {
+                Find<TextBox>(page, "BackgroundImageBox")!,
+                Find<TextBox>(result, "SourceTextBox")!,
+                Find<TextBox>(result, "TranslationTextBox")!,
+            };
+            Check("background test locates settings and result textboxes", inputs.All(input => input is not null));
+            CheckPanels("without image", 1);
+
             var config = new WindowConfig
             {
                 BackgroundImage = imagePath,
                 BackgroundBlur = 18.5,
                 BackgroundOpacity = 0.35,
+                PanelBackgroundOpacity = 0.45,
             };
             WindowBackgroundResources.Apply(config);
             Dispatcher.UIThread.RunJobs();
@@ -459,7 +510,8 @@ internal static partial class SelfTest
             Check(
                 "both background image layers receive blur and opacity without intercepting input",
                 layers.All(image => image.Opacity == 0.35 && image.Effect is BlurEffect { Radius: 18.5 } &&
-                                    image.Stretch == Stretch.UniformToFill && !image.IsHitTestVisible));
+                                    image.Stretch == Stretch.Fill && !image.IsHitTestVisible));
+            CheckPanels("with valid image", 0.45);
             Check(
                 "background effects leave window content opacity and effects unchanged",
                 new[] { settings, (Window)result }.All(window =>
@@ -468,24 +520,101 @@ internal static partial class SelfTest
 
             config.BackgroundBlur = 0;
             config.BackgroundOpacity = 0.625;
+            config.PanelBackgroundOpacity = 0.275;
             WindowBackgroundResources.Apply(config);
             Dispatcher.UIThread.RunJobs();
             Check(
                 "background appearance hot updates reuse the shared image without recreating windows",
                 layers.All(image => ReferenceEquals(image.Source, source) && image.Opacity == 0.625 &&
                                     image.Effect is BlurEffect { Radius: 0 }));
+            CheckPanels("after opacity update", 0.275);
 
+            // 面板与图片透明度独立，两个端点也必须落到现有画刷，不能让正文整体透明。
+            foreach (var opacity in new[] { 0d, 1d })
+            {
+                config.PanelBackgroundOpacity = opacity;
+                WindowBackgroundResources.Apply(config);
+                Dispatcher.UIThread.RunJobs();
+                CheckPanels($"at panel opacity {opacity}", opacity);
+                Check($"panel opacity {opacity} leaves image appearance unchanged",
+                    layers.All(image => ReferenceEquals(image.Source, source) && image.Opacity == 0.625));
+            }
+
+            config.PanelBackgroundOpacity = 0.275;
             config.BackgroundImage = string.Empty;
             WindowBackgroundResources.Apply(config);
             Dispatcher.UIThread.RunJobs();
             Check(
                 "clearing the background hot removes images from both existing windows",
                 layers.All(image => image.Source is null));
+            CheckPanels("after clearing image", 1);
+
+            // 先恢复有效图片，确保缺失路径真正撤掉已有图片及其透明底色。
+            config.BackgroundImage = imagePath;
+            WindowBackgroundResources.Apply(config);
+            Dispatcher.UIThread.RunJobs();
+            CheckPanels("after restoring image", 0.275);
+            config.BackgroundImage = Path.Combine(Path.GetDirectoryName(imagePath)!, "missing.png");
+            WindowBackgroundResources.Apply(config);
+            Dispatcher.UIThread.RunJobs();
+            Check("missing background removes images from both existing windows",
+                layers.All(image => image.Source is null));
+            CheckPanels("after missing image", 1);
+
+            void CheckPanels(string state, double expectedOpacity)
+            {
+                Check($"effective panel opacity {state}",
+                    TryFindResource<object>(app, "WindowBackground.PanelOpacity", app.ActualThemeVariant)
+                        is double opacity && opacity == expectedOpacity);
+                // 在同一批控件上往返切换主题，验证动态资源既更新透明度又保留当前主题 RGB。
+                foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark, ThemeVariant.Light })
+                {
+                    app.RequestedThemeVariant = variant;
+                    Dispatcher.UIThread.RunJobs();
+                    CheckBrush("sidebar", sidebar?.Background, "Sidebar");
+                    Check($"sidebar content stays opaque {state} {variant}",
+                        sidebar is { Opacity: 1, Effect: null });
+                    foreach (var titleBar in titleBars)
+                    {
+                        CheckBrush("window title bar", titleBar.Background, "Sidebar");
+                        Check($"title bar content stays opaque {state} {variant}",
+                            titleBar.Opacity == 1 && titleBar.Effect is null);
+                    }
+                    foreach (var card in cards)
+                    {
+                        CheckBrush("settings group card", card.Background, "Card");
+                        Check($"card content stays opaque {state} {variant}", card.Opacity == 1 && card.Effect is null);
+                    }
+                    foreach (var input in inputs)
+                    {
+                        CheckBrush($"textbox {input?.Name}", input?.Background, "Control");
+                        Check($"textbox content stays opaque {state} {variant}",
+                            input is { Opacity: 1, Effect: null } &&
+                            input.Foreground is ISolidColorBrush foreground && foreground.Opacity == 1 &&
+                            TryFindResource<ISolidColorBrush>(app, "Brush.Text.Primary", variant) is { } text &&
+                            foreground.Color == text.Color);
+                    }
+
+                    void CheckBrush(string target, IBrush? actual, string role)
+                    {
+                        var panel = TryFindResource<SolidColorBrush>(app, $"Brush.Panel.{role}", variant);
+                        var normal = TryFindResource<SolidColorBrush>(app, $"Brush.{role}.Background", variant);
+                        Check($"{target} uses themed panel background {state} {variant}",
+                            actual is SolidColorBrush brush && panel is not null && normal is not null &&
+                            brush.Opacity == expectedOpacity && panel.Opacity == expectedOpacity &&
+                            brush.Color == normal.Color && panel.Color == normal.Color &&
+                            normal.Color.A == 255 && normal.Opacity == 1,
+                            $"actual={actual}, opacity={(actual as SolidColorBrush)?.Opacity}, expected={expectedOpacity}");
+                    }
+                }
+            }
         }
         finally
         {
-            // 释放共享位图，避免临时目录清理与后续 UI 自测继承本例资源。
+            // 释放共享位图并恢复主题，避免后续 UI 自测继承本例资源。
             WindowBackgroundResources.Apply(new WindowConfig());
+            app.RequestedThemeVariant = originalTheme;
+            Dispatcher.UIThread.RunJobs();
             settings.Close();
             result.Close();
         }

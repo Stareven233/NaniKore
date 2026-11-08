@@ -50,6 +50,8 @@ internal static class WindowBackgroundResources
         _lastWriteTime = modified;
         app.Resources["WindowBackground.Image"] = next;
         app.Resources["WindowBackground.Opacity"] = config.BackgroundOpacity;
+        // 图片成功加载才启用面板透明；清空或失效时恢复原有不透明外观。
+        app.Resources["WindowBackground.PanelOpacity"] = next is not null ? config.PanelBackgroundOpacity : 1d;
         app.Resources["WindowBackground.Blur"] = new BlurEffect { Radius = config.BackgroundBlur };
         if (!ReferenceEquals(previous, next))
         {

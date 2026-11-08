@@ -71,6 +71,13 @@
                     <NumericUpDown x:Name="BackgroundOpacityBox" Width="160"
                                    Minimum="0" Maximum="100" Increment="5" FormatString="0'%'" />
                 </controls:SettingsRow>
+                <Border Classes="divider-row" />
+                <controls:SettingsRow Header="面板底色不透明度"
+                                      Description="侧栏、上下栏与内容卡片共用；仅设置有效背景图时生效，文字和图标保持清晰。"
+                                      ContentWidth="160">
+                    <NumericUpDown x:Name="PanelBackgroundOpacityBox" Width="160"
+                                   Minimum="0" Maximum="100" Increment="5" FormatString="0'%'" />
+                </controls:SettingsRow>
             </StackPanel>
         </controls:SettingsGroup>
 

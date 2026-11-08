@@ -3,7 +3,7 @@
 # 每个配置档只需 name / kind / base_url / model 四行；api_type / supports_vision / timeout_seconds /
 # enable_thinking 只在偏离缺省（completions / true / 30 / false）时才需要写，保存一次设置也不会反弹成更多行
 # API Key 不写在这里：以当前 Windows 用户的 DPAPI 密文整体保存在 .data/keys.bin（内部是 {配置档名: API Key} 的 JSON）。
-version: 0.6.2+2
+version: 0.6.2+3
 general:
   auto_translate: false
   # 选取/剪贴板翻译（Ctrl+Shift+S）读到内容后是否立即翻译；默认开，视觉直喂不受此约束。
@@ -57,6 +57,8 @@ windows:
   background_blur: 0
   # 仅背景图的不透明度：0～1，默认 1；非有限数或越界值恢复默认。
   background_opacity: 1
+  # 仅有有效背景图时控制面板背景不透明度：0～1，默认 1 保持当前效果；非有限数或越界值恢复默认。
+  panel_background_opacity: 1
   # 窗口大小缩放后自动记忆，跨重启恢复
   settings_width: 1024
   settings_height: 700

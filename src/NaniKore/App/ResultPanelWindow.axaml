@@ -10,6 +10,7 @@
         ShowInTaskbar="False"
         WindowStartupLocation="Manual"
         WindowDecorations="None"
+        Classes="image-background"
         Background="Transparent"
         TransparencyLevelHint="Transparent"
         Foreground="{DynamicResource Brush.Text.Primary}">
@@ -28,14 +29,14 @@
             <!-- 只对背景图片施加效果；正文、控件及窗口命中区不受影响。 -->
             <Image Grid.RowSpan="3"
                    Source="{DynamicResource WindowBackground.Image}"
-                   Stretch="UniformToFill"
+                   Stretch="Fill"
                    Opacity="{DynamicResource WindowBackground.Opacity}"
                    Effect="{DynamicResource WindowBackground.Blur}"
                    IsHitTestVisible="False" />
             <!-- 顶部自定义控制栏（支持窗口拖动、置顶图钉、最小化、关闭） -->
             <Grid Grid.Row="0"
                   Height="34"
-                  Background="{DynamicResource Brush.Sidebar.Background}"
+                  Background="{DynamicResource Brush.Panel.Sidebar}"
                   PointerPressed="OnTitleBarPointerPressed">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />

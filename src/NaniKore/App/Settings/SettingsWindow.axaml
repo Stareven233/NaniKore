@@ -11,6 +11,7 @@
         ShowInTaskbar="True"
         WindowStartupLocation="CenterScreen"
         WindowDecorations="None"
+        Classes="image-background"
         Background="Transparent"
         TransparencyLevelHint="Transparent"
         FontSize="14"
@@ -25,14 +26,14 @@
             <!-- 只对背景图片施加效果；正文、控件及窗口命中区不受影响。 -->
             <Image Grid.RowSpan="2"
                    Source="{DynamicResource WindowBackground.Image}"
-                   Stretch="UniformToFill"
+                   Stretch="Fill"
                    Opacity="{DynamicResource WindowBackground.Opacity}"
                    Effect="{DynamicResource WindowBackground.Blur}"
                    IsHitTestVisible="False" />
             <!-- 顶部自定义控制栏（支持窗口拖动、最小化、关闭） -->
             <Grid Grid.Row="0"
                   Height="34"
-                  Background="{DynamicResource Brush.Sidebar.Background}"
+                  Background="{DynamicResource Brush.Panel.Sidebar}"
                   PointerPressed="OnTitleBarPointerPressed">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -85,7 +86,7 @@
                 <!-- 左侧导航栏 -->
                 <Border Grid.Column="0"
                         Width="196"
-                        Background="{DynamicResource Brush.Sidebar.Background}"
+                        Background="{DynamicResource Brush.Panel.Sidebar}"
                         BorderBrush="{DynamicResource Brush.Divider}"
                         BorderThickness="0,0,1,0">
                     <ListBox x:Name="NavigationList"
@@ -128,7 +129,7 @@
 
                     <!-- 底部操作与状态条 -->
                     <Border Grid.Row="2"
-                            Background="{DynamicResource Brush.Sidebar.Background}"
+                            Background="{DynamicResource Brush.Panel.Sidebar}"
                             BorderBrush="{DynamicResource Brush.Divider}"
                             BorderThickness="0,1,0,0"
                             Padding="20,12">

@@ -79,6 +79,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         BackgroundImageBox.Text = config.Windows.BackgroundImage;
         BackgroundBlurBox.Value = (decimal)config.Windows.BackgroundBlur;
         BackgroundOpacityBox.Value = (decimal)(config.Windows.BackgroundOpacity * 100);
+        PanelBackgroundOpacityBox.Value = (decimal)(config.Windows.PanelBackgroundOpacity * 100);
         PhoneticsEnabledToggle.IsChecked = config.Phonetics.Enabled;
         PhoneticsRareOnlyToggle.IsChecked = config.Phonetics.RareOnly;
 
@@ -97,9 +98,10 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     public string? Validate()
     {
         if (BackgroundBlurBox.Value is not (>= 0 and <= 100) ||
-            BackgroundOpacityBox.Value is not (>= 0 and <= 100))
+            BackgroundOpacityBox.Value is not (>= 0 and <= 100) ||
+            PanelBackgroundOpacityBox.Value is not (>= 0 and <= 100))
         {
-            return "图片模糊和不透明度必须在 0–100 之间。";
+            return "图片模糊、图片不透明度和面板底色不透明度必须在 0–100 之间。";
         }
 
         if (!string.IsNullOrWhiteSpace(BackgroundImageBox.Text))
@@ -124,6 +126,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         config.Windows.BackgroundImage = BackgroundImageBox.Text?.Trim() ?? string.Empty;
         config.Windows.BackgroundBlur = (double)(BackgroundBlurBox.Value ?? 0);
         config.Windows.BackgroundOpacity = (double)(BackgroundOpacityBox.Value ?? 100) / 100;
+        config.Windows.PanelBackgroundOpacity = (double)(PanelBackgroundOpacityBox.Value ?? 100) / 100;
         config.Phonetics.Enabled = PhoneticsEnabledToggle.IsChecked == true;
         config.Phonetics.RareOnly = PhoneticsRareOnlyToggle.IsChecked == true;
         // 一律读 Text：手填的逗号回退链不会被选中项逻辑吞掉；空串合法（平台默认字体）。
