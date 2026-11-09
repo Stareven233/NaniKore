@@ -20,7 +20,7 @@ internal sealed class TextDetector : IDisposable
         ArgumentNullException.ThrowIfNull(image);
 
         var input = TensorImageConverter.CreateDetectorTensor(image, _config);
-        var output = _model.Run(input);
+        using var output = _model.Run(input);
         if (output.Dimensions.Length < 2)
         {
             throw new InvalidDataException(
@@ -36,7 +36,7 @@ internal sealed class TextDetector : IDisposable
         }
 
         return DetectionPostprocessor.Extract(
-            output.Data.AsSpan(0, mapLength),
+            output.Data[..mapLength],
             mapWidth,
             mapHeight,
             new SKSizeI(image.Width, image.Height),

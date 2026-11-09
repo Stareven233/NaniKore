@@ -29,6 +29,7 @@ internal static partial class SelfTest
     private static void RunResultPanelUiTests()
     {
         TestResultPanelSourceAnnotation();
+        TestResultPanelSubscriptionCleanup();
         TestResultPanelDetectedSourceLanguage();
         TestResultPanelRubyDualModeAndTranslationFlow();
         TestResultPanelViewportLayout();
@@ -41,6 +42,45 @@ internal static partial class SelfTest
         TestSelectionBubbleFavoriteNote();
         TestRubyDocumentBuilderAndSelectionCopy();
         TestResultPanelPolishBatch();
+    }
+
+    /// <summary>关闭面板必须解除全局和收藏服务订阅，避免长生命周期事件保留整个窗口。</summary>
+    private static void TestResultPanelSubscriptionCleanup()
+    {
+        EnsureThemedApplication();
+        var service = new InMemoryFavoriteService();
+        var rubyBefore = SubscriberCount(typeof(RubyInlineControl), null, "StatusNotificationRequested");
+        var themeBefore = SubscriberCount(typeof(NaniKore.App.Theme.ThemeManager), null, "ThemeChanged");
+        var panel = new ResultPanelWindow();
+        panel.SetFavoriteService(service);
+        Check("result panel subscribes to ruby notifications",
+            SubscriberCount(typeof(RubyInlineControl), null, "StatusNotificationRequested") == rubyBefore + 1);
+        Check("explanation subscribes to favorite service",
+            SubscriberCount(typeof(InMemoryFavoriteService), service, "FavoriteAdded") == 1);
+        panel.Close();
+        Check("closed panel removes ruby and theme subscriptions",
+            SubscriberCount(typeof(RubyInlineControl), null, "StatusNotificationRequested") == rubyBefore &&
+            SubscriberCount(typeof(NaniKore.App.Theme.ThemeManager), null, "ThemeChanged") == themeBefore);
+        Check("closed panel removes all favorite service subscriptions",
+            SubscriberCount(typeof(InMemoryFavoriteService), service, "FavoriteAdded") == 0 &&
+            SubscriberCount(typeof(InMemoryFavoriteService), service, "FavoriteRemoved") == 0 &&
+            SubscriberCount(typeof(InMemoryFavoriteService), service, "FavoriteUpdated") == 0);
+    }
+
+    // 仅在自测中检查事件根；窗口最终回收时机还受平台渲染队列影响，不以即时 GC 作为契约。
+    private static int SubscriberCount(
+        // BindingFlags 含运行期分支，裁剪分析器要求同时声明公共与非公共字段的保留范围。
+        [System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicFields | System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicFields)] Type type,
+        object? instance,
+        string eventName)
+    {
+        var field = type.GetField(eventName, System.Reflection.BindingFlags.NonPublic |
+            (instance is null ? System.Reflection.BindingFlags.Static : System.Reflection.BindingFlags.Instance));
+        if (field is null)
+        {
+            throw new InvalidOperationException($"Missing event field: {type.Name}.{eventName}");
+        }
+        return (field.GetValue(instance) as Delegate)?.GetInvocationList().Length ?? 0;
     }
 
     /// <summary>

@@ -17,6 +17,9 @@ internal sealed class OnnxModelRunner : IDisposable
             GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
             ExecutionMode = ExecutionMode.ORT_SEQUENTIAL,
             LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_WARNING,
+            // 截图尺寸动态变化，禁用高水位内存池和形状缓存，避免一次大图推理长期占住缓冲。
+            EnableCpuMemArena = false,
+            EnableMemoryPattern = false,
         };
 
         _session = new InferenceSession(modelPath, options);
@@ -28,14 +31,21 @@ internal sealed class OnnxModelRunner : IDisposable
     {
         using var input = OrtValue.CreateTensorValueFromMemory(tensor.Data, tensor.Dimensions);
         using var runOptions = new RunOptions();
-        using var outputs = _session.Run(
+        var outputs = _session.Run(
             runOptions,
             new Dictionary<string, OrtValue>(StringComparer.Ordinal) { [_inputName] = input },
             _outputNames);
 
-        var output = outputs.First();
-        var typeAndShape = output.GetTensorTypeAndShape();
-        return new TensorOutput(output.GetTensorDataAsSpan<float>().ToArray(), typeAndShape.Shape);
+        try
+        {
+            // 输出持有原生缓冲，交由调用方在后处理结束后释放，避免复制整张概率矩阵。
+            return new TensorOutput(outputs);
+        }
+        catch
+        {
+            outputs.Dispose();
+            throw;
+        }
     }
 
     public string Describe()
@@ -51,4 +61,22 @@ internal sealed class OnnxModelRunner : IDisposable
     public void Dispose() => _session.Dispose();
 }
 
-internal sealed record TensorOutput(float[] Data, long[] Dimensions);
+/// <summary>持有推理输出的原生内存；Data 仅可在本对象释放前同步读取。</summary>
+internal sealed class TensorOutput : IDisposable
+{
+    private readonly IDisposableReadOnlyCollection<OrtValue> _outputs;
+    private readonly OrtValue _output;
+
+    public TensorOutput(IDisposableReadOnlyCollection<OrtValue> outputs)
+    {
+        _outputs = outputs;
+        _output = outputs.First();
+        Dimensions = _output.GetTensorTypeAndShape().Shape;
+    }
+
+    public ReadOnlySpan<float> Data => _output.GetTensorDataAsSpan<float>();
+
+    public long[] Dimensions { get; }
+
+    public void Dispose() => _outputs.Dispose();
+}

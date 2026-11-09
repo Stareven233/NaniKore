@@ -293,6 +293,15 @@ internal sealed partial class ResultPanelWindow : Window
         }
     }
 
+    protected override void OnClosed(EventArgs e)
+    {
+        // 静态事件会持有整个窗口；关闭时退订，并阻止未完成的注音回写已关闭控件。
+        RubyInlineControl.StatusNotificationRequested -= OnRubyStatusNotification;
+        SetFavoriteService(null);
+        _annotationCancellation?.Cancel();
+        base.OnClosed(e);
+    }
+
     private void OnRubyStatusNotification(string message) => SetStatus(message);
 
     /// <summary>注入生词与知识点收藏服务。</summary>
@@ -635,6 +644,7 @@ internal sealed partial class ResultPanelWindow : Window
             {
                 _annotationCancellation = null;
             }
+            cancellation.Dispose();
         }
     }
 

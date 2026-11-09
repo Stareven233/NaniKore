@@ -20,7 +20,7 @@ internal sealed class TextRecognizer : IDisposable
         ArgumentNullException.ThrowIfNull(image);
 
         var input = TensorImageConverter.CreateRecognizerTensor(image, _config);
-        var output = _model.Run(input);
+        using var output = _model.Run(input);
         if (output.Dimensions.Length != 3 || output.Dimensions[0] != 1)
         {
             throw new InvalidDataException(
