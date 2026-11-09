@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using NaniKore.Config;
 using NaniKore.Translation;
 using NaniKore.Translation.Providers;
@@ -28,6 +29,8 @@ internal static partial class SelfTest
         TestTranslationSessionAndMultiTurnReplay();
         TestThinkingStreamSanitizer();
         TestProviderThinkingParameters();
+        TestProviderJsonPayload();
+        TestProviderRequestContentLifetime();
         TestOpenAiThinkingParameterRejectionFallback();
         TestProviderOutOfBandThinkingExtraction();
     }
@@ -1237,6 +1240,166 @@ internal static partial class SelfTest
             geminiOnDoc.RootElement.GetProperty("generationConfig").GetProperty("thinkingConfig").GetProperty("thinkingBudget").GetInt32() == -1);
     }
 
+    /// <summary>逐字节对照旧序列化路径，覆盖默认转义、嵌套值与大图片 base64。</summary>
+    private static void TestProviderJsonPayload()
+    {
+        var image = new byte[256 * 1024];
+        for (var i = 0; i < image.Length; i++)
+        {
+            image[i] = (byte)i;
+        }
+
+        var body = new JsonObject
+        {
+            ["文本\"<&"] = "中文・日本語 😀 + / <>& '\"\\\r\n\t\u2028\u2029",
+            ["image"] = "data:image/png;base64," + Convert.ToBase64String(image),
+            ["nested"] = JsonNode.Parse("[null,true,false,1.20,{\"value\":\"text\"}]"),
+        };
+        using var expected = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
+        using var request = ProviderProbe.JsonRequest(body);
+        var actual = request.Content!.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+        Check(
+            "Provider UTF-8 payload exactly matches StringContent including Unicode escaping and large base64",
+            actual.AsSpan().SequenceEqual(expected.ReadAsByteArrayAsync().GetAwaiter().GetResult()));
+        Check(
+            "Provider UTF-8 payload preserves content type, charset and exact segment length",
+            request.Content.Headers.ContentType?.ToString() == "application/json; charset=utf-8" &&
+            request.Content.Headers.ContentLength == actual.Length);
+    }
+
+    /// <summary>请求与响应的所有权独立：响应头到达即释放上传体，错误、取消和超时也不能滞留。</summary>
+    private static void TestProviderRequestContentLifetime()
+    {
+        using var responseBody = new ContentProbe("stream still readable");
+        using var success = new HttpResponseMessage(HttpStatusCode.OK) { Content = responseBody };
+        using var handler = new ProviderTransportProbe((message, _) =>
+        {
+            Check("Upload content remains available inside transport", message.Content is not null);
+            return Task.FromResult(success);
+        });
+        using var provider = new ProviderProbe(handler);
+        using var request = ProviderProbe.JsonRequest(new JsonObject { ["text"] = "上传" });
+        var upload = request.Content!;
+        using var response = provider.Send(request).GetAwaiter().GetResult();
+        Check(
+            "Response headers release and detach upload before reading the response body",
+            request.Content is null && IsContentDisposed(upload) &&
+            responseBody.ReadCount == 0 && !responseBody.Disposed);
+        Check(
+            "Response body remains readable after upload disposal",
+            response.Content.ReadAsStringAsync().GetAwaiter().GetResult() == "stream still readable");
+
+        using var errorBody = new ContentProbe("{\"error\":{\"message\":\"model not found\"}}");
+        using var rejected = new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = errorBody };
+        using var errorHandler = new ProviderTransportProbe((message, _) => Task.FromResult(rejected));
+        using var errorProvider = new ProviderProbe(errorHandler);
+        using var errorRequest = ProviderProbe.JsonRequest(new JsonObject());
+        var errorUpload = errorRequest.Content!;
+        try
+        {
+            using var unexpected = errorProvider.Send(errorRequest).GetAwaiter().GetResult();
+            Check("Non-success response throws provider error", false);
+        }
+        catch (ProviderHttpException ex)
+        {
+            Check(
+                "Non-success response preserves error and disposes both content owners",
+                ex.ServerMessage == "model not found" && errorBody.Disposed &&
+                errorRequest.Content is null && IsContentDisposed(errorUpload));
+        }
+
+        // 分别复现网络故障、HttpClient 超时和调用方取消，检查 finally 覆盖所有出口。
+        foreach (var failure in new Exception[] { new HttpRequestException("offline"), new TaskCanceledException("timeout"), new OperationCanceledException("cancelled") })
+        {
+            using var cancellation = new CancellationTokenSource();
+            using var failureHandler = new ProviderTransportProbe((_, _) =>
+            {
+                if (failure is OperationCanceledException and not TaskCanceledException)
+                {
+                    cancellation.Cancel();
+                }
+                return Task.FromException<HttpResponseMessage>(failure);
+            });
+            using var failureProvider = new ProviderProbe(failureHandler);
+            using var failureRequest = ProviderProbe.JsonRequest(new JsonObject());
+            var failedUpload = failureRequest.Content!;
+            try
+            {
+                using var unexpected = failureProvider.Send(failureRequest, cancellation.Token).GetAwaiter().GetResult();
+                Check($"Transport {failure.GetType().Name} propagates", false);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
+            {
+                Check(
+                    $"Transport {failure.Message} releases and detaches upload",
+                    failureRequest.Content is null && IsContentDisposed(failedUpload));
+                if (failure is TaskCanceledException)
+                {
+                    Check("Provider timeout retains friendly error", ex.Message.Contains("超时", StringComparison.Ordinal));
+                }
+            }
+        }
+    }
+
+    private static bool IsContentDisposed(HttpContent content)
+    {
+        try
+        {
+            content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+            return false;
+        }
+        catch (ObjectDisposedException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>仅暴露基类网络入口，保持真实 HttpClient 的完成与异常语义。</summary>
+    private sealed class ProviderProbe(HttpMessageHandler transport)
+        : TranslationProviderBase(new ProviderProfile(), "key", new PromptConfig(), transport)
+    {
+        public static HttpRequestMessage JsonRequest(JsonNode body) =>
+            CreateJsonRequest(HttpMethod.Post, new Uri("https://provider.test/translate"), body);
+
+        public Task<HttpResponseMessage> Send(HttpRequestMessage request, CancellationToken cancellationToken = default) =>
+            SendAsync(request, cancellationToken);
+
+        public override IAsyncEnumerable<UnderstandDelta> StreamAsync(UnderstandRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class ProviderTransportProbe(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            send(request, cancellationToken);
+    }
+
+    /// <summary>观测响应体何时被读取和释放，避免假传输掩盖提前缓冲或错误路径泄漏。</summary>
+    private sealed class ContentProbe(string text) : HttpContent
+    {
+        private readonly byte[] _bytes = Encoding.UTF8.GetBytes(text);
+        public int ReadCount { get; private set; }
+        public bool Disposed { get; private set; }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            ReadCount++;
+            return stream.WriteAsync(_bytes).AsTask();
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = _bytes.Length;
+            return true;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            Disposed |= disposing;
+            base.Dispose(disposing);
+        }
+    }
+
     /// <summary>
     /// 严格校验端点（NVIDIA）把非标思考参数整单打回（issue 022）：provider 必须去掉 enable_thinking / thinking
     /// 重试一次并正常出流，且记住该端点方言，让后续请求一开始就不带这两个参数；与思考无关的 400 不得重试。
@@ -1266,6 +1429,12 @@ internal static partial class SelfTest
             handler.Requests.Count == 3 &&
             first.Any(delta => delta.Channel == DeltaChannel.Translation && delta.Text == "你好世界") &&
             second.Any(delta => delta.Channel == DeltaChannel.Translation && delta.Text == "第二次请求"));
+
+        Check(
+            "OpenAI fallback creates independent requests and releases every upload",
+            handler.Messages.Distinct().Count() == 3 &&
+            handler.Messages.All(message => message.Content is null) &&
+            handler.Uploads.All(IsContentDisposed));
 
         Check(
             "Retry and follow-up requests omit enable_thinking, thinking and reasoning_effort",
@@ -1358,11 +1527,34 @@ internal static partial class SelfTest
 
         /// <summary>按发送顺序记录的请求体。</summary>
         public List<string> Requests { get; } = [];
+        public List<HttpRequestMessage> Messages { get; } = [];
+        public List<HttpContent> Uploads { get; } = [];
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            if (Messages.Count > 0)
+            {
+                Check(
+                    "Previous upload is released before OpenAI retry or follow-up starts",
+                    Messages[^1].Content is null && IsContentDisposed(Uploads[^1]));
+            }
+            Messages.Add(request);
+            Uploads.Add(request.Content!);
             Requests.Add(await request.Content!.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
             return _responses.Dequeue();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                // 未被发送的脚本回包同样归 handler 所有，断言失败也要正确释放。
+                while (_responses.TryDequeue(out var response))
+                {
+                    response.Dispose();
+                }
+            }
+            base.Dispose(disposing);
         }
     }
 

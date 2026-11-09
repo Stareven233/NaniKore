@@ -1,6 +1,5 @@
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json;
 using NaniKore.Config;
 
@@ -38,7 +37,19 @@ internal abstract class TranslationProviderBase : ITranslationProvider
     {
         try
         {
-            var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            HttpResponseMessage response;
+            try
+            {
+                response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                // 上传结束（或失败）即断开缓冲区引用；仅 Dispose 不会清空 ByteArrayContent 内的数组。
+                var content = request.Content;
+                request.Content = null;
+                content?.Dispose();
+            }
+
             if (!response.IsSuccessStatusCode)
             {
                 using (response)
@@ -64,9 +75,19 @@ internal abstract class TranslationProviderBase : ITranslationProvider
     /// <summary>构造下游 LLM 请求。载荷基于 JsonNode DOM 直出，零运行期反射，天然免疫 Native AOT 裁剪。</summary>
     protected static HttpRequestMessage CreateJsonRequest(HttpMethod method, Uri uri, System.Text.Json.Nodes.JsonNode body)
     {
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            body.WriteTo(writer);
+        }
+
+        // 直接移交有效 UTF-8 区段，避免 UTF-16 JSON 字符串及 ToArray 的整份复制。
+        var bytes = buffer.GetBuffer();
+        var content = new ByteArrayContent(bytes, 0, checked((int)buffer.Length));
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json") { CharSet = "utf-8" };
         return new HttpRequestMessage(method, uri)
         {
-            Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
+            Content = content,
         };
     }
 

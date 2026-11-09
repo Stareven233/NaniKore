@@ -65,6 +65,7 @@ internal sealed partial class ResultPanelWindow : Window
 
     /// <summary>原文注音显隐状态：由注音按钮直接翻转控制，与配置项 AutoAnnotate 联动。</summary>
     private bool _isRubyVisible = true;
+    private bool _autoAnnotate = true;
 
     /// <summary>当前注音是否可见。</summary>
     public bool IsRubyVisible => _isRubyVisible;
@@ -400,6 +401,8 @@ internal sealed partial class ResultPanelWindow : Window
     /// <summary>重置面板并装载初始原文与状态。</summary>
     public void Reset(string source, string status, bool autoTranslate = false, bool autoExplain = false, bool autoAnnotate = true)
     {
+        _annotationCancellation?.Cancel();
+        _autoAnnotate = autoAnnotate;
         _annotatedSource = source;
         SourceTextBox.Text = RubyTextParser.ToPlainText(source);
         _originalEditingText = SourceTextBox.Text ?? string.Empty;
@@ -571,6 +574,11 @@ internal sealed partial class ResultPanelWindow : Window
             {
                 ShowStatusSafe("原文注音已在设置-通用中关闭。");
             }
+            return;
+        }
+
+        if (!manual && !_autoAnnotate)
+        {
             return;
         }
 

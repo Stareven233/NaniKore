@@ -220,9 +220,12 @@ public partial class NaniKoreApp : Application
             if (imageRoute == ClipboardImageRoute.DirectFeed)
             {
                 var image = PngEncoder.Encode(cropped);
-                _lastImagePng = image;
+                // 网络请求序列化之前归还截图像素，避免与 base64/JSON 缓冲同时驻留。
+                cropped.Dispose();
+                frame.Dispose();
+                AcceptNewInput(image);
                 var visionPanel = EnsureResultPanel(selectionOnDesktop);
-                visionPanel.Reset(string.Empty, "正在识别并翻译图像…", autoTranslate: true, autoExplain: _configStore.Current.General.AutoExplain);
+                visionPanel.Reset(string.Empty, "正在识别并翻译图像…", autoTranslate: true, autoExplain: _configStore.Current.General.AutoExplain, autoAnnotate: _configStore.Current.General.AutoAnnotate);
                 _ = StartTranslationAsync(string.Empty, image);
                 return;
             }
@@ -244,7 +247,7 @@ public partial class NaniKoreApp : Application
                 return;
             }
 
-            _lastImagePng = null;
+            AcceptNewInput(null);
             var autoTranslate = _configStore.Current.General.AutoTranslate;
             var panel = EnsureResultPanel(selectionOnDesktop);
             panel.Reset(result.Text, $"OCR 完成：{result.Lines.Count} 行 · {result.Elapsed.TotalMilliseconds:N0} ms", autoTranslate, autoExplain: _configStore.Current.General.AutoExplain, autoAnnotate: _configStore.Current.General.AutoAnnotate);
@@ -311,18 +314,19 @@ public partial class NaniKoreApp : Application
             var autoExplain = config.General.AutoExplain;
             if (outcome.ImagePng is { Length: > 0 } imagePng)
             {
-                _lastImagePng = imagePng;
+                AcceptNewInput(imagePng);
                 var visionPanel = EnsureResultPanel(anchor);
                 visionPanel.Reset(
                     string.Empty,
                     outcome.Kind == PasteInputKind.SelectionImage ? "正在识别并翻译选区图像…" : "正在识别并翻译剪贴板图像…",
                     autoTranslate: true,
-                    autoExplain: autoExplain);
+                    autoExplain: autoExplain,
+                    autoAnnotate: config.General.AutoAnnotate);
                 _ = StartTranslationAsync(string.Empty, imagePng, outcome.Notice);
                 return;
             }
 
-            _lastImagePng = null;
+            AcceptNewInput(null);
             var status = outcome.Kind switch
             {
                 PasteInputKind.ClipboardImage or PasteInputKind.SelectionImage => $"OCR 完成：{outcome.OcrLineCount} 行 · {outcome.OcrElapsed.TotalMilliseconds:N0} ms",
@@ -470,6 +474,10 @@ public partial class NaniKoreApp : Application
             {
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
+                    if (!IsCurrentRequest(panel, generation, cancellation))
+                    {
+                        return;
+                    }
                     panel.SetStatus(
                         receivedOutput ? "翻译完成。" : "翻译服务返回空内容。",
                         isError: !receivedOutput);
@@ -504,15 +512,25 @@ public partial class NaniKoreApp : Application
             var details = exception is ProviderHttpException { ServerMessage: { } serverMessage }
                 ? serverMessage
                 : exception.Message;
-            await Dispatcher.UIThread.InvokeAsync(() => panel.SetError(summary, details));
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (IsCurrentRequest(panel, generation, cancellation))
+                {
+                    panel.SetError(summary, details);
+                }
+            });
         }
         finally
         {
-            if (ReferenceEquals(_translationCancellation, cancellation))
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                await Dispatcher.UIThread.InvokeAsync(() => panel.SetTranslationInProgress(false));
-                _translationCancellation = null;
-            }
+                // 身份检查与清理在同一次 UI 回调中完成，旧任务不能清掉新请求状态。
+                if (ReferenceEquals(_translationCancellation, cancellation))
+                {
+                    panel.SetTranslationInProgress(false);
+                    _translationCancellation = null;
+                }
+            });
 
             cancellation.Dispose();
         }
@@ -611,6 +629,10 @@ public partial class NaniKoreApp : Application
             {
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
+                    if (!IsCurrentRequest(panel, generation, cancellation))
+                    {
+                        return;
+                    }
                     panel.CompleteExplanation(receivedOutput);
                     panel.SetStatus(
                         receivedOutput ? "精讲解析完成" : "精讲服务返回空内容",
@@ -638,13 +660,19 @@ public partial class NaniKoreApp : Application
         }
         catch (Exception exception)
         {
-            await Dispatcher.UIThread.InvokeAsync(() => panel.CompleteExplanation(false));
             var profile = _configStore.GetActiveProfile();
             var summary = ProviderErrorMapper.ToUserMessage(exception, profile.Name, profile.Model, profile.BaseUrl);
             var details = exception is ProviderHttpException { ServerMessage: { } serverMessage }
                 ? serverMessage
                 : exception.Message;
-            await Dispatcher.UIThread.InvokeAsync(() => panel.SetError(summary, details));
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (IsCurrentRequest(panel, generation, cancellation))
+                {
+                    panel.CompleteExplanation(false);
+                    panel.SetError(summary, details);
+                }
+            });
         }
         finally
         {
@@ -744,6 +772,9 @@ public partial class NaniKoreApp : Application
             PersistResultPanelSize(panel);
             _resultPanel = null;
             CancelTranslation();
+            // 关闭即结束本次图像与精讲上下文；窗口打开期间仍保留，供重译和精讲使用。
+            _currentSession = null;
+            _lastImagePng = null;
         };
 
         _resultPanel = panel;
@@ -990,6 +1021,18 @@ public partial class NaniKoreApp : Application
         _ocrEngine.Configure(timeout);
         PhoneticAnnotatorRegistryHolder.Default.ConfigureIdleTimeout(timeout);
     }
+
+    private void AcceptNewInput(byte[]? imagePng)
+    {
+        // 即使本次关闭自动翻译，也必须让旧流失效，防止旧会话回写或继续保留上一张图。
+        CancelTranslation();
+        _currentSession = null;
+        _lastImagePng = imagePng;
+    }
+
+    private bool IsCurrentRequest(ResultPanelWindow panel, long generation, CancellationTokenSource cancellation) =>
+        !cancellation.IsCancellationRequested &&
+        Volatile.Read(ref _translationGeneration) == generation && ReferenceEquals(_resultPanel, panel);
 
     private void CancelTranslation()
     {

@@ -33,6 +33,7 @@ internal static partial class SelfTest
         TestResultPanelDetectedSourceLanguage();
         TestResultPanelRubyDualModeAndTranslationFlow();
         TestResultPanelViewportLayout();
+        TestAutomaticAnnotationPolicy();
         TestResultPanelAnnotateButton();
         TestResultPanelShortTextAnnotateAll();
         TestResultPanelMetricsBar();
@@ -417,6 +418,40 @@ internal static partial class SelfTest
         page.Measure(new Size(width, double.PositiveInfinity));
         page.Arrange(new Rect(0, 0, width, page.DesiredSize.Height));
         return view.Bounds.Height;
+    }
+
+    /// <summary>自动开关控制所有自动请求；手动注音独立可用，总开关仍有最高优先级。</summary>
+    private static void TestAutomaticAnnotationPolicy()
+    {
+        EnsureThemedApplication();
+        var panel = new ResultPanelWindow();
+        panel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = true });
+        const string source = "彼は躊躇なく答えた。";
+        panel.Reset(source, "test", autoAnnotate: false);
+        panel.AnnotateSourceAsync().GetAwaiter().GetResult();
+        Check("translation completion cannot bypass disabled automatic annotation",
+            panel.AnnotatedSourceText == source && !panel.IsRubyVisible);
+
+        // 视觉路径起初无原文，随后原文流到达，也必须继续遵守自动开关。
+        panel.Reset(string.Empty, "test", autoAnnotate: false);
+        panel.Append(new UnderstandDelta(DeltaChannel.SourceText, source));
+        panel.AnnotateSourceAsync().GetAwaiter().GetResult();
+        Check("vision source arriving later does not bypass disabled automatic annotation",
+            panel.AnnotatedSourceText == source && !panel.IsRubyVisible);
+
+        panel.AnnotateSourceAsync(manual: true);
+        WaitForAnnotation(panel);
+        if (PhoneticAnnotatorRegistryHolder.Default.GetAnnotator("ja")?.IsAvailable == true)
+        {
+            Check("manual annotation still works when automatic annotation is off",
+                panel.AnnotatedSourceText.Contains('['));
+        }
+        panel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = false });
+        panel.Reset(source, "test", autoAnnotate: true);
+        panel.AnnotateSourceAsync(manual: true).GetAwaiter().GetResult();
+        Check("annotation master switch blocks manual and automatic annotation",
+            panel.AnnotatedSourceText == source);
+        panel.Close();
     }
 
     /// <summary>

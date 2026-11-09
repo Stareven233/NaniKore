@@ -83,8 +83,8 @@
 
         <controls:SettingsGroup x:Name="PhoneticsGroup" Header="原文注音">
             <StackPanel>
-                <controls:SettingsRow Header="原文注音"
-                                      Description="本地引擎给原文标注振假名 / 国际音标 / 拼音，不经过模型；关闭后原文区为纯文本，翻译不受影响。">
+                <controls:SettingsRow Header="允许本地注音"
+                                      Description="本地假名 / 音标 / 拼音的总开关；关闭后自动注音和面板「注音」按钮均不加载词典，不影响翻译。自动触发可在「翻译 → 识别后自动注音」单独设置。">
                     <ToggleSwitch x:Name="PhoneticsEnabledToggle" OnContent="" OffContent="" />
                 </controls:SettingsRow>
                 <Border Classes="divider-row" />

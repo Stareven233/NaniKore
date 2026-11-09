@@ -15,7 +15,7 @@
                 <Border Classes="divider-row" />
 
                 <controls:SettingsRow Header="识别后自动注音"
-                                      Description="识别完成（OCR/选取）后自动叠加假名/拼音/音标；关闭时原文只呈现纯文本，由面板「注音」按钮显式触发。">
+                                      Description="需先开启「通用 → 允许本地注音」。OCR 或视觉识别后自动添加读音；关闭后仅由面板「注音」按钮手动触发，翻译完成不会自动加载词典。">
                     <ToggleSwitch x:Name="AutoAnnotateToggle" OnContent="" OffContent="" />
                 </controls:SettingsRow>
                 <Border Classes="divider-row" />
