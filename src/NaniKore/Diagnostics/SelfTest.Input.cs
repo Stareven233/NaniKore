@@ -2,6 +2,7 @@ using System.ComponentModel;
 
 using System.Runtime.InteropServices;
 using Avalonia;
+using Avalonia.Input;
 using NaniKore.App;
 using NaniKore.App.Controls;
 using NaniKore.Capture;
@@ -14,7 +15,7 @@ using SkiaSharp;
 namespace NaniKore.Diagnostics;
 
 /// <summary>
-/// 无 UI 自测（平台与输入链路）：热键手势解析、F1–F12 单键放开、输入获取状态机、
+/// 无 UI 自测（平台与输入链路）：热键手势解析、F1–F11 单键与 F12 保留规则、输入获取状态机、
 /// 纯 Win32 真实剪贴板 round-trip、虚拟屏幕捕获与选区几何、热键宿主与应用图标。
 /// </summary>
 internal static partial class SelfTest
@@ -24,11 +25,15 @@ internal static partial class SelfTest
     private const uint VkF5 = 0x74;
     private const uint VkF7 = 0x76;
     private const uint VkF13 = 0x7C;
+    private static readonly TimeSpan HotkeyTestTimeout = TimeSpan.FromSeconds(5);
 
     private static void RunInputTests()
     {
         TestHotkeyGestureNormalization();
         TestHotkeyGestureSingleFunctionKeys();
+        TestHotkeyExpandedKeys();
+        TestHotkeyRecorderMapping();
+        TestHotkeyRecordingEditingKeys();
         TestSendInputLayoutGuard();
         TestClipboardImageRouteResolution();
         TestPasteInputFallbackChain();
@@ -50,7 +55,12 @@ internal static partial class SelfTest
 
         Check(
             "gesture parsing rejects empty, modifier-only and unsupported keys",
-            RejectsGesture(string.Empty) && RejectsGesture("Ctrl") && RejectsGesture("Ctrl+Shift+PrintScreen"));
+            RejectsGesture(string.Empty) && RejectsGesture("Ctrl") && RejectsGesture("Ctrl+Shift+NotAKey"));
+
+        foreach (var malformed in new[] { "Ctrl++Q", "Ctrl+", "Ctrl+é", "Ctrl+中", "Ctrl+１", "Ctrl+😀" })
+        {
+            Check($"gesture parsing rejects malformed or Unicode key {malformed}", RejectsGesture(malformed));
+        }
 
         Check(
             "captured combinations reuse the registration parser",
@@ -78,18 +88,36 @@ internal static partial class SelfTest
     }
 
     /// <summary>
-    /// F1–F12 放开零修饰键单键绑定（issue 018）：可录制、可注册、规范化稳定；
+    /// F1–F11 可单独绑定；F12 保留给 Windows 调试器，任何修饰键组合均不可绑定。
     /// F13–F24 与裸字母数字仍然必须搭配修饰键。
     /// </summary>
     private static void TestHotkeyGestureSingleFunctionKeys()
     {
-        Check(
-            "F1 through F12 parse, normalize and capture without modifiers",
-            HotkeyGesture.Normalize("f1") == "F1" &&
-            HotkeyGesture.Normalize("F12") == "F12" &&
+        for (uint key = 0x70; key <= 0x7A; key++)
+        {
+            var name = $"F{key - 0x70 + 1}";
+            Check(
+                $"{name} parses, formats and captures without modifiers",
+                HotkeyGesture.Normalize(name.ToLowerInvariant()) == name &&
+                HotkeyGesture.Parse(name) == (0u, key) &&
+                HotkeyGesture.Format(0, key) == name &&
+                HotkeyGesture.TryCapture(0, key, out var captured, out var message) &&
+                captured == name && message.Length == 0);
+        }
+
+        // 穷举修饰键位，确保加修饰键也不能绕过 F12 系统保留规则。
+        for (uint modifiers = 0; modifiers <= 0x0F; modifiers++)
+        {
+            Check(
+                $"reserved F12 is rejected in parsing and capture with modifiers {modifiers}",
+                RejectsGesture(HotkeyGesture.Format(modifiers, 0x7B)) &&
+                !HotkeyGesture.TryCapture(modifiers, 0x7B, out var captured, out var message) &&
+                captured.Length == 0 && message.Contains("F12", StringComparison.Ordinal));
+        }
+
+        Check("bare function key virtual codes remain stable",
             HotkeyGesture.Parse("F5") == (0u, VkF5) &&
-            HotkeyGesture.TryCapture(0, VkF7, out var bare, out _) &&
-            bare == "F7");
+            HotkeyGesture.TryCapture(0, VkF7, out var bare, out _) && bare == "F7");
 
         Check(
             "F13 and beyond plus bare letters still require a modifier",
@@ -109,6 +137,118 @@ internal static partial class SelfTest
             !HotkeyGesture.IsEnabled(null) &&
             HotkeyGesture.IsEnabled("F1") &&
             HotkeyGesture.IsEnabled("Ctrl+Shift+S"));
+    }
+
+    /// <summary>扩展键名与 OEM 别名必须按稳定虚拟键码往返，小键盘数字不能折叠成主键盘数字。</summary>
+    private static void TestHotkeyExpandedKeys()
+    {
+        foreach (var (key, name) in new (uint, string)[]
+        {
+            (0x08, "Backspace"), (0x09, "Tab"), (0x0C, "Clear"), (0x0D, "Enter"),
+            (0x13, "Pause"), (0x14, "CapsLock"), (0x1B, "Escape"), (0x20, "Space"),
+            (0x21, "PageUp"), (0x22, "PageDown"), (0x23, "End"), (0x24, "Home"),
+            (0x25, "Left"), (0x26, "Up"), (0x27, "Right"), (0x28, "Down"),
+            (0x2C, "PrintScreen"), (0x2D, "Insert"), (0x2E, "Delete"), (0x5D, "Apps"),
+            (0x6A, "Multiply"), (0x6B, "Add"), (0x6C, "Separator"), (0x6D, "Subtract"),
+            (0x6E, "Decimal"), (0x6F, "Divide"), (0x90, "NumLock"), (0x91, "ScrollLock"),
+            (0xA6, "BrowserBack"), (0xAC, "BrowserHome"), (0xAD, "VolumeMute"), (0xAF, "VolumeUp"),
+            (0xB0, "MediaNextTrack"), (0xB3, "MediaPlayPause"), (0xB4, "LaunchMail"),
+            (0xB5, "SelectMedia"), (0xB6, "LaunchApplication1"), (0xB7, "LaunchApplication2"),
+            (0xDF, "Oem8"), (0xE2, "OemBackslash"), (0x87, "F24"),
+        })
+        {
+            Check($"expanded key {name} parses, captures and formats canonically",
+                HotkeyGesture.Parse($"ctrl+{name.ToLowerInvariant()}") == (HotkeyGesture.ModControl, key) &&
+                HotkeyGesture.Format(HotkeyGesture.ModControl, key) == $"Ctrl+{name}" &&
+                HotkeyGesture.TryCapture(HotkeyGesture.ModControl, key, out var captured, out _) &&
+                captured == $"Ctrl+{name}" &&
+                HotkeyGesture.Parse(captured) == (HotkeyGesture.ModControl, key));
+        }
+
+        foreach (var (alias, canonical, key) in new (string, string, uint)[]
+        {
+            (";", "OemSemicolon", 0xBA), ("=", "OemPlus", 0xBB), ("Plus", "OemPlus", 0xBB),
+            (",", "OemComma", 0xBC), ("-", "OemMinus", 0xBD), ("Minus", "OemMinus", 0xBD),
+            (".", "OemPeriod", 0xBE), ("/", "OemQuestion", 0xBF), ("`", "OemTilde", 0xC0),
+            ("[", "OemOpenBrackets", 0xDB), ("\\", "OemPipe", 0xDC),
+            ("]", "OemCloseBrackets", 0xDD), ("'", "OemQuotes", 0xDE),
+        })
+        {
+            Check($"OEM alias {alias} round-trips through stable key name {canonical}",
+                HotkeyGesture.Normalize($"Ctrl+{alias}") == $"Ctrl+{canonical}" &&
+                HotkeyGesture.Parse($"Ctrl+{canonical}") == (HotkeyGesture.ModControl, key) &&
+                HotkeyGesture.TryCapture(HotkeyGesture.ModControl, key, out var captured, out _) &&
+                captured == $"Ctrl+{canonical}" &&
+                HotkeyGesture.Format(HotkeyGesture.ModControl, key) == captured);
+        }
+
+        for (uint digit = 0; digit <= 9; digit++)
+        {
+            Check($"NumPad{digit} stays distinct from top-row {digit}",
+                HotkeyGesture.Parse($"Ctrl+NumPad{digit}") == (HotkeyGesture.ModControl, 0x60 + digit) &&
+                HotkeyGesture.Parse($"Ctrl+{digit}") == (HotkeyGesture.ModControl, 0x30 + digit) &&
+                HotkeyGesture.TryCapture(HotkeyGesture.ModControl, 0x60 + digit, out var captured, out _) &&
+                captured == $"Ctrl+NumPad{digit}" &&
+                HotkeyGesture.Format(HotkeyGesture.ModControl, 0x30 + digit) == $"Ctrl+{digit}");
+        }
+    }
+
+    /// <summary>遍历 Avalonia 枚举，防止录制映射新增按键后遗漏解析器支持。</summary>
+    private static void TestHotkeyRecorderMapping()
+    {
+        foreach (var key in Enum.GetValues<Key>().Distinct())
+        {
+            var vk = HotkeyRecorderBox.ToVirtualKey(key);
+            if (vk == 0 || HotkeyGesture.IsModifierKey(vk))
+            {
+                continue;
+            }
+
+            if (vk == 0x7B)
+            {
+                Check($"mapped {key} remains reserved",
+                    !HotkeyGesture.TryCapture(HotkeyGesture.ModControl, vk, out _, out _));
+                continue;
+            }
+
+            Check($"Avalonia {key} maps to a captureable virtual key and round-trips",
+                HotkeyGesture.TryCapture(HotkeyGesture.ModControl, vk, out var captured, out var message) &&
+                message.Length == 0 &&
+                HotkeyGesture.Parse(captured) == (HotkeyGesture.ModControl, vk) &&
+                HotkeyGesture.Format(HotkeyGesture.ModControl, vk) == captured &&
+                HotkeyGesture.Normalize(captured) == captured);
+        }
+    }
+
+    /// <summary>编辑键带修饰键时录制为热键；只有裸 Esc 执行取消或解绑。</summary>
+    private static void TestHotkeyRecordingEditingKeys()
+    {
+        // 输入测试可能先于 UI 套件运行，控件创建前显式准备 Avalonia 服务。
+        EnsureThemedApplication();
+        foreach (var allowUnbind in new[] { false, true })
+        {
+            var box = new HotkeyRecorderBox { Gesture = "Ctrl+Q", AllowUnbind = allowUnbind, EmptyHint = "未绑定" };
+            var transitions = new List<bool>();
+            box.RecordingChanged += (_, recording) => transitions.Add(recording);
+            foreach (var (key, name) in new[] { (Key.Delete, "Delete"), (Key.Back, "Backspace"), (Key.Escape, "Escape") })
+            {
+                box.BeginRecording();
+                box.ProcessRecordingKey(HotkeyRecorderBox.ToVirtualKey(key), HotkeyGesture.ModControl);
+                Check($"modified {name} records with AllowUnbind={allowUnbind}",
+                    !box.IsRecording && box.Gesture == $"Ctrl+{name}" && box.DisplayText == box.Gesture);
+            }
+
+            box.BeginRecording();
+            box.ProcessRecordingKey(0x7B, HotkeyGesture.ModControl);
+            Check($"reserved F12 keeps recording and the previous binding with AllowUnbind={allowUnbind}",
+                box.IsRecording && box.Gesture == "Ctrl+Escape");
+            box.ProcessRecordingKey(0x1B, 0);
+            Check($"bare Escape cancels or unbinds with AllowUnbind={allowUnbind}",
+                !box.IsRecording &&
+                box.Gesture == (allowUnbind ? string.Empty : "Ctrl+Escape") &&
+                box.DisplayText == (allowUnbind ? "未绑定" : "Ctrl+Escape") &&
+                transitions.SequenceEqual(new[] { true, false, true, false, true, false, true, false }));
+        }
     }
 
     /// <summary>
@@ -510,31 +650,125 @@ internal static partial class SelfTest
         Check("SelectionGeometry outside dim regions preserve area", totalOutsideArea == (100 * 80 - 30 * 25));
     }
 
-    /// <summary>测试 Win32HotkeyHost 生命周期、热键注册、冲突拦截与注销。</summary>
+    /// <summary>验证重复 ID 保留原注册与回调，以及注册/注销和并发关闭竞争能有界完成。</summary>
     private static void TestWin32HotkeyHostLifecycle()
     {
-        using var host = new Win32HotkeyHost();
-        Check("Win32HotkeyHost creates valid window handle", host.Handle != 0);
+        // 连构造和清理也放入有界等待，生命周期回归不能卡住整套自测。
+        static void Complete(Action action) =>
+            Task.Run(action).WaitAsync(HotkeyTestTimeout).GetAwaiter().GetResult();
 
-        // 注册一个测试热键（Ctrl+Alt+Shift+F12）
-        const int testId = 8888;
-        host.RegisterHotKey(testId, NativeMethods.MOD_CONTROL | NativeMethods.MOD_ALT | NativeMethods.MOD_SHIFT, 0x7B /* F12 */, () => { });
-
-        // 验证重复注册冲突拦截（1409）
-        var conflict = false;
+        var host = Task.Run(() => new Win32HotkeyHost())
+            .WaitAsync(HotkeyTestTimeout).GetAwaiter().GetResult();
         try
         {
-            host.RegisterHotKey(testId, NativeMethods.MOD_CONTROL | NativeMethods.MOD_ALT | NativeMethods.MOD_SHIFT, 0x7B, () => { });
-        }
-        catch (Win32Exception)
-        {
-            conflict = true;
-        }
-        Check("Win32HotkeyHost intercepts duplicate hotkey registration", conflict);
+            Check("Win32HotkeyHost creates valid window handle", host.Handle != 0);
+            const int testId = 8888;
+            const uint modifiers = NativeMethods.MOD_CONTROL | NativeMethods.MOD_ALT | NativeMethods.MOD_SHIFT;
+            const uint originalKey = 0x86; // F23：避开 Windows 为调试器保留的 F12。
+            const uint replacementKey = 0x87; // F24
+            var callback = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Complete(() => host.RegisterHotKey(testId, modifiers, originalKey, () => callback.TrySetResult(true)));
 
-        // 验证注销
-        var unregistered = host.TryUnregisterHotKey(testId);
-        Check("Win32HotkeyHost unregisters hotkey successfully", unregistered);
+            var duplicateRejected = false;
+            Complete(() =>
+            {
+                try
+                {
+                    host.RegisterHotKey(testId, modifiers, replacementKey, () => callback.TrySetResult(false));
+                }
+                catch (InvalidOperationException)
+                {
+                    duplicateRejected = true;
+                }
+            });
+            Check("duplicate hotkey id is rejected before replacing the registration", duplicateRejected);
+
+            var originalStillRegistered = false;
+            Complete(() =>
+            {
+                try
+                {
+                    host.RegisterHotKey(testId + 1, modifiers, originalKey, () => { });
+                }
+                catch (Win32Exception exception) when (exception.NativeErrorCode == 1409)
+                {
+                    originalStillRegistered = true;
+                }
+            });
+            Check("duplicate id leaves the original native gesture registered", originalStillRegistered);
+
+            // 直接投递消息验证保留的是原回调，不发送真实键盘输入干扰桌面。
+            Check("original hotkey callback message is posted",
+                NativeMethods.PostMessageW(host.Handle, NativeMethods.WM_HOTKEY, testId, 0));
+            Check("duplicate id leaves the original callback intact",
+                callback.Task.WaitAsync(HotkeyTestTimeout).GetAwaiter().GetResult());
+
+            Complete(() => host.RegisterHotKey(testId + 2, modifiers, replacementKey, () => { }));
+            bool unregistered = false;
+            Complete(() => unregistered = host.TryUnregisterHotKey(testId));
+            Check("Win32HotkeyHost unregisters the original hotkey successfully", unregistered);
+            Complete(() => host.TryUnregisterHotKey(testId + 2));
+
+            // 真实调用 RegisterHotKey 覆盖扩展键族，避免只验证文本与枚举之间的自洽。
+            foreach (var gesture in new[] { "Ctrl+Alt+Shift+OemPlus", "Ctrl+Alt+Shift+Left", "Ctrl+Alt+Shift+NumPad7", "Ctrl+Alt+Shift+Delete", "Ctrl+Alt+Shift+MediaPlayPause" })
+            {
+                var parsed = HotkeyGesture.Parse(gesture);
+                Complete(() => host.RegisterHotKey(testId + 4, parsed.Modifiers, parsed.Key, () => { }));
+                Complete(() => unregistered = host.TryUnregisterHotKey(testId + 4));
+                Check($"expanded gesture {gesture} registers and unregisters with Win32", unregistered);
+            }
+
+            // 同时释放请求与两个关闭者，覆盖已入队请求排空和停止后拒绝请求两条路径。
+            var start = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var operations = Enumerable.Range(0, 8).Select(index => Task.Run(async () =>
+            {
+                await start.Task;
+                _ = host.TryUnregisterHotKey(testId + 100 + index);
+            })).ToList();
+            operations.Add(Task.Run(async () =>
+            {
+                await start.Task;
+                try
+                {
+                    host.RegisterHotKey(testId + 3, modifiers, replacementKey, () => { });
+                }
+                catch (ObjectDisposedException)
+                {
+                    // 关闭先取得停止边界时，这是注册请求唯一允许的失败。
+                }
+            }));
+            for (var index = 0; index < 2; index++)
+            {
+                operations.Add(Task.Run(async () =>
+                {
+                    await start.Task;
+                    host.Dispose();
+                }));
+            }
+            start.SetResult(true);
+            Task.WhenAll(operations).WaitAsync(HotkeyTestTimeout).GetAwaiter().GetResult();
+            Check("registration, unregistration and concurrent disposal finish without hanging", host.Handle == 0);
+
+            var registrationRejected = false;
+            Complete(() =>
+            {
+                try
+                {
+                    host.RegisterHotKey(testId, modifiers, originalKey, () => { });
+                }
+                catch (ObjectDisposedException)
+                {
+                    registrationRejected = true;
+                }
+            });
+            Check("disposed host rejects registration", registrationRejected);
+            Complete(() => unregistered = host.TryUnregisterHotKey(testId));
+            Check("disposed host reports unregistration failure", !unregistered);
+        }
+        finally
+        {
+            Complete(host.Dispose);
+        }
     }
 
     /// <summary>测试应用图标与 Avalonia 组件实例化。</summary>

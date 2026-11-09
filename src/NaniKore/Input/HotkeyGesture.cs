@@ -20,8 +20,31 @@ internal static class HotkeyGesture
     private const int VirtualKeyRightWindows = 0x5C;
     private const uint VirtualKeyF1 = 0x70;
 
-    /// <summary>允许零修饰键单独绑定的功能键上限（F1–F12）；F13–F24 与字母数字一样必须搭配修饰键。</summary>
-    private const uint BareFunctionKeyLimit = VirtualKeyF1 + 11;
+    /// <summary>允许零修饰键单独绑定的功能键上限（F1–F11）；F13–F24 与字母数字一样必须搭配修饰键。</summary>
+    private const uint BareFunctionKeyLimit = VirtualKeyF1 + 10;
+
+    // 使用稳定的虚拟键名保存配置；OEM 标点受键盘布局影响，不能把显示字符直接当键码。
+    private static readonly Dictionary<uint, string> NamedKeys = new()
+    {
+        [0x08] = "Backspace", [0x09] = "Tab", [0x0C] = "Clear", [0x0D] = "Enter",
+        [0x13] = "Pause", [0x14] = "CapsLock", [0x1B] = "Escape", [0x20] = "Space",
+        [0x21] = "PageUp", [0x22] = "PageDown", [0x23] = "End", [0x24] = "Home",
+        [0x25] = "Left", [0x26] = "Up", [0x27] = "Right", [0x28] = "Down",
+        [0x2C] = "PrintScreen", [0x2D] = "Insert", [0x2E] = "Delete", [0x5D] = "Apps",
+        [0x6A] = "Multiply", [0x6B] = "Add", [0x6C] = "Separator", [0x6D] = "Subtract",
+        [0x6E] = "Decimal", [0x6F] = "Divide", [0x90] = "NumLock", [0x91] = "ScrollLock",
+        [0xA6] = "BrowserBack", [0xA7] = "BrowserForward", [0xA8] = "BrowserRefresh",
+        [0xA9] = "BrowserStop", [0xAA] = "BrowserSearch", [0xAB] = "BrowserFavorites", [0xAC] = "BrowserHome",
+        [0xAD] = "VolumeMute", [0xAE] = "VolumeDown", [0xAF] = "VolumeUp",
+        [0xB0] = "MediaNextTrack", [0xB1] = "MediaPreviousTrack", [0xB2] = "MediaStop", [0xB3] = "MediaPlayPause",
+        [0xB4] = "LaunchMail", [0xB5] = "SelectMedia", [0xB6] = "LaunchApplication1", [0xB7] = "LaunchApplication2",
+        [0xBA] = "OemSemicolon", [0xBB] = "OemPlus", [0xBC] = "OemComma", [0xBD] = "OemMinus",
+        [0xBE] = "OemPeriod", [0xBF] = "OemQuestion", [0xC0] = "OemTilde",
+        [0xDB] = "OemOpenBrackets", [0xDC] = "OemPipe", [0xDD] = "OemCloseBrackets",
+        [0xDE] = "OemQuotes", [0xDF] = "Oem8", [0xE2] = "OemBackslash",
+    };
+
+    private static readonly Dictionary<string, uint> KeyNames = CreateKeyNames();
 
     /// <summary>解析配置里的文本组合；非法输入抛出可直接展示给用户的说明。</summary>
     internal static (uint Modifiers, uint Key) Parse(string gesture)
@@ -33,7 +56,7 @@ internal static class HotkeyGesture
 
         uint modifiers = 0;
         uint? key = null;
-        foreach (var rawPart in gesture.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        foreach (var rawPart in gesture.Split('+', StringSplitOptions.TrimEntries))
         {
             // 配置可能是 control+shift+q 或 alt+f9 等写法，统一大写后再判定修饰键与普通键。
             var part = rawPart.ToUpperInvariant();
@@ -59,11 +82,15 @@ internal static class HotkeyGesture
             throw new ArgumentException("热键必须包含一个普通按键，格式应类似 Ctrl+Shift+A、Alt+F9 或 F5。", nameof(gesture));
         }
 
-        // F1–F12 允许零修饰键单键绑定（issue 018：可录制成 F1–F12 单键）；
-        // 其余普通键仍必须搭配至少一个修饰键，否则会大面积误触系统与浏览器快捷键。
+        if (key == 0x7B)
+        {
+            throw new ArgumentException("F12 由 Windows 保留给调试器，不能注册为全局热键。", nameof(gesture));
+        }
+
+        // F1–F11 允许零修饰键绑定；F12 是系统保留键，其余按键要求修饰键。
         if (modifiers == 0 && !IsBareFunctionKey(key.Value))
         {
-            throw new ArgumentException("除 F1–F12 可单独绑定外，热键必须包含至少一个修饰键。", nameof(gesture));
+            throw new ArgumentException("除 F1–F11 可单独绑定外，热键必须包含至少一个修饰键。", nameof(gesture));
         }
 
         return (modifiers, key.Value);
@@ -119,20 +146,22 @@ internal static class HotkeyGesture
 
         if (!TryMapKeyCode(keyCode, out var virtualKey))
         {
-            message = "当前只支持字母、数字和 F1–F24 作为普通键。";
+            message = "不支持此按键；可使用字母、数字、功能键、标点、导航键、小键盘或多媒体键。";
             return false;
         }
 
-        // 与 Parse 同一口径：只有 F1–F12 能零修饰键收下，裸字母/数字与 F13–F24 仍要求修饰键。
-        if (modifiers == 0 && !IsBareFunctionKey(virtualKey))
+        // 直接复用配置校验，确保录制与注册的按键范围、系统保留键规则一致。
+        try
         {
-            message = "除 F1–F12 可单独绑定外，热键必须包含至少一个修饰键，例如 Ctrl、Alt、Shift 或 Win。";
+            gesture = Normalize(Format(modifiers, virtualKey));
+            message = string.Empty;
+            return true;
+        }
+        catch (ArgumentException exception)
+        {
+            message = exception.Message;
             return false;
         }
-
-        gesture = Format(modifiers, virtualKey);
-        message = string.Empty;
-        return true;
     }
 
     /// <summary>录制过程中的实时回显：只有修饰键时显示 `Ctrl+Shift+…` 提示还差一个普通键。</summary>
@@ -203,7 +232,7 @@ internal static class HotkeyGesture
     /// </summary>
     internal static bool IsEnabled(string? gesture) => !string.IsNullOrWhiteSpace(gesture);
 
-    /// <summary>F1–F12 才允许裸键绑定；F13–F24 与字母数字一样必须带修饰键。</summary>
+    /// <summary>F1–F11 才允许裸键绑定；F13–F24 与字母数字一样必须带修饰键。</summary>
     private static bool IsBareFunctionKey(uint key) => key is >= VirtualKeyF1 and <= BareFunctionKeyLimit;
 
     private static bool IsKeyDown(int virtualKey) => (Interop.NativeMethods.GetKeyState(virtualKey) & 0x8000) != 0;
@@ -230,12 +259,18 @@ internal static class HotkeyGesture
             return true;
         }
 
+        if (keyCode is >= 0x60 and <= 0x69 || NamedKeys.ContainsKey(keyCode))
+        {
+            virtualKey = keyCode;
+            return true;
+        }
+
         return false;
     }
 
     private static bool TryParseKey(string value, out uint key)
     {
-        if (value.Length == 1 && char.IsLetterOrDigit(value[0]))
+        if (value.Length == 1 && value[0] is >= 'A' and <= 'Z' or >= '0' and <= '9')
         {
             key = char.ToUpperInvariant(value[0]);
             return true;
@@ -249,13 +284,37 @@ internal static class HotkeyGesture
             return true;
         }
 
-        key = 0;
-        return false;
+        if (value.StartsWith("NUMPAD", StringComparison.Ordinal) && value.Length == 7 && value[6] is >= '0' and <= '9')
+        {
+            key = 0x60 + (uint)(value[6] - '0');
+            return true;
+        }
+
+        return KeyNames.TryGetValue(value, out key);
+    }
+
+    private static Dictionary<string, uint> CreateKeyNames()
+    {
+        var names = NamedKeys.ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase);
+        // 符号只作为输入别名，写回统一使用 OEM 名，避免 '+' 与组合分隔符混淆。
+        foreach (var (name, key) in new (string, uint)[]
+        {
+            ("Esc", 0x1B), ("Back", 0x08), ("Return", 0x0D), ("PgUp", 0x21), ("PgDn", 0x22),
+            ("Del", 0x2E), ("Ins", 0x2D), ("Print", 0x2C), ("Plus", 0xBB), ("Minus", 0xBD),
+            (";", 0xBA), ("=", 0xBB), (",", 0xBC), ("-", 0xBD), (".", 0xBE), ("/", 0xBF),
+            ("`", 0xC0), ("[", 0xDB), ("\\", 0xDC), ("]", 0xDD), ("'", 0xDE),
+        })
+        {
+            names.Add(name, key);
+        }
+        return names;
     }
 
     private static string FormatKey(uint key) => key switch
     {
         >= VirtualKeyF1 and <= VirtualKeyF1 + 23 => $"F{key - VirtualKeyF1 + 1}",
+        >= 0x60 and <= 0x69 => $"NumPad{key - 0x60}",
+        _ when NamedKeys.TryGetValue(key, out var name) => name,
         _ => ((char)key).ToString(CultureInfo.InvariantCulture),
     };
 }

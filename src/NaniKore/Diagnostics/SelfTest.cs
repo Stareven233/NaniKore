@@ -11,7 +11,7 @@ namespace NaniKore.Diagnostics;
 /// - <see cref="SelfTest"/> (Ui): 无头 WPF 测试辅助工具、热键录制盒交互、设置页与结果面板自测调度
 /// - <see cref="SelfTest"/> (Ui.Settings): 主题资源、自适应卡片布局、各设置页绑定契约、尺寸记忆回写、收藏管理页、窗口层级
 /// - <see cref="SelfTest"/> (Ui.ResultPanel): 本地注音、振假名/纯文本双语态与翻译流、指标条、精讲生命周期、划词气泡与振假名文档
-/// - <see cref="SelfTest"/> (Input): 热键手势解析、F1–F12 单键规则、选取/剪贴板输入获取状态机与真实剪贴板 round-trip
+/// - <see cref="SelfTest"/> (Input): 热键手势解析、扩展按键与 F1–F11 单键规则、选取/剪贴板输入获取状态机与真实剪贴板 round-trip
 /// </summary>
 internal static partial class SelfTest
 {

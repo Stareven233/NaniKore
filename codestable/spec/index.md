@@ -10,6 +10,9 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 
 - 单一 C#/.NET 10 Avalonia 12 宿主进程（`ClassicDesktopStyleApplicationLifetime`）。
 - `Ctrl+Shift+A` 与 `Ctrl+Shift+S` 分别注册为框选与剪贴板全局热键（基于独立 Win32 消息窗口与 P/Invoke，脱离 WinForms/WPF）。
+- 热键的普通键支持 ASCII 字母数字、功能键、OEM 标点、方向/导航键、空格/Tab/Enter、Backspace/Delete/Escape、锁定键、小键盘、浏览器及多媒体键；除 F1–F11 可裸键绑定外，其余均要求 Ctrl/Shift/Alt/Win 修饰键，F12 因 Windows 调试器保留而拒绝。标点写入稳定 OEM 键名，小键盘与主键盘数字/运算键独立。裸 Esc 在录制时取消截图热键修改或解绑选取热键，带修饰键的 Esc 可正常录制。
+- 任一热键录制时暂停两个全局槽位，录制全部结束后按已提交配置分别恢复；保存前拒绝两个槽位使用相同组合（按解析后的键码比较）。变更多个槽位时先统一释放再注册，支持交换与迁移；注册失败独立提示，不回退旧绑定。宿主拒绝重复注册 ID，并在停止接收请求后完成或终结待处理请求，避免并发关闭永久等待。
+- 设置保存提交独立配置快照，连续保存不会提前修改宿主持有的配置；关闭时的尺寸记忆始终叠加到最新已提交配置，保留外部更新并丢弃未提交或被拒绝的编辑。
 - 使用 Win32 `BitBlt` 捕获完整虚拟桌面（含多屏负坐标与混合 DPI），直灌 `SKBitmap`，全面移除 GDI+ / `System.Drawing`。
 - 选区浮层采用 Avalonia 无边框全屏置顶窗口（`SelectionOverlayWindow`），自绘压暗与尺寸标签，结合纯几何状态机（`SelectionGeometry`）实现物理像素 1:1 对齐。
 - 左键拖选，Esc/右键取消，重复热键不会重入第二条选区流水线。

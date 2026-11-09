@@ -26,11 +26,13 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
     private readonly Thread _thread;
     private readonly TaskCompletionSource<bool> _readySource = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ConcurrentDictionary<int, Action> _callbacks = new();
-    private readonly ConcurrentQueue<Action> _actionQueue = new();
+    private readonly object _requestLock = new();
+    private readonly Queue<(Action Execute, Action<Exception> Fail)> _actionQueue = new();
 
     private nint _hWnd;
     private nint _hInstance;
     private bool _disposed;
+    private Exception? _postError;
 
     public Win32HotkeyHost()
     {
@@ -54,11 +56,16 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
     /// </summary>
     public void RegisterHotKey(int id, uint modifiers, uint vk, Action callback)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(callback);
 
         InvokeOnWindowThread(() =>
         {
+            // 同一窗口的重复 ID 可能保留多个原生注册，必须在调用 Win32 前拒绝。
+            if (_callbacks.ContainsKey(id))
+            {
+                throw new InvalidOperationException($"热键 ID {id} 已注册。");
+            }
+
             // MOD_NOREPEAT (0x4000) 避免长按热键震荡连发
             var success = NativeMethods.RegisterHotKey(_hWnd, id, modifiers | NativeMethods.MOD_NOREPEAT, vk);
             if (!success)
@@ -76,59 +83,78 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
     /// </summary>
     public bool TryUnregisterHotKey(int id)
     {
-        if (_disposed || _hWnd == 0)
+        try
+        {
+            return InvokeOnWindowThread(() =>
+            {
+                _callbacks.TryRemove(id, out _);
+                return NativeMethods.UnregisterHotKey(_hWnd, id);
+            });
+        }
+        catch (ObjectDisposedException)
         {
             return false;
         }
-
-        return InvokeOnWindowThread(() =>
-        {
-            _callbacks.TryRemove(id, out _);
-            return NativeMethods.UnregisterHotKey(_hWnd, id);
-        });
     }
 
-    private void InvokeOnWindowThread(Action action)
+    private void InvokeOnWindowThread(Action action) => InvokeOnWindowThread(() =>
     {
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _actionQueue.Enqueue(() =>
-        {
-            try
-            {
-                action();
-                tcs.SetResult(true);
-            }
-            catch (Exception ex)
-            {
-                tcs.SetException(ex);
-            }
-        });
-
-        NativeMethods.PostMessageW(_hWnd, WM_USER_EXECUTE, 0, 0);
-        tcs.Task.GetAwaiter().GetResult();
-    }
+        action();
+        return true;
+    });
 
     private T InvokeOnWindowThread<T>(Func<T> func)
     {
-        var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _actionQueue.Enqueue(() =>
+        TaskCompletionSource<T>? source = null;
+        lock (_requestLock)
         {
-            try
+            // 接收、投递和停止共用同一边界，停止后不再留下无人处理的请求。
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (Thread.CurrentThread != _thread)
             {
-                tcs.SetResult(func());
+                source = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                var completion = source;
+                _actionQueue.Enqueue((() =>
+                {
+                    try
+                    {
+                        completion.TrySetResult(func());
+                    }
+                    catch (Exception ex)
+                    {
+                        completion.TrySetException(ex);
+                    }
+                }, ex => { completion.TrySetException(ex); }));
+                PostExecuteLocked();
             }
-            catch (Exception ex)
-            {
-                tcs.SetException(ex);
-            }
-        });
+        }
 
-        NativeMethods.PostMessageW(_hWnd, WM_USER_EXECUTE, 0, 0);
-        return tcs.Task.GetAwaiter().GetResult();
+        // 窗口线程不能排队后等待自身；已接收的调用可在停止边界之后完成。
+        return source is null ? func() : source.Task.GetAwaiter().GetResult();
+    }
+
+    // 调用者必须持有 _requestLock；投递失败即关闭接收并终结全部待处理请求。
+    private void PostExecuteLocked()
+    {
+        if (!NativeMethods.PostMessageW(_hWnd, WM_USER_EXECUTE, 0, 0))
+        {
+            _postError = new Win32Exception(Marshal.GetLastPInvokeError(), "投递热键窗口请求失败");
+            _disposed = true;
+            FailPendingLocked(_postError);
+        }
+    }
+
+    private void FailPendingLocked(Exception error)
+    {
+        while (_actionQueue.TryDequeue(out var request))
+        {
+            request.Fail(error);
+        }
     }
 
     private void ThreadProc()
     {
+        Exception? exitError = null;
         try
         {
             _hInstance = NativeMethods.GetModuleHandle(null);
@@ -193,15 +219,24 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
         }
         catch (Exception ex)
         {
-            if (!_readySource.Task.IsCompleted)
-            {
-                _readySource.SetException(ex);
-            }
+            exitError = ex;
+            _readySource.TrySetException(ex);
         }
         finally
         {
+            lock (_requestLock)
+            {
+                _disposed = true;
+                FailPendingLocked(exitError ?? new ObjectDisposedException(nameof(Win32HotkeyHost)));
+            }
+
             if (_hWnd != 0)
             {
+                foreach (var id in _callbacks.Keys)
+                {
+                    NativeMethods.UnregisterHotKey(_hWnd, id);
+                }
+                _callbacks.Clear();
                 ActiveHosts.TryRemove(_hWnd, out _);
                 NativeMethods.DestroyWindow(_hWnd);
                 _hWnd = 0;
@@ -230,8 +265,22 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
         switch (msg)
         {
             case WM_USER_EXECUTE:
-                while (_actionQueue.TryDequeue(out var action))
+                while (true)
                 {
+                    Action action;
+                    lock (_requestLock)
+                    {
+                        if (!_actionQueue.TryDequeue(out var request))
+                        {
+                            if (_disposed)
+                            {
+                                NativeMethods.PostQuitMessage(0);
+                            }
+                            break;
+                        }
+                        action = request.Execute;
+                    }
+                    // 出队即取得执行权；关闭只能使尚未出队的请求失败。
                     action();
                 }
                 return 0;
@@ -270,26 +319,36 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
 
     public void Dispose()
     {
-        if (_disposed)
+        var onWindowThread = Thread.CurrentThread == _thread;
+        lock (_requestLock)
         {
-            return;
+            if (!_disposed)
+            {
+                _disposed = true;
+                if (onWindowThread)
+                {
+                    // 窗口线程关闭时不能等待自身，队列中的调用必须立即收到失败。
+                    FailPendingLocked(new ObjectDisposedException(nameof(Win32HotkeyHost)));
+                    NativeMethods.PostQuitMessage(0);
+                }
+                else
+                {
+                    // 已接收的请求先执行完，再由消息处理器退出并统一清理。
+                    PostExecuteLocked();
+                }
+            }
+
+            // 无法唤醒线程时报告失败，不能继续等待一个可能永远不会发生的退出。
+            if (_postError is not null)
+            {
+                throw new InvalidOperationException("无法唤醒热键窗口线程以完成关闭。", _postError);
+            }
         }
 
-        _disposed = true;
-
-        if (_hWnd != 0)
+        if (!onWindowThread)
         {
-            InvokeOnWindowThread(() =>
-            {
-                foreach (var id in _callbacks.Keys)
-                {
-                    NativeMethods.UnregisterHotKey(_hWnd, id);
-                }
-                _callbacks.Clear();
-            });
-
-            NativeMethods.PostMessageW(_hWnd, NativeMethods.WM_CLOSE, 0, 0);
-            _thread.Join(1000);
+            // 并发关闭者均在锁外等待清理完成，窗口线程自身绝不 Join。
+            _thread.Join();
         }
     }
 }

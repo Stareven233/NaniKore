@@ -44,6 +44,7 @@ internal static partial class SelfTest
         TestTranslationPagePromptEditing();
         TestAboutPageRepositoryEntry();
         TestSettingsCloseSizeMemory();
+        TestSettingsSaveSnapshots();
         TestSettingsCloseSizeWriteBackKeepsExternalUpdates();
         TestFavoritesSettingsPageFilteringAndEvents();
         TestFontsConfiguration();
@@ -198,6 +199,12 @@ internal static partial class SelfTest
             FindDescendants<HotkeyRecorderBox>(hotkeys.View).Distinct().Count() == 2 &&
             Find<HotkeyRecorderBox>(hotkeys, "CaptureRecorder") is { Gesture: "Ctrl+Shift+A", AllowUnbind: false } &&
             Find<HotkeyRecorderBox>(hotkeys, "PasteRecorder") is { Gesture: "F1", AllowUnbind: true });
+
+        hotkeys.Load(new AppConfig { Hotkeys = new HotkeyConfig { Capture = "Ctrl+OemPlus", Paste = "control+=" } });
+        Check("hotkey page rejects duplicate gestures expressed through aliases",
+            hotkeys.Validate() is { } duplicateError && duplicateError.Contains("相同", StringComparison.Ordinal));
+        hotkeys.Load(new AppConfig { Hotkeys = new HotkeyConfig { Capture = "Ctrl+OemPlus", Paste = "Ctrl+Add" } });
+        Check("hotkey page keeps main-keyboard and numpad plus bindings independent", hotkeys.Validate() is null);
     }
 
     /// <summary>回收设置始终可见；自定义输入先报错再保存，绝不以默认值吞掉非法输入。</summary>
@@ -946,70 +953,157 @@ internal static partial class SelfTest
             SettingsWindow.ResolvePersistedSize(baseline, double.PositiveInfinity, 640, 620, 460) is null);
     }
 
-    /// <summary>
-    /// 设置窗口未保存、仅拖过尺寸就关闭时，尺寸记忆必须叠加在「实时当前配置」上。
-    /// </summary>
-    private static void TestSettingsCloseSizeWriteBackKeepsExternalUpdates()
+    /// <summary>保存按钮必须提交独立快照，后续 Apply 不能修改宿主持有的旧提交。</summary>
+    private static void TestSettingsSaveSnapshots()
     {
-        var directory = Path.Combine(Path.GetTempPath(), $"NaniKore-self-test-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(directory);
+        var initial = new AppConfig();
+        var current = initial;
+        var submissions = new List<AppConfig>();
+        var settings = new SettingsWindow(() => current, next =>
+        {
+            submissions.Add(next);
+            current = next;
+        }, (_, _) => Task.FromResult("ok"));
         try
         {
-            File.WriteAllText(Path.Combine(directory, "config.yaml"), """
-                version: 0.2.11
-                general:
-                  auto_explain: false
-                  target_language: ja
-                windows:
-                  settings_width: 800
-                  settings_height: 640
-                """);
-            var store = new ConfigStore(directory);
+            var page = (GeneralPage)Find<ContentControl>(settings, "PageHost")!.Content!;
+            var idleBox = Find<AutoCompleteBox>(page, "LocalResourceIdleTimeoutBox")!;
+            var rareOnly = Find<ToggleSwitch>(page, "PhoneticsRareOnlyToggle")!;
+            var opacityBox = Find<NumericUpDown>(page, "PanelBackgroundOpacityBox")!;
+            var save = Find<Button>(settings, "SaveButton")!;
+            var status = Find<InfoBar>(settings, "FooterStatus")!;
 
-            AppConfig LatestConfig() => store.Current;
-            var openTimeSnapshot = AppConfigCloner.Clone(LatestConfig());
-            var working = AppConfigCloner.Clone(LatestConfig());
+            idleBox.Text = "30s";
+            rareOnly.IsChecked = false;
+            opacityBox.Value = 45;
+            save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check("settings save button successfully submits the edited configuration",
+                submissions.Count == 1 && status.Severity == InfoSeverity.Success &&
+                current.General.LocalResourceIdleTimeout == "30s" &&
+                !current.Phonetics.RareOnly && current.Windows.PanelBackgroundOpacity == 0.45);
+            Check("settings save leaves the configuration supplied at open unchanged",
+                !ReferenceEquals(current, initial) &&
+                initial.General.LocalResourceIdleTimeout == "0" && initial.Phonetics.RareOnly);
 
-            working.General.TargetLanguage = "未保存的页面编辑";
-
-            var external = LatestConfig();
-            external.General.AutoExplain = true;
-            store.AtomicWrite(external);
-
-            var baseline = SettingsWindow.ResolveCloseWriteBackBaseline(settingsSaved: false, working, LatestConfig());
-            Check(
-                "unsaved settings close picks the live config instead of the stale open-time snapshot",
-                !ReferenceEquals(baseline, openTimeSnapshot) &&
-                ReferenceEquals(baseline, store.Current) &&
-                baseline.General.AutoExplain);
-
-            if (SettingsWindow.ResolvePersistedSize(baseline.Windows, 1024, 700, 620, 460) is { } size)
-            {
-                var next = AppConfigCloner.Clone(baseline);
-                next.Windows.SettingsWidth = size.Width;
-                next.Windows.SettingsHeight = size.Height;
-                store.AtomicWrite(next);
-            }
-
-            var reloaded = new ConfigStore(directory);
-            Check(
-                "external auto_explain update survives an unsaved settings close with a resize",
-                reloaded.Current.General.AutoExplain);
-            Check(
-                "unsaved settings close still records the resized window dimensions",
-                reloaded.Current.Windows.SettingsWidth == 1024 &&
-                reloaded.Current.Windows.SettingsHeight == 700);
-            Check(
-                "unsaved settings close still discards page edits made in the working copy",
-                reloaded.Current.General.TargetLanguage == "ja");
-
-            Check(
-                "saved settings close keeps using the working copy as write-back baseline",
-                ReferenceEquals(SettingsWindow.ResolveCloseWriteBackBaseline(settingsSaved: true, working, store.Current), working));
+            var first = current;
+            idleBox.Text = "10m";
+            rareOnly.IsChecked = true;
+            opacityBox.Value = 75;
+            save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check("second settings save submits a separate snapshot with the new edits",
+                submissions.Count == 2 && status.Severity == InfoSeverity.Success &&
+                !ReferenceEquals(first, current) &&
+                !ReferenceEquals(first.General, current.General) &&
+                !ReferenceEquals(first.Phonetics, current.Phonetics) &&
+                !ReferenceEquals(first.Windows, current.Windows) &&
+                current.General.LocalResourceIdleTimeout == "10m" &&
+                current.Phonetics.RareOnly && current.Windows.PanelBackgroundOpacity == 0.75);
+            // 第二次保存会再次 Apply 到工作副本；首份提交保持原值才能证明提交不暴露工作对象。
+            Check("second settings save does not mutate the previously committed snapshot",
+                first.General.LocalResourceIdleTimeout == "30s" &&
+                !first.Phonetics.RareOnly && first.Windows.PanelBackgroundOpacity == 0.45);
         }
         finally
         {
-            Directory.Delete(directory, recursive: true);
+            settings.Close();
+        }
+    }
+
+    /// <summary>真实关闭事件仅回写尺寸，始终保留最新提交及外部更新，不夹带被拒绝的编辑。</summary>
+    private static void TestSettingsCloseSizeWriteBackKeepsExternalUpdates()
+    {
+        foreach (var scenario in new[] { "unsaved", "saved", "validation rejected", "host rejected" })
+        {
+            var directory = Path.Combine(Path.GetTempPath(), $"NaniKore-self-test-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(directory);
+            SettingsWindow? settings = null;
+            try
+            {
+                var store = new ConfigStore(directory);
+                var initial = new AppConfig();
+                initial.Windows.SettingsWidth = 800;
+                initial.Windows.SettingsHeight = 640;
+                store.AtomicWrite(initial);
+                var rejectSave = false;
+                var saveAttempts = 0;
+                settings = new SettingsWindow(() => store.Current, next =>
+                {
+                    saveAttempts++;
+                    if (rejectSave)
+                    {
+                        throw new InvalidOperationException("self-test host rejected settings");
+                    }
+                    store.AtomicWrite(next);
+                }, (_, _) => Task.FromResult("ok"));
+                var page = (GeneralPage)Find<ContentControl>(settings, "PageHost")!.Content!;
+                var idleBox = Find<AutoCompleteBox>(page, "LocalResourceIdleTimeoutBox")!;
+                var save = Find<Button>(settings, "SaveButton")!;
+                var status = Find<InfoBar>(settings, "FooterStatus")!;
+
+                if (scenario != "unsaved")
+                {
+                    idleBox.Text = "30s";
+                    save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Check($"{scenario}: initial settings save succeeds",
+                        saveAttempts == 1 && status.Severity == InfoSeverity.Success &&
+                        store.Current.General.LocalResourceIdleTimeout == "30s");
+                }
+
+                idleBox.Text = scenario == "validation rejected" ? "invalid duration" : "10m";
+                if (scenario == "validation rejected")
+                {
+                    save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    Check("invalid settings edits are rejected before reaching the host",
+                        saveAttempts == 1 && status.Severity == InfoSeverity.Warning);
+                }
+                else if (scenario == "host rejected")
+                {
+                    rejectSave = true;
+                    save.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    rejectSave = false;
+                    Check("host rejection leaves the last committed settings unchanged",
+                        saveAttempts == 2 && status.Severity == InfoSeverity.Error &&
+                        store.Current.General.LocalResourceIdleTimeout == "30s");
+                }
+
+                var external = AppConfigCloner.Clone(store.Current);
+                external.General.AutoExplain = true;
+                external.General.TargetLanguage = "日本語";
+                store.AtomicWrite(external);
+                var baseline = store.Current;
+                var attemptsBeforeClose = saveAttempts;
+                // 无头窗口通过真实布局产生 Bounds，再走取消按钮触发 Closed 的尺寸回写。
+                settings.Width = 1024;
+                settings.Height = 700;
+                settings.Measure(new Size(1024, 700));
+                settings.Arrange(new Rect(0, 0, 1024, 700));
+                // 平台可能限制客户区尺寸，验证实际 Bounds 的写回，不假设请求尺寸必被原样接纳。
+                var resized = settings.Bounds.Size;
+                Check($"{scenario}: settings close test lays out the resized window",
+                    SettingsWindow.ResolvePersistedSize(baseline.Windows, resized.Width, resized.Height,
+                        settings.MinWidth, settings.MinHeight) is not null,
+                    $"actual={resized}");
+                Find<Button>(settings, "CancelButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+                var reloaded = new ConfigStore(directory).Current;
+                Check($"{scenario}: resized settings close writes exactly once",
+                    saveAttempts == attemptsBeforeClose + 1);
+                Check($"{scenario}: external updates survive settings close",
+                    reloaded.General.AutoExplain && reloaded.General.TargetLanguage == "日本語");
+                Check($"{scenario}: settings close persists the resized dimensions",
+                    reloaded.Windows.SettingsWidth == resized.Width && reloaded.Windows.SettingsHeight == resized.Height);
+                Check($"{scenario}: settings close discards uncommitted page edits",
+                    reloaded.General.LocalResourceIdleTimeout ==
+                    (scenario == "unsaved" ? initial.General.LocalResourceIdleTimeout : "30s"));
+                Check($"{scenario}: size write-back clones the latest committed baseline",
+                    !ReferenceEquals(store.Current, baseline) &&
+                    baseline.Windows.SettingsWidth == 800 && baseline.Windows.SettingsHeight == 640);
+            }
+            finally
+            {
+                settings?.Close();
+                Directory.Delete(directory, recursive: true);
+            }
         }
     }
 

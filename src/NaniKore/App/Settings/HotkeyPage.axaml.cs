@@ -7,15 +7,20 @@ namespace NaniKore.App.Settings;
 
 internal sealed partial class HotkeyPage : UserControl, ISettingsPage
 {
-    private const string IdleHint = "点击方框开始录制；可配 Ctrl/Shift/Alt/Win 加字母、数字或 F1–F24，F1–F12 也可单独绑定。";
-
     public HotkeyPage()
     {
         InitializeComponent();
-        CaptureRecorderStatus.Text = IdleHint;
-        PasteRecorderStatus.Text = IdleHint;
-        CaptureRecorder.StatusChanged += (_, message) => CaptureRecorderStatus.Text = message;
-        PasteRecorder.StatusChanged += (_, message) => PasteRecorderStatus.Text = message;
+        // 通用录制说明集中在页尾；槽位下方仅在发生交互时显示各自状态。
+        CaptureRecorder.StatusChanged += (_, message) =>
+        {
+            CaptureRecorderStatus.Text = message;
+            CaptureRecorderStatus.IsVisible = true;
+        };
+        PasteRecorder.StatusChanged += (_, message) =>
+        {
+            PasteRecorderStatus.Text = message;
+            PasteRecorderStatus.IsVisible = true;
+        };
 
         CaptureRecorder.RecordingChanged += (_, recording) =>
             RecordingChanged?.Invoke(this, new HotkeyRecordingState(recording, HotkeySlot.Capture));
@@ -29,7 +34,7 @@ internal sealed partial class HotkeyPage : UserControl, ISettingsPage
 
     public Control View => this;
 
-    /// <summary>录制开始/结束时通知宿主临时注销、恢复对应的全局热键。</summary>
+    /// <summary>录制开始/结束时通知宿主临时注销、恢复全部全局热键。</summary>
     public event EventHandler<HotkeyRecordingState>? RecordingChanged;
 
     public void Load(AppConfig config)
@@ -56,7 +61,19 @@ internal sealed partial class HotkeyPage : UserControl, ISettingsPage
             return captureError;
         }
 
-        return ValidateGesture("选取翻译热键", PasteRecorder.Gesture, allowEmpty: true);
+        if (ValidateGesture("选取翻译热键", PasteRecorder.Gesture, allowEmpty: true) is { } pasteError)
+        {
+            return pasteError;
+        }
+
+        // 按解析后的键码比较，避免 control / Ctrl 或标点别名绕过重复校验。
+        if (HotkeyGesture.IsEnabled(PasteRecorder.Gesture) &&
+            HotkeyGesture.Parse(CaptureRecorder.Gesture) == HotkeyGesture.Parse(PasteRecorder.Gesture))
+        {
+            return "截图翻译和选取翻译不能使用相同的热键。";
+        }
+
+        return null;
     }
 
     public void Apply(AppConfig config)

@@ -8,12 +8,13 @@
         <controls:SettingsGroup Header="全局热键">
             <StackPanel>
                 <controls:SettingsRow Header="截图翻译"
-                                      Description="点击右侧方框开始录制；可配修饰键加字母、数字或 F1–F24，F1–F12 也支持单独绑定为单键。"
+                                      Description="框选屏幕区域，识别并翻译其中的文字。"
                                       ContentWidth="190">
                     <controls:HotkeyRecorderBox x:Name="CaptureRecorder" />
                 </controls:SettingsRow>
                 <Border Classes="divider-row" />
                 <TextBlock x:Name="CaptureRecorderStatus"
+                           IsVisible="False"
                            FontSize="12"
                            Foreground="{DynamicResource Brush.Text.Secondary}"
                            Margin="14,10"
@@ -27,6 +28,7 @@
                 </controls:SettingsRow>
                 <Border Classes="divider-row" />
                 <TextBlock x:Name="PasteRecorderStatus"
+                           IsVisible="False"
                            FontSize="12"
                            Foreground="{DynamicResource Brush.Text.Secondary}"
                            Margin="14,10"
@@ -38,6 +40,6 @@
                    Foreground="{DynamicResource Brush.Text.Secondary}"
                    Margin="4,0,0,0"
                    TextWrapping="Wrap"
-                   Text="录制期间全局热键会临时注销，因此可以安全地重新录制当前正在生效的组合。F1–F12 可单独绑定为单键热键，它会全局接管该键，请谨慎选择。" />
+                   Text="点击方框开始录制；支持 Ctrl/Shift/Alt/Win 加字母、数字、标点、导航键、小键盘、功能键或多媒体键。F1–F11 可单独绑定，会全局接管该键，请谨慎选择；F12 为系统保留键。&#10;录制期间全局热键会临时注销，因此可以安全地重新录制当前正在生效的组合。" />
     </StackPanel>
 </UserControl>

@@ -39,6 +39,7 @@ public partial class NaniKoreApp : Application
     private IClassicDesktopStyleApplicationLifetime? _desktop;
     private GlobalHotkeyWindow? _captureHotkey;
     private GlobalHotkeyWindow? _pasteHotkey;
+    private readonly HashSet<HotkeySlot> _recordingHotkeySlots = [];
     private OcrHttpServer? _ocrHttpServer;
     private ProviderFactory? _providerFactory;
     private TrayIconHost? _trayIcon;
@@ -864,12 +865,23 @@ public partial class NaniKoreApp : Application
         _providerFactory?.Dispose();
         _providerFactory = new ProviderFactory(next, _secretStore);
 
-        if (!string.Equals(oldConfig.Hotkeys.Capture, next.Hotkeys.Capture, StringComparison.OrdinalIgnoreCase))
+        var captureChanged = !string.Equals(oldConfig.Hotkeys.Capture, next.Hotkeys.Capture, StringComparison.OrdinalIgnoreCase);
+        var pasteChanged = !string.Equals(oldConfig.Hotkeys.Paste, next.Hotkeys.Paste, StringComparison.OrdinalIgnoreCase);
+        // 先释放所有变更槽位，再独立注册，允许两个热键交换或移到刚腾出的组合。
+        if (captureChanged)
+        {
+            ReleaseHotkey(HotkeySlot.Capture);
+        }
+        if (pasteChanged)
+        {
+            ReleaseHotkey(HotkeySlot.Paste);
+        }
+
+        if (captureChanged)
         {
             TryRegisterHotkey(HotkeySlot.Capture);
         }
-
-        if (!string.Equals(oldConfig.Hotkeys.Paste, next.Hotkeys.Paste, StringComparison.OrdinalIgnoreCase))
+        if (pasteChanged)
         {
             TryRegisterHotkey(HotkeySlot.Paste);
         }
@@ -909,6 +921,12 @@ public partial class NaniKoreApp : Application
         // 关键调度：全局热键底层消息泵在后台工作线程触发，必须调度到 Avalonia UI 线程执行窗口创建与交互
         Dispatcher.UIThread.Post(() =>
         {
+            // 注销前已排队的热键消息也不能打断录制。
+            if (_recordingHotkeySlots.Count > 0)
+            {
+                return;
+            }
+
             if (slot == HotkeySlot.Paste)
             {
                 OnPasteHotkeyPressed();
@@ -930,7 +948,7 @@ public partial class NaniKoreApp : Application
     {
         var gesture = CurrentGesture(slot);
         ReleaseHotkey(slot);
-        if (!HotkeyGesture.IsEnabled(gesture))
+        if (_recordingHotkeySlots.Count > 0 || !HotkeyGesture.IsEnabled(gesture))
         {
             return;
         }
@@ -960,22 +978,29 @@ public partial class NaniKoreApp : Application
     {
         if (state.Recording)
         {
-            ReleaseHotkey(state.Slot);
+            _recordingHotkeySlots.Add(state.Slot);
+            // 任一录制器活动时都释放两个槽位，避免另一槽位吞掉待录制的组合。
+            ReleaseHotkey(HotkeySlot.Capture);
+            ReleaseHotkey(HotkeySlot.Paste);
             return;
         }
 
-        if (HotkeyWindow(state.Slot) is not null)
+        if (!_recordingHotkeySlots.Remove(state.Slot) || _recordingHotkeySlots.Count > 0)
         {
             return;
         }
 
-        try
+        // 最后一个录制器结束后只恢复已提交配置；每个槽位独立报错，不回退旧绑定。
+        foreach (var slot in new[] { HotkeySlot.Capture, HotkeySlot.Paste })
         {
-            RegisterHotkey(state.Slot);
-        }
-        catch (Exception exception)
-        {
-            _trayIcon?.ShowWarning($"恢复{DescribeHotkey(state.Slot)}热键失败：{exception.Message}");
+            try
+            {
+                RegisterHotkey(slot);
+            }
+            catch (Exception exception)
+            {
+                _trayIcon?.ShowWarning($"恢复{DescribeHotkey(slot)}热键失败：{exception.Message}");
+            }
         }
     }
 

@@ -126,7 +126,7 @@ internal sealed class HotkeyRecorderBox : TemplatedControl
         RecordingChanged?.Invoke(this, true);
         StatusChanged?.Invoke(this, AllowUnbind
             ? "正在录制：按下新组合，或按 Esc 解除绑定。"
-            : "正在录制：按下修饰键加一个普通键，Esc 取消。");
+            : "正在录制：按下新组合，F1–F11 可单独绑定，Esc 取消。");
     }
 
     /// <summary>取消录制并恢复进入录制前的组合，绝不留下空热键。</summary>
@@ -150,10 +150,9 @@ internal sealed class HotkeyRecorderBox : TemplatedControl
         }
 
         const uint vkEscape = 0x1B;
-        const uint vkBack = 0x08;
-        const uint vkDelete = 0x2E;
 
-        if (keyCode == vkEscape)
+        // 只有裸 Esc 执行取消/解绑，Ctrl+Esc 等组合仍可录制。
+        if (keyCode == vkEscape && modifiers == 0)
         {
             if (AllowUnbind)
             {
@@ -163,14 +162,6 @@ internal sealed class HotkeyRecorderBox : TemplatedControl
             }
 
             CancelRecording();
-            return;
-        }
-
-        if (keyCode is vkBack or vkDelete)
-        {
-            StatusChanged?.Invoke(this, AllowUnbind
-                ? "请直接录制新的组合，或按 Esc 解除绑定。"
-                : "热键不能为空；请直接录制新的组合或按 Esc 取消。");
             return;
         }
 
@@ -252,11 +243,66 @@ internal sealed class HotkeyRecorderBox : TemplatedControl
 
     private string ResolveDisplayText() => Gesture is { Length: > 0 } gesture ? gesture : EmptyHint;
 
-    private static uint ToVirtualKey(Key key) => key switch
+    internal static uint ToVirtualKey(Key key) => key switch
     {
         >= Key.A and <= Key.Z => (uint)('A' + (key - Key.A)),
         >= Key.D0 and <= Key.D9 => (uint)('0' + (key - Key.D0)),
         >= Key.F1 and <= Key.F24 => 0x70 + (uint)(key - Key.F1),
+        >= Key.NumPad0 and <= Key.NumPad9 => 0x60 + (uint)(key - Key.NumPad0),
+        Key.Tab => 0x09,
+        Key.Clear => 0x0C,
+        Key.Pause => 0x13,
+        Key.CapsLock => 0x14,
+        Key.PageUp => 0x21,
+        Key.PageDown => 0x22,
+        Key.End => 0x23,
+        Key.Home => 0x24,
+        Key.Left => 0x25,
+        Key.Up => 0x26,
+        Key.Right => 0x27,
+        Key.Down => 0x28,
+        Key.PrintScreen => 0x2C,
+        Key.Insert => 0x2D,
+        Key.Apps => 0x5D,
+        Key.Multiply => 0x6A,
+        Key.Add => 0x6B,
+        Key.Separator => 0x6C,
+        Key.Subtract => 0x6D,
+        Key.Decimal => 0x6E,
+        Key.Divide => 0x6F,
+        Key.NumLock => 0x90,
+        Key.Scroll => 0x91,
+        Key.BrowserBack => 0xA6,
+        Key.BrowserForward => 0xA7,
+        Key.BrowserRefresh => 0xA8,
+        Key.BrowserStop => 0xA9,
+        Key.BrowserSearch => 0xAA,
+        Key.BrowserFavorites => 0xAB,
+        Key.BrowserHome => 0xAC,
+        Key.VolumeMute => 0xAD,
+        Key.VolumeDown => 0xAE,
+        Key.VolumeUp => 0xAF,
+        Key.MediaNextTrack => 0xB0,
+        Key.MediaPreviousTrack => 0xB1,
+        Key.MediaStop => 0xB2,
+        Key.MediaPlayPause => 0xB3,
+        Key.LaunchMail => 0xB4,
+        Key.SelectMedia => 0xB5,
+        Key.LaunchApplication1 => 0xB6,
+        Key.LaunchApplication2 => 0xB7,
+        Key.OemSemicolon => 0xBA,
+        Key.OemPlus => 0xBB,
+        Key.OemComma => 0xBC,
+        Key.OemMinus => 0xBD,
+        Key.OemPeriod => 0xBE,
+        Key.OemQuestion => 0xBF,
+        Key.OemTilde => 0xC0,
+        Key.OemOpenBrackets => 0xDB,
+        Key.OemPipe => 0xDC,
+        Key.OemCloseBrackets => 0xDD,
+        Key.OemQuotes => 0xDE,
+        Key.Oem8 => 0xDF,
+        Key.OemBackslash => 0xE2,
         Key.Escape => 0x1B,
         Key.Back => 0x08,
         Key.Delete => 0x2E,

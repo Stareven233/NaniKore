@@ -54,9 +54,6 @@ internal sealed partial class SettingsWindow : Window
     private readonly NavigationItem _translationNav;
     private readonly DispatcherTimer _successStatusTimer;
 
-    /// <summary>业务配置是否已成功落盘；决定关闭时尺寸记录克隆哪份副本。</summary>
-    private bool _settingsSaved;
-
     /// <summary>尺寸比较容差：吸收不同 DPI 下 Bounds 的取整漂移，偏差小于该值视为未变化。</summary>
     private const double SizeEpsilon = 1.0;
 
@@ -206,10 +203,8 @@ internal sealed partial class SettingsWindow : Window
 
         try
         {
-            _save(_working);
-            // 仅在业务配置落盘成功后置位：校验失败或写盘抛错时保持 false，
-            // 关闭流程的尺寸记录才会退回初始快照而不是污染后的 _working。
-            _settingsSaved = true;
+            // 提交独立快照，避免后续页面编辑直接修改宿主持有的已提交配置。
+            _save(AppConfigCloner.Clone(_working));
             if (_translationNav.IsCreated && _translationNav.GetOrCreatePage(_working) is TranslationPage translationPage)
             {
                 translationPage.SaveSecrets();
@@ -260,10 +255,8 @@ internal sealed partial class SettingsWindow : Window
             return;
         }
 
-        // 尺寸回写的基线必须是“当前最新的配置”：保存过业务配置时以 _working 为准
-        // （其内容已随保存落盘，只叠加尺寸）；没保存过时 _working 里只有未保存的页面编辑，
-        // 必须改用实时配置——打开时的快照可能已被其他入口改写，整份写回会静默回滚。
-        var baseline = ResolveCloseWriteBackBaseline(_settingsSaved, _working, _currentConfig());
+        // 始终以最新已提交配置为基线，避免后续被拒绝的编辑或旧快照随尺寸写回。
+        var baseline = _currentConfig();
         if (ResolvePersistedSize(baseline.Windows, Bounds.Width, Bounds.Height, MinWidth, MinHeight) is not { } size)
         {
             return;
@@ -280,19 +273,6 @@ internal sealed partial class SettingsWindow : Window
         {
             // 尺寸记忆是尽力而为的：关闭流程不该因写盘失败而中断。
         }
-    }
-
-    /// <summary>
-    /// 关闭时尺寸回写的基线决策：已保存过业务配置时以编辑副本 <paramref name="working"/> 为准
-    /// （其内容已随保存落盘，只叠加尺寸）；未保存时必须取 <paramref name="latest"/> 实时配置，
-    /// 避免打开时的快照覆盖其他入口期间的写盘。未保存的页面编辑只存在于 <paramref name="working"/>，
-    /// 选用 <paramref name="latest"/> 即可天然丢弃，不夹带任何业务字段。
-    /// </summary>
-    internal static AppConfig ResolveCloseWriteBackBaseline(bool settingsSaved, AppConfig working, AppConfig latest)
-    {
-        ArgumentNullException.ThrowIfNull(working);
-        ArgumentNullException.ThrowIfNull(latest);
-        return settingsSaved ? working : latest;
     }
 
     /// <summary>
