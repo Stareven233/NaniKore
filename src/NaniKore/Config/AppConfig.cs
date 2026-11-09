@@ -64,6 +64,9 @@ internal sealed class GeneralConfig
     /// <summary>识别完成（OCR/选取）后是否自动为原文叠加注音；关闭时原文只呈现纯文本，由面板按钮显式触发。</summary>
     public bool AutoAnnotate { get; set; } = true;
 
+    /// <summary>本地资源闲置多久后回收；非负整数秒或 s/m/h，0 表示永不回收。</summary>
+    public string LocalResourceIdleTimeout { get; set; } = "0";
+
     public string TargetLanguage { get; set; } = "中文（简体）";
 
     /// <summary>开发者选项：本地 OCR HTTP 监听地址（格式 host:port，如 127.0.0.1:23335 或 0.0.0.0:23335），留空不启用。</summary>
@@ -240,6 +243,7 @@ internal static class AppConfigCloner
             AutoExplain = source.General.AutoExplain,
             AutoAnnotate = source.General.AutoAnnotate,
             TargetLanguage = source.General.TargetLanguage,
+            LocalResourceIdleTimeout = source.General.LocalResourceIdleTimeout,
             OcrListen = source.General.OcrListen,
         },
         Pipeline = new PipelineConfig

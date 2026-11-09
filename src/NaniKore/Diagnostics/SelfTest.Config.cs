@@ -53,6 +53,8 @@ internal static partial class SelfTest
 
     private static void RunConfigTests()
     {
+        TestResourceIdleDurationParsing();
+        TestResourceIdleDurationConfigRoundTrip();
         TestConfigRoundTrip();
         TestResultPanelSizeConfigRoundTrip();
         TestSharedBackgroundConfigRoundTrip();
@@ -72,6 +74,93 @@ internal static partial class SelfTest
         // TestAboutPageDisplaysTemplateAndConfigVersions(); // 待 P4 关于页迁移至 Avalonia 后接回
         TestFavoritesDefaultDatabasePath();
         // TestApplicationIconResource(); // 待 P2 平台服务迁移至 Avalonia 后接回
+    }
+
+    /// <summary>统一时长语法覆盖单位、零值与整数 tick 上限，拒绝符号、小数及内部空白。</summary>
+    private static void TestResourceIdleDurationParsing()
+    {
+        foreach (var (text, ticks) in new[]
+        {
+            ("0", 0L), ("0h", 0L), ("30", 30 * TimeSpan.TicksPerSecond),
+            (" 30S ", 30 * TimeSpan.TicksPerSecond), ("10m", 10 * TimeSpan.TicksPerMinute),
+            ("24H", 24 * TimeSpan.TicksPerHour), ("001s", TimeSpan.TicksPerSecond),
+        })
+        {
+            Check($"resource idle duration parses {text}",
+                ResourceIdleDuration.TryParse(text, out var timeout) && timeout.Ticks == ticks);
+        }
+
+        // 每种单位都检查最大整数值与紧邻的溢出值，防止乘法溢出或浮点精度丢失。
+        foreach (var (suffix, unitTicks) in new[]
+        {
+            ("", TimeSpan.TicksPerSecond), ("s", TimeSpan.TicksPerSecond),
+            ("m", TimeSpan.TicksPerMinute), ("h", TimeSpan.TicksPerHour),
+        })
+        {
+            var max = TimeSpan.MaxValue.Ticks / unitTicks;
+            Check($"resource idle duration accepts the {suffix} boundary",
+                ResourceIdleDuration.TryParse($"{max}{suffix}", out var timeout) && timeout.Ticks == max * unitTicks);
+            Check($"resource idle duration rejects overflow in {suffix}",
+                !ResourceIdleDuration.TryParse($"{max + 1}{suffix}", out _));
+        }
+
+        foreach (var text in new string?[]
+        {
+            null, "", "  ", "-1", "-0", "+1", "1.5", "1.5h", "1 s", "1\tm", "s", "1d", "1ms",
+            "1m30s", "1e3", "1\0", "１２s", "9223372036854775808", "999999999999999999999999h",
+        })
+        {
+            Check($"resource idle duration rejects '{text ?? "<null>"}'",
+                !ResourceIdleDuration.TryParse(text, out var timeout) && timeout == TimeSpan.Zero);
+        }
+    }
+
+    /// <summary>默认、修整、克隆隔离与 YAML 读写采用同一时长契约。</summary>
+    private static void TestResourceIdleDurationConfigRoundTrip()
+    {
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
+        {
+            var configPath = Path.Combine(dataDirectory, "config.yaml");
+            File.WriteAllText(configPath, "general: {}\n");
+            var defaults = new ConfigStore(dataDirectory, templateDirectory);
+            Check("missing resource idle duration defaults to never without warnings",
+                defaults.Current.General.LocalResourceIdleTimeout == "0" && defaults.LoadWarning is null);
+
+            File.WriteAllText(configPath, "general:\n  local_resource_idle_timeout: ' 10M '\n");
+            var store = new ConfigStore(dataDirectory, templateDirectory);
+            var clone = AppConfigCloner.Clone(store.Current);
+            Check("resource idle duration loads normalized and clones independently",
+                store.Current.General.LocalResourceIdleTimeout == "10m" && store.LoadWarning is null &&
+                clone.General.LocalResourceIdleTimeout == "10m" && !ReferenceEquals(clone.General, store.Current.General));
+            clone.General.LocalResourceIdleTimeout = " 24H ";
+            Check("editing cloned resource idle duration leaves original untouched",
+                store.Current.General.LocalResourceIdleTimeout == "10m");
+            store.AtomicWrite(clone);
+            var reloaded = new ConfigStore(dataDirectory, templateDirectory);
+            Check("resource idle duration persists under its general snake-case key",
+                reloaded.Current.General.LocalResourceIdleTimeout == "24h" && reloaded.LoadWarning is null &&
+                File.ReadAllText(configPath).Contains("local_resource_idle_timeout: 24h", StringComparison.Ordinal));
+
+            foreach (var invalid in new[] { "~", "''", "'   '", "'-1'", "'1.5m'", "'9223372036854775807h'" })
+            {
+                File.WriteAllText(configPath, $"general:\n  target_language: English\n  local_resource_idle_timeout: {invalid}\n");
+                var loaded = new ConfigStore(dataDirectory, templateDirectory);
+                Check($"invalid YAML idle duration {invalid} warns and resets only that field",
+                    loaded.Current.General.LocalResourceIdleTimeout == "0" &&
+                    loaded.Current.General.TargetLanguage == "English" &&
+                    loaded.LoadWarning == "config.yaml 中的非法配置已回落到默认值。");
+            }
+
+            foreach (var value in new string?[] { "0", "30s", "10m", "24h", null, "", "invalid" })
+            {
+                store.Current.General.LocalResourceIdleTimeout = value!;
+                store.AtomicWrite(store.Current);
+                var loaded = new ConfigStore(dataDirectory, templateDirectory);
+                var expected = ResourceIdleDuration.TryParse(value, out _) ? value : "0";
+                Check($"resource idle duration write round-trip handles '{value ?? "<null>"}'",
+                    loaded.Current.General.LocalResourceIdleTimeout == expected && loaded.LoadWarning is null);
+            }
+        });
     }
 
     /// <summary>共用背景配置：缺省、路径修整、独立克隆与写盘往返均保留约定。</summary>

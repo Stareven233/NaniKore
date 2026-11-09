@@ -49,6 +49,8 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         UiFontBox.TemplateApplied += OnFontBoxTemplateApplied;
         PromptFontBox.TemplateApplied += OnFontBoxTemplateApplied;
 
+        LocalResourceIdleTimeoutBox.ItemsSource = new[] { "0", "30s", "10m", "24h" };
+
         DownloadDependenciesButton.Click += OnDownloadDependenciesClick;
         PhoneticsDownloadJa.Click += OnDownloadPhoneticsClick;
         PhoneticsDownloadEn.Click += OnDownloadPhoneticsClick;
@@ -76,6 +78,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     public void Load(AppConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
+        LocalResourceIdleTimeoutBox.Text = config.General.LocalResourceIdleTimeout;
         BackgroundImageBox.Text = config.Windows.BackgroundImage;
         BackgroundBlurBox.Value = (decimal)config.Windows.BackgroundBlur;
         BackgroundOpacityBox.Value = (decimal)(config.Windows.BackgroundOpacity * 100);
@@ -97,6 +100,11 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
 
     public string? Validate()
     {
+        if (!ResourceIdleDuration.TryParse(LocalResourceIdleTimeoutBox.Text, out _))
+        {
+            return "本地资源闲置回收时长必须为非负整数秒，或整数加 s / m / h（如 30s、10m、24h）；0 表示永不回收，时长超出支持范围时无法保存。";
+        }
+
         if (BackgroundBlurBox.Value is not (>= 0 and <= 100) ||
             BackgroundOpacityBox.Value is not (>= 0 and <= 100) ||
             PanelBackgroundOpacityBox.Value is not (>= 0 and <= 100))
@@ -123,6 +131,8 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     public void Apply(AppConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
+        // 由 Validate 拦截非法输入；读 Text 保留自定义时长，不能把未选中的手填值换成预设。
+        config.General.LocalResourceIdleTimeout = LocalResourceIdleTimeoutBox.Text?.Trim().ToLowerInvariant() ?? string.Empty;
         config.Windows.BackgroundImage = BackgroundImageBox.Text?.Trim() ?? string.Empty;
         config.Windows.BackgroundBlur = (double)(BackgroundBlurBox.Value ?? 0);
         config.Windows.BackgroundOpacity = (double)(BackgroundOpacityBox.Value ?? 100) / 100;

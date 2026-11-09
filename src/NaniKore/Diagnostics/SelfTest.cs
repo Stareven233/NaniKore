@@ -30,6 +30,7 @@ internal static partial class SelfTest
         _failed = 0;
         Failures.Clear();
 
+        RunIdleResourceTests();
         RunOcrTests();
         RunConfigTests();
         RunInputTests();

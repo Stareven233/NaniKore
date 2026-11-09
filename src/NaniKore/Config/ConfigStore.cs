@@ -180,6 +180,17 @@ internal sealed class ConfigStore
         config.Fonts.Ui ??= string.Empty;
         config.Fonts.Prompt ??= string.Empty;
 
+        // 手工配置无效时沿用读取提醒；设置页则在保存前显式校验，不能静默吞掉输入错误。
+        if (!ResourceIdleDuration.TryParse(config.General.LocalResourceIdleTimeout, out _))
+        {
+            config.General.LocalResourceIdleTimeout = "0";
+            normalized = true;
+        }
+        else
+        {
+            config.General.LocalResourceIdleTimeout = config.General.LocalResourceIdleTimeout.Trim().ToLowerInvariant();
+        }
+
         if (string.IsNullOrWhiteSpace(config.General.TargetLanguage))
         {
             config.General.TargetLanguage = "中文（简体）";

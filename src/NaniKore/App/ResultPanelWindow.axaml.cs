@@ -598,15 +598,6 @@ internal sealed partial class ResultPanelWindow : Window
             return;
         }
 
-        if (!annotator.IsAvailable)
-        {
-            if (manual)
-            {
-                ShowStatusSafe($"未安装{displayName}词典，请前往设置-通用-原文注音下载；当前以纯文本展示原文。");
-            }
-            return;
-        }
-
         _annotationCancellation?.Cancel();
         var cancellation = new CancellationTokenSource();
         _annotationCancellation = cancellation;
@@ -615,10 +606,24 @@ internal sealed partial class ResultPanelWindow : Window
         {
             var spans = await Task.Run(() =>
             {
+                // 空闲释放后首次查询会重载词典，连同可用性探测一起放到后台，避免阻塞窗口。
+                if (!annotator.IsAvailable)
+                {
+                    return null;
+                }
                 var wordCount = annotator.CountWords(plain);
                 var profile = AnnotationProfile.Load(languageCode, _phonetics.Enabled, _phonetics.RareOnly, wordCount);
                 return annotator.Annotate(plain, new AnnotationContext(profile));
             }, cancellation.Token);
+
+            if (spans is null)
+            {
+                if (manual && !cancellation.IsCancellationRequested)
+                {
+                    ShowStatusSafe($"未安装{displayName}词典，请前往设置-通用-原文注音下载；当前以纯文本展示原文。");
+                }
+                return;
+            }
 
             if (!Dispatcher.UIThread.CheckAccess())
             {

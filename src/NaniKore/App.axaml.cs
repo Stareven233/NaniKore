@@ -17,6 +17,7 @@ using NaniKore.Input;
 using NaniKore.Interop;
 using NaniKore.Ocr;
 using NaniKore.Ocr.Models;
+using NaniKore.Runtime;
 using NaniKore.Overlay;
 using NaniKore.Phonetics;
 using NaniKore.Translation;
@@ -32,13 +33,12 @@ public partial class NaniKoreApp : Application
 {
     private readonly SecretStore _secretStore = new();
     private readonly IFavoriteService _favoriteService = new SqliteFavoriteService();
-    private readonly object _ocrEngineGate = new();
+    private readonly IdleResource<OcrEngine> _ocrEngine = new(OcrEngine.CreateDefault);
 
     private ConfigStore _configStore = null!;
     private IClassicDesktopStyleApplicationLifetime? _desktop;
     private GlobalHotkeyWindow? _captureHotkey;
     private GlobalHotkeyWindow? _pasteHotkey;
-    private OcrEngine? _ocrEngine;
     private OcrHttpServer? _ocrHttpServer;
     private ProviderFactory? _providerFactory;
     private TrayIconHost? _trayIcon;
@@ -88,6 +88,7 @@ public partial class NaniKoreApp : Application
         }
 
         _configStore = new ConfigStore(AppPaths.DataDirectory);
+        ConfigureLocalResourceCache(_configStore.Current);
         // 字体族必须在任何窗口创建之前写入应用资源（issue 033）：DynamicResource 在控件构造期允许暂缺，
         // 但首帧就在此写入才能避免闪烁，且内置样式不再持有任何字体常量。
         FontResources.Apply(_configStore.Current.Fonts);
@@ -137,7 +138,8 @@ public partial class NaniKoreApp : Application
         _trayIcon?.Dispose();
         _ocrHttpServer?.Dispose();
         _providerFactory?.Dispose();
-        _ocrEngine?.Dispose();
+        _ocrEngine.Dispose();
+        PhoneticAnnotatorRegistryHolder.Default.Dispose();
         _captureHotkey?.Dispose();
         _pasteHotkey?.Dispose();
         ThemeManager.Shutdown();
@@ -228,7 +230,7 @@ public partial class NaniKoreApp : Application
             OcrResult result;
             try
             {
-                result = await Task.Run(() => GetOcrEngine().Recognize(cropped));
+                result = await Task.Run(() => RecognizeWithCachedEngine(cropped));
             }
             catch (Exception exception)
             {
@@ -292,7 +294,7 @@ public partial class NaniKoreApp : Application
 
             var outcome = await Task.Run(() => ClipboardInputSource.Acquire(
                 imageRoute,
-                bitmap => GetOcrEngine().Recognize(bitmap)));
+                RecognizeWithCachedEngine));
 
             if (outcome.Kind == PasteInputKind.Empty)
             {
@@ -824,6 +826,7 @@ public partial class NaniKoreApp : Application
     {
         var oldConfig = _configStore.Current;
         _configStore.AtomicWrite(next);
+        ConfigureLocalResourceCache(next);
         // 字体热刷新：DynamicResource 自动重绘已存在的控件，无需重启。
         FontResources.Apply(next.Fonts);
         WindowBackgroundResources.Apply(next.Windows);
@@ -974,12 +977,18 @@ public partial class NaniKoreApp : Application
         PhoneticAnnotatorRegistryHolder.ResetAvailability(languageCode);
     }
 
-    private OcrEngine GetOcrEngine()
+    private OcrResult RecognizeWithCachedEngine(SKBitmap bitmap) =>
+        _ocrEngine.Use(engine => engine.Recognize(bitmap));
+
+    private void ConfigureLocalResourceCache(AppConfig config)
     {
-        lock (_ocrEngineGate)
+        // ConfigStore 已校验配置；零时长保留资源，其他值按资源各自最后使用结束时间回收。
+        if (!ResourceIdleDuration.TryParse(config.General.LocalResourceIdleTimeout, out var timeout))
         {
-            return _ocrEngine ??= OcrEngine.CreateDefault();
+            throw new InvalidOperationException("本地资源空闲时长尚未通过配置校验。");
         }
+        _ocrEngine.Configure(timeout);
+        PhoneticAnnotatorRegistryHolder.Default.ConfigureIdleTimeout(timeout);
     }
 
     private void CancelTranslation()
@@ -1021,7 +1030,7 @@ public partial class NaniKoreApp : Application
 
         try
         {
-            _ocrHttpServer = new OcrHttpServer(listenAddress, bitmap => GetOcrEngine().Recognize(bitmap));
+            _ocrHttpServer = new OcrHttpServer(listenAddress, RecognizeWithCachedEngine);
             Console.WriteLine($"OCR HTTP service listening on {_ocrHttpServer.EndpointDescription}");
         }
         catch (Exception ex)

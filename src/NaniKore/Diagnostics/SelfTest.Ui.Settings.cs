@@ -36,6 +36,7 @@ internal static partial class SelfTest
     {
         EnsureThemedApplication();
         TestSettingsPagesUseAdaptiveLayout();
+        TestGeneralPageResourceIdleDuration();
         TestGeneralPagePipelineDependencyVisibility();
         TestGeneralPagePhoneticsCards();
         TestWindowBackgroundConfiguration();
@@ -197,6 +198,48 @@ internal static partial class SelfTest
             FindDescendants<HotkeyRecorderBox>(hotkeys.View).Distinct().Count() == 2 &&
             Find<HotkeyRecorderBox>(hotkeys, "CaptureRecorder") is { Gesture: "Ctrl+Shift+A", AllowUnbind: false } &&
             Find<HotkeyRecorderBox>(hotkeys, "PasteRecorder") is { Gesture: "F1", AllowUnbind: true });
+    }
+
+    /// <summary>回收设置始终可见；自定义输入先报错再保存，绝不以默认值吞掉非法输入。</summary>
+    private static void TestGeneralPageResourceIdleDuration()
+    {
+        var page = new GeneralPage();
+        var config = new AppConfig();
+        page.Load(config);
+        var box = Find<AutoCompleteBox>(page, "LocalResourceIdleTimeoutBox")!;
+        Check("general page loads the never-reclaim default and duration presets",
+            box.Text == "0" && box.ItemsSource!.Cast<string>().SequenceEqual(new[] { "0", "30s", "10m", "24h" }) &&
+            !box.IsTextCompletionEnabled && page.Validate() is null);
+
+        foreach (var mode in new[] { "local_ocr", "vision_oneshot" })
+        {
+            page.SetPipelineMode(mode);
+            Check($"local resource settings remain visible in {mode}",
+                Find<Control>(page, "LocalResourcesGroup") is { IsVisible: true } && box.IsVisible);
+        }
+
+        config.General.LocalResourceIdleTimeout = "24h";
+        page.Load(config);
+        Check("general page loads the configured resource idle duration", box.Text == "24h");
+        foreach (var invalid in new[] { "", " ", "-1", "1.5m", "1 s", "9223372036854775807h" })
+        {
+            box.Text = invalid;
+            Check($"general page rejects idle duration '{invalid}' without normalizing input or configuration",
+                page.Validate() is { } error && error.Contains("闲置回收", StringComparison.Ordinal) &&
+                box.Text == invalid && config.General.LocalResourceIdleTimeout == "24h");
+        }
+
+        foreach (var (input, expected) in new[] { (" 7M ", "7m"), ("42", "42"), ("0", "0") })
+        {
+            box.Text = input;
+            var applied = AppConfigCloner.Clone(config);
+            Check($"general page accepts custom idle duration '{input}'", page.Validate() is null);
+            page.Apply(applied);
+            Check($"general page saves trimmed lowercase idle duration '{expected}' without mutating source",
+                applied.General.LocalResourceIdleTimeout == expected && config.General.LocalResourceIdleTimeout == "24h");
+            page.Load(applied);
+            Check($"general page reloads applied idle duration '{expected}'", box.Text == expected);
+        }
     }
 
     /// <summary>

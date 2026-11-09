@@ -120,6 +120,20 @@
             </StackPanel>
         </controls:SettingsGroup>
 
+        <!-- OCR 与注音共用回收策略，独立于当前流水线模式，始终显示。 -->
+        <controls:SettingsGroup x:Name="LocalResourcesGroup" Header="本地资源">
+            <controls:SettingsRow Header="闲置回收时长"
+                                  Description="本地 OCR 与注音资源闲置后释放内存，下次使用需重新加载，可能稍有延迟。可输入整数秒或 s / m / h；0 永不回收，30s 为 30 秒，10m 为 10 分钟，24h 为 24 小时。"
+                                  ContentWidth="160">
+                <AutoCompleteBox x:Name="LocalResourceIdleTimeoutBox"
+                                 Width="160"
+                                 PlaceholderText="0 = 永不回收"
+                                 MinimumPrefixLength="0"
+                                 FilterMode="Contains"
+                                 IsTextCompletionEnabled="False" />
+            </controls:SettingsRow>
+        </controls:SettingsGroup>
+
         <controls:SettingsGroup x:Name="LocalOcrDependenciesGroup" Header="本地 OCR 依赖">
             <StackPanel>
                 <controls:SettingsRow Header="模型与运行库"

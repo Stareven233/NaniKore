@@ -9,7 +9,7 @@ namespace NaniKore.Phonetics;
 ///   - 含假名或纯汉字（无简体特征）→ 日语候选；命中简体独占字 → 中文（简体）；
 ///   - 注音是源文阅读辅助，与目标语言解耦，不再做旧提示词时代的目标语言互斥剪枝。
 /// </summary>
-internal sealed class TextAnnotatorRegistry
+internal sealed class TextAnnotatorRegistry : IDisposable
 {
     private readonly Dictionary<string, ITextAnnotator> _annotators;
 
@@ -26,10 +26,30 @@ internal sealed class TextAnnotatorRegistry
     public static TextAnnotatorRegistry CreateDefault() =>
         new(
         [
-            new JapaneseFuriganaAnnotator(),
-            new EnglishIpaAnnotator(),
-            new ChinesePinyinAnnotator()
+            new CachedTextAnnotator<JapaneseFuriganaAnnotator>("ja", static () => new()),
+            new CachedTextAnnotator<EnglishIpaAnnotator>("en", static () => new()),
+            new CachedTextAnnotator<ChinesePinyinAnnotator>("zh", static () => new())
         ]);
+
+    /// <summary>共用策略、分语言计时；设置保存后按已有空闲时长重新判断。</summary>
+    public void ConfigureIdleTimeout(TimeSpan timeout)
+    {
+        foreach (var annotator in _annotators.Values)
+        {
+            if (annotator is IIdleTextAnnotator cached)
+            {
+                cached.ConfigureIdleTimeout(timeout);
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        foreach (var annotator in _annotators.Values)
+        {
+            (annotator as IDisposable)?.Dispose();
+        }
+    }
 
     /// <summary>指定语言标注器；未装配或缺词典时为 null。</summary>
     public ITextAnnotator? GetAnnotator(string? languageCode)
