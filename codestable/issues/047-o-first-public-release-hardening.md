@@ -28,7 +28,7 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 | 编号 | 优先级 | 事项 | 状态 |
 | --- | --- | --- | --- |
 | R01 | P1 | 注音词典下载后的文件移动冲突 | 已修复并验证 |
-| R02 | P1 | 剪贴板文件列表还原丢失 | 待修复 |
+| R02 | P1 | 剪贴板文件列表还原丢失 | 已修复并验证 |
 | R03 | P1 | 取消翻译后新输入的按钮状态 | 待修复 |
 | R04 | P1 | 收藏数据库异常的 UI 隔离 | 待修复 |
 | R05 | P1 | 翻译重定向与凭据传输边界 | 待修复 |
@@ -64,13 +64,22 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 
 **复现场景：** 资源管理器复制文件 → 切到不响应 Ctrl+C 的窗口 → 触发选取翻译 → 等待超时 → 回资源管理器粘贴。
 
-**代码依据：** [PasteInputAcquirer.cs](../../src/NaniKore/Input/PasteInputAcquirer.cs) 的 Win32 快照与还原。`CF_HDROP` 只记录空的 `FileDrop` 标记；还原先 `EmptyClipboard()`，再跳过该格式，无法还原文件列表。
+**代码依据与根因：** [PasteInputAcquirer.cs](../../src/NaniKore/Input/PasteInputAcquirer.cs) 的 Win32 快照与还原。修复前 `CF_HDROP` 只记录空的 `FileDrop` 标记；还原先 `EmptyClipboard()`，再跳过该格式，无法还原文件列表。现已保留完整 HGLOBAL 数据块，并使用标准 `CF_HDROP` ID 写回。
 
 **处理与验收：**
 
-- [ ] 保留并正确恢复 `CF_HDROP` 的真实数据，复核相关文件复制格式的往返行为。
-- [ ] 增加上述场景的真实 Win32 回归，不仅依赖假剪贴板测试。
-- [ ] 确认正常文本、图片、自定义格式与新 Ctrl+C 结果仍按原有输入契约处理。
+- [x] 保留并正确恢复 `CF_HDROP` 的真实数据，复核相关文件复制格式的往返行为。
+- [x] 增加上述场景的真实 Win32 回归，不仅依赖假剪贴板测试。
+- [x] 确认正常文本、图片、自定义格式与新 Ctrl+C 结果仍按原有输入契约处理。
+
+**执行记录：**
+
+- 复用原有 HGLOBAL 复制路径，将 `CF_HDROP` 的完整 `DROPFILES` 头和路径数据保存进快照；还原时保留标准格式 ID，不将 `FileDrop` 注册为同名私有格式。文本、位图与注册格式的原有处理路径保持原契约。
+- 新增 [SelfTest.ClipboardFiles.cs](../../src/NaniKore/Diagnostics/SelfTest.ClipboardFiles.cs)，直接通过 Win32 写入文件列表、`Preferred DropEffect`（复制/剪切）及 `Shell IDList Array`。通过真实网关和输入获取状态机执行完整 600ms 轮询超时、空 Ctrl+C 回应还原；使用独立 Shell API `DragQueryFileW` 验证两条含中日文及空格的路径，并逐字节核对上述 Shell 格式。另验证新 Ctrl+C 文本和文件列表不被旧快照覆盖。测试结束恢复原剪贴板，剪贴板不可访问会使本回归失败，不静默跳过。
+- 修复前运行 `./scripts/dev.ps1 test`：4 项路径检查失败，分别覆盖复制/剪切与超时/空回应两组条件；Shell 注册格式仍在，明确复现文件列表单独丢失。
+- 修复后运行 `./scripts/dev.ps1 test -ShowPass`：退出码 0，`All self-tests passed (1662 checks).`；本项真实 Win32 回归全部执行通过，既有文本、图片、自定义格式往返及输入状态机检查也通过。详细输出位于 Git 忽略的 `artifacts/r02-self-test.log`。
+- 回归以无操作复制委托模拟不响应 Ctrl+C 的窗口，不向当前桌面发送按键；路径为测试数据，未实际执行资源管理器粘贴或文件复制。此次证据覆盖真实系统剪贴板和 Shell 路径读取，未进行资源管理器手测或 Native AOT 验证。
+- R02 已完成；整份发布加固事项保持 open。关闭候选：现有剪贴板还原契约应包含文件列表完整往返；稳定输入优先级及终态规则未改变。
 
 相关既有事项：[018](018-o-选中与剪贴板翻译热键.md)、[019](019-o-paste-input-hardening.md)、[021](021-o-clipboard-roundtrip-flake.md)。历史旧实现的往返结果不能代替本项回归。
 

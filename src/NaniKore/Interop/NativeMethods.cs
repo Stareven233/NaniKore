@@ -323,6 +323,7 @@ internal static unsafe partial class NativeMethods
     public const uint CF_BITMAP = 2;
     public const uint CF_DIB = 8;
     public const uint CF_UNICODETEXT = 13;
+    public const uint CF_HDROP = 15;
     public const uint CF_DIBV5 = 17;
 
     public const uint GMEM_FIXED = 0x0000;

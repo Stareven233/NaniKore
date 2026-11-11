@@ -463,17 +463,20 @@ internal sealed class Win32ClipboardGateway : IClipboardGateway
                 }
             }
 
-            // 3. 枚举自定义格式
+            // 3. 文件列表与注册格式均为 HGLOBAL，保留完整数据块及原格式 ID。
+            // CF_HDROP 包含 DROPFILES 头和路径列表，不能只记录格式名，否则清空后无法粘贴文件。
             uint formatId = 0;
             var nameBuffer = new char[256];
             while ((formatId = NativeMethods.EnumClipboardFormats(formatId)) != 0)
             {
-                if (formatId >= 0xC000)
+                if (formatId >= 0xC000 || formatId == NativeMethods.CF_HDROP)
                 {
-                    var len = NativeMethods.GetClipboardFormatNameW(formatId, nameBuffer, nameBuffer.Length);
-                    if (len > 0)
+                    var len = formatId == NativeMethods.CF_HDROP
+                        ? 0
+                        : NativeMethods.GetClipboardFormatNameW(formatId, nameBuffer, nameBuffer.Length);
+                    if (len > 0 || formatId == NativeMethods.CF_HDROP)
                     {
-                        var name = new string(nameBuffer, 0, len);
+                        var name = formatId == NativeMethods.CF_HDROP ? "FileDrop" : new string(nameBuffer, 0, len);
                         var hData = NativeMethods.GetClipboardData(formatId);
                         if (hData != 0)
                         {
@@ -494,10 +497,6 @@ internal sealed class Win32ClipboardGateway : IClipboardGateway
                             }
                         }
                     }
-                }
-                else if (formatId == 15 /* CF_HDROP */)
-                {
-                    formats.Add(new ClipboardFormat("FileDrop", []));
                 }
             }
 
@@ -560,10 +559,10 @@ internal sealed class Win32ClipboardGateway : IClipboardGateway
                 }
             }
 
-            // 3. 写回自定义格式
+            // 3. 写回文件列表及自定义格式，标准格式必须使用原 ID，不能注册同名私有格式。
             foreach (var format in snapshot.Formats)
             {
-                if (format.Format is "UnicodeText" or "Bitmap" or "FileDrop")
+                if (format.Format is "UnicodeText" or "Bitmap")
                 {
                     continue;
                 }
@@ -573,9 +572,7 @@ internal sealed class Win32ClipboardGateway : IClipboardGateway
                     continue;
                 }
 
-                var customId = (format.StandardFormatId.HasValue && format.StandardFormatId.Value >= 0xC000)
-                    ? format.StandardFormatId.Value
-                    : NativeMethods.RegisterClipboardFormatW(format.Format);
+                var customId = format.StandardFormatId ?? NativeMethods.RegisterClipboardFormatW(format.Format);
 
                 if (customId != 0)
                 {

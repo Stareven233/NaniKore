@@ -39,6 +39,7 @@ internal static partial class SelfTest
         TestPasteInputFallbackChain();
         TestClipboardSnapshotRoundTrip();
         TestForeignImageClipboardRoundTrip();
+        TestFileClipboardRoundTrip();
         TestDesktopCapturerAndGeometry();
         TestWin32HotkeyHostLifecycle();
         TestApplicationIconAndComponents();
