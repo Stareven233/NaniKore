@@ -402,13 +402,13 @@ internal sealed partial class ResultPanelWindow : Window
     public void Reset(string source, string status, bool autoTranslate = false, bool autoExplain = false, bool autoAnnotate = true)
     {
         _annotationCancellation?.Cancel();
+        // 新输入立即恢复全部操作按钮，不依赖已取消旧请求的 finally。
+        SetTranslationInProgress(false);
         _autoAnnotate = autoAnnotate;
         _annotatedSource = source;
         SourceTextBox.Text = RubyTextParser.ToPlainText(source);
         _originalEditingText = SourceTextBox.Text ?? string.Empty;
         _receivedAnnotatedSource = false;
-        NormalizeSourceButton.IsEnabled = true;
-        AnnotateSourceButton.IsEnabled = true;
         _isRubyVisible = autoAnnotate;
         TranslateButton.Content = "翻译";
         TranslationTextBox.Clear();

@@ -29,7 +29,7 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 | --- | --- | --- | --- |
 | R01 | P1 | 注音词典下载后的文件移动冲突 | 已修复并验证 |
 | R02 | P1 | 剪贴板文件列表还原丢失 | 已修复并验证 |
-| R03 | P1 | 取消翻译后新输入的按钮状态 | 待修复 |
+| R03 | P1 | 取消翻译后新输入的按钮状态 | 已修复并验证 |
 | R04 | P1 | 收藏数据库异常的 UI 隔离 | 待修复 |
 | R05 | P1 | 翻译重定向与凭据传输边界 | 待修复 |
 | R06 | P1 | 第三方许可与仓库授权 | 待核实并补齐 |
@@ -87,13 +87,22 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 
 **复现场景：** 关闭选取后自动翻译 → 手动启动较慢的翻译 A → 完成前通过热键载入文本 B。
 
-**代码依据：** [ResultPanelWindow.axaml.cs](../../src/NaniKore/App/ResultPanelWindow.axaml.cs) 的 `Reset` 没有恢复翻译按钮；[App.axaml.cs](../../src/NaniKore/App.axaml.cs) 的旧任务 `finally` 有身份检查，接纳新输入后不再恢复旧请求状态。代码分析可确认缺口，尚未真机复现。
+**代码依据与根因：** [ResultPanelWindow.axaml.cs](../../src/NaniKore/App/ResultPanelWindow.axaml.cs) 的 `Reset` 原先没有恢复翻译按钮；[App.axaml.cs](../../src/NaniKore/App.axaml.cs) 的旧任务 `finally` 有身份检查，接纳新输入后不再恢复旧请求状态。现已由 `Reset` 调用 `SetTranslationInProgress(false)` 统一恢复操作状态；该缺口已由真实面板自测复现，尚未进行热键真机复现。
 
 **处理与验收：**
 
-- [ ] 接纳新输入时重置完整操作状态，B 的手动翻译按钮可用。
-- [ ] A 的迟到结果与收尾不能覆盖 B 的内容，也不能干扰 B 已开始的新请求。
-- [ ] 覆盖“进行中 → 取消 → 新输入 → 手动翻译”的状态转换回归。
+- [x] 接纳新输入时重置完整操作状态，B 的手动翻译按钮可用。
+- [x] A 的迟到结果与收尾不能覆盖 B 的内容，也不能干扰 B 已开始的新请求（保留既有守卫，代码核对；本次未自动化驱动宿主异步交错）。
+- [x] 覆盖“进行中 → 取消 → 新输入 → 手动翻译”的状态转换回归（真实面板状态转换；宿主取消隔离由代码核对）。
+
+**执行记录：**
+
+- `Reset` 在装载新原文前调用现有 `SetTranslationInProgress(false)`，统一恢复规范化、注音、翻译按钮，替换原有两个按钮的单独启用。新输入的可操作状态由面板重置负责，不依赖旧任务收尾；没有修改请求生命周期或增加兼容逻辑。
+- 在 [SelfTest.Ui.ResultPanel.cs](../../src/NaniKore/Diagnostics/SelfTest.Ui.ResultPanel.cs) 新增 `TestResultPanelResetDuringTranslation`：分别模拟 A 正在思考和输出译文，直接在真实 Avalonia 面板上 Reset B，独立断言三个按钮启用及旧内容/辅助状态清空，然后通过实际点击事件确认发起的是 B，B 运行时三个按钮禁用、完成后恢复。
+- 修复前 `./scripts/dev.ps1 test`：两条 `new input restores all manual actions before A finishes` 检查失败，证明原 `Reset` 无法恢复手动操作。修复后 `./scripts/dev.ps1 test -ShowPass`：退出码 0，`All self-tests passed (1672 checks).`；日志位于 Git 忽略的 `artifacts/r03-self-test.log`。
+- 核对宿主：`AcceptNewInput` 调用 `CancelTranslation` 递增 generation、清空旧 CTS 并取消；流增量的实际 UI 回调检查 generation，完成/错误回调检查 `IsCurrentRequest`；`finally` 的 CTS 身份判断和清理在同一 UI 回调内完成。旧 A 因此不能回写 B 或启用运行中的 B；上述守卫本次未修改。
+- 本次新增回归未实际启动宿主网络请求、取消真实 A 或调度 A/B 迟到回调；没有进行慢速服务热键手测或 Native AOT 验证。自动化证据覆盖导致缺陷的面板状态转换，宿主异步隔离结论来自代码核对。
+- R03 已完成；整份发布加固事项保持 open。稳定输入和请求隔离契约未改变，无需修改 Project Spec。
 
 ## R04：收藏失败可见且不导致应用退出
 

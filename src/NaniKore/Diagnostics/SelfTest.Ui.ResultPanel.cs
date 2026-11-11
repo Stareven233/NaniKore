@@ -32,6 +32,7 @@ internal static partial class SelfTest
         TestResultPanelSubscriptionCleanup();
         TestResultPanelDetectedSourceLanguage();
         TestResultPanelRubyDualModeAndTranslationFlow();
+        TestResultPanelResetDuringTranslation();
         TestResultPanelViewportLayout();
         TestAutomaticAnnotationPolicy();
         TestResultPanelAnnotateButton();
@@ -303,6 +304,62 @@ internal static partial class SelfTest
         Check(
             "begin translation preserves modified source instead of reverting to initial source",
             panel.SourceText == "私は 先生です。");
+    }
+
+    /// <summary>旧请求仍在取消时，新输入必须立即恢复操作状态，允许手动开始下一次翻译。</summary>
+    private static void TestResultPanelResetDuringTranslation()
+    {
+        EnsureThemedApplication();
+        var panel = new ResultPanelWindow();
+        try
+        {
+            var translate = Find<Button>(panel, "TranslateButton")!;
+            var normalize = Find<Button>(panel, "NormalizeSourceButton")!;
+            var annotate = Find<Button>(panel, "AnnotateSourceButton")!;
+            var explanation = Find<Expander>(panel, "ExplanationExpander")!;
+            var metrics = Find<TextBlock>(panel, "MetricsTextBlock")!;
+            var error = Find<Expander>(panel, "ErrorDetailsExpander")!;
+            foreach (var oldChannel in new[] { DeltaChannel.Thinking, DeltaChannel.Translation })
+            {
+                panel.Reset("输入 A", "等待手动翻译", autoTranslate: false, autoAnnotate: false);
+                panel.BeginTranslation();
+                panel.SetTranslationInProgress(true);
+                panel.Append(new UnderstandDelta(oldChannel, "A 的未完成内容"));
+                Check($"translation A disables all actions ({oldChannel})",
+                    !translate.IsEnabled && !normalize.IsEnabled && !annotate.IsEnabled);
+
+                // 宿主已使 A 失效，其 finally 不再负责面板；Reset 必须独立完成新输入的复位。
+                panel.Reset("输入 B", "等待手动翻译", autoTranslate: false, autoAnnotate: false);
+                Check($"new input restores all manual actions before A finishes ({oldChannel})",
+                    translate.IsEnabled && normalize.IsEnabled && annotate.IsEnabled &&
+                    translate.Content as string == "翻译");
+                Check($"new input clears old output and auxiliary state ({oldChannel})",
+                    panel.SourceText == "输入 B" && string.IsNullOrEmpty(panel.TranslationText) &&
+                    !explanation.IsEnabled && !explanation.IsExpanded && !metrics.IsVisible && !error.IsVisible);
+
+                string? requestedSource = null;
+                EventHandler start = (_, _) =>
+                {
+                    requestedSource = panel.SourceText;
+                    panel.BeginTranslation();
+                    panel.SetTranslationInProgress(true);
+                };
+                panel.TranslateRequested += start;
+                RaiseClick(translate);
+                panel.TranslateRequested -= start;
+                Check($"manual translation starts with B and disables actions ({oldChannel})",
+                    requestedSource == "输入 B" && !translate.IsEnabled && !normalize.IsEnabled && !annotate.IsEnabled);
+                panel.Append(new UnderstandDelta(DeltaChannel.Translation, "B 的译文"));
+                panel.SetTranslationInProgress(false);
+                Check($"translation B completes with usable actions ({oldChannel})",
+                    panel.SourceText == "输入 B" && panel.TranslationText == "B 的译文" &&
+                    translate.IsEnabled && normalize.IsEnabled && annotate.IsEnabled);
+            }
+        }
+        finally
+        {
+            panel.Close();
+        }
     }
 
     /// <summary>
