@@ -246,11 +246,14 @@ internal sealed class PhoneticDependencyDownloader
                 await source.CopyToAsync(target, cancellationToken).ConfigureAwait(true);
             }
 
-            using var verifyStream = File.Open(temporary, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            var actual = Convert.ToHexString(SHA256.HashData(verifyStream));
-            if (!string.Equals(actual, file.Sha256, StringComparison.OrdinalIgnoreCase))
+            // Windows 移动文件前必须释放校验句柄，避免与重命名操作发生共享冲突。
+            using (var verifyStream = File.Open(temporary, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             {
-                throw new InvalidDataException($"SHA-256 校验失败（期望 {file.Sha256}，实际 {actual}）。请重试下载。");
+                var actual = Convert.ToHexString(SHA256.HashData(verifyStream));
+                if (!string.Equals(actual, file.Sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException($"SHA-256 校验失败（期望 {file.Sha256}，实际 {actual}）。请重试下载。");
+                }
             }
 
             File.Move(temporary, destination, overwrite: true);
