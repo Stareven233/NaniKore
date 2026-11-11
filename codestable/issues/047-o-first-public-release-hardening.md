@@ -30,7 +30,7 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 | R01 | P1 | 注音词典下载后的文件移动冲突 | 已修复并验证 |
 | R02 | P1 | 剪贴板文件列表还原丢失 | 已修复并验证 |
 | R03 | P1 | 取消翻译后新输入的按钮状态 | 已修复并验证 |
-| R04 | P1 | 收藏数据库异常的 UI 隔离 | 待修复 |
+| R04 | P1 | 收藏数据库异常的 UI 隔离 | 已修复并验证 |
 | R05 | P1 | 翻译重定向与凭据传输边界 | 待修复 |
 | R06 | P1 | 第三方许可与仓库授权 | 待核实并补齐 |
 | R07 | P2 | 小工作区与跨屏结果窗口定位 | 待修复 |
@@ -106,13 +106,26 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 
 ## R04：收藏失败可见且不导致应用退出
 
-**代码依据：** [ExplanationCardView.axaml.cs](../../src/NaniKore/App/Controls/ExplanationCardView.axaml.cs)、[FavoritesPage.axaml.cs](../../src/NaniKore/App/Settings/FavoritesPage.axaml.cs)。收藏/删除的 UI 事件缺少异常隔离，部分星标在持久化前即变成成功态。异常逃逸有代码依据，具体退出表现待实测。
+**代码依据：** [ExplanationCardView.axaml.cs](../../src/NaniKore/App/Controls/ExplanationCardView.axaml.cs)、[FavoritesPage.axaml.cs](../../src/NaniKore/App/Settings/FavoritesPage.axaml.cs)。收藏/删除的 UI 事件缺少异常隔离，部分星标在持久化前即变成成功态。异常逃逸有代码依据，现已在自测宿主中实测：损坏库下 `IsFavorited` 抛出的 `SqliteException` 直接冒泡终止进程，退出码 `-532462766`。
 
 **处理与验收：**
 
-- [ ] 收藏、删除、编辑与列表读取失败时给出可理解的提示，应用保持可用。
-- [ ] 落库失败后星标和列表不显示虚假成功；允许恢复条件后重试。
-- [ ] 用只读、排他锁和损坏数据库验证主要错误路径，不覆盖真实收藏库。
+- [x] 收藏、删除、编辑与列表读取失败时给出可理解的提示，应用保持可用。
+- [x] 落库失败后星标和列表不显示虚假成功；允许恢复条件后重试。
+- [x] 用只读、排他锁和损坏数据库验证主要错误路径，不覆盖真实收藏库。
+
+**执行记录（2026-11-11）：**
+
+- 新增 [FavoriteFailure.cs](../../src/NaniKore/Favorites/FavoriteFailure.cs)：按 SQLite 主结果码（5/6 占用、8 只读、11/26 损坏或非数据库、14 无法打开）及权限/IO 异常生成「{动作}失败：{原因}（{恢复建议}）。」。只做提示，不改变服务契约、异常语义与各接口返回值。
+- [ExplanationCardView.axaml.cs](../../src/NaniKore/App/Controls/ExplanationCardView.axaml.cs)：星标读取改走 `IsFavoritedQuietly`，库不可读时按未收藏降级，不打断流式渲染；词汇/语法收藏统一到 `ToggleFavoriteAsync`，先落库、成功后才切换星标并发 `FavoriteToggled`，返回 false 或抛异常均只发新增的 `FavoriteFailed` 并保持原星标；删除未命中（条目已被移除）视同完成。
+- [SelectionBubblePopup.axaml.cs](../../src/NaniKore/App/Controls/SelectionBubblePopup.axaml.cs)：拆分「读库状态」与「刷星标样式」，`ToggleFavoriteAsync` 失败时星标与气泡保持不变便于直接重试，同样新增 `FavoriteFailed`。[ResultPanelWindow.axaml.cs](../../src/NaniKore/App/ResultPanelWindow.axaml.cs) 把卡片与气泡两处失败事件接到状态栏（错误样式）。
+- [FavoritesPage.axaml.cs](../../src/NaniKore/App/Settings/FavoritesPage.axaml.cs)：`Refresh` 返回是否读取成功，失败时保留上一次成功快照并提示，不再把库不可用显示成空列表；删除与编辑失败都捕获异常并给出提示，编辑失败回滚内存字段快照，避免取消编辑后展示未落库内容；刷新按钮只在读取成功时提示「已刷新」。
+- 新增 [SelfTest.Ui.FavoriteFailures.cs](../../src/NaniKore/Diagnostics/SelfTest.Ui.FavoriteFailures.cs) 共 25 项检查，故障全部在系统临时目录构造：损坏库文件（26）、只读属性（8）、独占文件句柄（14）。覆盖卡片渲染与词汇收藏/取消收藏、气泡打开与收藏、收藏页损坏库读取、重置库文件后刷新恢复、只读库下删除与编辑失败后清除只读属性重试成功。
+- 修复前证据：临时把读/写路径还原为旧行为（星标先置成功态、`IsFavorited` 不捕获）后执行 `./scripts/dev.ps1 test`：2 项失败（`card keeps an unfavorited star when persisting fails`、`card keeps a favorited star when removing fails`），随后 `SQLite Error 26: 'file is not a database'` 未处理、进程退出码 `-532462766`；日志位于 Git 忽略的 `artifacts/r04-evidence/before-fix.log`。
+- 修复后 `./scripts/dev.ps1 test`：退出码 0，`All self-tests passed (1697 checks).`（上一轮基线 1672，新增 25 项）；日志位于 `artifacts/r04-self-test.log`。
+- `SQLITE_BUSY` 真机争用路径未自动化：Microsoft.Data.Sqlite 默认 busy timeout 为 30 秒，自测中构造 `BEGIN EXCLUSIVE` 会阻塞约 30 秒，因此改用独占文件句柄覆盖「被占用/无法打开」表现；错误码 5/6 的中文映射仅由 `FavoriteFailure` 分支承载。
+- 未做真实桌面手测与 Native AOT 发布包验证；未读取或修改实际 `.data/collections.db`。
+- R04 已完成；整份发布加固事项保持 open。收藏失败语义已作为稳定事实补入 [Project Spec](../spec/index.md) 的本地知识库条目。
 
 相关能力承诺见 [Epic 001 / Issue 007](../epics/001-o-学习型演进-精讲假名与生词库/issues/007-o-sqlite知识库与设置收藏tab.md)。
 

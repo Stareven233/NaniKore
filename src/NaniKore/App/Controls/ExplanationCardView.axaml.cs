@@ -28,6 +28,9 @@ public partial class ExplanationCardView : UserControl
     /// <summary>当卡片被用户收藏或取消收藏时激发的事件通知。</summary>
     public event EventHandler<(string Content, string Category, bool Added)>? FavoriteToggled;
 
+    /// <summary>收藏库操作失败时激发：宿主据此提示用户，星标保持真实落库状态。</summary>
+    public event EventHandler<string>? FavoriteFailed;
+
     /// <summary>当前是否因模型未按格式输出而降级为纯文本排版展示。</summary>
     public bool IsDegraded
     {
@@ -181,7 +184,7 @@ public partial class ExplanationCardView : UserControl
         for (var i = 0; i < cards.Count; i++)
         {
             var card = cards[i];
-            var isFavorited = _favoriteService?.IsFavorited(card.Term) ?? false;
+            var isFavorited = IsFavoritedQuietly(card.Term);
             if (i < VocabularyItems.Count)
             {
                 var vm = VocabularyItems[i];
@@ -209,7 +212,7 @@ public partial class ExplanationCardView : UserControl
         for (var i = 0; i < cards.Count; i++)
         {
             var card = cards[i];
-            var isFavorited = _favoriteService?.IsFavorited(card.Pattern) ?? false;
+            var isFavorited = IsFavoritedQuietly(card.Pattern);
             if (i < GrammarItems.Count)
             {
                 var vm = GrammarItems[i];
@@ -240,11 +243,32 @@ public partial class ExplanationCardView : UserControl
 
         foreach (var item in VocabularyItems)
         {
-            item.IsFavorited = _favoriteService.IsFavorited(item.Term);
+            item.IsFavorited = IsFavoritedQuietly(item.Term);
         }
         foreach (var item in GrammarItems)
         {
-            item.IsFavorited = _favoriteService.IsFavorited(item.Pattern);
+            item.IsFavorited = IsFavoritedQuietly(item.Pattern);
+        }
+    }
+
+    /// <summary>
+    /// 读取星标状态：库不可读时按未收藏降级展示，避免异常从流式刷新路径逃逸。
+    /// 读失败不打断内容渲染，写失败另有提示，库恢复后下一次刷新即可纠正星标。
+    /// </summary>
+    private bool IsFavoritedQuietly(string content)
+    {
+        if (_favoriteService is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return _favoriteService.IsFavorited(content);
+        }
+        catch (Exception)
+        {
+            return false;
         }
     }
 
@@ -297,63 +321,88 @@ public partial class ExplanationCardView : UserControl
 
     private async void OnVocabularyFavoriteClick(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: VocabularyCardViewModel vm })
+        if (sender is Button { Tag: VocabularyCardViewModel vm })
         {
-            return;
+            await ToggleVocabularyFavoriteAsync(vm);
         }
-
-        var newFavoritedState = !vm.IsFavorited;
-        vm.IsFavorited = newFavoritedState;
-
-        if (_favoriteService != null)
-        {
-            if (newFavoritedState)
-            {
-                await _favoriteService.AddFavoriteAsync(new FavoriteItem
-                {
-                    Category = "单词",
-                    Content = vm.Term,
-                    Language = CurrentFavoriteLanguage,
-                    Note = vm.Model.ToFavoriteNote()
-                });
-            }
-            else
-            {
-                await _favoriteService.RemoveFavoriteAsync(vm.Term);
-            }
-        }
-
-        FavoriteToggled?.Invoke(this, (vm.Term, "单词", newFavoritedState));
     }
 
     private async void OnGrammarFavoriteClick(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: GrammarCardViewModel vm })
+        if (sender is Button { Tag: GrammarCardViewModel vm })
+        {
+            await ToggleGrammarFavoriteAsync(vm);
+        }
+    }
+
+    /// <summary>切换词汇星标（自测直接调用同一入口）。</summary>
+    internal Task ToggleVocabularyFavoriteAsync(VocabularyCardViewModel vm) => ToggleFavoriteAsync(
+        vm.Term,
+        "单词",
+        vm.IsFavorited,
+        () => new FavoriteItem
+        {
+            Category = "单词",
+            Content = vm.Term,
+            Language = CurrentFavoriteLanguage,
+            Note = vm.Model.ToFavoriteNote(),
+        },
+        value => vm.IsFavorited = value);
+
+    /// <summary>切换语法星标：与词汇共用同一失败语义。</summary>
+    internal Task ToggleGrammarFavoriteAsync(GrammarCardViewModel vm) => ToggleFavoriteAsync(
+        vm.Pattern,
+        "语法",
+        vm.IsFavorited,
+        () => new FavoriteItem
+        {
+            Category = "语法",
+            Content = vm.Pattern,
+            Language = CurrentFavoriteLanguage,
+            Note = vm.Model.ToFavoriteNote(),
+        },
+        value => vm.IsFavorited = value);
+
+    /// <summary>
+    /// 卡片收藏的统一写路径：先落库、成功后才切换星标，异常就地收敛为提示。
+    /// 这样既不会让 async void 事件里的异常结束应用，也不会出现星标先变成功态。
+    /// </summary>
+    private async Task ToggleFavoriteAsync(
+        string content,
+        string category,
+        bool currentlyFavorited,
+        Func<FavoriteItem> createItem,
+        Action<bool> applyState)
+    {
+        if (_favoriteService is null)
         {
             return;
         }
 
-        var newFavoritedState = !vm.IsFavorited;
-        vm.IsFavorited = newFavoritedState;
-
-        if (_favoriteService != null)
+        var added = !currentlyFavorited;
+        try
         {
-            if (newFavoritedState)
+            if (added)
             {
-                await _favoriteService.AddFavoriteAsync(new FavoriteItem
+                if (!await _favoriteService.AddFavoriteAsync(createItem()))
                 {
-                    Category = "语法",
-                    Content = vm.Pattern,
-                    Language = CurrentFavoriteLanguage,
-                    Note = vm.Model.ToFavoriteNote()
-                });
+                    FavoriteFailed?.Invoke(this, $"收藏失败：收藏库未保存「{content}」，请稍后重试。");
+                    return;
+                }
             }
             else
             {
-                await _favoriteService.RemoveFavoriteAsync(vm.Pattern);
+                // 删除未命中（条目已被移除）视同完成：星标目标态本就是未收藏。
+                await _favoriteService.RemoveFavoriteAsync(content);
             }
         }
+        catch (Exception exception)
+        {
+            FavoriteFailed?.Invoke(this, FavoriteFailure.Describe(added ? "收藏" : "取消收藏", exception));
+            return;
+        }
 
-        FavoriteToggled?.Invoke(this, (vm.Pattern, "语法", newFavoritedState));
+        applyState(added);
+        FavoriteToggled?.Invoke(this, (content, category, added));
     }
 }

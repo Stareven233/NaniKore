@@ -126,7 +126,7 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
     {
         if (!Dispatcher.UIThread.CheckAccess())
         {
-            Dispatcher.UIThread.Post(Refresh);
+            Dispatcher.UIThread.Post(() => Refresh());
             return;
         }
 
@@ -135,8 +135,10 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
 
     private void OnRefreshClick(object? sender, RoutedEventArgs e)
     {
-        Refresh();
-        Status.Show("已刷新收藏列表。", InfoSeverity.Neutral);
+        if (Refresh())
+        {
+            Status.Show("已刷新收藏列表。", InfoSeverity.Neutral);
+        }
     }
 
     private void OnCopyPathClick(object? sender, RoutedEventArgs e)
@@ -153,10 +155,24 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
         CopyTextToClipboard(path, "已复制数据库路径。");
     }
 
-    private void Refresh()
+    /// <summary>
+    /// 重新读取收藏列表；读取失败时保留上一次成功快照并提示原因，
+    /// 不把“库不可用”误显示成“没有收藏”。返回是否读取成功。
+    /// </summary>
+    private bool Refresh()
     {
-        _items = _favoriteService?.GetAllFavorites().ToList() ?? [];
+        try
+        {
+            _items = _favoriteService?.GetAllFavorites().ToList() ?? [];
+        }
+        catch (Exception exception)
+        {
+            Status.Show(FavoriteFailure.Describe("读取收藏列表", exception), InfoSeverity.Error);
+            return false;
+        }
+
         ApplyFilter();
+        return true;
     }
 
     private void ApplyFilter()
@@ -209,12 +225,32 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
 
     private async void OnDeleteItemClick(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: FavoriteDisplayViewModel vm } || _favoriteService is null)
+        if (sender is Button { Tag: FavoriteDisplayViewModel vm })
+        {
+            await DeleteFavoriteAsync(vm);
+        }
+    }
+
+    /// <summary>删除一条收藏（自测直接调用同一入口）：异常收敛为提示，失败后列表仍可重试。</summary>
+    internal async Task DeleteFavoriteAsync(FavoriteDisplayViewModel vm)
+    {
+        if (_favoriteService is null)
         {
             return;
         }
 
-        var removed = await _favoriteService.RemoveFavoriteAsync(vm.Item.Content);
+        bool removed;
+        try
+        {
+            removed = await _favoriteService.RemoveFavoriteAsync(vm.Item.Content);
+        }
+        catch (Exception exception)
+        {
+            // 数据库异常不向外逃逸：提示后保留既有列表，条件恢复后可直接重试。
+            Status.Show(FavoriteFailure.Describe("删除收藏", exception), InfoSeverity.Error);
+            return;
+        }
+
         if (removed)
         {
             Status.Show($"已删除「{vm.Item.Content}」。", InfoSeverity.Success);
@@ -484,14 +520,29 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
             return false;
         }
 
+        // 失败时回滚内存快照：否则取消编辑会展示未落库的内容，等同于虚假保存成功。
+        var snapshot = (item.Category, item.Content, item.Note, item.Language);
+
         item.Category = string.IsNullOrWhiteSpace(category) ? "单词" : category;
         item.Content = trimmed;
         item.Note = string.IsNullOrWhiteSpace(note) ? null : note;
         item.Language = string.IsNullOrWhiteSpace(language) ? "日本語" : language;
 
-        var saved = await _favoriteService.UpdateFavoriteAsync(item);
+        bool saved;
+        try
+        {
+            saved = await _favoriteService.UpdateFavoriteAsync(item);
+        }
+        catch (Exception exception)
+        {
+            (item.Category, item.Content, item.Note, item.Language) = snapshot;
+            Status.Show(FavoriteFailure.Describe("保存收藏", exception), InfoSeverity.Error);
+            return false;
+        }
+
         if (!saved)
         {
+            (item.Category, item.Content, item.Note, item.Language) = snapshot;
             Status.Show("保存失败：条目可能已被移除，或与另一条收藏内容重复。", InfoSeverity.Warning);
             return false;
         }

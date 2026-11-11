@@ -22,6 +22,7 @@ internal static partial class SelfTest
         TestThemeVariantHotSwitching();
         RunResultPanelUiTests();
         RunSettingsUiTests();
+        RunFavoriteFailureUiTests();
     }
 
     /// <summary>

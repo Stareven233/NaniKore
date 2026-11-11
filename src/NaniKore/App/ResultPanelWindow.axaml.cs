@@ -161,6 +161,10 @@ internal sealed partial class ResultPanelWindow : Window
             SetStatus(args.Added ? $"已收藏{args.Category}：{args.Content}" : $"已取消收藏{args.Category}：{args.Content}");
         };
 
+        // 收藏库异常就地展示：星标与列表保持真实落库状态，应用继续可用
+        ExplanationView.FavoriteFailed += (_, message) => SetStatus(message, isError: true);
+        SelectionBubble.FavoriteFailed += (_, message) => SetStatus(message, isError: true);
+
         SelectionBubble.FavoriteRequested += (_, item) =>
         {
             SetStatus($"已收藏{item.Category}：{item.Content}");

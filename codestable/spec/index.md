@@ -36,7 +36,7 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 - 提示词为模块化组装（`PromptTemplates`）：设置页对应 `base` / `vision_base` / `explain` 三个 Base 键与 `japanese_plugin` / `english_plugin` / `chinese_plugin` 三个语言插件键，留空即回落到内置常量。Base 与插件支持 `{{target_language}}`；视觉一条龙由视觉 Base + 语言插件恒定同拼，与输入无关，前缀缓存 100% 命中。语言插件经「探测结果纳入 + 目标语言互斥剔除」双重门控：某语言本身就是目标语言时对应插件整条不注入（日译英不标 IPA、外译中不标拼音等）。
 - 结果窗口采用 Avalonia 原生实现，`ShowActivated=false` 与 Win32 `SetWindowPos(SWP_NOACTIVATE)` 严格保护前台焦点不抢夺；设置页包含通用、翻译、热键、收藏和关于页。
 - 原文区基于 Avalonia `SelectableTextBlock` + `Inlines` + `InlineUIContainer` 承载振假名与双模就地编辑（光标定位不全选、未修改失焦复原）；翻译采用两阶段流式协议（阶段 1 假名原句 + `---TRANSLATION---` + 译文，阶段 2 精讲完整回放阶段 1 图文历史以命中前缀缓存）；精讲微结构化卡片与划词微型气泡完全由 Avalonia 承载。
-- 本地知识库（生词本）：收藏持久化到数据目录 `程序目录\.data\collections.db`（SQLite，由随包旁置的 `e_sqlite3.dll` 驱动，首次收藏惰性建库），设置面板 `[收藏]` Tab 支持类别筛选、关键词搜索、单条复制/删除与复制全部；收藏不写入 `config.yaml`。
+- 本地知识库（生词本）：收藏持久化到数据目录 `程序目录\.data\collections.db`（SQLite，由随包旁置的 `e_sqlite3.dll` 驱动，首次收藏惰性建库），设置面板 `[收藏]` Tab 支持类别筛选、关键词搜索、单条复制/删除与复制全部；收藏不写入 `config.yaml`。收藏库不可用（只读、被独占、文件损坏）时卡片星标、划词气泡与收藏页统一给出中文原因与恢复建议并保持可用：写失败不改星标、不报成功，列表读取失败保留上一次快照，条件恢复后同一入口可直接重试。
 - 配置与密钥管理：`config.yaml` 基于 YamlDotNet 18.1.0 静态上下文（`ConfigYamlStaticContext`，0 反射）读写；API Key 保存在 `程序目录\.data\keys.bin`，带方案版本头（NKKEY + Scheme 1 + Version 1），向后透明兼容旧 DPAPI 密文；全部 JSON 序列化（SecretStore、OcrHttpServer、LLM 请求体 JsonNode 结构化组装）均通过 AOT 安全静态化。
 - 注音设置分为「通用 → 允许本地注音」（`phonetics.enabled` 总开关，关闭则自动/手动均不加载本地词典）和「翻译 → 识别后自动注音」（`general.auto_annotate`，关闭后只允许面板手动触发）。自动策略同时覆盖 OCR、视觉原文到达、翻译完成与编辑后的自动调用，不因翻译完成而绕过关闭设置。
 - 结果卡底部状态栏呈现本次调用的 Token 消耗与首字延迟（TTFT）、TPS指标。

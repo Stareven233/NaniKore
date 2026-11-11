@@ -29,6 +29,9 @@ public partial class SelectionBubblePopup : UserControl
     /// <summary>取消收藏动作被触发时激发的事件。</summary>
     public event EventHandler<string>? FavoriteRemoved;
 
+    /// <summary>收藏库操作失败时激发：气泡保持打开且星标不变，宿主据此提示用户。</summary>
+    public event EventHandler<string>? FavoriteFailed;
+
     public Popup PopupHost => BubblePopup;
 
     public ComboBox CategoryPicker => CategoryComboBox;
@@ -249,9 +252,31 @@ public partial class SelectionBubblePopup : UserControl
     private void UpdateFavoriteState()
     {
         var content = ContentTextBox?.Text?.Trim() ?? string.Empty;
-        _isCurrentContentFavorited = !string.IsNullOrEmpty(content) &&
-                                     (_favoriteService?.IsFavorited(content) ?? false);
+        _isCurrentContentFavorited = !string.IsNullOrEmpty(content) && IsFavoritedQuietly(content);
+        ApplyFavoriteVisual();
+    }
 
+    /// <summary>库不可读时按未收藏降级展示：读失败不阻塞气泡输入，写失败另有提示。</summary>
+    private bool IsFavoritedQuietly(string content)
+    {
+        if (_favoriteService is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return _favoriteService.IsFavorited(content);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>按当前收藏态刷新星标与按钮样式，不访问收藏库。</summary>
+    private void ApplyFavoriteVisual()
+    {
         if (FavoriteIconTextBlock is not null && FavoriteLabelTextBlock is not null && FavoriteButton is not null)
         {
             if (_isCurrentContentFavorited)
@@ -271,7 +296,13 @@ public partial class SelectionBubblePopup : UserControl
         }
     }
 
-    private async void OnFavoriteClick(object? sender, RoutedEventArgs e)
+    private async void OnFavoriteClick(object? sender, RoutedEventArgs e) => await ToggleFavoriteAsync();
+
+    /// <summary>
+    /// 收藏/取消收藏气泡内容：成功后才切换状态，异常与拒绝都收敛为提示，
+    /// 气泡保持打开以便重试，绝不把异常抛出 async void 事件。
+    /// </summary>
+    internal async Task ToggleFavoriteAsync()
     {
         var content = ContentTextBox.Text?.Trim() ?? string.Empty;
         if (string.IsNullOrEmpty(content))
@@ -279,40 +310,43 @@ public partial class SelectionBubblePopup : UserControl
             return;
         }
 
-        if (_isCurrentContentFavorited)
+        try
         {
-            // 取消收藏
-            if (_favoriteService != null)
+            if (_isCurrentContentFavorited)
             {
-                await _favoriteService.RemoveFavoriteAsync(content);
-            }
+                if (_favoriteService is not null)
+                {
+                    // 删除未命中（条目已被移除）视同完成：星标目标态本就是未收藏。
+                    await _favoriteService.RemoveFavoriteAsync(content);
+                }
 
-            _isCurrentContentFavorited = false;
-            UpdateFavoriteState();
-            FavoriteRemoved?.Invoke(this, content);
-        }
-        else
-        {
-            // 执行收藏
-            var category = (CategoryComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "单词";
-            var language = (LanguageComboBox.SelectedItem as LanguageChoice)?.Name ?? "日本語";
+                _isCurrentContentFavorited = false;
+                ApplyFavoriteVisual();
+                FavoriteRemoved?.Invoke(this, content);
+                return;
+            }
 
             var item = new FavoriteItem
             {
-                Category = category,
+                Category = (CategoryComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "单词",
                 Content = content,
-                Language = language,
+                Language = (LanguageComboBox.SelectedItem as LanguageChoice)?.Name ?? "日本語",
                 Note = _pendingNote
             };
 
-            if (_favoriteService != null)
+            if (_favoriteService is not null && !await _favoriteService.AddFavoriteAsync(item))
             {
-                await _favoriteService.AddFavoriteAsync(item);
+                FavoriteFailed?.Invoke(this, $"收藏失败：收藏库未保存「{content}」，请稍后重试。");
+                return;
             }
 
             _isCurrentContentFavorited = true;
-            UpdateFavoriteState();
+            ApplyFavoriteVisual();
             FavoriteRequested?.Invoke(this, item);
+        }
+        catch (Exception exception)
+        {
+            FavoriteFailed?.Invoke(this, FavoriteFailure.Describe(_isCurrentContentFavorited ? "取消收藏" : "收藏", exception));
         }
     }
 }
