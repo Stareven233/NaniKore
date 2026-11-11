@@ -2,7 +2,7 @@
 
 > 轻量的 Windows 截图 OCR 与翻译工具。
 
-按下全局快捷键后框选屏幕文字，NaniKore 会在本地完成 OCR，并可调用已配置的翻译服务显示流式结果。基于 .NET 10 与 Avalonia 12 UI 框架，采用 Native AOT 编译为精简原生机器码
+按下全局快捷键后框选屏幕文字，NaniKore 会在本地完成 OCR，并可调用已配置的翻译服务显示流式结果。基于 .NET 11 / C# 15 与 Avalonia 12 UI 框架，采用 Native AOT 编译为精简原生机器码
 
 ## 功能
 
@@ -22,7 +22,7 @@
 
 - Windows 10 version 2004（build 19041）或更高版本（x64）。
 - **运行发布包**：**解压即用，目标机器零 .NET 运行时依赖**（Native AOT 原生机器码编译）。
-- **源码开发**：.NET 10 SDK（`global.json` 当前要求 `10.0.302` 或兼容的更高 feature band）。
+- **源码开发**：.NET 11 SDK（`global.json` 当前要求 `11.0.100` 或同一 11.0 通道兼容的更高 feature band），默认使用正式版 C# 15。
 - 本地 OCR 依赖：PP-OCRv6-small 模型和 ONNX Runtime native DLL（设置页一键按需下载至 `deps/`，或直接使用 `-full` 完整离线包）。
 
 ## 快速开始
@@ -48,7 +48,7 @@
 | `./scripts/dev.ps1 build -Release` | 编译 Native AOT Release 版本（生成至 `artifacts/win-x64`，不打包）。 |
 | `./scripts/dev.ps1 run` | 启动本地 Debug 桌面应用（后台脱手运行，不占用终端）。 |
 | `./scripts/dev.ps1 run -Release` | 启动本地已构建的 Native AOT Release 桌面应用。 |
-| `./scripts/dev.ps1 test` | 运行无 UI 全量自动化自测（609 项断言）。 |
+| `./scripts/dev.ps1 test` | 运行无 UI 全量自动化自测。 |
 | `./scripts/dev.ps1 publish` | 编译 Native AOT 并发布免安装轻量 ZIP（~18 MB，根目录 7 项，解压即用）。 |
 | `./scripts/dev.ps1 publish -full` | 编译 Native AOT 并发布包含完整 `deps/` 离线模型与词典的 Windows x64 ZIP（~67 MB）。 |
 

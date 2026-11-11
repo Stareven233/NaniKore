@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
@@ -45,14 +45,14 @@
 
   <ItemGroup>
     <!-- Avalonia 12 核心套件与主题（P1 引入） -->
-    <PackageReference Include="Avalonia" Version="12.1.4" />
-    <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <PackageReference Include="Avalonia" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.6" />
     <PackageReference Include="SkiaSharp" Version="3.119.4" />
 
     <!-- 跨框架/非 Windows TFM 下补充系统包（P1 审计修订） -->
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
-    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="10.0.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="11.0.0" />
+    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="11.0.0" />
 
     <!-- 业务核心依赖 -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />

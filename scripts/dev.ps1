@@ -18,7 +18,7 @@ $root = Split-Path -Parent $PSScriptRoot
 
 $solution = Join-Path $root 'NaniKore.slnx'
 $project = Join-Path $root 'src\NaniKore\NaniKore.csproj'
-$debugExecutable = Join-Path $root 'src\NaniKore\bin\Debug\net10.0\NaniKore.exe'
+$debugExecutable = Join-Path $root 'src\NaniKore\bin\Debug\net11.0\NaniKore.exe'
 $artifactsDirectory = Join-Path $root 'artifacts'
 $publishOutput = Join-Path $root 'artifacts\win-x64'
 $publishedExecutable = Join-Path $publishOutput 'NaniKore.exe'

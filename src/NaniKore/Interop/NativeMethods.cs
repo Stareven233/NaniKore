@@ -4,7 +4,7 @@ namespace NaniKore.Interop;
 
 /// <summary>
 /// 集中声明平台 Win32 P/Invoke 接口，供捕获、热键、浮层、剪贴板和托盘等平台服务共用。
-/// 全部使用 .NET 10 的 LibraryImport 源生成，确保 NativeAOT 裁剪下零警告。
+/// 使用 LibraryImport 源生成平台调用封送，确保 NativeAOT 裁剪下零警告。
 /// </summary>
 internal static unsafe partial class NativeMethods
 {

@@ -29,14 +29,13 @@ if (-not (Test-Path -LiteralPath $htmlPath)) {
 function Get-NaniKoreDebugExecutable {
     param([string]$ProjectRoot)
 
-    $known = Join-Path $ProjectRoot 'src\NaniKore\bin\Debug\net10.0-windows10.0.19041.0\NaniKore.exe'
-    if (Test-Path -LiteralPath $known) {
-        return $known
+    # 仅使用当前目标框架的产物，避免误启升级前残留的旧版本。
+    $executablePath = Join-Path $ProjectRoot 'src\NaniKore\bin\Debug\net11.0\NaniKore.exe'
+    if (Test-Path -LiteralPath $executablePath) {
+        return $executablePath
     }
 
-    $fallback = Get-ChildItem -LiteralPath (Join-Path $ProjectRoot 'src\NaniKore\bin\Debug') -Recurse -Force -Filter 'NaniKore.exe' -ErrorAction SilentlyContinue |
-        Sort-Object FullName | Select-Object -First 1
-    return $fallback?.FullName
+    return $null
 }
 
 $executable = Get-NaniKoreDebugExecutable -ProjectRoot $root

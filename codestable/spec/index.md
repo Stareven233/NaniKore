@@ -8,7 +8,7 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 
 ### 捕获与选区
 
-- 单一 C#/.NET 10 Avalonia 12 宿主进程（`ClassicDesktopStyleApplicationLifetime`）。
+- 单一 C# 15/.NET 11 Avalonia 12 宿主进程（`ClassicDesktopStyleApplicationLifetime`）。
 - `Ctrl+Shift+A` 与 `Ctrl+Shift+S` 分别注册为框选与剪贴板全局热键（基于独立 Win32 消息窗口与 P/Invoke，脱离 WinForms/WPF）。
 - 热键的普通键支持 ASCII 字母数字、功能键、OEM 标点、方向/导航键、空格/Tab/Enter、Backspace/Delete/Escape、锁定键、小键盘、浏览器及多媒体键；除 F1–F11 可裸键绑定外，其余均要求 Ctrl/Shift/Alt/Win 修饰键，F12 因 Windows 调试器保留而拒绝。标点写入稳定 OEM 键名，小键盘与主键盘数字/运算键独立。裸 Esc 在录制时取消截图热键修改或解绑选取热键，带修饰键的 Esc 可正常录制。
 - 任一热键录制时暂停两个全局槽位，录制全部结束后按已提交配置分别恢复；保存前拒绝两个槽位使用相同组合（按解析后的键码比较）。变更多个槽位时先统一释放再注册，支持交换与迁移；注册失败独立提示，不回退旧绑定。宿主拒绝重复注册 ID，并在停止接收请求后完成或终结待处理请求，避免并发关闭永久等待。
@@ -43,7 +43,7 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 
 ### UI 引擎与平台边界
 
-- UI 引擎：统一为 Avalonia 12.1.4，以 FluentTheme 为基底配合草地绿品牌色语义覆写与 Win11 Fluent 2 微圆角（Route A 路线），彻底消解旧 WPF 模板维护负担。
+- UI 引擎：统一为 Avalonia 12.1.6，以 FluentTheme 为基底配合草地绿品牌色语义覆写与 Win11 Fluent 2 微圆角（Route A 路线），彻底消解旧 WPF 模板维护负担。
 - 平台能力接缝（`Platform.Windows`）：
   - 屏幕捕获：`IScreenCapture`（Win32 `BitBlt` → `SKBitmap`）
   - 全局热键：`IGlobalHotkey`（独立 Win32 消息窗口，STA 线程 P/Invoke）
@@ -57,7 +57,7 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 
 ### 工具链与发布
 
-- .NET 10 SDK、Native AOT（ILC 编译器）与 MSBuild。
+- .NET 11 SDK（`global.json` 最低 `11.0.100`，同一 11.0 通道 `latestFeature`）、正式版 C# 15、Native AOT（ILC 编译器）与 MSBuild；不启用预览语言或内存安全规则。
 - 交付形态：**免安装便携目录 = 精简 Native AOT exe + 随包原生 DLL 旁置**，目标机器零 .NET 运行时依赖，解压即用。
 - 交付物目录契约：
   - 根目录恰好 7 项：精简可执行文件 `NaniKore.exe` + 4 个随包原生 DLL（`libSkiaSharp.dll`、`libHarfBuzzSharp.dll`、`av_libglesv2.dll`、`e_sqlite3.dll`）+ 只读配置模板 `config.template.yaml` + 许可声明 `NOTICE`。
@@ -71,6 +71,8 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 
 ## 已验证边界
 
+- .NET 11 升级验证：Debug 与 Native AOT 各通过 1641 项自测；AOT 真实中英混排 OCR、桌面启动及截图消息触发/取消选区浮层通过。
+- .NET 11 ILC 仍报告第三方 `ConsoleCtrlHandlerRoutine` 两个反向委托存根与 Avalonia DComposition 两个 `CreateTargetForHwnd` 存根含非 blittable 布尔签名，调用这些存根会抛异常。现有自测和桌面截图冒烟未触发，不代表所有原生回调路径均安全；保留诊断，未用全局禁用封送或屏蔽输出处理，详见 `issues/045-x-ff-dotnet11-upgrade.md`。
 - 构建、自测、真实中英混排 OCR、自动化键鼠冒烟和主显示器人工交互均通过。
 - 副显示器、负坐标虚拟桌面和混合 DPI 代码路径已实现，且全量自测在 Native AOT 干净环境下通过。
 - 水平游戏/UI 文本是当前目标；旋转、弯曲和竖排文本不是当前轻量后处理的保证范围。
