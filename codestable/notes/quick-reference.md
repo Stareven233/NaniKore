@@ -47,6 +47,10 @@ dotnet run --project src\NaniKore\NaniKore.csproj -- --ocr-file path\to\image.pn
 artifacts\win-x64\NaniKore.exe --self-test
 ```
 
+## Native AOT 与依赖升级
+
+升级 Avalonia / .NET，或修改 DComposition COM 使用方式前，先读 [DComposition 精确裁剪的维护边界](001-nativeaot-dcomposition-substitutions.md)：了解哪些注册可以移除、哪些客户端代码必须保留，以及何时应停止引用替换配置。
+
 ## 本地 OCR HTTP 服务
 
 默认关闭，在 `.data/config.yaml` 的 `general.ocr_listen` 填 `127.0.0.1:23335` 开启（重启生效）。

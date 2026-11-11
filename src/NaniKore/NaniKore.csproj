@@ -30,6 +30,12 @@
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
+  <ItemGroup Condition="'$(PublishAot)' == 'true'">
+    <!-- 精确裁剪未使用的 COM 服务端注册；文件变化也必须使增量编译和 ILC 重新执行。 -->
+    <IlcArg Include="--substitution:$(MSBuildProjectDirectory)\Interop\NativeAot.Substitutions.xml" />
+    <CustomAdditionalCompileInputs Include="Interop\NativeAot.Substitutions.xml" />
+  </ItemGroup>
+
   <ItemGroup>
     <EmbeddedResource Include="Assets\nanikore.ico" />
   </ItemGroup>
@@ -52,7 +58,6 @@
 
     <!-- 跨框架/非 Windows TFM 下补充系统包（P1 审计修订） -->
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="11.0.0" />
-    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="11.0.0" />
 
     <!-- 业务核心依赖 -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />

@@ -72,7 +72,7 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 ## 已验证边界
 
 - .NET 11 升级验证：Debug 与 Native AOT 各通过 1641 项自测；AOT 真实中英混排 OCR、桌面启动及截图消息触发/取消选区浮层通过。
-- .NET 11 ILC 仍报告第三方 `ConsoleCtrlHandlerRoutine` 两个反向委托存根与 Avalonia DComposition 两个 `CreateTargetForHwnd` 存根含非 blittable 布尔签名，调用这些存根会抛异常。现有自测和桌面截图冒烟未触发，不代表所有原生回调路径均安全；保留诊断，未用全局禁用封送或屏蔽输出处理，详见 `issues/045-x-ff-dotnet11-upgrade.md`。
+- .NET 11 AOT 非 blittable 回调已从产物移除：主题监听使用 Avalonia `IPlatformSettings.ColorValuesChanged`，不再依赖 SystemEvents；`Interop/NativeAot.Substitutions.xml` 仅移除 Avalonia 12.1.6 两个未使用的 DComposition COM 服务端虚表注册，保留 Windows 原生设备的客户端代理与 GPU 合成。更新 Avalonia 或引入托管 DComposition 服务端实现时须复核该裁剪边界。原生代码映射确认四个问题回调均不存在、客户端 `CreateTargetForHwnd` 仍存在；未屏蔽诊断或禁用运行时封送，详见 `issues/046-x-ff-aot-callback-signatures.md`。
 - 构建、自测、真实中英混排 OCR、自动化键鼠冒烟和主显示器人工交互均通过。
 - 副显示器、负坐标虚拟桌面和混合 DPI 代码路径已实现，且全量自测在 Native AOT 干净环境下通过。
 - 水平游戏/UI 文本是当前目标；旋转、弯曲和竖排文本不是当前轻量后处理的保证范围。

@@ -1,0 +1,17 @@
+<linker>
+  <!--
+    Avalonia.Win32 12.1.6 为 DComposition 同时生成客户端代理与 COM 服务端虚表。
+    NaniKore 仅使用 Windows 提供的原生设备，从不实现这两个 internal COM 接口；
+    服务端虚表的 CreateTargetForHwnd 使用 bool，违反 .NET 11 的 UnmanagedCallersOnly 规则。
+    仅移除服务端虚表注册，使错误回调不进入 AOT 产物；保留客户端代理注册和 GPU 合成能力。
+    升级 Avalonia 时须复核接口实现及生成代码，不能扩展成全局禁用封送或删除整个模块初始化。
+  -->
+  <assembly fullname="Avalonia.Win32">
+    <type fullname="Avalonia.Win32.DComposition.Impl.__MicroComIDCompositionDeviceVTable">
+      <method signature="System.Void __MicroComModuleInit()" body="stub" />
+    </type>
+    <type fullname="Avalonia.Win32.DComposition.Impl.__MicroComIDCompositionDesktopDeviceVTable">
+      <method signature="System.Void __MicroComModuleInit()" body="stub" />
+    </type>
+  </assembly>
+</linker>

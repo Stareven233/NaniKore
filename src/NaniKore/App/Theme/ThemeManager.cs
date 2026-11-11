@@ -1,8 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Platform;
 using Avalonia.Styling;
 using Avalonia.Threading;
-using Microsoft.Win32;
 using NaniKore.Interop;
 
 namespace NaniKore.App.Theme;
@@ -13,12 +13,12 @@ namespace NaniKore.App.Theme;
 /// </summary>
 internal static class ThemeManager
 {
-    private const string PersonalizeKey = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
     private const int DwmwaUseImmersiveDarkMode = 20;
     private const int DwmwaWindowCornerPreference = 33;
     private const int DwmwcpRound = 2; // 系统大圆角偏好（Windows 11）
 
-    private static bool _initialized;
+    private static Application? _application;
+    private static IPlatformSettings? _platformSettings;
 
     /// <summary>当前是否为深色主题。</summary>
     public static bool IsDark { get; private set; }
@@ -30,28 +30,31 @@ internal static class ThemeManager
     public static void Initialize(Application application)
     {
         ArgumentNullException.ThrowIfNull(application);
-        if (_initialized)
+        if (_application is not null)
         {
             return;
         }
 
-        _initialized = true;
-        IsDark = ReadSystemUsesDarkMode();
+        // 复用 Avalonia 的系统主题通知，避免 SystemEvents 的反向布尔委托进入 AOT 产物。
+        var settings = application.PlatformSettings
+            ?? throw new InvalidOperationException("主题初始化必须在 Avalonia 平台初始化之后执行。");
+        _application = application;
+        _platformSettings = settings;
+        IsDark = settings.GetColorValues().ThemeVariant == PlatformThemeVariant.Dark;
         application.RequestedThemeVariant = IsDark ? ThemeVariant.Dark : ThemeVariant.Light;
-
-        if (OperatingSystem.IsWindows())
-        {
-            SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
-        }
+        settings.ColorValuesChanged += OnColorValuesChanged;
     }
 
     /// <summary>卸载事件监听。</summary>
     public static void Shutdown()
     {
-        if (OperatingSystem.IsWindows())
+        if (_platformSettings is { } settings)
         {
-            SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+            settings.ColorValuesChanged -= OnColorValuesChanged;
         }
+
+        _platformSettings = null;
+        _application = null;
     }
 
     /// <summary>让窗口标题栏跟随深浅色主题，并启用 Windows 11 DWM 系统级平滑大圆角与柔和阴影。</summary>
@@ -108,14 +111,9 @@ internal static class ThemeManager
         }
     }
 
-    private static void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
+    private static void OnColorValuesChanged(object? sender, PlatformColorValues e)
     {
-        if (e.Category is not (UserPreferenceCategory.General or UserPreferenceCategory.Color or UserPreferenceCategory.VisualStyle))
-        {
-            return;
-        }
-
-        var application = Application.Current;
+        var application = _application;
         if (application is null)
         {
             return;
@@ -123,7 +121,13 @@ internal static class ThemeManager
 
         Dispatcher.UIThread.Post(() =>
         {
-            var dark = ReadSystemUsesDarkMode();
+            // 关闭后忽略已排队的旧通知，避免写回已卸载的宿主。
+            if (!ReferenceEquals(application, _application))
+            {
+                return;
+            }
+
+            var dark = e.ThemeVariant == PlatformThemeVariant.Dark;
             if (dark == IsDark)
             {
                 return;
@@ -133,22 +137,5 @@ internal static class ThemeManager
             application.RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
             ThemeChanged?.Invoke(null, EventArgs.Empty);
         });
-    }
-
-    private static bool ReadSystemUsesDarkMode()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return true; // 默认深色
-        }
-
-        try
-        {
-            return Registry.CurrentUser.OpenSubKey(PersonalizeKey)?.GetValue("AppsUseLightTheme") is int light && light == 0;
-        }
-        catch (Exception exception) when (exception is System.Security.SecurityException or UnauthorizedAccessException or IOException)
-        {
-            return false;
-        }
     }
 }
