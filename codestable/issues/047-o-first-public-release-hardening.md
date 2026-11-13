@@ -35,7 +35,7 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 | R06 | P1 | 第三方许可与仓库授权 | 已修复并验证 |
 | R07 | P2 | 小工作区与跨屏结果窗口定位 | 已修复并验证 |
 | R08 | P2 | 流式正文超时与设置热应用 | 已修复并验证 |
-| R09 | P2 | 配置及密钥读取失败后的原文件保护 | 待修复 |
+| R09 | P2 | 配置及密钥读取失败后的原文件保护 | 已修复并验证 |
 | R10 | P2 | 发布归档清单与完整包哈希校验 | 待改进 |
 | R11 | P2 | 用户入口、离线说明及默认值一致性 | 待整理 |
 | R12 | P2 | 博客素材与性能数据 | 待准备 |
@@ -231,11 +231,22 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 
 **处理与验收：**
 
-- [ ] 区分不存在、格式错误、无权限和无法解密，不把读取失败等同于首次使用。
-- [ ] 失败后后续保存不会静默销毁原配置或整份旧密文，提供明确的恢复/重置路径。
-- [ ] 用临时测试数据验证损坏 YAML、损坏密文和不可读文件，不读取或修改实际凭据。
-- [ ] 升级说明准确描述配置语义边界；不承诺未实现的自动迁移，不增加旧逻辑兼容层。
-- [ ] 备份说明明确 DPAPI `CurrentUser` 的边界，不承诺换机器或用户后可直接恢复 Key。
+- [x] 区分不存在、格式错误、无权限和无法解密，不把读取失败等同于首次使用。
+- [x] 失败后后续保存不会静默销毁原配置或整份旧密文，提供明确的恢复/重置路径。
+- [x] 用临时测试数据验证损坏 YAML、损坏密文和不可读文件，不读取或修改实际凭据。
+- [x] 升级说明准确描述配置语义边界；不承诺未实现的自动迁移，不增加旧逻辑兼容层。
+- [x] 备份说明明确 DPAPI `CurrentUser` 的边界，不承诺换机器或用户后可直接恢复 Key。
+
+**执行记录（2026-11-11）：**
+
+- **策略（主人定）**：读取失败时**拒绝写盘、让用户自己修**，并在启动时显著警示、点出解析有问题的一项；密钥另加可见提示；README 只做 DPAPI/配置读取失败语义，绝对表述交 R11 统一收敛。
+- [ConfigStore.cs](../../src/NaniKore/Config/ConfigStore.cs)：`ReadConfig` 失败时置 `_readFailed`，`DescribeReadFailure` 按 `YamlException`/`UnauthorizedAccessException`/`IOException` 分类为「格式错误 / 无权限 / 读取失败」，格式错误经 `DescribeYamlError` 读出出错行原文（「解析有问题的一项」）。`AtomicWrite` 在 `_readFailed` 时抛新增 `ConfigWriteRefusedException`，拒绝用默认值覆盖无法解析的原文件；内存仍退默认值供程序启动。不存在（首启/模板缺失）路径不变。
+- [SecretStore.cs](../../src/NaniKore/Config/SecretStore.cs)：`LoadMap` 区分「缺失/空文件」（非失败）与「无法解密（`CryptographicException`）/内容损坏（`JsonException`）/未知方案版本/IO 权限」（失败），失败时置 `_readFailed` 与可行动 `LoadWarning`，读仍降级为空不改调用契约；`WriteMap` 在 `_readFailed` 时抛新增 `SecretStoreWriteRefusedException`，拒绝整份覆盖旧密文；新增 `CheckReadable()` 供启动探测。
+- 宿主与 UI：[App.axaml.cs](../../src/NaniKore/App.axaml.cs) 启动时配置读取失败改走 `MessageDialog` 显著警示、普通规范化提醒仍走托盘；密钥启动失败推托盘提示；`PinChanged`/`AutoExplainChanged` 的后台写盘改经 `TryWriteConfig`，读取锁定或写盘异常只推托盘不崩溃。[TranslationPage.axaml.cs](../../src/NaniKore/App/Settings/TranslationPage.axaml.cs) 密钥无法解密时状态栏明确提示「原始密文未改动、保存将被拒绝」，不再显示成「尚未保存 API Key」。设置保存路径的拒绝异常由 `SettingsWindow.Save` 的既有 catch 直接展示为页脚错误。
+- **回归（无 UI 临时数据，不碰真实 `.data` 与凭据）**：[SelfTest.Config.cs](../../src/NaniKore/Diagnostics/SelfTest.Config.cs) 改写 `TestSecretStoreKeysBinEnvelope`（损坏密文读为空、`ReadFailed`、保存被拒且字节不变、删文件后恢复可写）并新增 `TestConfigReadFailurePreservesOriginal`（损坏 YAML 不重置、内存可启动、保存被拒且字节不变、警告点名格式错误与出错行）与 `TestConfigUnreadableFileIsPreserved`（文件被独占不可读≠不存在、保存被拒、原文件逐字节保留）。
+- **验证**：`./scripts/dev.ps1 build` 0 错误；`./scripts/dev.ps1 test` 退出码 0，`All self-tests passed (1733 checks).`（R08 基线 1724，新增/改写净增 9 项）。未重新构建/验证 Native AOT 发布包；启动弹窗与设置页提示为代码路径，未做真机手测。
+- **文档**：[README.md](../../README.md) 增补配置/密钥读取失败语义与 DPAPI `CurrentUser` 备份边界（换用户/机器后密钥无法解密、需重填）；「覆盖升级不冲掉任何数据」等绝对表述留待 R11 统一处理。Project Spec 配置与密钥条目已同步。
+- R09 已完成；整份发布加固事项保持 open。
 
 ## R10：发布包由明确清单构造
 

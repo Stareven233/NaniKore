@@ -25,6 +25,9 @@ internal sealed class ConfigStore
     private readonly string _configPath;
     private readonly string _templatePath;
 
+    // 读取失败后置位：内存虽退回默认值让程序仍能启动，但拒绝写盘，防止覆盖无法解析的原文件（R09）。
+    private bool _readFailed;
+
     public ConfigStore(string dataDirectory, string? templateDirectory = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dataDirectory);
@@ -42,6 +45,12 @@ internal sealed class ConfigStore
     /// <summary>供设置面板显示的非致命读取/规范化提醒。</summary>
     public string? LoadWarning { get; private set; }
 
+    /// <summary>
+    /// 配置读取失败（格式错误/无权限/IO）。此时 <see cref="AtomicWrite"/> 会拒绝写盘，
+    /// 避免把用户无法解析的原文件静默覆盖成默认配置（R09）。
+    /// </summary>
+    public bool ReadFailed => _readFailed;
+
     public ProviderProfile GetActiveProfile() => GetProfile(Current.Pipeline.ActiveProfile);
 
     /// <summary>按档名查找；档名是配置档唯一身份（issue 017）。</summary>
@@ -57,6 +66,12 @@ internal sealed class ConfigStore
     public void AtomicWrite(AppConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
+        // 读取失败时拒绝覆盖原文件（R09）：宁可不保存，也不把无法解析的用户配置静默抹成默认值。
+        if (_readFailed)
+        {
+            throw new ConfigWriteRefusedException(LoadWarning ?? "config.yaml 读取失败，已拒绝写入。");
+        }
+
         Normalize(config, reportWarnings: false);
         // 写盘只走磁盘契约：缺省字段在此折叠成 null 并被序列器省略（4 行形态的唯一来源）。
         var yaml = Serializer.Serialize(AppConfigDocument.ToDocument(config));
@@ -115,13 +130,58 @@ internal sealed class ConfigStore
             var document = Deserializer.Deserialize<AppConfigDocument>(yaml) ?? new AppConfigDocument();
             var config = document.ToRuntime();
             Normalize(config, reportWarnings: true);
+            _readFailed = false;
             return config;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or YamlDotNet.Core.YamlException)
         {
-            LoadWarning = $"读取 config.yaml 失败，已使用默认配置：{exception.Message}";
+            // 读取失败不等于首次使用（R09）：内存退回默认值让程序仍能启动，但记录失败并锁定写盘，
+            // 避免后续保存把无法解析的原文件覆盖成默认配置。
+            _readFailed = true;
+            LoadWarning = DescribeReadFailure(exception);
             return new AppConfig();
         }
+    }
+
+    /// <summary>
+    /// 把读取失败分类成可行动的中文说明：区分格式错误、无权限与 IO 失败；格式错误额外读出
+    /// 出错行原文（即「解析有问题的一项」），便于用户直接定位修改。
+    /// </summary>
+    private string DescribeReadFailure(Exception exception)
+    {
+        var reason = exception switch
+        {
+            YamlDotNet.Core.YamlException yaml => $"config.yaml 格式错误：{DescribeYamlError(yaml)}",
+            UnauthorizedAccessException => $"config.yaml 无权限读取：{exception.Message}",
+            _ => $"config.yaml 读取失败：{exception.Message}",
+        };
+
+        return $"{reason}。为避免覆盖原文件，本次不会写入 config.yaml；请修正或删除 {_configPath} 后重启。";
+    }
+
+    /// <summary>从 YamlException 的标记位置读出出错行原文，拼进说明里点名「有问题的一项」。</summary>
+    private string DescribeYamlError(YamlDotNet.Core.YamlException exception)
+    {
+        var line = exception.Start.Line; // YamlDotNet 行号从 1 开始
+        if (line <= 0)
+        {
+            return exception.Message;
+        }
+
+        try
+        {
+            var lines = File.ReadAllLines(_configPath);
+            if (line <= lines.Length)
+            {
+                return $"{exception.Message}（第 {line} 行：{lines[line - 1].Trim()}）";
+            }
+        }
+        catch (Exception readException) when (readException is IOException or UnauthorizedAccessException)
+        {
+            // 二次读取失败时只保留原始异常文本，不影响主流程。
+        }
+
+        return exception.Message;
     }
 
     /// <returns>true 表示已从模板生成 config.yaml；模板缺失或复制失败返回 false。</returns>
@@ -341,3 +401,9 @@ internal sealed class ConfigStore
         }
     }
 }
+
+/// <summary>
+/// config.yaml 读取失败后仍尝试写盘时抛出（R09）：拒绝用默认值覆盖无法解析的原文件。
+/// 提示信息本身已是可行动中文，调用方通常直接展示。
+/// </summary>
+internal sealed class ConfigWriteRefusedException(string message) : Exception(message);

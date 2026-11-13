@@ -103,12 +103,24 @@ public partial class NaniKoreApp : Application
             () => ShowSettings(),
             ExitApplication);
 
-        if (!string.IsNullOrWhiteSpace(_configStore.LoadWarning))
+        if (_configStore.ReadFailed)
+        {
+            // 配置读取失败要显著警示并点名出错项（R09）：用对话框而非一闪而过的托盘提示。
+            MessageDialog.Show(null, "配置文件读取失败", _configStore.LoadWarning, InfoSeverity.Error);
+        }
+        else if (!string.IsNullOrWhiteSpace(_configStore.LoadWarning))
         {
             _trayIcon.ShowWarning(_configStore.LoadWarning);
         }
 
-        if (IsConfigVersionBehindTemplate())
+        // 密钥文件无法解密（换用户/换机器/损坏）时不再静默当作未配置（R09）。
+        if (_secretStore.CheckReadable())
+        {
+            _trayIcon.ShowWarning(_secretStore.LoadWarning ?? "密钥文件无法读取，已拒绝覆盖原始密文。");
+        }
+
+        // 读取失败时已在上面给出显著警示；不再叠加版本差提示，避免默认回退后的噪音。
+        if (!_configStore.ReadFailed && IsConfigVersionBehindTemplate())
         {
             _trayIcon.ShowWarning("检测到配置版本与模板版本不一致，详见 设置-关于");
         }
@@ -755,7 +767,7 @@ public partial class NaniKoreApp : Application
             if (config.Windows.ResultPanelPinned != pinned)
             {
                 config.Windows.ResultPanelPinned = pinned;
-                _configStore.AtomicWrite(config);
+                TryWriteConfig(config);
             }
         };
         panel.AutoExplainChanged += (_, autoExplain) =>
@@ -764,7 +776,7 @@ public partial class NaniKoreApp : Application
             if (config.General.AutoExplain != autoExplain)
             {
                 config.General.AutoExplain = autoExplain;
-                _configStore.AtomicWrite(config);
+                TryWriteConfig(config);
             }
         };
         panel.SettingsRequested += (_, tab) => ShowSettings(tab);
@@ -822,6 +834,22 @@ public partial class NaniKoreApp : Application
         }
         catch
         {
+        }
+    }
+
+    /// <summary>
+    /// 后台开关写配置的守卫（R09）：读取失败锁定写盘或写盘异常时，不让事件处理崩溃，
+    /// 只把可行动的中文错误推到托盘；内存开关仍即时生效供本次会话使用。
+    /// </summary>
+    private void TryWriteConfig(AppConfig config)
+    {
+        try
+        {
+            _configStore.AtomicWrite(config);
+        }
+        catch (Exception exception)
+        {
+            _trayIcon?.ShowWarning(exception.Message);
         }
     }
 

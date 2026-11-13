@@ -24,6 +24,10 @@ internal sealed class SecretStore
 
     private readonly string _keysPath;
 
+    // 读取失败（密文无法解密、JSON 损坏或未知方案版本）后置位：写盘时拒绝覆盖整份旧密文（R09）。
+    private bool _readFailed;
+    private string? _loadWarning;
+
     /// <param name="directory">密钥所在目录；缺省为数据目录 <c>.data</c>，自测一律注入临时目录。</param>
     public SecretStore(string? directory = null)
     {
@@ -32,6 +36,19 @@ internal sealed class SecretStore
     }
 
     public string KeysPath => _keysPath;
+
+    /// <summary>密钥文件存在但无法解密/解析；此时写盘会拒绝覆盖原密文（R09）。</summary>
+    public bool ReadFailed => _readFailed;
+
+    /// <summary>供托盘/设置页展示的可行动中文说明；成功或文件缺失时为 null。</summary>
+    public string? LoadWarning => _loadWarning;
+
+    /// <summary>启动时探测密钥文件是否可读；返回 true 表示存在但无法解密/解析（R09）。</summary>
+    public bool CheckReadable()
+    {
+        _ = LoadMap();
+        return _readFailed;
+    }
 
     public void Save(string name, string apiKey)
     {
@@ -84,9 +101,9 @@ internal sealed class SecretStore
     }
 
     /// <summary>
-    /// 读整份映射。文件缺失、DPAPI 解不开（换用户/换机器）或 JSON 损坏一律按「未配置」处理，
-    /// 返回空字典，绝不泄露密文内容、绝不抛异常打断调用方。
-    /// 自动根据文件头判断方案版本：若无 NKKEY 头则作为旧版无头 DPAPI 处理（零迁移兼容）。
+    /// 读整份映射。文件缺失或空文件按「未配置」处理；DPAPI 解不开（换用户/换机器）、JSON 损坏或未知方案版本
+    /// 同样返回空字典不抛异常（绝不泄露密文内容、不打断调用方），但会置 <see cref="ReadFailed"/> 并记录可行动说明，
+    /// 供写盘阶段拒绝覆盖（R09）。自动根据文件头判断方案版本：无 NKKEY 头则作为旧版无头 DPAPI 处理（零迁移兼容）。
     /// </summary>
     private Dictionary<string, string> LoadMap()
     {
@@ -94,12 +111,14 @@ internal sealed class SecretStore
         {
             if (!File.Exists(_keysPath))
             {
+                ClearReadFailure();
                 return NewMap();
             }
 
             var rawBytes = File.ReadAllBytes(_keysPath);
             if (rawBytes.Length == 0)
             {
+                ClearReadFailure();
                 return NewMap();
             }
 
@@ -109,9 +128,10 @@ internal sealed class SecretStore
             {
                 var scheme = rawBytes[5];
                 var version = rawBytes[6];
-                // 当前仅支持 Scheme 1 (DPAPI) Version 1；未知方案安全降级为空
+                // 未知方案版本：原文件可能是其它版本的密文，安全降级为空并要求用户手动处理，绝不静默覆盖。
                 if (scheme != SchemeDpapi || version != SchemeVersion1)
                 {
+                    SetReadFailure("keys.bin 的方案版本无法识别，原始密文可能属于其它版本。");
                     return NewMap();
                 }
 
@@ -128,16 +148,46 @@ internal sealed class SecretStore
                 Entropy,
                 DataProtectionScope.CurrentUser);
 
-            return JsonSerializer.Deserialize(
+            var parsed = JsonSerializer.Deserialize(
                 plaintext,
-                NaniKoreJsonSerializerContext.Default.DictionaryStringString) is { } map
-                ? NewMap(map)
-                : NewMap();
-        }
-        catch (Exception exception) when (exception is CryptographicException or JsonException or IOException or UnauthorizedAccessException)
-        {
+                NaniKoreJsonSerializerContext.Default.DictionaryStringString);
+            if (parsed is { } map)
+            {
+                ClearReadFailure();
+                return NewMap(map);
+            }
+
+            SetReadFailure("keys.bin 解密后的内容无法解析。");
             return NewMap();
         }
+        catch (CryptographicException)
+        {
+            // DPAPI 绑定当前 Windows 用户：换用户/换机器或密文损坏都会落到这里。
+            SetReadFailure("keys.bin 无法解密（可能由其它 Windows 用户或机器生成，或密文已损坏）。");
+            return NewMap();
+        }
+        catch (JsonException)
+        {
+            SetReadFailure("keys.bin 解密后的内容已损坏，无法解析。");
+            return NewMap();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            SetReadFailure($"keys.bin 读取失败：{exception.Message}");
+            return NewMap();
+        }
+    }
+
+    private void ClearReadFailure()
+    {
+        _readFailed = false;
+        _loadWarning = null;
+    }
+
+    private void SetReadFailure(string reason)
+    {
+        _readFailed = true;
+        _loadWarning = $"{reason}为避免覆盖原始密文，保存新密钥将被拒绝；请将 {_keysPath} 改名或删除后重启。";
     }
 
     /// <summary>
@@ -146,6 +196,12 @@ internal sealed class SecretStore
     /// </summary>
     private void WriteMap(Dictionary<string, string> map)
     {
+        // 读取失败时拒绝覆盖（R09）：旧密文可能仍可人工恢复，不能因保存一个新 Key 就整份抹掉。
+        if (_readFailed)
+        {
+            throw new SecretStoreWriteRefusedException(_loadWarning ?? "keys.bin 读取失败，已拒绝写入。");
+        }
+
         var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(
             map,
             NaniKoreJsonSerializerContext.Default.DictionaryStringString);
@@ -174,3 +230,8 @@ internal sealed class SecretStore
             ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             : new Dictionary<string, string>(source, StringComparer.OrdinalIgnoreCase);
 }
+
+/// <summary>
+/// keys.bin 读取失败后仍尝试写盘时抛出（R09）：拒绝用新密文覆盖可能仍可恢复的旧密文。
+/// </summary>
+internal sealed class SecretStoreWriteRefusedException(string message) : Exception(message);

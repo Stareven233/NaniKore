@@ -205,11 +205,14 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         SetApiKey(_pendingKeys.GetValueOrDefault(profile.Name) ?? Secrets.Load(profile.Name) ?? string.Empty);
         SetApiKeyVisibility(false);
         RemoveButton.IsEnabled = _config is { Profiles.Count: > 1 };
+        // 密钥文件无法解密时不显示成「未配置」（R09）：明确提示原密文未动、保存会被拒绝。
         TestStatus.Show(
-            _pendingKeys.ContainsKey(profile.Name) || Secrets.Exists(profile.Name)
-                ? "该配置档已保存 API Key。"
-                : "该配置档尚未保存 API Key。",
-            InfoSeverity.Neutral);
+            Secrets.ReadFailed
+                ? "密钥文件无法解密（可能来自其它用户/机器或已损坏），原始密文未改动；保存新密钥将被拒绝，请改名或删除 .data\\keys.bin 后重启。"
+                : _pendingKeys.ContainsKey(profile.Name) || Secrets.Exists(profile.Name)
+                    ? "该配置档已保存 API Key。"
+                    : "该配置档尚未保存 API Key。",
+            Secrets.ReadFailed ? InfoSeverity.Error : InfoSeverity.Neutral);
         _loading = false;
         UpdateKindControls();
     }

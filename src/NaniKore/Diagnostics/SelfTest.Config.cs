@@ -66,6 +66,8 @@ internal static partial class SelfTest
         TestProfileDocumentOmitsDefaults();
         TestProfileWithOnlyNameGetsDefaults();
         TestConfigSeedsFromTemplateByteForByte();
+        TestConfigReadFailurePreservesOriginal();
+        TestConfigUnreadableFileIsPreserved();
         TestDataDirectoryWritabilityRefusal();
         TestSecretStoreKeysBinEnvelope();
         TestSecretStoreIgnoresLegacyLayout();
@@ -698,16 +700,17 @@ internal static partial class SelfTest
 
     /// <summary>
     /// keys.bin 信封（issue 017）：整块 DPAPI 密文、无明文；按档名 Save/Load 往返一致；
-    /// 整文件损坏时按「未配置」处理不抛；删除只掉对应键。
+    /// 整文件损坏时按「未配置」读而不抛，但原密文受保护：保存新 Key 必须被拒绝而非覆盖（R09）。
     /// </summary>
     private static void TestSecretStoreKeysBinEnvelope()
     {
         WithTempSecretDirectory(directory =>
         {
+            var keysPath = Path.Combine(directory, "keys.bin");
             var secrets = new SecretStore(directory);
             secrets.Save("档 A", "key-alpha");
             secrets.Save("档 B", "key-beta");
-            var bytes = File.ReadAllBytes(Path.Combine(directory, "keys.bin"));
+            var bytes = File.ReadAllBytes(keysPath);
             var text = Encoding.UTF8.GetString(bytes);
             Check(
                 "keys.bin stores only ciphertext without plaintext keys or profile names",
@@ -720,21 +723,114 @@ internal static partial class SelfTest
                 secrets.Load("档 A") == "key-alpha" &&
                 secrets.Load("档 B") == "key-beta" &&
                 secrets.Exists("档 A") &&
-                !secrets.Exists("不存在的档"));
+                !secrets.Exists("不存在的档") &&
+                !secrets.ReadFailed);
 
-            // 整文件损坏：整体按未配置处理，绝不泄露密文内容
-            File.WriteAllBytes(Path.Combine(directory, "keys.bin"), [1, 2, 3]);
-            Check(
-                "a corrupted keys.bin degrades to no secrets without throwing",
-                secrets.Load("档 A") is null && !secrets.Exists("档 A"));
-
-            secrets.Save("档 A", "key-alpha");
-            secrets.Save("档 B", "key-beta");
             secrets.Delete("档 A");
             Check(
                 "delete removes only the named entry",
                 secrets.Load("档 A") is null && secrets.Load("档 B") == "key-beta");
+
+            // 整文件损坏（R09）：读不出仍是「未配置」不抛；但原密文受保护，保存新 Key 必须被拒绝。
+            byte[] corrupted = [1, 2, 3];
+            File.WriteAllBytes(keysPath, corrupted);
+            Check(
+                "a corrupted keys.bin degrades to no secrets without throwing",
+                secrets.Load("档 B") is null && secrets.ReadFailed &&
+                secrets.LoadWarning?.Contains("解密", StringComparison.Ordinal) == true);
+            Check(
+                "saving after a decrypt failure is refused instead of wiping the corrupted ciphertext",
+                ThrowsSecretWriteRefused(() => secrets.Save("档 A", "key-alpha")) &&
+                File.ReadAllBytes(keysPath).SequenceEqual(corrupted));
+
+            // 用户删除不可读的 keys.bin 后（新实例）恢复为首次使用：缺失不等于失败，可正常写入。
+            File.Delete(keysPath);
+            var recovered = new SecretStore(directory);
+            recovered.Save("档 A", "key-alpha");
+            Check(
+                "deleting the unreadable keys.bin restores a writable first-use state",
+                !recovered.ReadFailed && recovered.Load("档 A") == "key-alpha");
         });
+    }
+
+    private static bool ThrowsSecretWriteRefused(Action action)
+    {
+        try
+        {
+            action();
+            return false;
+        }
+        catch (SecretStoreWriteRefusedException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// R09：损坏 YAML 不能当作首次使用静默重置；内存退默认仍可启动，但保存必须拒绝，原文件字节不变，
+    /// 且警告点明「格式错误 + 出错行」供用户手动修复。
+    /// </summary>
+    private static void TestConfigReadFailurePreservesOriginal()
+    {
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
+        {
+            var configPath = Path.Combine(dataDirectory, "config.yaml");
+            byte[] corrupted = Encoding.UTF8.GetBytes("general: [未闭合\n  bad: : :\n");
+            File.WriteAllBytes(configPath, corrupted);
+            var store = new ConfigStore(dataDirectory, templateDirectory);
+            Check(
+                "a malformed config.yaml is not treated as first use and keeps a warning",
+                store.ReadFailed && !string.IsNullOrWhiteSpace(store.LoadWarning) && File.Exists(configPath));
+            Check(
+                "a malformed config still starts on defaults so the app can run",
+                store.Current.Profiles.Count == 3);
+            Check(
+                "saving over a malformed config is refused instead of silently rewriting defaults",
+                ThrowsConfigWriteRefused(() => store.AtomicWrite(AppConfigCloner.Clone(store.Current))) &&
+                File.ReadAllBytes(configPath).SequenceEqual(corrupted));
+            Check(
+                "the read failure warning names the format error and the offending line",
+                store.LoadWarning!.Contains("格式错误", StringComparison.Ordinal) &&
+                store.LoadWarning.Contains("行", StringComparison.Ordinal));
+        });
+    }
+
+    /// <summary>R09：文件被占用/不可读时区分于「不存在」，不覆盖原文件。</summary>
+    private static void TestConfigUnreadableFileIsPreserved()
+    {
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
+        {
+            var configPath = Path.Combine(dataDirectory, "config.yaml");
+            byte[] original = Encoding.UTF8.GetBytes("version: 1.2.3\n");
+            File.WriteAllBytes(configPath, original);
+            using (new FileStream(configPath, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                var store = new ConfigStore(dataDirectory, templateDirectory);
+                Check(
+                    "an unreadable config.yaml is reported as a read failure, not as missing",
+                    store.ReadFailed && store.LoadWarning!.Contains("读取失败", StringComparison.Ordinal));
+                Check(
+                    "an unreadable config.yaml is never overwritten by a save attempt",
+                    ThrowsConfigWriteRefused(() => store.AtomicWrite(AppConfigCloner.Clone(store.Current))));
+            }
+
+            Check(
+                "the unreadable config file survives byte for byte",
+                File.ReadAllBytes(configPath).SequenceEqual(original));
+        });
+    }
+
+    private static bool ThrowsConfigWriteRefused(Action action)
+    {
+        try
+        {
+            action();
+            return false;
+        }
+        catch (ConfigWriteRefusedException)
+        {
+            return true;
+        }
     }
 
     /// <summary>反向断言（零兼容）：旧布局 secrets\{id}.bin 一律不读，应用只认注入目录下的 keys.bin。</summary>

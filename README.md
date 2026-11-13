@@ -15,7 +15,7 @@
 - 结果自动复制到剪贴板；设置、热键和 API Key 可在应用内管理。
 - 结果卡精讲与正文划词均可一键收藏进本地生词本：SQLite 持久化（`.data/collections.db`），支持类别/语言/关键词筛选与就地编辑。
 - 原文区本地注音：日语标振假名、英语标国际音标、简体中文标拼音，由本地引擎叠加（词典按语言按需下载）；面板「注音」按钮可随时对当前原文重新标注并查看读音，无需先点「翻译」。短原文（可注音单词不足 10 个）视为短语，全部单词都注音，不再按难词过滤。
-- API Key 仅使用当前 Windows 用户的 DPAPI 保存，不会写入仓库、配置模板或 `.data/config.yaml`。
+- API Key 仅使用当前 Windows 用户的 DPAPI 保存，不会写入仓库、配置模板或 `.data/config.yaml`。DPAPI 绑定当前 Windows 账户，换用户或换机器后密文无法解密；此时程序不会覆盖原密文，会提示手动处理。
 - 程序目录根只放交付物（精简 exe、随包原生 DLL、`config.template.yaml`、`NOTICE`、`LICENSE`）；配置、密钥与收藏库全部收拢在 `程序目录\.data\`，解压覆盖升级碰不到它们。
 
 ## 系统要求
@@ -82,13 +82,13 @@ deps/                        # （仅 -full 完整包携带，或设置页按需
 └─ phonetics/                # 中/日/英三语形态素与注音词典
 ```
 
-发布包不含 `.data/`：首次启动时程序把 `config.template.yaml` 按字节原样复制到 `程序目录\.data\config.yaml` 作为用户配置，密钥落在 `.data/keys.bin`（整块 DPAPI 密文），收藏库是 `.data/collections.db`。因此解压覆盖升级不会冲掉任何本机数据；备份整个软件只需复制 `.data/`。
+发布包不含 `.data/`：首次启动时程序把 `config.template.yaml` 按字节原样复制到 `程序目录\.data\config.yaml` 作为用户配置，密钥落在 `.data/keys.bin`（整块 DPAPI 密文），收藏库是 `.data/collections.db`。因此解压覆盖升级不会冲掉任何本机数据。备份整个软件只需复制 `.data/`；但其中 `keys.bin` 由当前 Windows 用户的 DPAPI 加密，复制到其它 Windows 用户或其它机器后无法解密，需在目标机重新填写 API Key（程序不会覆盖无法解密的原文件，会提示手动处理）。
 
 轻量包需要用户在设置页确认下载依赖后才能进行本地 OCR；完整包解压后无需额外下载。
 
 ## 配置与翻译服务
 
-根目录 `config.template.yaml` 是不含密钥、可审阅的配置模板，随包发布且程序永不写它。首次启动时它被字节级复制到 `程序目录\.data\config.yaml`（模板注释原样保留），之后只读写 `.data` 里的副本——已有配置时模板怎么改都不影响运行。
+根目录 `config.template.yaml` 是不含密钥、可审阅的配置模板，随包发布且程序永不写它。首次启动时它被字节级复制到 `程序目录\.data\config.yaml`（模板注释原样保留），之后只读写 `.data` 里的副本——已有配置时模板怎么改都不影响运行。若 `config.yaml` 或 `keys.bin` 读取失败（格式错误、无权限、被占用或无法解密），程序会明确提示并点出出错的配置行，且不会覆盖原文件；请手动修正或删除该文件后重启。
 
 每个配置档只需 `name` / `kind` / `base_url` / `model` 四行；`api_type` / `supports_vision` / `timeout_seconds` / `enable_thinking` 只在偏离缺省（`completions` / `true` / `30` 秒 / `false`）时才需要写。配置档的唯一身份是 `name`：`pipeline.active_profile`、翻译页下拉、错误提示与密钥索引全部用它。
 
