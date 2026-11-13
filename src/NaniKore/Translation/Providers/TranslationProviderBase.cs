@@ -317,6 +317,16 @@ internal abstract class TranslationProviderBase : ITranslationProvider
         }
     }
 
+    /// <summary>
+    /// 打开受空闲超时约束的响应体流（R08）：连接与等待响应头阶段由 HttpClient.Timeout 负责，
+    /// 之后的正文读取则按 timeout_seconds 的空闲间隔计时，避免服务端发出 200 响应头后不再发送正文导致永久挂起。
+    /// </summary>
+    protected async Task<Stream> OpenIdleGuardedStreamAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var raw = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        return new IdleTimeoutStream(raw, TimeSpan.FromSeconds(Profile.TimeoutSeconds));
+    }
+
     protected static Uri BuildUri(string baseUrl, string relative) => new(
         baseUrl.TrimEnd('/') + "/" + relative.TrimStart('/'),
         UriKind.Absolute);

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -34,6 +35,8 @@ internal static partial class SelfTest
         TestOpenAiThinkingParameterRejectionFallback();
         TestProviderOutOfBandThinkingExtraction();
         TestProviderTransportBoundary();
+        TestProviderStreamIdleTimeout();
+        TestProviderFactoryDeferredDisposal();
     }
 
     /// <summary>
@@ -1800,6 +1803,339 @@ internal static partial class SelfTest
         Check(
             "Gemini ExtractDelta separates thought parts from regular text parts",
             geminiText == "正式译文" && geminiThinking == "Gemini思考过程");
+    }
+
+    /// <summary>
+    /// R08 空闲超时：用受控端点复现“发出 200 响应头后不再发送正文”，验证应用能结束等待并抛出可理解错误；
+    /// 同时验证持续有数据的长回复不会被总时长截断，以及调用方取消（关闭窗口/新输入）仍能及时生效。
+    /// </summary>
+    private static void TestProviderStreamIdleTimeout()
+    {
+        var request = new UnderstandRequest(UnderstandKind.Translate, "原文", null, "中文（简体）");
+
+        // 1. 200 响应头后永久静默：应在空闲超时（这里 1 秒）内结束并抛 ProviderTimeoutException，而不是永久挂起。
+        using (var provider = new OpenAiProvider(
+            new ProviderProfile { BaseUrl = "https://provider.test/v1", TimeoutSeconds = 1 },
+            "key", new PromptConfig(), new ScriptedHandler(OkWithStream(new SilentStream()))))
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                Drain(provider, request);
+                Check("Silent stream after 200 headers ends the wait instead of hanging", false);
+            }
+            catch (ProviderTimeoutException ex)
+            {
+                stopwatch.Stop();
+                Check(
+                    "Silent body stream aborts via idle timeout with actionable message",
+                    ex.Message.Contains("未收到任何数据", StringComparison.Ordinal) &&
+                    ex.Message.Contains("timeout_seconds", StringComparison.Ordinal));
+                Check(
+                    "Idle timeout fires near the configured second rather than hanging",
+                    stopwatch.Elapsed >= TimeSpan.FromMilliseconds(700) && stopwatch.Elapsed < TimeSpan.FromSeconds(8));
+            }
+            catch (Exception ex)
+            {
+                Check($"Silent stream should time out, got {ex.GetType().Name}: {ex.Message}", false);
+            }
+        }
+
+        // 2. 长回复：每块间隔 350ms、总时长远超 1 秒空闲阈值，但每个间隔都在阈值内 → 不应被截断。
+        var pacedSegments = new[] { "长", "回", "复", "完" }
+            .Select(OpenAiDeltaFrame)
+            .Append("data: [DONE]\n\n")
+            .ToArray();
+        using (var provider = new OpenAiProvider(
+            new ProviderProfile { BaseUrl = "https://provider.test/v1", TimeoutSeconds = 1 },
+            "key", new PromptConfig(), new ScriptedHandler(OkWithStream(new PacedStream(pacedSegments, TimeSpan.FromMilliseconds(350))))))
+        {
+            var text = string.Concat(Drain(provider, request).Where(d => d.Channel == DeltaChannel.Translation).Select(d => d.Text));
+            Check(
+                "Continuously streaming long reply is not truncated by the total timeout",
+                text == "长回复完");
+        }
+
+        // 3. 调用方取消：即使空闲阈值很长（5 秒），收到取消也应及时结束，且不误报为超时。
+        using (var provider = new OpenAiProvider(
+            new ProviderProfile { BaseUrl = "https://provider.test/v1", TimeoutSeconds = 5 },
+            "key", new PromptConfig(), new ScriptedHandler(OkWithStream(new SilentStream()))))
+        using (var cts = new CancellationTokenSource())
+        {
+            var canceled = false;
+            var cancelTimer = Task.Run(async () => { await Task.Delay(150).ConfigureAwait(false); cts.Cancel(); });
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                DrainWithToken(provider, request, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                canceled = true;
+            }
+            catch (Exception ex)
+            {
+                Check($"Caller cancellation should surface as OperationCanceledException, got {ex.GetType().Name}", false);
+            }
+            stopwatch.Stop();
+            cancelTimer.GetAwaiter().GetResult();
+            Check(
+                "Closing or new input still cancels a stuck stream promptly via the caller token",
+                canceled && stopwatch.Elapsed < TimeSpan.FromSeconds(3));
+        }
+    }
+
+    /// <summary>
+    /// R08 配置热应用生命周期：用真实本地延迟响应端点复现“翻译途中保存设置/关闭改过尺寸的设置窗口”。
+    /// 这些操作都经 ApplySettings 重建并 Dispose 旧 ProviderFactory；修复前会在等待响应头阶段被中断，
+    /// 修复后通过流租约延迟释放底层 HttpClient，让进行中的请求跑完。
+    /// </summary>
+    private static void TestProviderFactoryDeferredDisposal()
+    {
+        const string body =
+            "data: {\"choices\":[{\"delta\":{\"content\":\"热\"}}]}\n\n" +
+            "data: {\"choices\":[{\"delta\":{\"content\":\"应用\"}}]}\n\n" +
+            "data: [DONE]\n\n";
+        using var server = new DelayedSseServer(TimeSpan.FromMilliseconds(500), body);
+        var request = new UnderstandRequest(UnderstandKind.Translate, "原文", null, "中文（简体）");
+
+        WithTempSecretDirectory(directory =>
+        {
+            var secrets = new SecretStore(directory);
+            const string profileName = "本地延迟档";
+            secrets.Save(profileName, "test-key");
+
+            var config = new AppConfig();
+            config.Profiles.Clear();
+            config.Profiles.Add(new ProviderProfile
+            {
+                Name = profileName,
+                Kind = "openai",
+                BaseUrl = $"http://127.0.0.1:{server.Port}/v1",
+                Model = "test-model",
+                TimeoutSeconds = 30,
+            });
+
+            var factory = new ProviderFactory(config, secrets);
+            var provider = factory.GetProvider(profileName, request);
+            var enumerator = provider.StreamAsync(request, CancellationToken.None).GetAsyncEnumerator();
+            try
+            {
+                // 让请求进入“已发出、等待响应头”阶段，再模拟配置热应用（ApplySettings 会 Dispose 旧工厂）。
+                var firstMove = enumerator.MoveNextAsync().AsTask();
+                Thread.Sleep(150);
+                factory.Dispose();
+
+                var received = new List<string>();
+                if (firstMove.GetAwaiter().GetResult())
+                {
+                    received.Add(enumerator.Current.Text);
+                }
+                while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+                {
+                    received.Add(enumerator.Current.Text);
+                }
+
+                Check(
+                    "Saving settings or closing a resized settings window mid-request keeps the translation alive",
+                    string.Concat(received) == "热应用");
+            }
+            catch (Exception ex)
+            {
+                Check($"In-flight translation should survive provider re-apply, got {ex.GetType().Name}: {ex.Message}", false);
+            }
+            finally
+            {
+                enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                factory.Dispose();
+            }
+        });
+    }
+
+    /// <summary>收集指定取消令牌的流式增量；用于验证取消路径，不关心内容。</summary>
+    private static void DrainWithToken(ITranslationProvider provider, UnderstandRequest request, CancellationToken cancellationToken)
+    {
+        var enumerator = provider.StreamAsync(request, cancellationToken).GetAsyncEnumerator(cancellationToken);
+        try
+        {
+            while (enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+            {
+            }
+        }
+        finally
+        {
+            enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+    }
+
+    private static HttpResponseMessage OkWithStream(Stream stream) =>
+        new(HttpStatusCode.OK) { Content = new StreamContent(stream) };
+
+    private static string OpenAiDeltaFrame(string text) =>
+        $"data: {{\"choices\":[{{\"delta\":{{\"content\":\"{text}\"}}}}]}}\n\n";
+
+    /// <summary>永远读不到数据的流：模拟“发出 200 响应头后不再发送正文”。</summary>
+    private sealed class SilentStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            return 0;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    /// <summary>按固定间隔逐块吐出的流：验证持续有数据时不会被总时长截断。</summary>
+    private sealed class PacedStream : Stream
+    {
+        private readonly Queue<byte[]> _segments;
+        private readonly TimeSpan _gap;
+        private bool _started;
+        private byte[]? _pending;
+
+        public PacedStream(IEnumerable<string> segments, TimeSpan gap)
+        {
+            _segments = new Queue<byte[]>(segments.Select(segment => Encoding.UTF8.GetBytes(segment)));
+            _gap = gap;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_pending is null)
+            {
+                if (_segments.Count == 0)
+                {
+                    return 0;
+                }
+
+                if (_started)
+                {
+                    await Task.Delay(_gap, cancellationToken).ConfigureAwait(false);
+                }
+                _started = true;
+                _pending = _segments.Dequeue();
+            }
+
+            var count = Math.Min(_pending.Length, buffer.Length);
+            _pending.AsSpan(0, count).CopyTo(buffer.Span);
+            _pending = count < _pending.Length ? _pending[count..] : null;
+            return count;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// 极简本地流式服务：读完请求头后先延迟 headerDelay 再发 200 响应头与一段 SSE，
+    /// 用于在真实网络栈上复现“等待响应头期间配置热应用会中断请求”的 R08 行为。
+    /// </summary>
+    private sealed class DelayedSseServer : IDisposable
+    {
+        private readonly TcpListener _listener;
+        private readonly TimeSpan _headerDelay;
+        private readonly string _body;
+        private readonly CancellationTokenSource _cts = new();
+        private readonly Task _loop;
+
+        public DelayedSseServer(TimeSpan headerDelay, string body)
+        {
+            _headerDelay = headerDelay;
+            _body = body;
+            _listener = new TcpListener(IPAddress.Loopback, 0);
+            _listener.Start();
+            Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
+            _loop = Task.Run(AcceptLoopAsync);
+        }
+
+        public int Port { get; }
+
+        private async Task AcceptLoopAsync()
+        {
+            try
+            {
+                while (!_cts.IsCancellationRequested)
+                {
+                    var client = await _listener.AcceptTcpClientAsync(_cts.Token).ConfigureAwait(false);
+                    _ = HandleAsync(client);
+                }
+            }
+            catch
+            {
+                // 监听停止或取消属正常退出。
+            }
+        }
+
+        private async Task HandleAsync(TcpClient client)
+        {
+            using (client)
+            await using (var stream = client.GetStream())
+            {
+                try
+                {
+                    var buffer = new byte[4096];
+                    var header = new StringBuilder();
+                    while (!header.ToString().Contains("\r\n\r\n", StringComparison.Ordinal))
+                    {
+                        var read = await stream.ReadAsync(buffer, _cts.Token).ConfigureAwait(false);
+                        if (read <= 0)
+                        {
+                            return;
+                        }
+                        header.Append(Encoding.ASCII.GetString(buffer, 0, read));
+                    }
+
+                    await Task.Delay(_headerDelay, _cts.Token).ConfigureAwait(false);
+                    var payload = Encoding.UTF8.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n" + _body);
+                    await stream.WriteAsync(payload, _cts.Token).ConfigureAwait(false);
+                    await stream.FlushAsync(_cts.Token).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // 客户端断开或取消属正常退出。
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            _cts.Cancel();
+            try
+            {
+                _listener.Stop();
+            }
+            catch
+            {
+            }
+            try
+            {
+                _loop.GetAwaiter().GetResult();
+            }
+            catch
+            {
+            }
+            _cts.Dispose();
+        }
     }
 }
 

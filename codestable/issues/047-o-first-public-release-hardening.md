@@ -34,7 +34,7 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 | R05 | P1 | 翻译重定向与凭据传输边界 | 已修复并验证 |
 | R06 | P1 | 第三方许可与仓库授权 | 已修复并验证 |
 | R07 | P2 | 小工作区与跨屏结果窗口定位 | 已修复并验证 |
-| R08 | P2 | 流式正文超时与设置热应用 | 超时待修复；热应用待复现 |
+| R08 | P2 | 流式正文超时与设置热应用 | 已修复并验证 |
 | R09 | P2 | 配置及密钥读取失败后的原文件保护 | 待修复 |
 | R10 | P2 | 发布归档清单与完整包哈希校验 | 待改进 |
 | R11 | P2 | 用户入口、离线说明及默认值一致性 | 待整理 |
@@ -205,14 +205,25 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 
 **已确认的超时缺口：** [TranslationProviderBase.cs](../../src/NaniKore/Translation/Providers/TranslationProviderBase.cs) 使用 `ResponseHeadersRead`；后续 [SseReader.cs](../../src/NaniKore/Translation/SseReader.cs) 正文读取只有宿主取消令牌。`HttpClient.Timeout` 不能据此保证整个流式请求在配置时间内结束。
 
-- [ ] 定义 `timeout_seconds` 的准确语义，决定总期限与无数据期限，文案和实现一致。
-- [ ] 受控端点返回 200 响应头后永久不发正文，应用能结束等待、提示并恢复按钮。
-- [ ] 正常持续输出的长回复不会被不合理截断；关闭窗口、新输入仍能及时取消。
+- [x] 定义 `timeout_seconds` 的准确语义，决定总期限与无数据期限，文案和实现一致。
+- [x] 受控端点返回 200 响应头后永久不发正文，应用能结束等待、提示并恢复按钮。
+- [x] 正常持续输出的长回复不会被不合理截断；关闭窗口、新输入仍能及时取消。
 
 **待复现的独立风险：** [App.axaml.cs](../../src/NaniKore/App.axaml.cs) 的 `ApplySettings` 重建 Provider，设置窗口尺寸回写也经过该路径。旧 HttpClient 被释放可能中断正在连接的请求，实际表现尚未验证。
 
-- [ ] 用延迟响应端点验证翻译期间保存普通设置、调整设置窗口尺寸后关闭的行为。
-- [ ] 仅在确认影响后修复对应生命周期；若不成立，记录证据并关闭该观察项，不为假设增加结构。
+- [x] 用延迟响应端点验证翻译期间保存普通设置、调整设置窗口尺寸后关闭的行为。
+- [x] 仅在确认影响后修复对应生命周期；若不成立，记录证据并关闭该观察项，不为假设增加结构。
+
+**执行记录（2026-11-11）：**
+
+- **语义决策**：`timeout_seconds` 定为「空闲超时」而非「总期限」。连接与等待响应头阶段由 `HttpClient.Timeout`（`ResponseHeadersRead`）约束；响应头到达后，正文读取改由新增的 [IdleTimeoutStream.cs](../../src/NaniKore/Translation/Providers/IdleTimeoutStream.cs) 按同一 `timeout_seconds` 的空闲间隔计时——任意两次读取之间超过该时长仍无字节即抛新增的 `ProviderTimeoutException`（[UnderstandContracts.cs](../../src/NaniKore/Translation/UnderstandContracts.cs)，[ProviderErrors.cs](../../src/NaniKore/Translation/ProviderErrors.cs) 原样透出中文建议）。持续有数据会不断重置计时，长回复不会被累计时长截断。`TranslationProviderBase.OpenIdleGuardedStreamAsync` 统一包装响应体，OpenAI/Claude/Gemini 三个 provider 均已接入。`config.template.yaml` 与设置页「超时」说明同步为「连接/等响应头的最长等待，以及正文两次数据间的最长空闲，非总时长」。
+- **超时缺口实证（修复前）**：本机回环起「先发 200 响应头、延迟 2.5 秒才发正文」的极简服务，`HttpClient.Timeout=1s` + `ResponseHeadersRead`，仍能完整读完延迟正文——确认正文读取不受 `HttpClient.Timeout` 约束，即原缺口成立（`artifacts/r08-timeout-probe`，Git 忽略）。
+- **热应用实证（修复前）**：同一回环服务「延迟发响应头」，在 `SendAsync` 等待响应头期间 `HttpClient.Dispose()`，`SendAsync` 立即抛 `TaskCanceledException`；而在响应头到达后的正文阶段 Dispose 不会再中断读取。故风险真实存在，但只落在「等待响应头」窗口（`ApplySettings` 会 `Dispose` 旧 `ProviderFactory`，设置页尺寸回写关闭亦经此路径）。
+- **生命周期修复**：[ProviderFactory.cs](../../src/NaniKore/Translation/ProviderFactory.cs) 改为流租约 + 延迟释放：`GetProvider` 返回 `LeasedProvider` 包装，`StreamAsync` 完整枚举期间租约 +1、结束 -1；`Dispose` 在仍有活动流时只置延迟标记，等最后一个流结束再销毁底层 provider（`lock` 保护计数，避免并发漏释放）。这样配置热应用替换旧工厂不会中断进行中的请求，新请求自然改用新工厂；空闲超时兜底保证卡死的流最终也会结束并触发释放。
+- **新增回归**（[SelfTest.Translation.cs](../../src/NaniKore/Diagnostics/SelfTest.Translation.cs)，共 5 项检查）：①静默正文流在 `timeout_seconds=1` 时约 1 秒内抛 `ProviderTimeoutException` 且含「未收到任何数据 / timeout_seconds」；②每块间隔 350ms、累计 1.4s（>1s 阈值）的长回复完整收到「长回复完」，证明非总时长截断；③空闲阈值 5s 时调用方取消 150ms 内及时抛 `OperationCanceledException`、不误报超时；④真实本地延迟响应端点（延迟 500ms 发响应头），请求发出后 150ms `factory.Dispose()`，流仍完整收到「热应用」——修复前此处会被 `TaskCanceledException` 打断。
+- **验证**：`./scripts/dev.ps1 test` 退出码 0，`All self-tests passed (1724 checks).`（上一轮基线 1719，新增 5 项）。一次 `-ShowPass` 运行出现 3 项 `SelfTest.ClipboardFiles` 真实剪贴板 flake（`empty copy response (effect 1)`，与本项无关），随即重跑恢复全绿；日志见 Git 忽略的 `artifacts/r08-self-test.log` / `r08-self-test-verbose.log`。
+- **边界**：未做真实桌面手测（截图/选取翻译真机点击）与 Native AOT 发布包验证；热应用在 provider/工厂层用真实网络栈+延迟端点复现与回归，未驱动完整设置窗口 UI 保存流程（`ApplySettings` 的 `Dispose` 即被测入口）。
+- R08 已完成；整份发布加固事项保持 open。`timeout_seconds` 的空闲超时语义、以及「配置热应用延迟释放旧 provider、不中断进行中请求」已作为稳定事实补入 [Project Spec](../spec/index.md) 的翻译条目。
 
 ## R09：读取失败时保留配置和密钥原件
 

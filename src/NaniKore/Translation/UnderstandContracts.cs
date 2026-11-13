@@ -84,3 +84,9 @@ internal sealed class ProviderTransportPolicyException : InvalidOperationExcepti
 {
     public ProviderTransportPolicyException(string message) : base(message) { }
 }
+
+/// <summary>流式请求空闲超时（R08）：连接建立后长时间收不到任何数据，主动中止等待并提示调大 timeout_seconds。</summary>
+internal sealed class ProviderTimeoutException : Exception
+{
+    public ProviderTimeoutException(string message) : base(message) { }
+}

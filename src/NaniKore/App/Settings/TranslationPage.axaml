@@ -110,7 +110,8 @@
                     <TextBox x:Name="ModelBox" Width="280" />
                 </controls:SettingsRow>
                 <Border Classes="divider-row" />
-                <controls:SettingsRow Header="超时" ContentWidth="170">
+                <controls:SettingsRow Header="超时" ContentWidth="170"
+                                     Description="连接与等待响应头最多等这么久；流式正文若连续这么久收不到新数据也判为超时（空闲超时，不是总时长），持续有输出不会被截断。">
                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                         <NumericUpDown x:Name="TimeoutBox"
                                        Width="128"

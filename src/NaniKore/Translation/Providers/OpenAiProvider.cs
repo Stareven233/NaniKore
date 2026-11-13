@@ -28,7 +28,7 @@ internal sealed class OpenAiProvider : TranslationProviderBase
             : CreateCompletionsRequest(request, skipThinkingParameters: _thinkingParametersRejected);
         using var response = await SendWithThinkingParameterFallbackAsync(message, request, isResponses, cancellationToken)
             .ConfigureAwait(false);
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        await using var stream = await OpenIdleGuardedStreamAsync(response, cancellationToken).ConfigureAwait(false);
         var router = CreateRouter(request);
         var sanitizer = new ThinkingStreamSanitizer();
         TokenUsage? usage = null;

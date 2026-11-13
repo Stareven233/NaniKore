@@ -50,8 +50,9 @@ internal static class ProviderErrorMapper
 {
     public static string ToUserMessage(Exception exception, string? profileName = null, string? model = null, string? baseUrl = null)
     {
-        if (exception is ProviderCapabilityException or ProviderConfigurationException or ProviderTransportPolicyException)
+        if (exception is ProviderCapabilityException or ProviderConfigurationException or ProviderTransportPolicyException or ProviderTimeoutException)
         {
+            // 这些异常自带可行动的中文说明（含具体原因与调大 timeout_seconds 的建议），原样透出。
             return exception.Message;
         }
 
