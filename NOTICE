@@ -1,45 +1,67 @@
 # NaniKore 第三方组件与数据许可声明（NOTICE）
 
-NaniKore 分发或使用下列第三方组件与数据。随应用发布的二进制只在随包原生 DLL、NuGet 依赖与按需下载的 `deps/` 中；
-按语言下载的词典与模型权重所有权归其许可方。若你认为此处遗漏或标注有误，请提 issue。
+NaniKore 自身代码依据 GNU 通用公共许可证第 3 版或（可选）更高版本授权（GPL-3.0-or-later），
+完整文本见随包根目录 `LICENSE`。本程序以二进制分发时，对应源码（Corresponding Source）可从公开仓库
+<https://github.com/Stareven233/NaniKore> 免费获取；若随包版本对应某发布标签，以该标签的源码为准。
 
-## 1. 托管程序集与框架依赖（随应用编译与发布）
+本文件登记随本程序分发或按需下载的第三方组件与数据。Native AOT 发布形态下托管组件已全部静态编译进
+`NaniKore.exe`，不存在独立托管程序集文件；原生组件以 DLL 旁置于发布包根目录；词典与模型权重按需下载至
+`deps/`。按语言下载的词典与模型权重的所有权归其许可方。若你认为此处遗漏或标注有误，请提 issue。
 
-- **Avalonia 12.1.4**（包 `Avalonia`、`Avalonia.Desktop`、`Avalonia.Themes.Fluent`）
-  - 许可：MIT License（Copyright (c) .NET Foundation and Contributors）。
+## 1. 托管组件（Native AOT 静态编译进 NaniKore.exe）
+
+- **Avalonia 12.1.6**（包 `Avalonia`、`Avalonia.Desktop`、`Avalonia.Themes.Fluent`，及传递依赖
+  `Avalonia.Skia`、`Avalonia.Win32`、`Avalonia.Native`、`Avalonia.X11`、`MicroCom.Runtime` 0.11.6 等；
+  非 Windows 平台资产不在本发布包内）
+  - 许可：MIT License（Copyright (c) .NET Foundation and Contributors / Avalonia contributors）。
   - 用途：跨平台 XAML UI 框架与渲染/输入/托盘窗口生命周期宿主。
 
 - **SkiaSharp 3.119.4**（包 `SkiaSharp`）
-  - 许可：MIT License（Copyright (c) 2015-2016 Xamarin, Inc. / Microsoft Corporation；底层基于 Google Skia，BSD 3-Clause License）。
+  - 许可：MIT License（Copyright (c) 2015-2016 Xamarin, Inc. / Microsoft Corporation；
+    底层基于 Google Skia，BSD 3-Clause License）。
   - 用途：跨平台图形与 2D 绘图底座、位图内存表示与 PNG 编解码。
 
-- **LibNMeCab 0.10.2**（包 `LibNMeCab`）
-  - 许可：GPL-2.0 / LGPL-2.1 双许可（使用者可按其一遵守）。
-  - 用途：NaniKore 本地分词注音引擎（日语/简体中文共用的纯托管 MeCab 实现）。
-  - 对于 GPL-2.0 with ClasspathException 语义的 lib 组件分发，本仓库以 LGPL-2.1 口径使用：
-    保留本声明与许可文本，替换 LibNMeCab.dll 后保持其可替换性即可；NaniKore 自身代码不链接 GPL 代码。
+- **HarfBuzzSharp 8.3.1.3**（包 `HarfBuzzSharp`，经 Avalonia 传递引入）
+  - 许可：MIT License（Copyright (c) Xamarin, Inc. / Microsoft Corporation；底层 HarfBuzz 为 Old MIT License）。
+  - 用途：复杂文字排版与字形整形托管封装。
 
-- **Microsoft.Data.Sqlite 10.0.12**（包 `Microsoft.Data.Sqlite`）
+- **Microsoft.Data.Sqlite 10.0.12**（包 `Microsoft.Data.Sqlite`、`Microsoft.Data.Sqlite.Core`）
   - 许可：MIT License（Copyright (c) .NET Foundation and Contributors）。
   - 用途：轻量本地 SQLite ADO.NET 数据持久化提供程序（收藏知识库）。
 
-- **Microsoft.ML.OnnxRuntime 1.28.0**（包 `Microsoft.ML.OnnxRuntime`）
+- **SQLitePCLRaw 2.1.12**（包 `SQLitePCLRaw.bundle_e_sqlite3`、`SQLitePCLRaw.core` 等，经 Microsoft.Data.Sqlite 传递引入）
+  - 许可：Apache-2.0 License。
+  - 用途：SQLite 的 .NET 绑定层（驱动下方旁置的 `e_sqlite3.dll`）。
+
+- **Microsoft.ML.OnnxRuntime 1.28.0**（包 `Microsoft.ML.OnnxRuntime`、`Microsoft.ML.OnnxRuntime.Managed`，
+  及传递依赖 `System.Numerics.Tensors` 9.0.0）
   - 许可：MIT License（Copyright (c) Microsoft Corporation）。
   - 用途：ONNX 模型推理托管运行时驱动。
 
-- **YamlDotNet 18.1.0**（包 `YamlDotNet`、`Vecc.YamlDotNet.Analyzers.StaticGenerator`）
-  - 许可：MIT License（Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014 Antoine Aubry and contributors）。
-  - 用途：YAML 格式配置文件的静态无反射（Native AOT 兼容）源生成、序列化与反序列化。
+- **YamlDotNet 18.1.0**（包 `YamlDotNet`）
+  - 许可：MIT License（Copyright (c) 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015 Antoine Aubry and contributors）。
+  - 用途：YAML 配置文件的序列化与反序列化。
 
-- **System.Security.Cryptography.ProtectedData 10.0.0**
+- **Vecc.YamlDotNet.Analyzers.StaticGenerator 18.1.0**
+  - 许可：MIT License。
+  - 用途：编译期 Roslyn 源生成器，为 config.yaml 类型图生成无反射代码（Native AOT 必需）。
+    仅构建期参与，不随包分发。
+
+- **System.Security.Cryptography.ProtectedData 11.0.0**
   - 许可：MIT License（Copyright (c) .NET Foundation and Contributors）。
   - 用途：Windows DPAPI 密钥加密保护。
 
-- **Microsoft.Win32.SystemEvents 10.0.0**
-  - 许可：MIT License（Copyright (c) .NET Foundation and Contributors）。
-  - 用途：Windows 系统事件监听（深浅色主题偏好变更通知）。
+- **LibNMeCab 0.10.2**（包 `LibNMeCab`）
+  - 许可：GPL-2.0-or-later 或 LGPL-2.1-or-later 双许可（SPDX 表达式
+    `GPL-2.0-or-later OR LGPL-2.1-or-later`，以其 NuGet 包元数据与上游仓库声明为准）。
+  - 用途：本地分词注音引擎（日语/简体中文共用的纯托管 MeCab 实现）。
+  - **分发口径**：Native AOT 将 LibNMeCab 静态编译进 `NaniKore.exe`，发布包中不存在可单独替换的
+    LibNMeCab.dll，因此不适用「替换共享库保持可替换性」的 LGPL 动态链接路径。NaniKore 整体以
+    GPL-3.0-or-later 分发，LibNMeCab 依据其 GPL-2.0-or-later 条款按 GPL-3.0 选用；包含该组件的
+    整件作品随本仓库一并提供对应源码，满足 GPL-3.0 第 6 节的源码提供要求。
+  - LibNMeCab 上游源码：<https://github.com/komutan/NMeCab>
 
-## 2. 随包旁置原生动态链接库（Native Binaries，随包发布于根目录）
+## 2. 随包旁置原生动态链接库（随应用发布于根目录）
 
 - **libSkiaSharp.dll**
   - 许可：BSD 3-Clause License（Copyright (c) 2011 Google Inc.）。
@@ -57,38 +79,124 @@ NaniKore 分发或使用下列第三方组件与数据。随应用发布的二�
   - 许可：Public Domain（SQLite 原生库；SQLitePCLRaw 包装层为 Apache-2.0 License）。
   - 用途：SQLite 原生嵌入式数据库引擎。
 
-## 3. 词典与数据（按语言下载，位于 `deps/phonetics/`，镜像于 ModelScope `Noetuu/nanikore-deps`）
+## 3. 词典与数据（按语言下载至 `deps/phonetics/`，镜像于 ModelScope `Noetuu/nanikore-deps`）
 
-- **IPAdic（日语文档形态素词典，编译态）**
-  - 许可：IPAdic 授权文本（1999-2007 Nara Institute of Science and Technology，
-    原文 `COPYING` 已随 `deps/phonetics/ja/IPAdic-COPYING.txt` 分发）。
-  - 用途：日语振假名标注。
-  - 注意：IPAdic 的原始词库版权属各词条贡献者；本仓库仅原样分发其编译产物，未做内容改动。
+### 3.1 IPAdic（日语文档形态素词典，编译态）
 
-- **CMUdict 0.7b（cmusphinx 发音词典）**
-  - 许可：BSD 2-Clause 风格许可（Copyright (C) 1993-2015 Carnegie Mellon University；
-    允许保留版权声明与免责声明的前提下再分发）。
-  - 用途：英语 IPA 注音（ARPAbet → IPA 在生成期转换为单主读音）。
-  - 源地址：https://github.com/cmusphinx/cmudict
+- 许可：IPAdic 授权文本，全文随附如下（版权 2000-2003 Nara Institute of Science and Technology）：
 
-- **CC-CEDICT（汉英词典）**
-  - 许可：Creative Commons Attribution-ShareAlike 4.0 International（CC BY-SA 4.0）。
-  - 用途：简体中文拼音注音的词面/读音来源。
-  - 派生要求：基于 CC-CEDICT 生成的词典与再分发需标注「CC-CEDICT, CC BY-SA 4.0」。
-    本声明及 `deps/README.md`、`codestable/notes/phonetics-pipeline.md` 即该标注。
+  ```text
+  Copyright 2000, 2001, 2002, 2003 Nara Institute of Science
+  and Technology.  All Rights Reserved.
 
-- **Unicode Unihan Database（`Unihan_Readings.txt`，kMandarin 字段）**
-  - 许可：Unicode 许可 v3（https://www.unicode.org/license.txt）。
-  - 用途：简体中文未登录单字的默认读音补充。
+  Use, reproduction, and distribution of this software is permitted.
+  Any copy of this software, whether in its original form or modified,
+  must include both the above copyright notice and the following
+  paragraphs.
 
-## 4. 判据数据（随程序集内嵌于 `src/NaniKore/Phonetics/Data/`）
+  Nara Institute of Science and Technology (NAIST),
+  the copyright holders, disclaims all warranties with regard to this
+  software, including all implied warranties of merchantability and
+  fitness, in no event shall NAIST be liable for
+  any special, indirect or consequential damages or any damages
+  whatsoever resulting from loss of use, data or profits, whether in
+  an action of contract, negligence or other tortious action, arising out
+  of or in connection with the use or performance of this software.
+
+  A large portion of the dictionary entries
+  originate from ICOT Free Software.  The following conditions for ICOT
+  Free Software applies to the current dictionary as well.
+
+  Each User may also freely distribute the Program, whether in its
+  original form or modified, to any third party or parties, PROVIDED
+  that the provisions of Section 3 ("NO WARRANTY") will ALWAYS appear
+  on, or be attached to, the Program, which is distributed substantially
+  in the same form as set out herein and that such intended
+  distribution, if actually made, will neither violate or otherwise
+  contravene any of the laws and regulations of the countries having
+  jurisdiction over the User or the intended distribution itself.
+
+  NO WARRANTY
+
+  The program was produced on an experimental basis in the course of the
+  research and development conducted during the project and is provided
+  to users as so produced on an experimental basis.  Accordingly, the
+  program is provided without any warranty whatsoever, whether express,
+  implied, statutory or otherwise.  The term "warranty" used herein
+  includes, but is not limited to, any warranty of the quality,
+  performance, merchantability and fitness for a particular purpose of
+  the program and the nonexistence of any infringement or violation of
+  any right of any third party.
+
+  Each user of the program will agree and understand, and be deemed to
+  have agreed and understood, that there is no warranty whatsoever for
+  the program and, accordingly, the entire risk arising out of or
+  otherwise connected with the program is assumed by the user.
+
+  Therefore, neither ICOT, the copyright holder, or any other
+  organization that participated in or was otherwise related to the
+  development of the program and their respective officials, directors,
+  officers and other employees shall be held liable for any and all
+  damages, including, without limitation, general, special, incidental
+  and consequential damages, arising out of or otherwise in connection
+  with the use or inability to use the program or any product, material
+  or result produced or otherwise obtained by using the program,
+  regardless of whether they have been advised of, or otherwise had
+  knowledge of, the possibility of such damages at any time during the
+  project or thereafter.  Each user will be deemed to have agreed to
+  the foregoing by his or her commencement of use of the program.  The
+  term "use" as used herein includes, but is not limited to, the use,
+  modification, copying and distribution of the program and the
+  production of secondary products from the program.
+
+  In the case where the program, whether in its original form or
+  modified, was distributed or delivered to or received by a user from
+  any person, organization or entity other than ICOT, unless it makes or
+  grants independently of ICOT any specific warranty to the user in
+  writing, such person, organization or entity, will also be exempted
+  from and not be held liable to the user for any such damages as noted
+  above as far as the program is concerned.
+  ```
+
+- 用途：日语振假名标注。
+- 分发口径：按需下载日语词典时，本 NOTICE 即该词典拷贝的随附许可声明（随应用一并分发）；
+  完整发布包另在 `deps/phonetics/ja/IPAdic-COPYING.txt` 提供同一文本。
+- 注意：IPAdic 的原始词库版权属各词条贡献者；本仓库仅原样分发其编译产物，未做内容改动。
+
+### 3.2 CMUdict 0.7b（英语发音词典）
+
+- 许可：BSD 2-Clause 风格许可（Copyright (C) 1993-2015 Carnegie Mellon University；
+  允许在保留版权声明与免责声明的前提下再分发）。
+- 用途：英语 IPA 注音（ARPAbet → IPA 在生成期转换为单主读音）。
+- 源地址：<https://github.com/cmusphinx/cmudict>
+
+### 3.3 简体中文（CC-CEDICT 派生 MeCab 词典）
+
+- 基础数据：CC-CEDICT（汉英词典），许可 Creative Commons Attribution-ShareAlike 4.0 International
+  （CC BY-SA 4.0，<https://creativecommons.org/licenses/by-sa/4.0/>）。
+- 归属标注：本词典由 CC-CEDICT 派生，再分发时标注「CC-CEDICT, CC BY-SA 4.0」。
+  本 NOTICE 及随应用分发的说明文件即该标注。
+- 修改/派生说明：管线抽取 CC-CEDICT 的词形、拼音与英文义项，转写为 MeCab CSV 后由
+  mecab-dict-index 编译为 MeCab 二进制词典；多音字按读音各自成条；
+  CC-CEDICT 未收录单字的默认读音以 Unicode Unihan Database `kMandarin` 字段补充
+  （Unicode License v3，<https://www.unicode.org/license.txt>）。
+- 用途：简体中文拼音注音的词面/读音来源。
+
+## 4. OCR / ONNX Runtime（按需下载至 `deps/`）
+
+- **PP-OCRv6-small 模型权重**（`det`/`rec` 的 inference.onnx 与 inference.yml）
+  - 上游：Baidu PaddlePaddle / PaddleOCR 项目，许可 Apache-2.0（<https://github.com/PaddlePaddle/PaddleOCR>）。
+  - 来源仓库：<https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx> 与
+    <https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx>。
+  - 分发口径：原样再分发、未做改动；下载时逐文件 SHA-256 校验；镜像于 ModelScope `Noetuu/nanikore-deps`。
+
+- **ONNX Runtime 1.28.0 原生 DLL**（onnxruntime.dll、onnxruntime_providers_shared.dll）
+  - 许可：MIT License（Copyright (c) Microsoft Corporation）。
+  - 来源：`Microsoft.ML.OnnxRuntime` 1.28.0 原生资产；分发口径同上（哈希校验、镜像下载）。
+
+## 5. 判据数据（随程序集内嵌于 `src/NaniKore/Phonetics/Data/`）
 
 - **常用漢字表（2010，文化庁）**：日本政府公开发布的公共文书规范内容（政府标准，非著作权对象，
   按公共再利用惯例收录 2136 字清单（官方通用字体口径，含剝・塡・頰）。
 - **通用规范汉字表（2013，国务院发布）**：收录一级字表 3500 字清单（注音判据口径，2026-10-04 由一·二级 6500 字收紧）。
-- **三语停用/高频词表**：NaniKore 自策展内容（贡献者按仓库 LICENSE 授权）。
-
-## 5. OCR / ONNX Runtime（按需下载组件）
-
-见仓库 `deps/README.md` 与各模型目录内的 LICENSE、YAML 说明：PP-OCRv6-small 模型权重与
-ONNX Runtime 的许可归属其上游发布方，未在本文重复张贴。
+- **三语停用/高频词表**：NaniKore 自策展内容（贡献者按仓库 LICENSE 即 GPL-3.0-or-later 授权）。

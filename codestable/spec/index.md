@@ -60,8 +60,9 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 
 - .NET 11 SDK（`global.json` 最低 `11.0.100`，同一 11.0 通道 `latestFeature`）、正式版 C# 15、Native AOT（ILC 编译器）与 MSBuild；不启用预览语言或内存安全规则。
 - 交付形态：**免安装便携目录 = 精简 Native AOT exe + 随包原生 DLL 旁置**，目标机器零 .NET 运行时依赖，解压即用。
+- 授权与分发口径（issue 047 R06）：仓库自身代码以 GPL-3.0-or-later 授权（根 `LICENSE`）；第三方组件与数据许可见根 `NOTICE`。LibNMeCab（SPDX `GPL-2.0-or-later OR LGPL-2.1-or-later`）在 AOT 下静态链接进 exe、不存在可单独替换的 DLL，按其 GPL-2.0-or-later 条款按 GPL-3.0 选用，随公开仓库提供对应源码；其余托管/原生依赖均为 MIT/Apache/BSD/公共领域。IPAdic 的 NAIST 许可要求版权与条款随每一份拷贝附带：完整包经 `deps/phonetics/ja/IPAdic-COPYING.txt` 随行，按需下载路径经随包 `NOTICE` 第 3.1 节内联全文随行；zh 词典为 CC-CEDICT（CC BY-SA 4.0）派生，归属与派生说明见 NOTICE 第 3.3 节。OCR 权重为 PaddlePaddle PP-OCRv6-small（Apache-2.0）原样再分发，ONNX Runtime 原生 DLL 为 MIT。
 - 交付物目录契约：
-  - 根目录恰好 7 项：精简可执行文件 `NaniKore.exe` + 4 个随包原生 DLL（`libSkiaSharp.dll`、`libHarfBuzzSharp.dll`、`av_libglesv2.dll`、`e_sqlite3.dll`）+ 只读配置模板 `config.template.yaml` + 许可声明 `NOTICE`。
+  - 根目录恰好 8 项：精简可执行文件 `NaniKore.exe` + 4 个随包原生 DLL（`libSkiaSharp.dll`、`libHarfBuzzSharp.dll`、`av_libglesv2.dll`、`e_sqlite3.dll`）+ 只读配置模板 `config.template.yaml` + 许可声明 `NOTICE` + 仓库许可证全文 `LICENSE`。
   - 仅有两个子目录：按需下载的 `deps/`（本地 OCR 与三语注音词典）与运行期生成的 `.data/`（用户配置与数据库）。
   - 运行期数据全部收拢在 `.data\`，发布 ZIP 绝不包含 `.data/`。
 - 发布通道：

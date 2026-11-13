@@ -16,7 +16,7 @@
 - 结果卡精讲与正文划词均可一键收藏进本地生词本：SQLite 持久化（`.data/collections.db`），支持类别/语言/关键词筛选与就地编辑。
 - 原文区本地注音：日语标振假名、英语标国际音标、简体中文标拼音，由本地引擎叠加（词典按语言按需下载）；面板「注音」按钮可随时对当前原文重新标注并查看读音，无需先点「翻译」。短原文（可注音单词不足 10 个）视为短语，全部单词都注音，不再按难词过滤。
 - API Key 仅使用当前 Windows 用户的 DPAPI 保存，不会写入仓库、配置模板或 `.data/config.yaml`。
-- 程序目录根只放交付物（精简 exe、随包原生 DLL、`config.template.yaml`、`NOTICE`）；配置、密钥与收藏库全部收拢在 `程序目录\.data\`，解压覆盖升级碰不到它们。
+- 程序目录根只放交付物（精简 exe、随包原生 DLL、`config.template.yaml`、`NOTICE`、`LICENSE`）；配置、密钥与收藏库全部收拢在 `程序目录\.data\`，解压覆盖升级碰不到它们。
 
 ## 系统要求
 
@@ -49,7 +49,7 @@
 | `./scripts/dev.ps1 run` | 启动本地 Debug 桌面应用（后台脱手运行，不占用终端）。 |
 | `./scripts/dev.ps1 run -Release` | 启动本地已构建的 Native AOT Release 桌面应用。 |
 | `./scripts/dev.ps1 test` | 运行无 UI 全量自动化自测。 |
-| `./scripts/dev.ps1 publish` | 编译 Native AOT 并发布免安装轻量 ZIP（~18 MB，根目录 7 项，解压即用）。 |
+| `./scripts/dev.ps1 publish` | 编译 Native AOT 并发布免安装轻量 ZIP（~18 MB，根目录 8 项，解压即用）。 |
 | `./scripts/dev.ps1 publish -full` | 编译 Native AOT 并发布包含完整 `deps/` 离线模型与词典的 Windows x64 ZIP（~67 MB）。 |
 
 ## 发布包
@@ -59,7 +59,7 @@
 - `./scripts/dev.ps1 publish`：`NaniKore-v{版本号}-win_amd64.zip`
 - `./scripts/dev.ps1 publish -full`：`NaniKore-v{版本号}-win_amd64-full.zip`
 
-两种 ZIP 都将发布内容直接置于压缩包根目录。根目录严格遵守 7 文件契约，完整包额外携带与仓库一致的 `deps/`：
+两种 ZIP 都将发布内容直接置于压缩包根目录。根目录严格遵守 8 文件契约，完整包额外携带与仓库一致的 `deps/`：
 
 ```text
 NaniKore.exe                 # Native AOT 精简可执行文件（~20.8 MB，零 .NET 运行时依赖）
@@ -69,6 +69,7 @@ av_libglesv2.dll             # 随包原生 OpenGL ES 渲染底座
 e_sqlite3.dll                # 随包原生 SQLite 嵌入式数据库底座
 config.template.yaml         # 只读配置模板（首启按字节复制到 .data/config.yaml）
 NOTICE                       # 第三方组件与数据许可声明
+LICENSE                      # GNU GPL-3.0-or-later 许可全文（仓库自身代码）
 deps/                        # （仅 -full 完整包携带，或设置页按需下载）
 ├─ ocr-onnx/pp-ocr-v6-small/
 │  ├─ det/inference.onnx
@@ -140,4 +141,6 @@ artifacts/      发布产物（Git 忽略）
 
 ## 许可证与第三方声明
 
-仓库自身代码暂未声明开源许可证。所引用的 Avalonia、SkiaSharp、LibNMeCab、SQLite、ONNX Runtime 等第三方库与词典许可声明请参阅 [NOTICE](NOTICE)。在许可证明确前，请勿假定可再分发或用于其他商业用途。
+仓库自身代码以 [GNU 通用公共许可证第 3 版或更高版本](LICENSE)（GPL-3.0-or-later）授权，完整文本见根目录 `LICENSE`。
+所引用的第三方组件、词典与模型权重的许可声明、归属与再分发口径见 [NOTICE](NOTICE)：LibNMeCab 在 Native AOT 静态链接下按 GPL-3.0 选用；OCR 权重为 PaddlePaddle PP-OCRv6-small（Apache-2.0）；日语词典为 IPAdic（NAIST 许可，全文随 NOTICE 附带）；简体中文词典为 CC-CEDICT（CC BY-SA 4.0）派生。
+分发本程序的二进制时，对应源码（Corresponding Source）可从 <https://github.com/Stareven233/NaniKore> 免费获取。

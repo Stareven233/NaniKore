@@ -428,6 +428,8 @@ try {
                 Remove-Item -LiteralPath (Join-Path $publishOutput 'config.yaml') -Force -ErrorAction SilentlyContinue
                 Copy-Item -LiteralPath (Join-Path $root 'config.template.yaml') -Destination $publishOutput -Force
                 Copy-Item -LiteralPath (Join-Path $root 'NOTICE') -Destination $publishOutput -Force
+                # GPL-3.0 第 6 节：二进制分发须随附许可证全文（issue 047 R06）
+                Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination $publishOutput -Force
                 Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $publishOutput
 
                 Set-NaniKoreJunction -Path $publishDepsLink -Target $dependenciesDirectory
@@ -500,9 +502,11 @@ try {
 
             # 显式同步交付物模板与声明文件：
             # config.template.yaml 首启按字节复制到 .data/config.yaml；同时清理可能残留的运行期 config.yaml。
+            # LICENSE 是 GPL-3.0 第 6 节要求的随附许可证全文（issue 047 R06）。
             Remove-Item -LiteralPath (Join-Path $publishOutput 'config.yaml') -Force -ErrorAction SilentlyContinue
             Copy-Item -LiteralPath (Join-Path $root 'config.template.yaml') -Destination $publishOutput -Force
             Copy-Item -LiteralPath (Join-Path $root 'NOTICE') -Destination $publishOutput -Force
+            Copy-Item -LiteralPath (Join-Path $root 'LICENSE') -Destination $publishOutput -Force
 
             # NuGet 附带的 .lib 是 Windows 链接器导入库，应用运行时只需要 DLL，不进交付物。
             Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $publishOutput

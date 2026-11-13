@@ -32,7 +32,7 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 | R03 | P1 | 取消翻译后新输入的按钮状态 | 已修复并验证 |
 | R04 | P1 | 收藏数据库异常的 UI 隔离 | 已修复并验证 |
 | R05 | P1 | 翻译重定向与凭据传输边界 | 已修复并验证 |
-| R06 | P1 | 第三方许可与仓库授权 | 待核实并补齐 |
+| R06 | P1 | 第三方许可与仓库授权 | 已修复并验证 |
 | R07 | P2 | 小工作区与跨屏结果窗口定位 | 待修复 |
 | R08 | P2 | 流式正文超时与设置热应用 | 超时待修复；热应用待复现 |
 | R09 | P2 | 配置及密钥读取失败后的原文件保护 | 待修复 |
@@ -159,15 +159,27 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 
 **处理与验收：**
 
-- [ ] 核实实际使用版本的授权原文，确定 LibNMeCab 在 AOT 链接下可落实的分发方案；不得仅改文案后视为完成。
-- [ ] 根据直接及传递依赖补齐需要随包提供的许可文本、版权、免责声明、必要 NOTICE 和来源。
-- [ ] 补齐日语词典许可原文，使轻量包按需下载和完整包均满足附带要求。
-- [ ] 明确 OCR 权重的上游来源与再分发许可；补齐 CC-CEDICT 派生词典的归属、许可链接及修改/派生说明。
-- [ ] 同步 NOTICE 中已漂移的依赖版本，移除与实际依赖或交付方式不符的说明。
-- [ ] 主人决定仓库自身许可证后落实 `LICENSE`；若暂不授予开源许可，对外使用“公开源码”而不是“开源”。
-- [ ] 最终发布包实际携带所需授权材料；允许为此调整当前“根目录 7 文件”契约。
+- [x] 核实实际使用版本的授权原文，确定 LibNMeCab 在 AOT 链接下可落实的分发方案；不得仅改文案后视为完成。
+- [x] 根据直接及传递依赖补齐需要随包提供的许可文本、版权、免责声明、必要 NOTICE 和来源。
+- [x] 补齐日语词典许可原文，使轻量包按需下载和完整包均满足附带要求。
+- [x] 明确 OCR 权重的上游来源与再分发许可；补齐 CC-CEDICT 派生词典的归属、许可链接及修改/派生说明。
+- [x] 同步 NOTICE 中已漂移的依赖版本，移除与实际依赖或交付方式不符的说明。
+- [x] 主人决定仓库自身许可证后落实 `LICENSE`；若暂不授予开源许可，对外使用“公开源码”而不是“开源”。
+- [x] 最终发布包实际携带所需授权材料；允许为此调整当前“根目录 7 文件”契约。
 
 仓库授权选择与 AOT 分发方案涉及真实取舍，实施时给出具体选项，不擅自替主人选择许可证。
+
+**执行记录（2026-11-11）：**
+
+- 主人选定仓库许可证为 **GPL-3.0-or-later**，版权署名 `Copyright (C) 2026 NaniKore Contributors`。
+- **LibNMeCab 授权实证**：0.10.2 的 NuGet nuspec 为 `GPL-2.0-or-later OR LGPL-2.1-or-later`（SPDX 表达式）。Native AOT 发布将 LibNMeCab 静态编译进 `NaniKore.exe`，发布包根目录逐项核对只有 `NaniKore.exe` + 4 个原生 DLL + `config.template.yaml` + `NOTICE`（+本次新增 `LICENSE`），不存在可单独替换的 LibNMeCab.dll。据此确认分发方案：按其 GPL-2.0-or-later 条款按 GPL-3.0 选用，整件作品随公开仓库提供对应源码（GPL-3.0 第 6 节）。原 NOTICE 中「GPL-2.0 with ClasspathException」与「替换 LibNMeCab.dll 保持可替换性」的表述与授权原文、交付方式均不符，已移除。
+- **LICENSE 新建**：GPL-3.0 全文，与 gnu.org 权威文本逐行比对 0 差异（674 行），头部附署名与标准许可提示。
+- **NOTICE 重写**：版本漂移修正（Avalonia 12.1.4→12.1.6、ProtectedData 10.0.0→11.0.0）；移除 Microsoft.Win32.SystemEvents（已不在 project.assets.json 依赖图，issue 046 起改走 Avalonia 主题监听）；补齐传递依赖 HarfBuzzSharp 8.3.1.3、SQLitePCLRaw 2.1.12、System.Numerics.Tensors 9.0.0、MicroCom.Runtime 0.11.6；Vecc 生成器标注为编译期参与、不随包分发；OCR 权重明确为 PaddlePaddle PP-OCRv6-small（Apache-2.0，HF 上游仓库链接、原样再分发、SHA-256 校验）；ONNX Runtime 原生 DLL 1.28.0（MIT，实测文件版本 1.28.0.20260724）；IPAdic 的 NAIST 许可全文内联为 NOTICE 第 3.1 节；CC-CEDICT 补齐归属标注、许可链接与修改/派生说明，并附 Unihan Unicode-3.0 链接。
+- **IPAdic 随行方案**（主人定）：不做 ModelScope 清单上传、不在仓库另放文本，改为将许可全文内联进根目录 NOTICE——轻量包按需下载词典时 NOTICE 即随附声明，完整包另已有 `deps/phonetics/ja/IPAdic-COPYING.txt`，两种交付形态均满足 IPAdic「拷贝须附带版权声明与条款」的要求。zh 词典（CC BY-SA 4.0）按主人决定仅做 NOTICE 文档归属，不单独落盘归属文件。
+- **发布包携带**：[NaniKore.csproj](../../src/NaniKore/NaniKore.csproj) 增加 `LICENSE` 的 None 项（Debug 输出与 publish 输出）；[dev.ps1](../../scripts/dev.ps1) 在 `build -Release` 与 `publish` 两处将 `LICENSE` 与 `NOTICE` 一并复制进发布输出。Project Spec 交付物目录契约由根目录 7 项调整为 8 项（新增 `LICENSE`）；README 的发布包文件树、「7 文件契约」表述与许可证章节同步更新。
+- **验证**：`./scripts/dev.ps1 test` 退出码 0，`All self-tests passed (1711 checks).`（与 R05 完成后基线一致；本轮改动不触及运行期代码路径）。未重新构建 Native AOT 发布包；根目录 8 项与 `LICENSE` 随行的产物级复核并入 R10 打包清单改进。
+- **边界记录**：关于页未增加许可提示行——GPL-3.0 第 5(d) 条的交互界面法定声明仅约束改编版的转发，本仓库作为权利人对原件分发不受该条约束；随包 NOTICE/LICENSE 已承担分发声明职能。
+- R06 已完成；整份发布加固事项保持 open。仓库许可证口径（GPL-3.0-or-later）、LibNMeCab 的 GPL-3.0 选用与 IPAdic/CC-CEDICT 随行口径已作为稳定事实补入 [Project Spec](../spec/index.md) 的授权与分发条目。
 
 ## R07：结果窗口适应较小工作区
 
