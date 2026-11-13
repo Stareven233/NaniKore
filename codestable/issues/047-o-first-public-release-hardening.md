@@ -33,7 +33,7 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 | R04 | P1 | 收藏数据库异常的 UI 隔离 | 已修复并验证 |
 | R05 | P1 | 翻译重定向与凭据传输边界 | 已修复并验证 |
 | R06 | P1 | 第三方许可与仓库授权 | 已修复并验证 |
-| R07 | P2 | 小工作区与跨屏结果窗口定位 | 待修复 |
+| R07 | P2 | 小工作区与跨屏结果窗口定位 | 已修复并验证 |
 | R08 | P2 | 流式正文超时与设置热应用 | 超时待修复；热应用待复现 |
 | R09 | P2 | 配置及密钥读取失败后的原文件保护 | 待修复 |
 | R10 | P2 | 发布归档清单与完整包哈希校验 | 待改进 |
@@ -187,9 +187,19 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 
 **处理与验收：**
 
-- [ ] 窗口大于目标工作区时仍可定位、阅读和操作，不抛异常。
-- [ ] 验证大屏拉宽后移至小屏、较高 DPI、任务栏压缩工作区的场景。
-- [ ] 覆盖边界几何回归；负坐标、多屏和混合 DPI 的真机证据按实际条件记录。
+- [x] 窗口大于目标工作区时仍可定位、阅读和操作，不抛异常。
+- [x] 验证大屏拉宽后移至小屏、较高 DPI、任务栏压缩工作区的场景。
+- [x] 覆盖边界几何回归；负坐标、多屏和混合 DPI 的真机证据按实际条件记录。
+
+**执行记录（2026-11-11）：**
+
+- 将 `PositionNearSelection` 的定位决策抽成纯函数 `ResultPanelWindow.ResolvePanelPlacement`；横向/纵向夹取上界改用 `Math.Max(工作区起点, 工作区终点 - 窗口尺寸)`，窗口大于工作区时上界收敛到下界本身，退化为对齐工作区左上角，不再触发 `Math.Clamp`「上界小于下界」的 `ArgumentException`。正常路径（下方优先、下方不足上移、横向夹取）逻辑不变；窗口保持 `SwpNoSize|SwpNoActivate|SwpShowWindow`，标题栏拖动、左上缩放握柄、内容滚动与 Esc 关闭在超大窗口下仍可达。
+- 新增 `TestResultPanelPlacementGeometry`（[SelfTest.Ui.ResultPanel.cs](../../src/NaniKore/Diagnostics/SelfTest.Ui.ResultPanel.cs)）：覆盖常规下方落点、右缘横向夹取、下方不足上移、超高窗口对齐顶部、超宽窗口对齐左边、双向超限落回工作区原点、负坐标副屏几何，并做「工作区 × 窗口尺寸 × 选区（含极端负值/超出右下）」几何矩阵，断言任何组合都不抛异常且窗口始终与工作区相交、放得下时完整落入工作区。修复前的旧 `Math.Clamp` 在这些超限组合会抛异常，矩阵会直接失败。
+- 真机验证：`artifacts/r07-placement-verification`（Git 忽略）在真实桌面窗口栈上经由 `PositionNearSelection` 驱动真实 `HWND` 与 `SetWindowPos`，用 Win32 `GetWindowRect` 读回窗口物理尺寸。`dotnet run --project artifacts/r07-placement-verification/R07Verification.csproj -p:ExposeR07Internals=true` 四项全 PASS：常规尺寸落点与决策一致且在工作区内；窗口放大到超过整个工作区时对齐工作区原点、不抛异常；右缘选区仍按原契约夹取；负坐标副屏几何与决策一致。为让该 scratch 工程可复跑而不污染产品，`NaniKore.csproj` 仅在传入 `-p:ExposeR07Internals=true` 时加 `InternalsVisibleTo R07Verification`，正常构建不暴露任何内部类型（无参数构建验证工程会因 `ResultPanelWindow` 不可访问而 CS0122）。
+- 真机环境实测：单显示器 1920×1080，系统缩放 **125%**（DPI 1.25），工作区 **1920×1030**（任务栏压缩掉约 50px）。据此「较高 DPI」与「任务栏压缩工作区」由真机覆盖；面板 DIP 960×660 在 125% 下即物理 1200×825，与工作区交集判定、右缘夹取均正确。
+- `./scripts/dev.ps1 test`：退出码 0，`All self-tests passed (1719 checks).`（上一轮基线 1711，新增几何回归 8 项）；运行日志见 `artifacts/r07-placement-verification/real-window-run.log`。
+- **证据边界**：本机仅一块物理显示器，无真实左侧副屏/多屏，「大屏拉宽后移至小屏」以「窗口放大到超过当前工作区」等价模拟，「负坐标副屏」与「多屏混合 DPI」由纯决策几何矩阵覆盖、并经真机 `SetWindowPos` 路径复核同一决策，但未在第二块物理屏或跨屏拖拽下实测；未重新构建/验证 Native AOT 发布包；未做手动拖拽窗口后点击收藏的真实交互手测。
+- R07 已完成；整份发布加固事项保持 open。超大窗口退化对齐工作区左上角属定位契约新增事实，如项目规格需登记可后续补入发布契约条目。
 
 ## R08：翻译卡流可结束，设置更新不误伤请求
 

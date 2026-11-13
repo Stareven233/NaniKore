@@ -34,6 +34,7 @@ internal static partial class SelfTest
         TestResultPanelRubyDualModeAndTranslationFlow();
         TestResultPanelResetDuringTranslation();
         TestResultPanelViewportLayout();
+        TestResultPanelPlacementGeometry();
         TestAutomaticAnnotationPolicy();
         TestResultPanelAnnotateButton();
         TestResultPanelShortTextAnnotateAll();
@@ -465,6 +466,86 @@ internal static partial class SelfTest
         Check(
             "collapsed explanation releases the viewport minimum height",
             page.MinHeight == 0 && page.RowDefinitions[6].Height.IsAuto);
+    }
+
+    /// <summary>
+    /// 结果面板定位几何（issue 047 R07）：优先落在选区下方、下方不足上移、横向夹在工作区内；
+    /// 窗口大于工作区时（小屏、任务栏压缩工作区、大屏拉宽后移至小屏）不得抛异常，
+    /// 退化为对齐工作区左上角，保证标题栏与缩放握柄可达；负坐标副屏与混合 DPI 物理像素同样成立。
+    /// </summary>
+    private static void TestResultPanelPlacementGeometry()
+    {
+        // 常规几何：窗口放得下，贴在选区下方，横向夹取
+        var work = new PixelRect(0, 0, 1920, 1040);
+        var below = ResultPanelWindow.ResolvePanelPlacement(new PixelRect(100, 100, 200, 40), work, 960, 660);
+        Check("placement prefers right below the selection",
+            below.X == 100 && below.Y == 148);
+
+        var rightEdge = ResultPanelWindow.ResolvePanelPlacement(new PixelRect(1900, 100, 200, 40), work, 960, 660);
+        Check("placement clamps x to the work area right edge",
+            rightEdge.X == work.Right - 960 && rightEdge.Y == 148);
+
+        var flipped = ResultPanelWindow.ResolvePanelPlacement(new PixelRect(100, 900, 200, 100), work, 960, 660);
+        Check("placement flips above the selection when below does not fit",
+            flipped.Y == 900 - 8 - 660 && flipped.X == 100);
+
+        // 超高窗口：小笔记本工作区高度不足，对齐工作区顶部而不是抛异常
+        var tiny = new PixelRect(0, 0, 1366, 552);
+        var tooTall = ResultPanelWindow.ResolvePanelPlacement(new PixelRect(100, 100, 200, 40), tiny, 960, 660);
+        Check("window taller than the work area aligns to its top instead of throwing",
+            tooTall.Y == tiny.Y && tooTall.X == 100);
+
+        // 超宽窗口：大屏拉宽后移至小屏（高度仍放得下，只验证横向对齐）
+        var tooWide = ResultPanelWindow.ResolvePanelPlacement(new PixelRect(100, 100, 200, 40), tiny, 1400, 400);
+        Check("window wider than the work area aligns to its left instead of throwing",
+            tooWide.X == tiny.X && tooWide.Y == 148);
+
+        // 两个方向都超出：落在工作区原点
+        var tooBig = ResultPanelWindow.ResolvePanelPlacement(new PixelRect(500, 400, 200, 40), tiny, 1600, 800);
+        Check("window larger than the work area on both axes lands on the work area origin",
+            tooBig.X == tiny.X && tooBig.Y == tiny.Y);
+
+        // 负坐标副屏（主屏左侧）与更高 DPI 的物理像素工作区
+        var leftScreen = new PixelRect(-1920, -100, 1600, 900);
+        var negative = ResultPanelWindow.ResolvePanelPlacement(new PixelRect(-1800, -50, 200, 40), leftScreen, 960, 660);
+        Check("negative-coordinate secondary screen keeps the panel fully inside its work area",
+            negative.X >= leftScreen.X && negative.X + 960 <= leftScreen.Right &&
+            negative.Y >= leftScreen.Y && negative.Y + 660 <= leftScreen.Bottom);
+
+        // 边界几何矩阵：任何工作区/窗口/选区组合都不得抛异常，且窗口始终与工作区相交（可见、可操作）
+        var areas = new[] { work, tiny, leftScreen, new PixelRect(-3840, 0, 1280, 720), new PixelRect(0, 0, 1024, 600) };
+        var sizes = new[] { (440, 300), (960, 660), (1400, 660), (1600, 900) };
+        PixelRect[] selections =
+        [
+            new(0, 0, 10, 10),
+            new(int.MinValue / 4, int.MinValue / 4, 10, 10),
+            new(1920, 1040, 10, 10),
+        ];
+        var matrixFailures = 0;
+        foreach (var area in areas)
+        {
+            foreach (var (windowWidth, windowHeight) in sizes)
+            {
+                foreach (var selection in selections)
+                {
+                    var point = ResultPanelWindow.ResolvePanelPlacement(selection, area, windowWidth, windowHeight);
+                    var intersectsWorkArea = point.X < area.Right && point.X + windowWidth > area.X &&
+                                             point.Y < area.Bottom && point.Y + windowHeight > area.Y;
+                    // 放得下时必须完整落入工作区；放不下时至少覆盖工作区，标题栏仍可达
+                    var fullyInside = point.X >= area.X && point.X + windowWidth <= area.Right &&
+                                      point.Y >= area.Y && point.Y + windowHeight <= area.Bottom;
+                    var fits = windowWidth <= area.Width && windowHeight <= area.Height;
+                    if (!intersectsWorkArea || (fits && !fullyInside))
+                    {
+                        matrixFailures++;
+                    }
+                }
+            }
+        }
+
+        Check("placement geometry matrix never throws and always keeps the panel reachable",
+            matrixFailures == 0,
+            $"failures={matrixFailures}");
     }
 
     /// <summary>模拟滚动视口完成页面测量/排列，返回精讲卡片实际高度。</summary>

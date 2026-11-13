@@ -525,7 +525,35 @@ internal sealed partial class ResultPanelWindow : Window
 
         var windowWidth = windowBounds.Right - windowBounds.Left;
         var windowHeight = windowBounds.Bottom - windowBounds.Top;
-        var x = Math.Clamp(selectionOnDesktop.X, workArea.X, workArea.X + workArea.Width - windowWidth);
+        var placement = ResolvePanelPlacement(selectionOnDesktop, workArea, windowWidth, windowHeight);
+
+        _ = NativeMethods.SetWindowPos(
+            _windowHandle,
+            HwndNoTopmost,
+            placement.X,
+            placement.Y,
+            0,
+            0,
+            SwpNoSize | SwpNoActivate | SwpShowWindow);
+    }
+
+    /// <summary>
+    /// 面板定位纯决策：优先落在选区下方，下方空间不足时上移到选区上方，横向夹在工作区内。
+    /// 窗口大于工作区时（小屏、任务栏压缩、大屏拉宽后移至小屏），夹取上界会小于下界，
+    /// <see cref="Math.Clamp(int, int, int)"/> 直接抛异常；此时把上界收敛到下界本身，
+    /// 退化为对齐工作区左上角——与系统对超大窗口的处理一致，标题栏拖动、左上缩放握柄、
+    /// 内容滚动与 Esc 关闭始终可达，不会因定位失败丢掉整个面板。
+    /// </summary>
+    internal static PixelPoint ResolvePanelPlacement(
+        PixelRect selectionOnDesktop,
+        PixelRect workArea,
+        int windowWidth,
+        int windowHeight)
+    {
+        var maxX = Math.Max(workArea.X, workArea.X + workArea.Width - windowWidth);
+        var maxY = Math.Max(workArea.Y, workArea.Y + workArea.Height - windowHeight);
+
+        var x = Math.Clamp(selectionOnDesktop.X, workArea.X, maxX);
         var y = selectionOnDesktop.Bottom + PlacementGapPixels;
 
         if (y + windowHeight > workArea.Y + workArea.Height)
@@ -533,16 +561,8 @@ internal sealed partial class ResultPanelWindow : Window
             y = selectionOnDesktop.Y - PlacementGapPixels - windowHeight;
         }
 
-        y = Math.Clamp(y, workArea.Y, workArea.Y + workArea.Height - windowHeight);
-
-        _ = NativeMethods.SetWindowPos(
-            _windowHandle,
-            HwndNoTopmost,
-            x,
-            y,
-            0,
-            0,
-            SwpNoSize | SwpNoActivate | SwpShowWindow);
+        y = Math.Clamp(y, workArea.Y, maxY);
+        return new PixelPoint(x, y);
     }
 
     /// <summary>将窗口提升到普通非置顶层顶端，不抢占焦点。</summary>

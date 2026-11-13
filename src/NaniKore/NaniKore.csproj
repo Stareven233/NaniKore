@@ -17,6 +17,12 @@
     <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
 
+  <!-- 仅当传入 -p:ExposeR07Internals=true 时向真机定位验证 scratch 工程（artifacts/r07-placement-verification）暴露内部类型；
+       正常构建不暴露任何内部类型。验证工程已归档，需要复跑时加此参数。 -->
+  <ItemGroup Condition="'$(ExposeR07Internals)' == 'true'">
+    <InternalsVisibleTo Include="R07Verification" />
+  </ItemGroup>
+
   <!-- NativeAOT 发布口径（epic 002 P1 引入通道，P6 正式验收） -->
   <PropertyGroup Condition="'$(PublishAot)' == 'true'">
     <IsAotCompatible>true</IsAotCompatible>
