@@ -33,6 +33,7 @@ internal static partial class SelfTest
         TestProviderRequestContentLifetime();
         TestOpenAiThinkingParameterRejectionFallback();
         TestProviderOutOfBandThinkingExtraction();
+        TestProviderTransportBoundary();
     }
 
     /// <summary>
@@ -1499,6 +1500,173 @@ internal static partial class SelfTest
         return deltas;
     }
 
+    /// <summary>
+    /// R05 传输边界：同源重定向可跟随且保留密钥头与 POST 正文；跨源重定向拒绝且不发出第二个请求；
+    /// 远程明文 HTTP 拒绝，本地回环 HTTP 放行。全部使用虚构密钥与本地受控假 handler，不访问真实网络。
+    /// </summary>
+    private static void TestProviderTransportBoundary()
+    {
+        var request = new UnderstandRequest(UnderstandKind.Translate, "秘", null, "中文（简体）");
+
+        // 1. 302 同源跳转：密钥头与正文必须原样带到目标路径，最终拿到 200 流。
+        // 上传缓冲随同源跟随转移到下一个请求（用完才释放），因此关闭“重试前已释放”断言。
+        var sameOriginHandler = new ScriptedHandler(false,
+            Redirect(HttpStatusCode.Found, new Uri("https://provider.test/v1/translate?retry=1")),
+            Streaming("同源跳转成功"));
+        using (var provider = new OpenAiProvider(new ProviderProfile { BaseUrl = "https://provider.test/v1" }, "key", new PromptConfig(), sameOriginHandler))
+        {
+            var deltas = Drain(provider, request);
+            Check(
+                "Same-origin redirect is followed once with the custom key header and POST body preserved",
+                sameOriginHandler.Requests.Count == 2 &&
+                sameOriginHandler.Requests[1].Length > 0 &&
+                sameOriginHandler.Requests[1] == sameOriginHandler.Requests[0] &&
+                deltas.Any(delta => delta.Channel == DeltaChannel.Translation && delta.Text == "同源跳转成功"));
+            Check(
+                "Follow-up request retains bearer credential on same-origin redirect",
+                sameOriginHandler.Messages[1].Headers.Authorization is { } auth && auth.Scheme == "Bearer" && auth.Parameter == "key");
+        }
+
+        // 2. 跨源重定向（307/308 会转发正文）：必须在本地拦截，不向第二台主机发出任何请求。
+        foreach (var status in new[] { HttpStatusCode.TemporaryRedirect, HttpStatusCode.PermanentRedirect, HttpStatusCode.MovedPermanently, HttpStatusCode.Found })
+        {
+            var hijackHandler = new ScriptedHandler(Redirect(status, new Uri("https://attacker.test/collect")));
+            using (var provider = new OpenAiProvider(new ProviderProfile { BaseUrl = "https://provider.test/v1" }, "leaked-key", new PromptConfig(), hijackHandler))
+            {
+                string? message = null;
+                try
+                {
+                    Drain(provider, request);
+                    Check($"Cross-origin redirect {status} is refused", false);
+                }
+                catch (ProviderTransportPolicyException ex)
+                {
+                    message = ex.Message;
+                }
+
+                Check(
+                    $"Cross-origin redirect {status} never forwards credentials or payload",
+                    hijackHandler.Requests.Count == 1 &&
+                    message!.Contains("attacker.test", StringComparison.Ordinal));
+            }
+        }
+
+        // 3. Claude/Gemini 的自定义密钥头同样只随同源跳转，跨源被拦截。
+        var claudeHijack = new ScriptedHandler(Redirect(HttpStatusCode.TemporaryRedirect, new Uri("https://attacker.test/v1/messages")));
+        using (var provider = new ClaudeProvider(new ProviderProfile { BaseUrl = "https://provider.test" }, "claude-key", new PromptConfig(), claudeHijack))
+        {
+            try
+            {
+                Drain(provider, request);
+                Check("Claude cross-origin redirect is refused", false);
+            }
+            catch (ProviderTransportPolicyException)
+            {
+                Check(
+                    "Claude cross-origin redirect never forwards the x-api-key header",
+                    claudeHijack.Requests.Count == 1);
+            }
+        }
+
+        var geminiHijack = new ScriptedHandler(Redirect(HttpStatusCode.PermanentRedirect, new Uri("https://attacker.test/v1beta")));
+        using (var provider = new GeminiProvider(new ProviderProfile { BaseUrl = "https://provider.test/v1beta" }, "gemini-key", new PromptConfig(), geminiHijack))
+        {
+            try
+            {
+                Drain(provider, request);
+                Check("Gemini cross-origin redirect is refused", false);
+            }
+            catch (ProviderTransportPolicyException)
+            {
+                Check(
+                    "Gemini cross-origin redirect never forwards the x-goog-api-key header",
+                    geminiHijack.Requests.Count == 1);
+            }
+        }
+
+        // 4. 同源 303 按语义转 GET 并丢弃正文；重定向环在有限跳数内中止。
+        var seeOtherHandler = new ScriptedHandler(
+            Redirect(HttpStatusCode.SeeOther, new Uri("https://provider.test/v1/translate-result")),
+            Streaming("GET 收尾"));
+        using (var provider = new OpenAiProvider(new ProviderProfile { BaseUrl = "https://provider.test/v1" }, "key", new PromptConfig(), seeOtherHandler))
+        {
+            var deltas = Drain(provider, request);
+            Check(
+                "Same-origin 303 switches to GET and drops the upload body",
+                seeOtherHandler.Requests.Count == 2 &&
+                seeOtherHandler.Messages[1].Method == HttpMethod.Get &&
+                seeOtherHandler.Messages[1].Content is null &&
+                deltas.Any(delta => delta.Channel == DeltaChannel.Translation && delta.Text == "GET 收尾"));
+        }
+
+        var loopHandler = new RedirectLoopHandler();
+        using (var provider = new OpenAiProvider(new ProviderProfile { BaseUrl = "https://provider.test/v1" }, "key", new PromptConfig(), loopHandler))
+        {
+            try
+            {
+                Drain(provider, request);
+                Check("Redirect loop is bounded", false);
+            }
+            catch (ProviderTransportPolicyException ex)
+            {
+                Check(
+                    "Redirect loop is refused without unbounded following",
+                    loopHandler.Messages.Count == 6 && ex.Message.Contains("重定向次数过多", StringComparison.Ordinal));
+            }
+        }
+
+        // 5. 远程明文 HTTP 拒绝；本地回环 HTTP 放行（假 handler 内直接回 200，不出网）。
+        var loopbackHandler = new ScriptedHandler(Streaming("回环可用"));
+        using (var remote = new OpenAiProvider(new ProviderProfile { BaseUrl = "http://provider.test/v1" }, "key", new PromptConfig(), loopbackHandler))
+        {
+            try
+            {
+                Drain(remote, request);
+                Check("Remote plaintext HTTP is refused", false);
+            }
+            catch (ProviderTransportPolicyException ex)
+            {
+                Check(
+                    "Remote plaintext HTTP error names the endpoint and HTTPS requirement",
+                    loopbackHandler.Requests.Count == 0 && ex.Message.Contains("HTTPS", StringComparison.Ordinal));
+            }
+        }
+
+        using (var local = new OpenAiProvider(new ProviderProfile { BaseUrl = "http://127.0.0.1:11434/v1" }, "key", new PromptConfig(), new ScriptedHandler(Streaming("回环可用"))))
+        {
+            var deltas = Drain(local, request);
+            Check(
+                "Loopback HTTP endpoint remains callable for local model servers",
+                deltas.Any(delta => delta.Channel == DeltaChannel.Translation && delta.Text == "回环可用"));
+        }
+
+        using (var localhost = new OpenAiProvider(new ProviderProfile { BaseUrl = "http://localhost:11434/v1" }, "key", new PromptConfig(), new ScriptedHandler(Streaming("回环可用"))))
+        {
+            var deltas = Drain(localhost, request);
+            Check(
+                "localhost HTTP endpoint remains callable for local model servers",
+                deltas.Any(delta => delta.Channel == DeltaChannel.Translation && delta.Text == "回环可用"));
+        }
+    }
+
+    /// <summary>3xx 重定向回包，Location 指向指定绝对地址。</summary>
+    private static HttpResponseMessage Redirect(HttpStatusCode status, Uri location) => new(status)
+    {
+        Headers = { Location = location },
+    };
+
+    /// <summary>无限同源重定向环，用于验证跳数上限。</summary>
+    private sealed class RedirectLoopHandler : HttpMessageHandler
+    {
+        public List<HttpRequestMessage> Messages { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Messages.Add(request);
+            return Task.FromResult(Redirect(HttpStatusCode.Found, new Uri("https://provider.test/v1/loop")));
+        }
+    }
+
     /// <summary>服务端 400 回包；报文走 error.message，与 ProviderHttpException 的解析口径一致。</summary>
     private static HttpResponseMessage Rejected(string message) => new(HttpStatusCode.BadRequest)
     {
@@ -1512,18 +1680,23 @@ internal static partial class SelfTest
             $"data: {{\"choices\":[{{\"delta\":{{\"content\":\"{text}\"}}}}]}}\n\ndata: [DONE]\n\n"),
     };
 
-    /// <summary>按脚本依次回包的假 handler：记录请求体，用于复现服务端 400 与成功流（issue 022）。</summary>
+    /// <summary>按脚本依次回包的假 handler：记录请求体，用于复现服务端 400 与成功流（issue 022）。
+    /// checkUploadRelease 关闭后不再断言上一请求体已释放，供重定向跟随等复用上传缓冲的场景使用。</summary>
     private sealed class ScriptedHandler : HttpMessageHandler
     {
         private readonly Queue<HttpResponseMessage> _responses = [];
+        private readonly bool _checkUploadRelease;
 
-        public ScriptedHandler(params HttpResponseMessage[] responses)
+        public ScriptedHandler(bool checkUploadRelease, params HttpResponseMessage[] responses)
         {
+            _checkUploadRelease = checkUploadRelease;
             foreach (var response in responses)
             {
                 _responses.Enqueue(response);
             }
         }
+
+        public ScriptedHandler(params HttpResponseMessage[] responses) : this(true, responses) { }
 
         /// <summary>按发送顺序记录的请求体。</summary>
         public List<string> Requests { get; } = [];
@@ -1532,15 +1705,23 @@ internal static partial class SelfTest
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            if (Messages.Count > 0)
+            if (_checkUploadRelease && Messages.Count > 0)
             {
                 Check(
                     "Previous upload is released before OpenAI retry or follow-up starts",
                     Messages[^1].Content is null && IsContentDisposed(Uploads[^1]));
             }
             Messages.Add(request);
-            Uploads.Add(request.Content!);
-            Requests.Add(await request.Content!.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+            if (request.Content is { } upload)
+            {
+                Uploads.Add(upload);
+                Requests.Add(await upload.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+            }
+            else
+            {
+                Uploads.Add(new StringContent(string.Empty));
+                Requests.Add(string.Empty);
+            }
             return _responses.Dequeue();
         }
 

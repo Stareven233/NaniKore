@@ -33,6 +33,7 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 ### 翻译、结果与配置
 
 - 已有 OpenAI（completions/responses）、Claude、Gemini 的流式 provider 契约，支持 `local_ocr` 与 `vision_oneshot` 两条输入路径。
+- 翻译请求传输边界：生产 HttpClient 关闭自动重定向，仅自动跟随同源（协议 + 主机 + 端口一致）重定向并保留密钥头与 POST 正文，303 转 GET 丢正文，跨源或 https→http 降级抛出 `ProviderTransportPolicyException` 中文错误；远程端点强制 HTTPS，仅 localhost/127.0.0.1/::1 允许明文 HTTP；连接测试与真实翻译共用同一传输入口，策略一致。
 - 提示词为模块化组装（`PromptTemplates`）：设置页对应 `base` / `vision_base` / `explain` 三个 Base 键与 `japanese_plugin` / `english_plugin` / `chinese_plugin` 三个语言插件键，留空即回落到内置常量。Base 与插件支持 `{{target_language}}`；视觉一条龙由视觉 Base + 语言插件恒定同拼，与输入无关，前缀缓存 100% 命中。语言插件经「探测结果纳入 + 目标语言互斥剔除」双重门控：某语言本身就是目标语言时对应插件整条不注入（日译英不标 IPA、外译中不标拼音等）。
 - 结果窗口采用 Avalonia 原生实现，`ShowActivated=false` 与 Win32 `SetWindowPos(SWP_NOACTIVATE)` 严格保护前台焦点不抢夺；设置页包含通用、翻译、热键、收藏和关于页。
 - 原文区基于 Avalonia `SelectableTextBlock` + `Inlines` + `InlineUIContainer` 承载振假名与双模就地编辑（光标定位不全选、未修改失焦复原）；翻译采用两阶段流式协议（阶段 1 假名原句 + `---TRANSLATION---` + 译文，阶段 2 精讲完整回放阶段 1 图文历史以命中前缀缓存）；精讲微结构化卡片与划词微型气泡完全由 Avalonia 承载。

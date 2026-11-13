@@ -78,3 +78,9 @@ internal sealed class ProviderConfigurationException : InvalidOperationException
 {
     public ProviderConfigurationException(string message) : base(message) { }
 }
+
+/// <summary>翻译传输边界违规（R05）：拒绝明文远程 HTTP、跨源重定向等不安全传输路径，提示用户可行动的修正方式。</summary>
+internal sealed class ProviderTransportPolicyException : InvalidOperationException
+{
+    public ProviderTransportPolicyException(string message) : base(message) { }
+}

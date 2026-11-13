@@ -31,7 +31,7 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 | R02 | P1 | 剪贴板文件列表还原丢失 | 已修复并验证 |
 | R03 | P1 | 取消翻译后新输入的按钮状态 | 已修复并验证 |
 | R04 | P1 | 收藏数据库异常的 UI 隔离 | 已修复并验证 |
-| R05 | P1 | 翻译重定向与凭据传输边界 | 待修复 |
+| R05 | P1 | 翻译重定向与凭据传输边界 | 已修复并验证 |
 | R06 | P1 | 第三方许可与仓库授权 | 待核实并补齐 |
 | R07 | P2 | 小工作区与跨屏结果窗口定位 | 待修复 |
 | R08 | P2 | 流式正文超时与设置热应用 | 超时待修复；热应用待复现 |
@@ -135,12 +135,23 @@ P1 为建议正式推广前完成的事项；P2 为发布质量改进，应逐�
 
 **处理与验收：**
 
-- [ ] 关闭自动重定向，或实施明确的同源策略；拒绝不符合策略的跳转并给出可理解错误。
-- [ ] 仅使用虚构凭据和本地受控端点，验证跨源跳转不泄露自定义密钥头及图文载荷。
-- [ ] 明确远程明文 HTTP 的处理策略：建议远程要求 HTTPS、本地回环允许 HTTP；在连接测试和真实翻译中保持一致。
-- [ ] 保留 OpenAI/Claude/Gemini 及本地兼容端点的正常调用能力。
+- [x] 关闭自动重定向，或实施明确的同源策略；拒绝不符合策略的跳转并给出可理解错误。
+- [x] 仅使用虚构凭据和本地受控端点，验证跨源跳转不泄露自定义密钥头及图文载荷。
+- [x] 明确远程明文 HTTP 的处理策略：远程要求 HTTPS、本地回环允许 HTTP；在连接测试和真实翻译中保持一致。
+- [x] 保留 OpenAI/Claude/Gemini 及本地兼容端点的正常调用能力。
 
 本项仅涉及翻译客户端，不包含已排除的 OCR HTTP 服务。
+
+**执行记录（2026-11-11）：**
+
+- [TranslationProviderBase.cs](../../src/NaniKore/Translation/Providers/TranslationProviderBase.cs)：生产 `HttpClientHandler` 改为 `AllowAutoRedirect = false`；`SendAsync` 内实现「仅同源跟随」——只自动跟随协议 + 主机 + 端口完全一致的重定向，303 按语义转 GET 并丢弃正文，跨源、https→http 降级一律抛出新增的 `ProviderTransportPolicyException`（中文说明跳转两端与拒绝原因），最多跟随 5 跳防环；同源跟随复用 ByteArrayContent 上传缓冲（所有权转移，不整份复制），请求头（含密钥头）仅在同源时继续携带。另增 `ValidateTransportSecurity`：远程明文 HTTP 拒绝，仅 localhost/127.0.0.1/::1 允许，连接测试与真实翻译同一入口、策略天然一致。
+- [UnderstandContracts.cs](../../src/NaniKore/Translation/UnderstandContracts.cs) 新增 `ProviderTransportPolicyException`；[ProviderErrors.cs](../../src/NaniKore/Translation/ProviderErrors.cs) 将其映射为原文透出（消息本身已是可行动中文）。Claude/Gemini 构造函数补上可选 `transport` 注入以便真实网络栈回归。
+- 新增 `TestProviderTransportBoundary`（[SelfTest.Translation.cs](../../src/NaniKore/Diagnostics/SelfTest.Translation.cs)，14 项检查）：同源 302 跟随后密钥头与 POST 正文逐字保留；307/308/301/302 跨源到 `attacker.test` 均只发出 1 个请求且抛出点名目标主机的错误（密钥头与图文载荷零转发）；Claude `x-api-key` 与 Gemini `x-goog-api-key` 跨源同样被拦截；同源 303 转 GET 丢正文；重定向环在 6 次请求后中止；远程 `http://provider.test` 拒绝且不发出任何请求；`http://127.0.0.1` 与 `http://localhost` 回环端点照常可调用。全部使用虚构密钥与本地受控假 handler，不访问真实网络。
+- `./scripts/dev.ps1 test`：退出码 0，`All self-tests passed (1711 checks).`（上一轮基线 1697，新增 14 项）。日志位于 Git 忽略的 `artifacts/r05-debug2.log`。
+- 官方 HTTPS 端点正常不发起跨源重定向，此修复对其无感；第三方兼容端点若依赖跨主机跳转将被明确报错提示检查 Base URL，属预期加固而非回归。Native AOT 发布包未重新构建验证；未进行真实网络手测。
+- R05 已完成；整份发布加固事项保持 open。翻译请求传输边界（同源跟随 + 远程 HTTPS）应作为稳定事实补入 Project Spec 的翻译条目。
+
+相关既有事项：[022-x-ff-nvidia-thinking-parameter-400](022-x-ff-nvidia-thinking-parameter-400.md)。
 
 ## R06：按实际交付方式补齐授权材料
 

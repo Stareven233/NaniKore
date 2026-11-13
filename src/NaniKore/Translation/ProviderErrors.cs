@@ -50,7 +50,7 @@ internal static class ProviderErrorMapper
 {
     public static string ToUserMessage(Exception exception, string? profileName = null, string? model = null, string? baseUrl = null)
     {
-        if (exception is ProviderCapabilityException or ProviderConfigurationException)
+        if (exception is ProviderCapabilityException or ProviderConfigurationException or ProviderTransportPolicyException)
         {
             return exception.Message;
         }

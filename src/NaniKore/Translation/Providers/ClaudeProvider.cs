@@ -7,7 +7,8 @@ namespace NaniKore.Translation.Providers;
 
 internal sealed class ClaudeProvider : TranslationProviderBase
 {
-    public ClaudeProvider(ProviderProfile profile, string apiKey, PromptConfig prompts) : base(profile, apiKey, prompts) { }
+    public ClaudeProvider(ProviderProfile profile, string apiKey, PromptConfig prompts, HttpMessageHandler? transport = null)
+        : base(profile, apiKey, prompts, transport) { }
 
     public override async IAsyncEnumerable<UnderstandDelta> StreamAsync(
         UnderstandRequest request,

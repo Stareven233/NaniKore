@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -18,8 +20,9 @@ internal abstract class TranslationProviderBase : ITranslationProvider
         Profile = profile.Clone();
         ApiKey = apiKey;
         Prompts = prompts;
-        // transport 只供自测注入假网络栈复现服务端行为；生产恒为默认 handler。
-        _client = new HttpClient(transport ?? new HttpClientHandler())
+        // transport 只供自测注入假网络栈复现服务端行为；生产 handler 关闭自动重定向，
+        // 改由 SendAsync 执行“仅同源跟随”策略（R05），避免密钥头/正文被 .NET 静默转发到跨源主机。
+        _client = new HttpClient(transport ?? new HttpClientHandler { AllowAutoRedirect = false })
         {
             Timeout = TimeSpan.FromSeconds(profile.TimeoutSeconds),
         };
@@ -33,14 +36,71 @@ internal abstract class TranslationProviderBase : ITranslationProvider
 
     public void Dispose() => _client.Dispose();
 
+    /// <summary>同源重定向最多自动跟随的跳数；超过即视为服务端异常并中止。</summary>
+    private const int MaxRedirectHops = 5;
+
     protected async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        // R05 传输边界：远程端点强制 HTTPS，仅本地回环允许明文 HTTP。
+        // 连接测试与真实翻译都经过本入口，策略天然一致。
+        if (request.RequestUri is { } endpoint)
+        {
+            ValidateTransportSecurity(endpoint);
+        }
+
         try
         {
             HttpResponseMessage response;
             try
             {
-                response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+                var redirectsRemaining = MaxRedirectHops;
+                while (true)
+                {
+                    response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+
+                    if (!IsRedirect(response) || request.RequestUri is null)
+                    {
+                        break;
+                    }
+
+                    if (redirectsRemaining == 0)
+                    {
+                        response.Dispose();
+                        throw new ProviderTransportPolicyException("翻译服务重定向次数过多，已中止本次请求。");
+                    }
+
+                    if (!TryResolveRedirectTarget(request.RequestUri, response, out var target, out var dropBody, out var policyError))
+                    {
+                        response.Dispose();
+                        throw new ProviderTransportPolicyException(policyError);
+                    }
+
+                    response.Dispose();
+                    var followUp = new HttpRequestMessage(dropBody ? HttpMethod.Get : request.Method, target);
+                    foreach (var header in request.Headers)
+                    {
+                        // 同源跳转允许继续携带密钥头等自定义头；跨源已在 TryResolveRedirectTarget 拦截。
+                        followUp.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                    }
+
+                    if (!dropBody && request.Content is { } upload)
+                    {
+                        // ByteArrayContent 可重复发送：上传缓冲所有权转移到跟随请求，避免整份复制。
+                        followUp.Content = upload;
+                    }
+                    else
+                    {
+                        // 303 语义要求丢弃正文：显式释放上传缓冲后再解除引用。
+                        request.Content?.Dispose();
+                        request.Content = null;
+                    }
+
+                    var previous = request;
+                    request = followUp;
+                    previous.Content = null; // 缓冲已转移，旧请求仅解除引用后关闭
+                    previous.Dispose();
+                    redirectsRemaining--;
+                }
             }
             finally
             {
@@ -63,6 +123,67 @@ internal abstract class TranslationProviderBase : ITranslationProvider
         catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             throw new TaskCanceledException($"请求超过 {Profile.TimeoutSeconds} 秒超时。", innerException: null, cancellationToken);
+        }
+    }
+
+    private static bool IsRedirect(HttpResponseMessage response) =>
+        response.StatusCode is HttpStatusCode.MovedPermanently
+            or HttpStatusCode.Found
+            or HttpStatusCode.SeeOther
+            or HttpStatusCode.TemporaryRedirect
+            or HttpStatusCode.PermanentRedirect;
+
+    /// <summary>
+    /// 解析重定向目标（R05）：仅接受同源（协议 + 主机 + 端口完全一致）跳转；
+    /// 跨源、https→http 降级一律拒绝并给出可理解错误，303 按语义转为 GET 并丢弃正文。
+    /// </summary>
+    private static bool TryResolveRedirectTarget(
+        Uri current,
+        HttpResponseMessage response,
+        out Uri target,
+        out bool dropBody,
+        [NotNullWhen(false)] out string? error)
+    {
+        target = current;
+        dropBody = false;
+        error = null;
+
+        var location = response.Headers.Location;
+        if (location is null)
+        {
+            error = "翻译服务返回重定向响应但缺少 Location 头，无法继续。";
+            return false;
+        }
+
+        target = location.IsAbsoluteUri ? location : new Uri(current, location);
+
+        if (!string.Equals(current.Scheme, target.Scheme, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(current.Authority, target.Authority, StringComparison.OrdinalIgnoreCase))
+        {
+            error = $"翻译服务要求重定向到其它位置（{current.Scheme}://{current.Authority} → {target.Scheme}://{target.Authority}）。" +
+                    "为避免 API Key 与请求内容被转发到不可信主机，已中止本次请求；请检查 Base URL 或改用直连端点。";
+            return false;
+        }
+
+        dropBody = response.StatusCode == HttpStatusCode.SeeOther;
+        return true;
+    }
+
+    /// <summary>R05：远程明文 HTTP 一律拒绝，仅本地回环（localhost / 127.0.0.1 / ::1）允许，兼容本地 Ollama 等服务。</summary>
+    private static void ValidateTransportSecurity(Uri endpoint)
+    {
+        if (!string.Equals(endpoint.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var isLoopback = string.Equals(endpoint.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+                         (IPAddress.TryParse(endpoint.Host, out var address) && IPAddress.IsLoopback(address));
+        if (!isLoopback)
+        {
+            throw new ProviderTransportPolicyException(
+                $"远程翻译端点必须使用 HTTPS（当前为 {endpoint.Scheme}://{endpoint.Authority}）；" +
+                "仅本地回环地址（localhost、127.0.0.1、::1）允许明文 HTTP。请改用 HTTPS 端点。");
         }
     }
 
