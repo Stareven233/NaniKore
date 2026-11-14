@@ -31,7 +31,6 @@ internal static partial class SelfTest
         TestResultPanelSourceAnnotation();
         TestStructuredChineseDisplayAndLayout();
         TestChineseMultiPronunciationHint();
-        RunBrushDiag();
         TestAnnotationInvalidation();
         TestResultPanelSubscriptionCleanup();
         TestResultPanelDetectedSourceLanguage();
@@ -226,6 +225,14 @@ internal static partial class SelfTest
         Check("hover panel drops the orange frame and green block for a borderless translucent panel",
             tipBorder.BorderThickness == default &&
             tipBorder.Background is ISolidColorBrush panelBg && panelBg.Color.A is > 0 and < 255);
+        // 面板底色取自当前主题的中性 Control.Background（不是深色下亮绿的 Card.Background），随系统深浅色
+        var themedApp = Application.Current!;
+        Check("hover surface derives from theme Control.Background and is not the bright-green card color",
+            themedApp.TryGetResource("Brush.Control.Background", themedApp.ActualThemeVariant, out var cb)
+            && cb is ISolidColorBrush controlBg && tipBorder.Background is ISolidColorBrush surfaceBg
+            && surfaceBg.Color.R == controlBg.Color.R && surfaceBg.Color.G == controlBg.Color.G &&
+            surfaceBg.Color.B == controlBg.Color.B &&
+            !(surfaceBg.Color.R == 0x77 && surfaceBg.Color.G == 0xEE && surfaceBg.Color.B == 0x66));
 
         // 面板文本必须显式清空 LineHeight，否则继承外层 36 行高，导致每行之间多出空行
         var panelTexts = CollectTextBlocks(tip).ToArray();
@@ -350,31 +357,6 @@ internal static partial class SelfTest
         }
 
         return null;
-    }
-
-    /// <summary>TEMP：解析深/浅色下 hover 面板实际背景画刷来源。</summary>
-    private static void RunBrushDiag()
-    {
-        EnsureThemedApplication();
-        var app = Application.Current!;
-        var lines = new List<string>();
-        foreach (var variant in new[] { ThemeVariant.Dark, ThemeVariant.Light })
-        {
-            app.RequestedThemeVariant = variant;
-            string ColorOf(string key)
-            {
-                var ok = app.TryGetResource(key, variant, out var val);
-                return val is ISolidColorBrush sb ? $"{key}={sb.Color}" : $"{key}=<{(ok ? val?.GetType().Name : "null")}>";
-            }
-            lines.Add($"[{variant}] {ColorOf("Brush.Card.Background")} | {ColorOf("Brush.Window.Background")} | {ColorOf("Brush.Panel.Card")}");
-            var ruby = new RubyInlineControl("银行", "yín háng", 15,
-                [new(0, 1, "yín", ["yín"]), new(1, 1, "háng", ["háng", "xíng"])], 0);
-            var bg = ruby.HoverPanelBorder.Background as ISolidColorBrush;
-            lines.Add($"    hoverPanel actual bg = {(bg is null ? "null" : bg.Color.ToString())}");
-        }
-        app.RequestedThemeVariant = ThemeVariant.Dark;
-        Directory.CreateDirectory("artifacts");
-        File.WriteAllText("artifacts/p2-brush-diag.txt", string.Join("\n", lines));
     }
 
     /// <summary>深度优先收集控件子树内所有 TextBlock 文本，供 hover 候选面板断言。</summary>

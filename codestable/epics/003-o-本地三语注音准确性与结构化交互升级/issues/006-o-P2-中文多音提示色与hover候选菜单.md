@@ -61,4 +61,6 @@ P1 Issue 005 的自研词组匹配引擎已为每个 `AnnotationSyllable` 产出
 2. **「点击复制注音」偏大偏粗：** 统一为与读音行同字号、`FontWeight.Normal`（行高 NaN 后视觉也归一）。补断言：页脚与默认读音同 FontSize 且 Normal。
 3. **（附带、非注音范畴）结果面板置顶保持激活却失效：** 根因 `PositionNearSelection` 定位时用 `HWND_NOTOPMOST` 把置顶剥掉；改为按 `Topmost` 选择 `HWND_TOPMOST`/`HWND_NOTOPMOST`，并在 `OnOpened` 用 `PinButton.IsChecked` 重建一次 `Topmost`。涉及 `ResultPanelWindow.axaml.cs`。
 
-验证：Debug（独立输出目录，避开运行中进程锁）与 NativeAOT 均 **1811 checks 通过**。
+4. **悬浮面板底色用错了主题键（主人追问）：** 原用 `Brush.Card.Background`，但深色主题下它是亮绿 `#77EE66`（非中性），且旧 `ResolveBrush` 用了不带 `ThemeVariant` 的 `TryGetResource` 重载、不展开 ThemeDictionaries，实际一直落到兜底 `#202020`；面板文字色也没随主题。改为：`ResolveBrush` 用 `Application.Current.ActualThemeVariant` 查询主题字典；面板底色改用中性 `Brush.Control.Background`（浅 `#F8FBF9`／深 `#2A342E`）加 240 alpha，随系统深浅色自动切换。补断言：面板底色等于当前主题 `Brush.Control.Background` 且非亮绿。**说明：应用本身没有手动主题开关，但会跟随 Windows 系统深浅色热切换（`ThemeManager` 监听 `PlatformSettings.ColorValuesChanged`），故需要 Light/Dark 两套色板。**
+
+验证：Debug（独立输出目录，避开运行中进程锁）与 NativeAOT 均 **1812 checks 通过**。

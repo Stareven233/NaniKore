@@ -231,7 +231,7 @@ internal sealed class RubyInlineControl : Grid
         // 悬浮候选面板：Popup 承载单个半透明 Border，避免 ToolTip 自带的不透明外壳；锚定注音行
         _hoverPanel = new Border
         {
-            Background = GetToolTipBackground(this),
+            Background = GetHoverPanelBackground(this),
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(9, 6),
             IsHitTestVisible = false,
@@ -485,9 +485,19 @@ internal sealed class RubyInlineControl : Grid
             return brush;
         }
 
-        if (Application.Current?.TryGetResource(key, out var appRes) == true && appRes is IBrush appBrush)
+        // 主题色板放在 ThemeDictionaries 里，必须带当前 ThemeVariant 查询；
+        // 不带 variant 的重载不会展开主题字典，会拿到兜底色（正是之前 hover 面板/文字色不随主题的根因）
+        if (Application.Current is { } app)
         {
-            return appBrush;
+            if (app.TryGetResource(key, app.ActualThemeVariant, out var themed) && themed is IBrush themedBrush)
+            {
+                return themedBrush;
+            }
+
+            if (app.TryGetResource(key, out var appRes) && appRes is IBrush appBrush)
+            {
+                return appBrush;
+            }
         }
 
         return fallback;
@@ -496,17 +506,21 @@ internal sealed class RubyInlineControl : Grid
     /// <summary>多音提示色：复用主题警示色（琥珀/橙），表示该字存在其他读音而默认音仍照常。</summary>
     internal static IBrush GetHintBrush(Control control) => ResolveBrush(control, "Brush.Warning", Brushes.Orange);
 
-    /// <summary>悬浮面板半透明中性底色：沿用卡片色降为半透明（去掉原来的淡绿块与橙色描边框）。</summary>
-    private static IBrush GetToolTipBackground(Control control)
+    /// <summary>
+    /// 悬浮面板半透明中性底色：取主题的中性控件面色 <c>Brush.Control.Background</c> 加透明度。
+    /// 不再用 <c>Brush.Card.Background</c>（深色主题下它是亮绿 #77EE66，不适合当面板底），
+    /// 且按当前 ThemeVariant 解析，随系统深浅色自动切换。要换色/透明度就改这里。
+    /// </summary>
+    private static IBrush GetHoverPanelBackground(Control control)
     {
-        var card = ResolveBrush(control, "Brush.Card.Background", new SolidColorBrush(Color.FromRgb(32, 32, 32)));
-        if (card is ISolidColorBrush solid)
+        var surface = ResolveBrush(control, "Brush.Control.Background", new SolidColorBrush(Color.FromRgb(42, 52, 46)));
+        if (surface is ISolidColorBrush solid)
         {
             var color = solid.Color;
-            return new SolidColorBrush(Color.FromArgb(230, color.R, color.G, color.B));
+            return new SolidColorBrush(Color.FromArgb(240, color.R, color.G, color.B));
         }
 
-        return card;
+        return surface;
     }
 
     /// <summary>
