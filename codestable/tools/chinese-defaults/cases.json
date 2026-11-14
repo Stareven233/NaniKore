@@ -1,0 +1,17 @@
+[
+  {"id":"still", "text":"他还在这里。", "targets":[[1,"hai2"]], "basis":"還：仍然义，沿用 Epic 固定期望"},
+  {"id":"return", "text":"把书还给我。", "targets":[[2,"huan2"]], "basis":"還：交回义，沿用 Epic 固定期望"},
+  {"id":"perimeter", "text":"这里的周长大于十米。", "targets":[[4,"chang2"],[5,"da4"]], "basis":"周长+大于，沿用 Epic 固定期望"},
+  {"id":"grow", "text":"孩子长大了。", "targets":[[2,"zhang3"],[3,"da4"]], "basis":"長大：成长义，沿用 Epic 固定期望"},
+  {"id":"crack", "text":"罅缝", "targets":[[0,"xia4"],[1,"feng4"]], "basis":"罅+缝隙名词义，字义构词期望，尚无专词条证据"},
+  {"id":"paihuai", "text":"俳佪", "targets":[[0,"pai2"],[1,"huai2"]], "basis":"沿用现有 self-test"},
+  {"id":"juyu", "text":"龃龉", "targets":[[0,"ju3"],[1,"yu3"]], "basis":"沿用现有 self-test"},
+  {"id":"bank", "text":"不行就去银行", "targets":[[0,"bu4"],[1,"xing2"],[4,"yin2"],[5,"hang2"]], "basis":"沿用 Epic 固定期望，不使用连读变调"},
+  {"id":"traditional-bank", "text":"銀行", "targets":[[0,"yin2"],[1,"hang2"]], "basis":"沿用 Epic 固定期望，原文繁体不改写"},
+  {"id":"return-object", "text":"请把钱还我。", "targets":[[3,"huan2"]], "basis":"人工语义反例：归还+直接宾语，非词条整句核验"},
+  {"id":"return-money", "text":"他终于还钱了。", "targets":[[3,"huan2"]], "basis":"人工语义反例：归还钱款"},
+  {"id":"sewing", "text":"她正在缝补衣服。", "targets":[[3,"feng2"]], "basis":"人工语义反例：缝补动词义"},
+  {"id":"gap", "text":"墙上的缝隙很大。", "targets":[[3,"feng4"]], "basis":"縫隙词条名词义"},
+  {"id":"extension", "text":"𠮷𠀀龃龉", "targets":[[2,"ju3"],[3,"yu3"]], "basis":"只核对龃龉，补充平面字本身不设置期望"},
+  {"id":"mixed", "text":"龃龉\r\nHello 123! 龃龉\n龃龉", "targets":[[0,"ju3"],[1,"yu3"]], "basis":"已知读音与输入形状检查，不核对整句"}
+]
