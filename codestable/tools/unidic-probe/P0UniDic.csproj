@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(PublishAot)' == 'true'">
+    <PublishAot>true</PublishAot>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <StripSymbols>true</StripSymbols>
+    <IlcTrimMetadata>true</IlcTrimMetadata>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 直接链接生产策略与判据，避免隔离探针复制出另一套过滤语义。 -->
+    <Compile Include="../../../src/NaniKore/Phonetics/AnnotationContracts.cs" Link="AnnotationContracts.cs" />
+    <Compile Include="../../../src/NaniKore/Translation/RubyTextParser.cs" Link="RubyTextParser.cs" />
+    <EmbeddedResource Include="../../../src/NaniKore/Phonetics/Data/*.txt" LogicalName="NaniKore.Phonetics.Data.%(Filename)%(Extension)" />
+    <PackageReference Include="LibNMeCab" Version="0.10.2" />
+  </ItemGroup>
+</Project>

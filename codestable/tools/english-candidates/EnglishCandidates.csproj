@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 直接验证生产解析器和 IPA 转写，禁止运行词典生成入口。 -->
+    <Compile Include="../../../src/NaniKore/Phonetics/CmuDictionarySourceParser.cs;../../../src/NaniKore/Phonetics/PhoneticDictionaryBuilder.cs;../../../src/NaniKore/Phonetics/IpaTranscription.cs;../../../src/NaniKore/Phonetics/PhoneticDependencies.cs;../../../src/NaniKore/Translation/RubyTextParser.cs" Link="Production/%(Filename)%(Extension)" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+  </ItemGroup>
+</Project>

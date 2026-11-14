@@ -13,6 +13,7 @@ internal static partial class SelfTest
         TestIpaTranscription();
         TestEnglishPipeline();
         TestCmuDictionarySourceParser();
+        TestCmuDictionaryCandidateIndex();
         TestPinyinToneConversion();
         TestRegistryLanguageRouting();
         TestPhoneticLanguageCatalog();
@@ -300,12 +301,56 @@ internal static partial class SelfTest
         ]).ToArray();
 
         Check(
+            "CMUdict 空白分隔与行尾标签不混入发音",
+            CmuDictionarySourceParser.Parse([
+                "  # source comment",
+                "  ;;; legacy comment",
+                "  LEAD(2)\t L IY1 D # alternate pronunciation",
+                "lead(0) L EH1 D",
+                "lead(abc) L EH1 D",
+                "lead(3) # missing pronunciation"
+            ]).ToArray() is [{ Word: "lead", Variant: 2, Arpabet: "L IY1 D" }]);
+
+        Check(
             "CMUdict 编号读音在解析层保留",
             entries.Length == 4 &&
             entries.Count(entry => entry.Word == "lead") == 2 &&
             entries.Any(entry => entry.Word == "lead" && entry.Variant == 2) &&
             entries.Count(entry => entry.IsDefault) == 2,
             $"actual={string.Join(";", entries.Select(entry => $"{entry.Word}({entry.Variant})"))}");
+    }
+    private static void TestCmuDictionaryCandidateIndex()
+    {
+        var index = EnglishPronunciationIndex.FromCmuEntries(
+            CmuDictionarySourceParser.Parse([
+                "lead L EH1 D",
+                "lead(2) L IY1 D",
+                "record R EH1 K ER0 D",
+                "record(2) R IH0 K AO1 R D"
+            ]),
+            ArpabetIpaConverter.Convert);
+
+        var unordered = EnglishPronunciationIndex.FromCmuEntries(
+            CmuDictionarySourceParser.Parse(["lead(2) L IY1 D", "LEAD L EH1 D", "orphan(2) AO1 R F AH0 N"]),
+            ArpabetIpaConverter.Convert);
+        Check("CMUdict 候选按来源编号排序且查询不区分大小写",
+            unordered.LookupAll("LEAD").Select(c => c.Variant).SequenceEqual([1, 2]) &&
+            unordered.Lookup("LEAD") is { Variant: 1, Ipa: "ˈled" });
+        Check("CMUdict 缺少主项时不把备选伪装成默认",
+            unordered.LookupAll("orphan").Count == 1 && unordered.Lookup("orphan") is null &&
+            unordered.LookupAll("missing").Count == 0 && unordered.Lookup("missing") is null);
+
+        var lead = index.LookupAll("lead");
+        var record = index.LookupAll("record");
+        var defaultLead = index.Lookup("lead");
+        Check(
+            "CMUdict 候选索引保留全部编号读音并提供默认项",
+            lead.Count == 2 && record.Count == 2 &&
+            lead.Any(candidate => candidate.Variant == 2) &&
+            record.Any(candidate => candidate.Variant == 2) &&
+            defaultLead is { Variant: 1 } &&
+            defaultLead.Value.Ipa == lead[0].Ipa,
+            $"lead={string.Join(",", lead.Select(candidate => $"{candidate.Variant}:{candidate.Ipa}"))} record={record.Count}");
     }
     private static void TestIpaTranscription()
     {
