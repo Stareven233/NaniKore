@@ -205,38 +205,108 @@ internal static partial class SelfTest
             ((ISolidColorBrush)hang.Foreground!).Color == ((ISolidColorBrush)hint).Color &&
             yin.Foreground is ISolidColorBrush yinRestored && yinRestored.Color != ((ISolidColorBrush)hint).Color);
 
-        // hover 候选面板：纯文字标注默认项，不只靠颜色
-        var tip = ToolTip.GetTip(ruby.Children[0] as Control) as Control;
+        // hover 候选面板：列出全部读音，本句默认读音响橙色，与原文注音同色
+        var tip = ruby.HoverPanelContent;
         var tipTexts = tip is null ? [] : FlattenText(tip).ToArray();
         Check("multi-pronunciation hover panel lists every candidate reading",
             tipTexts.Length > 0 &&
             !tipTexts.Contains("yín") &&
             tipTexts.Contains("háng") && tipTexts.Contains("xíng") && tipTexts.Contains("hàng"));
-        Check("hover panel labels the default reading with explicit text, not color alone",
-            tipTexts.Contains("✓ 本句默认读音"));
+        var defaultReading = FindTextBlock(tip, "háng");
+        var altReading = FindTextBlock(tip, "xíng");
+        Check("hover panel highlights the in-context default reading in the same hint color as the source ruby",
+            defaultReading?.Foreground is ISolidColorBrush dr && dr.Color == ((ISolidColorBrush)hint).Color &&
+            altReading?.Foreground is ISolidColorBrush ar && ar.Color != ((ISolidColorBrush)hint).Color);
 
-        // 视觉冒烟：把候选面板独立渲染成 PNG，留作样式证据（半透明淡绿、文字标注默认项）
-        if (tip is not null)
-        {
-            var surface = new Border { Background = Brushes.White, Padding = new Thickness(12), Child = tip };
-            surface.Measure(Size.Infinity);
-            surface.Arrange(new Rect(surface.DesiredSize));
-            using var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(new PixelSize(
-                (int)Math.Ceiling(surface.DesiredSize.Width), (int)Math.Ceiling(surface.DesiredSize.Height)));
-            bitmap.Render(surface);
-            Directory.CreateDirectory("artifacts");
-            bitmap.Save("artifacts/p2-chinese-multi-pronunciation.png",
-                new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
-            Check("multi-pronunciation hover panel render smoke writes PNG",
-                new FileInfo("artifacts/p2-chinese-multi-pronunciation.png").Length > 100);
-        }
+        // 悬浮面板容器（单个 Popup 承载的 Border）：去掉橙色描边与淡绿块，仅半透明中性底
+        var tipBorder = ruby.HoverPanelBorder;
+        Check("hover panel drops the orange frame and green block for a borderless translucent panel",
+            tipBorder.BorderThickness == default &&
+            tipBorder.Background is ISolidColorBrush panelBg && panelBg.Color.A is > 0 and < 255);
 
-        // 单音字：无候选面板、保持原样提示，不制造视觉噪音
+        // 单音字：共用同一套悬浮面板，内容换成复制提示而不是候选列表
         var mono = new RubyInlineControl("银行", "yín háng", 17.5,
             [new(0, 1, "yín", ["yín"]), new(1, 1, "háng", ["háng"])], 0);
         mono.Measure(Size.Infinity);
-        Check("word without alternative readings stays plain with no candidate panel",
-            !mono.HasAlternativeReadings && ToolTip.GetTip(mono.Children[0]) is string);
+        var monoTip = mono.HoverPanelContent;
+        var monoTexts = monoTip is null ? [] : FlattenText(monoTip).ToArray();
+        Check("word without alternative readings shows the shared panel with copy hint, not a candidate list",
+            !mono.HasAlternativeReadings &&
+            monoTexts.Any(t => t.Contains("点击复制")) &&
+            monoTexts.All(t => t != "xíng" && t != "háng"));
+        Check("multi and single pronunciation panels share the same borderless translucent style",
+            mono.HoverPanelBorder.BorderThickness == tipBorder.BorderThickness &&
+            mono.HoverPanelBorder.CornerRadius == tipBorder.CornerRadius &&
+            mono.HoverPanelBorder.Background is ISolidColorBrush mb && tipBorder.Background is ISolidColorBrush tb &&
+            mb.Color.A == tb.Color.A);
+
+        // 布局回归：外层 SelectableTextBlock 固定 LineHeight=36 时，注音控件不得继承行高被撑到整行而溢出原文区
+        const string wrapText = "不行就去银行，银行里的人很多，长大以后再说。";
+        var wrapSpans = new List<AnnotationSpan>();
+        foreach (var word in new[] { "不行", "银行", "人", "多", "长大", "再说" })
+        {
+            var at = wrapText.IndexOf(word, StringComparison.Ordinal);
+            while (at >= 0)
+            {
+                var syls = word.Select((_, k) => new AnnotationSyllable(at + k, 1, "x", ["x"])).ToArray();
+                wrapSpans.Add(new AnnotationSpan(at, word.Length, string.Join(' ', word.Select(_ => "x")), syls));
+                at = wrapText.IndexOf(word, at + word.Length, StringComparison.Ordinal);
+            }
+        }
+        var wrapViewer = new SelectableTextBlock
+        {
+            FontSize = 15, LetterSpacing = 0.8, TextWrapping = TextWrapping.Wrap, LineHeight = 36, Width = 300,
+        };
+        wrapViewer.Inlines = RubyDocumentBuilder.BuildInlines(wrapText, wrapSpans, 15);
+        wrapViewer.Measure(new Size(300, double.PositiveInfinity));
+        wrapViewer.Arrange(new Rect(0, 0, 300, wrapViewer.DesiredSize.Height));
+        var wrappedRubies = wrapViewer.Inlines.OfType<InlineUIContainer>()
+            .Select(c => c.Child).OfType<RubyInlineControl>().ToArray();
+        Check("ruby controls never inherit the fixed line height and stay inside the source region",
+            wrappedRubies.Length > 0 && wrappedRubies.All(r =>
+            {
+                var p = r.TranslatePoint(new Point(0, 0), wrapViewer);
+                return p is { } pt && pt.Y >= -0.5 && r.Bounds.Height <= 36.5 &&
+                       pt.Y + r.Bounds.Height <= wrapViewer.DesiredSize.Height + 0.5;
+            }),
+            string.Join(";", wrappedRubies.Select(r =>
+            {
+                var p = r.TranslatePoint(new Point(0, 0), wrapViewer);
+                return $"{r.BaseText}@y={p?.Y:F0} h={r.Bounds.Height:F0}";
+            })));
+    }
+
+    /// <summary>在控件子树里按文本查找首个 TextBlock，供候选面板断言。</summary>
+    private static TextBlock? FindTextBlock(Control? root, string text)
+    {
+        if (root is null)
+        {
+            return null;
+        }
+
+        if (root is TextBlock tb && tb.Text == text)
+        {
+            return tb;
+        }
+
+        IEnumerable<Control> children = root switch
+        {
+            Panel panel => panel.Children.OfType<Control>(),
+            Border { Child: Control only } => [only],
+            ContentControl { Content: Control content } => [content],
+            _ => [],
+        };
+
+        foreach (var child in children)
+        {
+            var match = FindTextBlock(child, text);
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>深度优先收集控件子树内所有 TextBlock 文本，供 hover 候选面板断言。</summary>

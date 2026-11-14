@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
+using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Brushes = Avalonia.Media.Brushes;
@@ -51,6 +52,9 @@ internal sealed class RubyInlineControl : Grid
     private readonly List<(TextBlock Reading, TextBlock Base, IBrush ReadingBrush)> _syllableColumns = [];
     /// <summary>中文多音候选条目：只在存在其他读音时填充，供 hover 候选查看面板与多音提示色。</summary>
     private readonly List<RubyCandidateEntry> _candidateEntries = [];
+    /// <summary>悬浮面板：Popup 承载的半透明 Border，自带顶层宿主，不被滚动区裁切。</summary>
+    private readonly Border _hoverPanel;
+    private readonly Popup _hoverPopup;
     private bool _isRubyPressed;
     private bool _letterSpacingResolved;
 
@@ -79,9 +83,6 @@ internal sealed class RubyInlineControl : Grid
         RubyText = rubyText;
         ReadingKind = RubyReadingTerms.Detect(rubyText);
 
-        var readingNoun = RubyReadingTerms.Reading(ReadingKind);
-        var baseNoun = RubyReadingTerms.Base(ReadingKind);
-
         Focusable = false;
         VerticalAlignment = VerticalAlignment.Bottom;
         // 紧凑排版：外边距严格归零，避免连续中日文字符之间被拉出虚假切词缝隙；
@@ -105,11 +106,9 @@ internal sealed class RubyInlineControl : Grid
             Margin = new Thickness(0, 0, 0, -1),
             Cursor = new Cursor(StandardCursorType.Hand),
         };
-        ToolTip.SetTip(_rubyBlock, $"点击复制{readingNoun}: {rubyText}\r\n右键查看更多选项");
-
-        // 悬停高亮反馈（优雅主题高亮或草地绿）：安全解析主题资源，杜绝 UnsetValue 强转异常导致进程崩溃
-        _rubyBlock.PointerEntered += (_, _) => SetReadingForeground(GetAccentBrush(this));
-        _rubyBlock.PointerExited += (_, _) => RestoreReadingForeground();
+        // 悬停高亮 + 悬浮面板：安全解析主题资源，杜绝 UnsetValue 强转异常导致进程崩溃
+        _rubyBlock.PointerEntered += (_, _) => { SetReadingForeground(GetAccentBrush(this)); OpenHoverPanel(); };
+        _rubyBlock.PointerExited += (_, _) => { RestoreReadingForeground(); _hoverPopup?.Close(); };
 
         Point rubyPressStartPos = default;
 
@@ -169,7 +168,9 @@ internal sealed class RubyInlineControl : Grid
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
         };
-        ToolTip.SetTip(_baseBlock, $"{baseNoun}: {baseText} ({readingNoun}: {rubyText})\r\n右键查看更多选项");
+        // 底字行同样可用悬停查看（单列注音模式下底字行隐藏，不影响）
+        _baseBlock.PointerEntered += (_, _) => OpenHoverPanel();
+        _baseBlock.PointerExited += (_, _) => _hoverPopup?.Close();
 
         Grid.SetRow(_baseBlock, 1);
         Children.Add(_baseBlock);
@@ -187,12 +188,15 @@ internal sealed class RubyInlineControl : Grid
                 var reading = new TextBlock
                 {
                     Text = syllable.Reading, FontSize = _rubyBlock.FontSize, LetterSpacing = RubyLetterSpacing,
+                    // 必须显式清空行高：否则会继承外层 SelectableTextBlock 的固定 LineHeight,
+                    // 使每列被撑到整行高度，注音溢出原文区、并把后续文字挤走
+                    LineHeight = double.NaN,
                     Foreground = readingBrush, IsHitTestVisible = false,
                 };
                 var bottom = new TextBlock
                 {
                     Text = baseChar,
-                    FontSize = baseFontSize, IsHitTestVisible = false,
+                    FontSize = baseFontSize, IsHitTestVisible = false, LineHeight = double.NaN,
                 };
                 _syllableColumns.Add((reading, bottom, readingBrush));
                 Children.Add(reading);
@@ -212,14 +216,53 @@ internal sealed class RubyInlineControl : Grid
             _rubyBlock.Background = Brushes.Transparent;
             _baseBlock.IsVisible = false;
 
-            // 只有多音字才把默认提示替换成候选查看面板，单音字保持原有简洁提示
-            if (_candidateEntries.Count > 0)
-            {
-                ToolTip.SetTip(_rubyBlock, CreateCandidateToolTip());
-            }
         }
 
+        // 悬浮候选面板：Popup 承载单个半透明 Border，避免 ToolTip 自带的不透明外壳；锚定注音行
+        _hoverPanel = new Border
+        {
+            Background = GetToolTipBackground(this),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(9, 6),
+            IsHitTestVisible = false,
+            Child = BuildHoverContent(),
+        };
+        _hoverPopup = new Popup
+        {
+            PlacementTarget = _rubyBlock,
+            Placement = PlacementMode.Top,
+            IsLightDismissEnabled = false,
+            Child = _hoverPanel,
+        };
+        Children.Add(_hoverPopup);
+        DetachedFromVisualTree += (_, _) => _hoverPopup.Close();
+
         ContextMenu = CreateContextMenu();
+    }
+
+    /// <summary>悬浮面板是否可查看的内容摘要，供自测断言。</summary>
+    internal Control? HoverPanelContent => _hoverPanel.Child as Control;
+
+    /// <summary>悬浮面板的容器 Border（半透明无边框），供自测断言。</summary>
+    internal Border HoverPanelBorder => _hoverPanel;
+
+    /// <summary>展开悬浮面板；未接入可视树（无顶层）时静默跳过。</summary>
+    private void OpenHoverPanel()
+    {
+        if (_hoverPopup.IsOpen || TopLevel.GetTopLevel(this) is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _hoverPopup.Open();
+        }
+        catch
+        {
+            // 悬浮面板打开失败绝不打崩 UI 主线程；候选仍可通过原文注音与右键复制获得
+            _hoverPopup.Close();
+        }
     }
 
     /// <summary>悬停高亮：临时把注音（含逐字列）染成主题高亮色。</summary>
@@ -443,60 +486,68 @@ internal sealed class RubyInlineControl : Grid
     /// <summary>多音提示色：复用主题警示色（琥珀/橙），表示该字存在其他读音而默认音仍照常。</summary>
     internal static IBrush GetHintBrush(Control control) => ResolveBrush(control, "Brush.Warning", Brushes.Orange);
 
-    /// <summary>候选菜单半透明淡绿背景：取主题弱强调色，缺失时退回淡绿。</summary>
-    private static IBrush GetCandidateBackground(Control control) =>
-        ResolveBrush(control, "Brush.Accent.Subtle", new SolidColorBrush(Color.FromRgb(237, 247, 218)));
+    /// <summary>悬浮面板半透明中性底色：沿用卡片色降为半透明（去掉原来的淡绿块与橙色描边框）。</summary>
+    private static IBrush GetToolTipBackground(Control control)
+    {
+        var card = ResolveBrush(control, "Brush.Card.Background", new SolidColorBrush(Color.FromRgb(32, 32, 32)));
+        if (card is ISolidColorBrush solid)
+        {
+            var color = solid.Color;
+            return new SolidColorBrush(Color.FromArgb(230, color.R, color.G, color.B));
+        }
 
-    /// <summary>构建 hover 候选查看面板：逐字列出词典收录读音，默认项用文字标记，不只靠颜色传达。</summary>
-    private Control CreateCandidateToolTip()
+        return card;
+    }
+
+    /// <summary>
+    /// 构建统一悬浮面板内容：多音字列出词典收录的全部读音，本句默认读音用与原文注音相同的橙色高亮；
+    /// 单音字与日/英注音只显示复制提示。两者共用同一套面板容器与样式。
+    /// </summary>
+    private Control BuildHoverContent()
     {
         var panel = new StackPanel { Spacing = 2 };
-        var primary = ResolveBrush(this, "Brush.Text.Primary", Brushes.Black);
-        var secondary = Brushes.Gray;
+        var primary = ResolveBrush(this, "Brush.Text.Primary", Brushes.White);
+        var secondary = ResolveBrush(this, "Brush.Text.Secondary", Brushes.LightGray);
         var hint = GetHintBrush(this);
-        var readingSize = _rubyBlock.FontSize;
+        var size = Math.Max(12, _rubyBlock.FontSize);
 
-        foreach (var entry in _candidateEntries)
+        if (_candidateEntries.Count > 0)
         {
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-            row.Children.Add(new TextBlock
+            foreach (var entry in _candidateEntries)
             {
-                Text = entry.BaseChar, FontSize = readingSize, Foreground = secondary,
-                VerticalAlignment = VerticalAlignment.Center,
-            });
-            row.Children.Add(new TextBlock
-            {
-                Text = entry.Reading, FontSize = readingSize, Foreground = primary,
-                FontWeight = entry.IsDefault ? FontWeight.SemiBold : FontWeight.Normal,
-                VerticalAlignment = VerticalAlignment.Center,
-            });
-            if (entry.IsDefault)
-            {
+                var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
                 row.Children.Add(new TextBlock
                 {
-                    Text = "✓ 本句默认读音", FontSize = Math.Max(10, readingSize - 1), Foreground = hint,
+                    Text = entry.BaseChar, FontSize = size - 1, Foreground = secondary,
                     VerticalAlignment = VerticalAlignment.Center,
                 });
+                row.Children.Add(new TextBlock
+                {
+                    Text = entry.Reading, FontSize = size,
+                    // 本句默认读音与原文区注音同色（橙），并以半粗体作为非颜色的辅助区分
+                    Foreground = entry.IsDefault ? hint : primary,
+                    FontWeight = entry.IsDefault ? FontWeight.SemiBold : FontWeight.Normal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                });
+                panel.Children.Add(row);
             }
-            panel.Children.Add(row);
+        }
+        else
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = $"点击复制{RubyReadingTerms.Reading(ReadingKind)}：{RubyText}",
+                FontSize = size, Foreground = primary,
+            });
         }
 
         panel.Children.Add(new TextBlock
         {
-            Text = "左键复制读音 · 右键复制/更多", FontSize = Math.Max(10, readingSize - 2),
-            Foreground = secondary, Margin = new Thickness(0, 4, 0, 0),
+            Text = "右键查看更多选项", FontSize = size - 2, Foreground = secondary,
+            Margin = new Thickness(0, _candidateEntries.Count > 0 ? 4 : 1, 0, 0),
         });
 
-        return new Border
-        {
-            Background = GetCandidateBackground(this),
-            BorderBrush = hint,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(10, 8),
-            Opacity = 0.97,
-            Child = panel,
-        };
+        return panel;
     }
 
     /// <summary>多音候选条目：底字、候选读音、是否为该字本句默认读音。</summary>

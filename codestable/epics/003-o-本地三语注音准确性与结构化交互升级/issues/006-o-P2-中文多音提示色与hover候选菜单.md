@@ -29,23 +29,25 @@ P1 Issue 005 的自研词组匹配引擎已为每个 `AnnotationSyllable` 产出
 
 ## 实现
 
-- `RubyInlineControl` 逐字列构建时，按 `syllable.Candidates is { Count: > 1 }` 判定多音：是则读注音用 `GetHintBrush`（回退橙），否则灰；把底字/候选/默认项收进 `CandidateEntries` 供面板消费。
+- **布局踩坑（真实视觉回归）：** 逐字列的 `reading`/`bottom` TextBlock 未显式设 `LineHeight`，会继承外层 `SelectableTextBlock` 的固定 `LineHeight=36`，致使每个注音控件被撑到 ~71px、溢出原文区并把后续文字挤走。修复：两列显式 `LineHeight=double.NaN`，控件高度回到 ~34px 内，注音回到汉字上方且留在原文区内。
+- 逐字列按 `syllable.Candidates is { Count: > 1 }` 判定多音：是则默认注音用 `GetHintBrush`（`Brush.Warning`，回退橙），否则灰；底字/候选/默认项收进 `CandidateEntries` 供 hover 面板消费。
 - 悬停高亮后由 `RestoreReadingForeground` 恢复每列**各自底色**（多音回提示色，其余回灰），杜绝原先统一抹灰。
-- 多音字把默认 ToolTip 换成 `CreateCandidateToolTip`：`Border`（半透明淡绿 `Brush.Accent.Subtle`、圆角、紧凑内距）+ 每行「底字 读音（默认项 SemiBold）」+ `✓ 本句默认读音` + 底部「左键复制读音 · 右键复制/更多」提示。复用主题 `Brush.Warning / Brush.Accent.Subtle / Brush.Text.Primary`，`ResolveBrush` 安全回退，杜绝 UnsetValue 强转崩溃。
+- **统一悬浮面板：** 不再用 `ToolTip`（自带不透明外壳），改用 `Popup` 承载单个 `Border`（半透明卡片色、圆角、无边框、无淡绿/橙框），锚定注音行、层级在滚动区之上不被裁切。多音字列出全部读音、**本句默认读音用与原文注音相同的橙色高亮**（并列 SemiBold 作非颜色辅助）；单音字与日/英注音同一面板只显示「点击复制…」。多音/单音共用同一容器与样式。
+- `Popup` 打开失败有防御兜底，绝不打崩 UI 线程；`DetachedFromVisualTree` 时关闭面板。
 - 复制、选区、收藏、编辑再注音仍走原结构化路径（`AnnotationSpan`/`Syllables`），候选只影响显示，不进入导出/复制事实源。
 
 ## 验证
 
-- `./scripts/dev.ps1 test`（等价 `dotnet run --project src/NaniKore -- --self-test`）：**1807 checks 通过**。新增覆盖：单音列中性色、多音列警示色、候选条目只来自多音字且默认唯一、悬停高亮/移出恢复提示色、候选面板列出全部读音并含 `✓ 本句默认读音`、单音词无候选面板；`SelfTest.Phonetics` 增加真实词典端到端断言「银行」的「行」携带默认 `háng` + 备选 `xíng`；候选面板 PNG 冒烟。
-- NativeAOT：`./scripts/dev.ps1 build -Release` 生成成功，直接运行 `artifacts/win-x64/NaniKore.exe --self-test` → **1807 checks 通过**，Debug/AOT 一致。
-- 视觉证据：`artifacts/p2-chinese-multi-pronunciation.png`（候选面板渲染，不入版本库）。
+- `./scripts/dev.ps1 test`（等价 `dotnet run --project src/NaniKore -- --self-test`）：**1809 checks 通过**。新增覆盖：单音列中性色、多音列警示色、候选条目只来自多音字且默认唯一、悬停高亮/移出恢复提示色、候选面板列出全部读音且默认项为橙色、单音词共用同一面板只显示复制提示、多音/单音面板样式一致、**固定 `LineHeight=36` 下注音控件不被撑高且留在原文区内的布局回归**；`SelfTest.Phonetics` 增加真实词典端到端断言「银行」的「行」携带默认 `háng` + 备选 `xíng`。
+- NativeAOT：`./scripts/dev.ps1 build -Release` 生成成功，直接运行 `artifacts/win-x64/NaniKore.exe --self-test` → **1809 checks 通过**，Debug/AOT 一致。\n- 真实可视树冒烟：把注音控件挂进真实 `Window` 后 `Popup` 能真正打开（`toplevel=True opened=True`），确认 hover 面板不会被静默吞掉（该临时诊断已移除）。
 
 ## 未覆盖
 
-- 当前模型不能读图，**人工视觉与真实鼠标 hover 冒烟未完成**；hover 用非交互 ToolTip 呈现（复制动作仍在右键菜单），未做可点击的常驻弹出菜单。
+- 当前模型不能读图，**人工视觉与真实鼠标 hover 冒烟仍未由 AI 复核**；主人已做真实视觉测试并报告了本次布局与样式问题，本轮据此修复但需主人再次目视确认。
+- hover 用 `Popup` 呈现，不作为可点击常驻菜单；面板内不含可交互编辑。
 - 英语异读/日语异读交互、手动纠音、持久化偏好均为后续，不在本切片。
 
 ## 关闭时
 
-- **回写 epic spec 候选：** 多音提示色口径（橙色=存在其他读音、非不确定）、候选查看面板结构（默认项文字标注、半透明淡绿、悬停恢复）、以及「只查看不纠音」的边界。
-- **关闭判断：** 人工视觉/鼠标交互补验 + 质量目标逐项有证据后，经主人授权再关闭。完成不等于关闭。
+- **回写 epic spec 候选：** 多音提示色口径（橙色=存在其他读音、非不确定）、hover 面板结构（Popup 半透明、默认读音响橙、悬停恢复、不裁切）、逐字列须显式行高避免继承外层 LineHeight 的布局约束、以及「只查看不纠音」的边界。
+- **关闭判断：** 主人真实视觉/鼠标复核通过 + 质量目标逐项有证据后，经主人授权再关闭。完成不等于关闭。
