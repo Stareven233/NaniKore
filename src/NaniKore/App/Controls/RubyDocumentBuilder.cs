@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Documents;
 using Avalonia.Media;
 using NaniKore.Translation;
+using NaniKore.Phonetics;
 
 namespace NaniKore.App.Controls;
 
@@ -17,46 +18,55 @@ internal static class RubyDocumentBuilder
     /// </summary>
     public static InlineCollection BuildInlines(string? annotatedText, double fontSize = 14)
     {
-        var inlines = new InlineCollection();
-        if (string.IsNullOrEmpty(annotatedText))
-        {
-            return inlines;
-        }
+        var (plain, spans) = ParseInput(annotatedText);
+        return BuildInlines(plain, spans, fontSize);
+    }
 
-        var lines = annotatedText.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
-        for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+    /// <summary>仅 LLM 方括号输入在此解析一次；本地结果直接使用原文与区间。</summary>
+    public static (string Plain, IReadOnlyList<AnnotationSpan> Spans) ParseInput(string? annotatedText)
+    {
+        var plain = new StringBuilder();
+        var spans = new List<AnnotationSpan>();
+        foreach (var segment in RubyTextParser.Parse(annotatedText))
         {
-            var line = lines[lineIndex];
-            if (lineIndex > 0)
+            if (segment.IsRuby)
             {
-                inlines.Add(new LineBreak());
+                spans.Add(new AnnotationSpan(plain.Length, segment.Text.Length, segment.Ruby!));
             }
+            plain.Append(segment.Text);
+        }
+        return (plain.ToString(), spans);
+    }
 
-            if (line.Length == 0)
+    /// <summary>按明确 UTF-16 区间构建词级内联，普通文本（含字面方括号）不进入解析器。</summary>
+    public static InlineCollection BuildInlines(string plain, IReadOnlyList<AnnotationSpan> spans, double fontSize = 14)
+    {
+        var inlines = new InlineCollection();
+        var cursor = 0;
+        foreach (var span in spans.OrderBy(s => s.Start))
+        {
+            if (span.Start < cursor || span.Length <= 0 || span.Start > plain.Length - span.Length || string.IsNullOrEmpty(span.Reading))
             {
                 continue;
             }
+            AddPlain(plain[cursor..span.Start]);
+            var control = new RubyInlineControl(plain.Substring(span.Start, span.Length), span.Reading, fontSize,
+                span.Syllables, span.Start);
+            inlines.Add(new InlineUIContainer(control) { BaselineAlignment = BaselineAlignment.TextBottom });
+            cursor = span.Start + span.Length;
+        }
+        AddPlain(plain[cursor..]);
+        return inlines;
 
-            var segments = RubyTextParser.Parse(line);
-            foreach (var segment in segments)
+        void AddPlain(string text)
+        {
+            var lines = text.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
+            for (var index = 0; index < lines.Length; index++)
             {
-                if (!segment.IsRuby)
-                {
-                    inlines.Add(new Run(segment.Text));
-                }
-                else
-                {
-                    var control = new RubyInlineControl(segment.Text, segment.Ruby!, fontSize);
-                    var container = new InlineUIContainer(control)
-                    {
-                        BaselineAlignment = BaselineAlignment.TextBottom
-                    };
-                    inlines.Add(container);
-                }
+                if (index > 0) inlines.Add(new LineBreak());
+                if (lines[index].Length > 0) inlines.Add(new Run(lines[index]));
             }
         }
-
-        return inlines;
     }
 
     /// <summary>

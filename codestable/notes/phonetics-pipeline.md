@@ -68,7 +68,7 @@ dotnet run --project src/NaniKore -- --build-phonetics --dict-index <path-to-mec
    （`PinyinToneConverter`，含 ü/v 归一、轻声去数字）；
 2. Unihan `kMandarin` 补充 CC-CEDICT 未覆盖的汉字单字默认读音；
 3. 写 `_build/zh/main.csv`：`词面,0,0,成本,拼音`，成本 = 多字词 100 / 单字 3000（长词面优先）；
-   同一词面的多个读音各自成条（`行 háng / xíng`），由 MeCab 按上下文自选；
+   同一词面的多个读音各自成条（`行 háng / xíng`），MeCab 选择最小成本路径；当前固定成本与 1×1 连接矩阵不具备可靠语义消歧，不能据此声称按上下文读对；
 4. 写骨架（`WriteMeCabSkeleton`）：`matrix.def`（1x1 + 非零项 `0 0 1`）、`char.def`（仅 BMP 区间，
    MeCab 的 char_property 要求区间端 < 0xFFFF，CJK 扩展 B 段不可写）、`unk.def`（三类默认 20000）、
    `dicrc`（**必须有 `cost-factor = 800`**，mecab-dict-index 缺它直接报
@@ -108,7 +108,7 @@ dotnet run --project src/NaniKore -- --self-test         # 全量无 UI 自测�
 ## 8. 口径备注（实测，改代码前先读）
 
 - **LibNMeCab 的 `node.Feature` 是「词面\t素性」整体**：拼音/读音取最后一个制表符后的内容
-  （`ChinesePinyinAnnotator.ExtractFeature`）。`node.GetFeatureAt(0)` 返回的是整串。
+  （`ChinesePinyinAnnotator.ExtractFeature`）。`node.GetFeatureAt(0)` 返回的是整串。中文适配器拒绝未知占位及非等长音节，保留显式逐字 UTF-16 映射；输入在代理项边界分段，补充平面字自身保留纯文，避免破坏后续已知词。
 - **IPAdic 的振假名取 `読み`（片假名）而非 `発音`**：`発音` 是音便表记（ちゅうちょ→ちゅーちょ），
   取错会出现长音符；`JapaneseFuriganaAnnotator` 统一转写平假名。
 - **停用词表 vs 常用字符表的边界**：zh 判据为通用规范汉字表**一级字表 3500 字**（2026-10-04 由一·二级 6500

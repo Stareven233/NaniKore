@@ -29,6 +29,8 @@ internal static partial class SelfTest
     private static void RunResultPanelUiTests()
     {
         TestResultPanelSourceAnnotation();
+        TestStructuredChineseDisplayAndLayout();
+        TestAnnotationInvalidation();
         TestResultPanelSubscriptionCleanup();
         TestResultPanelDetectedSourceLanguage();
         TestResultPanelRubyDualModeAndTranslationFlow();
@@ -45,6 +47,206 @@ internal static partial class SelfTest
         TestSelectionBubbleFavoriteNote();
         TestRubyDocumentBuilderAndSelectionCopy();
         TestResultPanelPolishBatch();
+    }
+
+    /// <summary>固定区间验证银行不吞前缀，逐字列仍是一个词级选区，字面括号完整保留。</summary>
+    private static void TestStructuredChineseDisplayAndLayout()
+    {
+        const string source = "去银行[原文]，银行\n龃龉";
+        AnnotationSpan[] spans = [new(1, 2, "yín háng",
+            [new(1, 1, "yín"), new(2, 1, "háng")])];
+        foreach (var fontSize in new[] { 14.0, 17.5, 28.0 })
+        {
+            var inlines = RubyDocumentBuilder.BuildInlines(source, spans, fontSize);
+            var rubies = inlines.OfType<InlineUIContainer>().Select(c => c.Child).OfType<RubyInlineControl>().ToArray();
+            Check($"structured bank keeps preceding 去 outside word ({fontSize})",
+                inlines[0] is Run { Text: "去" } && rubies is [{ BaseText: "银行", RubyText: "yín háng" }]);
+            Check($"structured plain copy preserves literal brackets ({fontSize})",
+                RubyDocumentBuilder.ExtractFromInlines(inlines, 0, int.MaxValue, RubyCopyKind.Plain) ==
+                source.Replace("\n", Environment.NewLine));
+            Check($"structured annotation export preserves exact bank boundary ({fontSize})",
+                AnnotatedTextFormatter.Compose(source, spans) == "去银行[yín háng][原文]，银行\n龃龉");
+            Check($"structured bank selection copies one whole word in all formats ({fontSize})",
+                RubyDocumentBuilder.ExtractFromInlines(inlines, 1, 2, RubyCopyKind.Plain) == "银行" &&
+                RubyDocumentBuilder.ExtractFromInlines(inlines, 1, 2, RubyCopyKind.Annotated) == "银行[yín háng]" &&
+                RubyDocumentBuilder.ExtractFromInlines(inlines, 1, 2, RubyCopyKind.ReadingOnly) == "yín háng");
+
+            var viewer = new SelectableTextBlock { FontSize = fontSize, Inlines = inlines };
+            viewer.Measure(Size.Infinity);
+            viewer.Arrange(new Rect(viewer.DesiredSize));
+            var ruby = rubies.Single();
+            var blocks = ruby.Children.OfType<TextBlock>().Where(b => b.IsVisible && b.Text?.Length > 0).ToArray();
+            var yin = blocks.Single(b => b.Text == "yín");
+            var hang = blocks.Single(b => b.Text == "háng");
+            var silver = blocks.Single(b => b.Text == "银");
+            var walk = blocks.Single(b => b.Text == "行");
+            static double Center(TextBlock b) => b.Bounds.Center.X;
+            Check($"real Avalonia syllable columns center on original characters ({fontSize})",
+                Math.Abs(Center(yin) - Center(silver)) <= 0.5 && Math.Abs(Center(hang) - Center(walk)) <= 0.5 &&
+                yin.Bounds.Right <= hang.Bounds.Left + 0.1 && silver.Bounds.Right <= walk.Bounds.Left + 0.1,
+                $"yin={yin.Bounds}, silver={silver.Bounds}, hang={hang.Bounds}, walk={walk.Bounds}, ruby={ruby.Bounds}");
+            Check($"real Avalonia word contains syllable display and click surface ({fontSize})",
+                blocks.All(b => b.Bounds.Left >= -0.1 && b.Bounds.Right <= ruby.Bounds.Width + 0.1) &&
+                ruby.Children[0].Bounds.Width == ruby.Bounds.Width &&
+                ruby.Children[0].Bounds.Height >= yin.Bounds.Height && ruby.DesiredSize.Height < fontSize * 3,
+                $"word={ruby.Bounds}, hit={ruby.Children[0].Bounds}, children={string.Join(';', blocks.Select(b => $"{b.Text}:{b.Bounds}"))}");
+            var following = new RubyInlineControl("龃龉", "jǔ yǔ", fontSize,
+                [new(0, 1, "jǔ"), new(1, 1, "yǔ")]);
+            var row = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal };
+            // 新容器复用相同生产构造路径，检验紧邻词和普通文字没有悬挂遮挡。
+            var first = new RubyInlineControl("银行", "yín háng", fontSize, spans[0].Syllables, 1);
+            var adjacent = new TextBlock { Text = "去", FontSize = fontSize };
+            row.Children.Add(first);
+            row.Children.Add(adjacent);
+            row.Children.Add(following);
+            row.Measure(Size.Infinity);
+            row.Arrange(new Rect(row.DesiredSize));
+            Check($"real Avalonia syllable word reserves width before adjacent text ({fontSize})",
+                first.Bounds.Right <= adjacent.Bounds.Left + 0.1 && adjacent.Bounds.Right <= following.Bounds.Left + 0.1 &&
+                following.Children.OfType<TextBlock>().Where(b => b.IsVisible).All(b => b.Bounds.Right <= following.Bounds.Width + 0.1));
+            if (fontSize == 17.5)
+            {
+                var surface = new Border { Background = Brushes.White, Padding = new Thickness(12), Child = viewer };
+                viewer.Foreground = Brushes.Black;
+                surface.Measure(Size.Infinity);
+                surface.Arrange(new Rect(surface.DesiredSize));
+                using var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(new PixelSize(
+                    (int)Math.Ceiling(surface.DesiredSize.Width), (int)Math.Ceiling(surface.DesiredSize.Height)));
+                bitmap.Render(surface);
+                Directory.CreateDirectory("artifacts");
+                bitmap.Save("artifacts/p1-chinese-ruby-layout.png", new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+                Check("real Avalonia structured bank render smoke writes PNG",
+                    new FileInfo("artifacts/p1-chinese-ruby-layout.png").Length > 100);
+            }
+        }
+
+        var annotator = new FixtureChineseAnnotator();
+        using var registry = new TextAnnotatorRegistry([annotator]);
+        var panel = new ResultPanelWindow(registry);
+        try
+        {
+            panel.SetPhoneticsOptions(new PhoneticsConfig { RareOnly = false });
+            panel.Reset(source, "structured fixture");
+            WaitForAnnotation(panel);
+            Check("panel structured source and all full-copy formats preserve literal brackets",
+                panel.SourceText == source && panel.GetSourceCopyText(RubyCopyKind.Plain) == source &&
+                panel.GetSourceCopyText(RubyCopyKind.Annotated) == "去银行[yín háng][原文]，银行\n龃龉" &&
+                panel.GetSourceCopyText(RubyCopyKind.ReadingOnly) == "去yín háng[原文]，银行\n龃龉");
+            var viewer = Find<SelectableTextBlock>(panel, "SourceViewer")!;
+            viewer.SelectionStart = 1;
+            viewer.SelectionEnd = 2;
+            var content = panel.GetSourceCopyText(RubyCopyKind.Plain);
+            var note = panel.GetSourceCopyText(RubyCopyKind.ReadingOnly);
+            var favorites = new InMemoryFavoriteService();
+            panel.SetFavoriteService(favorites);
+            var bubble = Find<SelectionBubblePopup>(panel, "SelectionBubble")!;
+            bubble.ShowAt(viewer, new Rect(0, 0, 8, 8), content, note);
+            RaiseClick(bubble.FavoriteBtn);
+            Check("structured word selection favorite stores bank and whole reading",
+                favorites.GetAllFavorites().Any(f => f.Content == "银行" && f.Note == "yín háng"));
+            viewer.ClearSelection();
+            RaiseClick(Find<Button>(panel, "AnnotateSourceButton")!);
+            Check("hidden ruby retains structured full-copy reading and annotations",
+                !panel.IsRubyVisible && panel.GetSourceCopyText(RubyCopyKind.Annotated).Contains("银行[yín háng][原文]") &&
+                panel.GetSourceCopyText(RubyCopyKind.ReadingOnly).StartsWith("去yín háng[原文]"));
+            panel.EnterEditMode();
+            Find<TextBox>(panel, "SourceTextBox")!.Text = "[编辑]去银行";
+            panel.CommitEditingSourceIfActive();
+            _ = panel.AnnotateSourceAsync();
+            WaitForAnnotation(panel);
+            Check("editing and reannotation retain literal brackets and new bank offset",
+                panel.SourceText == "[编辑]去银行" && panel.GetSourceCopyText(RubyCopyKind.Annotated) == "[编辑]去银行[yín háng]");
+        }
+        finally { panel.Close(); }
+    }
+
+    /// <summary>可控的词典边界替身：返回真实形状的区间，允许确定性地暂停旧请求。</summary>
+    private sealed class FixtureChineseAnnotator : ITextAnnotator
+    {
+        public string LanguageCode => "zh";
+        public bool IsAvailable => true;
+        public int Calls;
+        public ManualResetEventSlim? Started;
+        public ManualResetEventSlim? Release;
+        public void ResetAvailability() { }
+        public int CountWords(string plainText) => 10;
+        public IReadOnlyList<AnnotationSpan> Annotate(string plainText, AnnotationContext context)
+        {
+            Interlocked.Increment(ref Calls);
+            var release = Release;
+            Started?.Set();
+            if (release is not null && !release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("fixture release");
+            var start = plainText.IndexOf("银行", StringComparison.Ordinal);
+            return start >= 0 && context.ShouldEmit("银行", "yín háng")
+                ? [new(start, 2, "yín háng", [new(start, 1, "yín"), new(start + 1, 1, "háng")])] : [];
+        }
+    }
+
+    /// <summary>缓存配置快照与请求取消覆盖同文重置、语言、编辑、关闭及后发请求。</summary>
+    private static void TestAnnotationInvalidation()
+    {
+        var annotator = new FixtureChineseAnnotator();
+        using var registry = new TextAnnotatorRegistry([annotator]);
+        var panel = new ResultPanelWindow(registry);
+        try
+        {
+            var options = new PhoneticsConfig { RareOnly = false };
+            panel.SetPhoneticsOptions(options);
+            panel.Reset("去银行", "cache");
+            WaitForAnnotation(panel);
+            var firstCalls = annotator.Calls;
+            _ = panel.AnnotateSourceAsync();
+            WaitForAnnotation(panel);
+            Check("same source and settings reuse panel annotation cache", annotator.Calls == firstCalls);
+            options.RareOnly = true;
+            panel.SetPhoneticsOptions(options);
+            _ = panel.AnnotateSourceAsync();
+            WaitForAnnotation(panel);
+            Check("mutated config snapshot invalidates cache and reapplies rare-only filter",
+                annotator.Calls == firstCalls + 1 && panel.AnnotatedSourceText == "去银行");
+            options.RareOnly = false;
+            panel.SetPhoneticsOptions(options);
+            _ = panel.AnnotateSourceAsync();
+            WaitForAnnotation(panel);
+            Check("config change restores structured result for same source",
+                panel.AnnotatedSourceText == "去银行[yín háng]");
+        }
+        finally { panel.Close(); }
+
+        foreach (var change in new[] { "reset", "config", "language", "target", "edit", "close", "new request" })
+        {
+            using var started = new ManualResetEventSlim();
+            using var release = new ManualResetEventSlim();
+            var controlled = new FixtureChineseAnnotator { Started = started, Release = release };
+            using var controlledRegistry = new TextAnnotatorRegistry([controlled]);
+            var current = new ResultPanelWindow(controlledRegistry);
+            current.SetPhoneticsOptions(new PhoneticsConfig { RareOnly = false });
+            current.Reset("去银行", "old request");
+            var oldTask = current.PendingAnnotation!;
+            Check($"old annotation reached controlled dictionary before {change}", started.Wait(TimeSpan.FromSeconds(5)));
+            switch (change)
+            {
+                case "reset": current.Reset("去银行", "same source new request", autoAnnotate: false); break;
+                case "config": current.SetPhoneticsOptions(new PhoneticsConfig { Enabled = false }); break;
+                case "language": Find<ComboBox>(current, "SourceLanguageBox")!.SelectedIndex = 2; break;
+                case "target": current.SetTargetLanguage("English"); break;
+                case "edit": current.EnterEditMode(); break;
+                case "close": current.Close(); break;
+                case "new request":
+                    current.SetPhoneticsOptions(new PhoneticsConfig { RareOnly = true });
+                    controlled.Started = null;
+                    controlled.Release = null;
+                    _ = current.AnnotateSourceAsync(manual: true);
+                    WaitForAnnotation(current);
+                    break;
+            }
+            release.Set();
+            while (!oldTask.IsCompleted) { Dispatcher.UIThread.RunJobs(); Thread.Sleep(5); }
+            oldTask.GetAwaiter().GetResult();
+            Check($"old same-source annotation cannot write after {change}",
+                current.SourceText == "去银行" && current.AnnotatedSourceText == "去银行");
+            if (change != "close") current.Close();
+        }
     }
 
     /// <summary>关闭面板必须解除全局和收藏服务订阅，避免长生命周期事件保留整个窗口。</summary>
@@ -193,7 +395,7 @@ internal static partial class SelfTest
 
         // 1. AutoTranslate == true：直接以阅读态呈现，初始按钮为「翻译」
         var panel = new ResultPanelWindow();
-        panel.Reset("こ こ は  通[とお]れないよ", "OCR 完成", autoTranslate: true);
+        panel.Reset("こ こ は  通れないよ", "OCR 完成", autoTranslate: true);
         var viewerBorder = Find<Border>(panel, "SourceViewerBorder");
         var sourceBox = Find<TextBox>(panel, "SourceTextBox");
         var translateButton = Find<Button>(panel, "TranslateButton");
@@ -206,7 +408,7 @@ internal static partial class SelfTest
 
         // 2. AutoTranslate == false：同样保持阅读态，消除垂直居中伪编辑状态
         var panelManual = new ResultPanelWindow();
-        panelManual.Reset("こ こ は  通[とお]れないよ", "OCR 完成", autoTranslate: false);
+        panelManual.Reset("こ こ は  通れないよ", "OCR 完成", autoTranslate: false);
         Check(
             "result panel with autoTranslate false displays SelectableTextBlock viewer initially",
             Find<Border>(panelManual, "SourceViewerBorder")?.IsVisible == true &&
@@ -297,14 +499,14 @@ internal static partial class SelfTest
         Check(
             "clicking 重译 raises TranslateRequested with modified text intact",
             translateRequestedRaised &&
-            panel.SourceText == "私は 先生です。" &&
+            panel.SourceText == "私[わたし]は 先生[せんせい]です。" &&
             viewerBorder?.IsVisible == true &&
             sourceBox?.IsVisible == false);
 
         panel.BeginTranslation();
         Check(
             "begin translation preserves modified source instead of reverting to initial source",
-            panel.SourceText == "私は 先生です。");
+            panel.SourceText == "私[わたし]は 先生[せんせい]です。");
     }
 
     /// <summary>旧请求仍在取消时，新输入必须立即恢复操作状态，允许手动开始下一次翻译。</summary>

@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <CandidateRoot>$(MSBuildThisFileDirectory)../../../artifacts/chinese-candidates/csharp-pinyin</CandidateRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 只链接固定外部克隆，不复制或修补候选实现；普通话资源名必须遵循上游查找约定。 -->
+    <Compile Include="$(CandidateRoot)/Pinyin/*.cs" Link="Candidate/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(CandidateRoot)/Pinyin/dict/mandarin/*.txt" LogicalName="Pinyin.dict.mandarin.%(Filename)%(Extension)" />
+    <Compile Include="../phonetics-baseline/Samples.cs" Link="Samples.cs" />
+    <Compile Include="../../../src/NaniKore/Phonetics/AnnotationContracts.cs;../../../src/NaniKore/Phonetics/AnnotatedTextFormatter.cs;../../../src/NaniKore/Phonetics/ChinesePinyinAnnotator.cs;../../../src/NaniKore/Translation/RubyTextParser.cs" Link="Production/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../../src/NaniKore/Phonetics/Data/*-zh.txt" LogicalName="NaniKore.Phonetics.Data.%(Filename)%(Extension)" />
+    <PackageReference Include="LibNMeCab" Version="0.10.2" />
+  </ItemGroup>
+  <!-- 构建时冻结所有实际编译/嵌入输入；运行前重新计算，阻止旧二进制配新源码。 -->
+  <Target Name="FreezeComparisonInputs" BeforeTargets="AssignTargetPaths">
+    <ItemGroup>
+      <ComparisonInput Include="@(Compile);@(EmbeddedResource);$(MSBuildProjectFullPath);$(MSBuildThisFileDirectory)run.ps1;$(MSBuildThisFileDirectory)../../../deps/phonetics/zh/sys.dic;$(MSBuildThisFileDirectory)../../../deps/phonetics/zh/unk.dic;$(MSBuildThisFileDirectory)../../../deps/phonetics/zh/matrix.bin;$(MSBuildThisFileDirectory)../../../deps/phonetics/zh/char.bin;$(MSBuildThisFileDirectory)../../../deps/phonetics/zh/dicrc" />
+    </ItemGroup>
+    <GetFileHash Files="@(ComparisonInput)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="ComparisonHash" />
+    </GetFileHash>
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+    <WriteLinesToFile File="$(IntermediateOutputPath)comparison-inputs.txt" Lines="@(ComparisonHash->'%(FullPath)|%(FileHash)')" Overwrite="true" />
+    <ItemGroup>
+      <EmbeddedResource Include="$(IntermediateOutputPath)comparison-inputs.txt" LogicalName="Comparison.Inputs" />
+    </ItemGroup>
+  </Target>
+</Project>

@@ -4,11 +4,14 @@ namespace NaniKore.Phonetics;
 
 /// <summary>
 /// 一段原文上的注音落点：从 <see cref="Start"/> 起 <see cref="Length"/> 个字符为底字，读音是 <see cref="Reading"/>。
-/// 落点只描述「谁带读音」，不负责渲染；由 <see cref="AnnotatedTextFormatter.Compose"/> 拼成 底字[读音]
-/// 后交既有的 RubyTextParser/RubyDocumentBuilder 消费。
+/// 区间使用原文 UTF-16 偏移，直接传至渲染层；方括号格式仅用于导出。
 /// 区间不重叠：汉字区间与拉丁词元天然互斥，日语/中文/英语标注器各自只认领自己脚本的区段。
 /// </summary>
-internal readonly record struct AnnotationSpan(int Start, int Length, string Reading);
+internal readonly record struct AnnotationSpan(int Start, int Length, string Reading,
+    IReadOnlyList<AnnotationSyllable>? Syllables = null);
+
+/// <summary>中文适配器产出的逐字读音，Start 为原文的绝对 UTF-16 偏移。</summary>
+internal readonly record struct AnnotationSyllable(int Start, int Length, string Reading);
 
 /// <summary>
 /// 多语言注音标注器契约：初版 ja（振假名）/ en（IPA）/ zh（简体拼音），预留 ko 等扩展位。

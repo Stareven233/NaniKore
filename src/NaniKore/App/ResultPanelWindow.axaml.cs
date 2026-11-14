@@ -41,10 +41,13 @@ internal sealed partial class ResultPanelWindow : Window
     private const int TranslationRegionRow = 4;
     private const int ExplanationRegionRow = 6;
 
+    private readonly TextAnnotatorRegistry _annotators;
     private nint _windowHandle;
     private int _translationInsertIndex;
     private bool _translationHasContent;
-    private string _annotatedSource = string.Empty;
+    private string _sourcePlain = string.Empty;
+    private IReadOnlyList<AnnotationSpan> _sourceSpans = [];
+    private string _llmSourceInput = string.Empty;
     private string _originalEditingText = string.Empty;
     private bool _isEditingSource;
     private bool _receivedAnnotatedSource;
@@ -92,7 +95,7 @@ internal sealed partial class ResultPanelWindow : Window
 
     public string SourceText => _isEditingSource
         ? (SourceTextBox?.Text ?? string.Empty)
-        : (RubyTextParser.ToPlainText(_annotatedSource) is { Length: > 0 } plain ? plain : (SourceTextBox?.Text ?? string.Empty));
+        : _sourcePlain;
 
     public string TranslationText => TranslationTextBox?.Text ?? string.Empty;
 
@@ -100,7 +103,7 @@ internal sealed partial class ResultPanelWindow : Window
 
     public Task? PendingAnnotation => _annotationTask;
 
-    public string AnnotatedSourceText => _annotatedSource;
+    public string AnnotatedSourceText => AnnotatedTextFormatter.Compose(_sourcePlain, _sourceSpans);
 
     public bool IsAutoExplainEnabled
     {
@@ -123,8 +126,11 @@ internal sealed partial class ResultPanelWindow : Window
         }
     }
 
-    public ResultPanelWindow()
+    public ResultPanelWindow() : this(PhoneticAnnotatorRegistryHolder.Default) { }
+
+    internal ResultPanelWindow(TextAnnotatorRegistry annotators)
     {
+        _annotators = annotators;
         InitializeComponent();
         Icon = ApplicationIcon.Load();
         TitleBarIcon.Source = ApplicationIcon.LoadBitmap();
@@ -278,15 +284,8 @@ internal sealed partial class ResultPanelWindow : Window
         var showRuby = _isRubyVisible;
         SourceViewer.LineHeight = showRuby ? 36 : 26;
 
-        if (showRuby)
-        {
-            SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(_annotatedSource, SourceViewer.FontSize);
-        }
-        else
-        {
-            var plain = RubyTextParser.ToPlainText(_annotatedSource);
-            SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(plain, SourceViewer.FontSize);
-        }
+        SourceViewer.Inlines = RubyDocumentBuilder.BuildInlines(_sourcePlain,
+            showRuby ? _sourceSpans : [], SourceViewer.FontSize);
     }
 
     protected override void OnOpened(EventArgs e)
@@ -319,14 +318,23 @@ internal sealed partial class ResultPanelWindow : Window
     /// <summary>同步当前的目标语言。</summary>
     public void SetTargetLanguage(string? targetLanguage)
     {
-        _targetLanguage = string.IsNullOrWhiteSpace(targetLanguage) ? "中文（简体）" : targetLanguage;
+        var next = string.IsNullOrWhiteSpace(targetLanguage) ? "中文（简体）" : targetLanguage;
+        if (_targetLanguage != next)
+        {
+            _targetLanguage = next;
+            InvalidateAnnotation(clearSpans: true);
+            UpdateSourceViewerDisplay();
+        }
     }
 
     /// <summary>同步注音配置项。</summary>
     public void SetPhoneticsOptions(PhoneticsConfig options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        _phonetics = options;
+        if (_phonetics.Enabled == options.Enabled && _phonetics.RareOnly == options.RareOnly) return;
+        _phonetics = new PhoneticsConfig { Enabled = options.Enabled, RareOnly = options.RareOnly };
+        InvalidateAnnotation(clearSpans: true);
+        UpdateSourceViewerDisplay();
     }
 
     private void PopulateSourceLanguageBox()
@@ -346,7 +354,7 @@ internal sealed partial class ResultPanelWindow : Window
     /// <summary>自动模式显示本轮探测结果，保留空语言代码，避免把探测结果变成手动锁定。</summary>
     private void UpdateDetectedSourceLanguage()
     {
-        var plain = RubyTextParser.ToPlainText(_annotatedSource);
+        var plain = _sourcePlain;
         var displayName = string.IsNullOrWhiteSpace(plain)
             ? "自动探测"
             : $"{PhoneticLanguages.DisplayName(DetectSourceLanguageCode(plain))}（自动）";
@@ -409,8 +417,8 @@ internal sealed partial class ResultPanelWindow : Window
         // 新输入立即恢复全部操作按钮，不依赖已取消旧请求的 finally。
         SetTranslationInProgress(false);
         _autoAnnotate = autoAnnotate;
-        _annotatedSource = source;
-        SourceTextBox.Text = RubyTextParser.ToPlainText(source);
+        SetPlainSource(source);
+        SourceTextBox.Text = source;
         _originalEditingText = SourceTextBox.Text ?? string.Empty;
         _receivedAnnotatedSource = false;
         _isRubyVisible = autoAnnotate;
@@ -485,9 +493,9 @@ internal sealed partial class ResultPanelWindow : Window
 
         CommitEditingSourceIfActive();
 
-        if (string.IsNullOrEmpty(_annotatedSource) && !string.IsNullOrEmpty(SourceTextBox.Text))
+        if (string.IsNullOrEmpty(_sourcePlain) && !string.IsNullOrEmpty(SourceTextBox.Text))
         {
-            _annotatedSource = SourceTextBox.Text;
+            SetPlainSource(SourceTextBox.Text);
             UpdateSourceViewerDisplay();
         }
     }
@@ -612,7 +620,7 @@ internal sealed partial class ResultPanelWindow : Window
             return;
         }
 
-        if (!manual && _annotatedSource.Length > 0 && string.Equals(_annotationSourcePlain, plain, StringComparison.Ordinal))
+        if (!manual && string.Equals(_annotationSourcePlain, plain, StringComparison.Ordinal))
         {
             return;
         }
@@ -620,7 +628,7 @@ internal sealed partial class ResultPanelWindow : Window
         var languageCode = _selectedSourceLanguage ?? DetectSourceLanguageCode(plain);
         var displayName = PhoneticLanguages.DisplayName(languageCode) ?? languageCode;
         var readingKind = ReadingKindForLanguage(languageCode);
-        var annotator = PhoneticAnnotatorRegistryHolder.Default.GetAnnotator(languageCode);
+        var annotator = _annotators.GetAnnotator(languageCode);
         if (annotator is null)
         {
             if (manual)
@@ -634,6 +642,8 @@ internal sealed partial class ResultPanelWindow : Window
         var cancellation = new CancellationTokenSource();
         _annotationCancellation = cancellation;
 
+        var enabled = _phonetics.Enabled;
+        var rareOnly = _phonetics.RareOnly;
         try
         {
             var spans = await Task.Run(() =>
@@ -644,7 +654,7 @@ internal sealed partial class ResultPanelWindow : Window
                     return null;
                 }
                 var wordCount = annotator.CountWords(plain);
-                var profile = AnnotationProfile.Load(languageCode, _phonetics.Enabled, _phonetics.RareOnly, wordCount);
+                var profile = AnnotationProfile.Load(languageCode, enabled, rareOnly, wordCount);
                 return annotator.Annotate(plain, new AnnotationContext(profile));
             }, cancellation.Token);
 
@@ -717,8 +727,8 @@ internal sealed partial class ResultPanelWindow : Window
 
     private void ApplyAnnotation(string plain, IReadOnlyList<AnnotationSpan> spans, string displayName, RubyReadingKind readingKind, bool manual)
     {
-        var ruby = spans.Count == 0 ? plain : AnnotatedTextFormatter.Compose(plain, spans);
-        _annotatedSource = ruby;
+        _sourcePlain = plain;
+        _sourceSpans = spans;
         _annotationSourcePlain = plain;
         _sourceReadingKind = readingKind;
         _isRubyVisible = true;
@@ -786,7 +796,8 @@ internal sealed partial class ResultPanelWindow : Window
         }
 
         _selectedSourceLanguage = (SourceLanguageBox.SelectedItem as SourceLanguageChoice)?.LanguageCode;
-        UpdateDetectedSourceLanguage();
+        InvalidateAnnotation(clearSpans: true);
+        UpdateSourceViewerDisplay();
         _ = AnnotateSourceAsync(manual: true);
     }
 
@@ -818,14 +829,16 @@ internal sealed partial class ResultPanelWindow : Window
         {
             if (!_receivedAnnotatedSource)
             {
-                _annotatedSource = string.Empty;
+                _llmSourceInput = string.Empty;
                 _receivedAnnotatedSource = true;
             }
 
-            _annotatedSource += delta.Text;
-            _annotationSourcePlain = string.Empty;
+            InvalidateAnnotation(clearSpans: true);
+            _llmSourceInput += delta.Text;
+            // LLM 方括号是输入协议；解析后的原文与 spans 是后续显示、复制的唯一事实源。
+            (_sourcePlain, _sourceSpans) = RubyDocumentBuilder.ParseInput(_llmSourceInput);
             UpdateSourceViewerDisplay();
-            SourceTextBox.Text = RubyTextParser.ToPlainText(_annotatedSource);
+            SourceTextBox.Text = _sourcePlain;
             _originalEditingText = SourceTextBox.Text;
             return;
         }
@@ -989,8 +1002,7 @@ internal sealed partial class ResultPanelWindow : Window
         var caretIndex = SourceTextBox.CaretIndex;
         SourceTextBox.Text = normalized;
         SourceTextBox.CaretIndex = Math.Min(caretIndex, normalized.Length);
-        _annotatedSource = normalized;
-        _annotationSourcePlain = string.Empty;
+        SetPlainSource(normalized);
         UpdateSourceViewerDisplay();
 
         if (_translationHasContent)
@@ -1008,9 +1020,7 @@ internal sealed partial class ResultPanelWindow : Window
     private async void OnCopyPlainSourceClick(object? sender, RoutedEventArgs e)
     {
         var hasSelection = SourceViewer.SelectionStart != SourceViewer.SelectionEnd;
-        var text = hasSelection
-            ? RubyDocumentBuilder.ExtractText(SourceViewer, RubyCopyKind.Plain)
-            : RubyTextParser.ToPlainText(_annotatedSource);
+        var text = GetSourceCopyText(RubyCopyKind.Plain);
 
         if (!string.IsNullOrEmpty(text))
         {
@@ -1022,9 +1032,7 @@ internal sealed partial class ResultPanelWindow : Window
     private async void OnCopyAnnotatedSourceClick(object? sender, RoutedEventArgs e)
     {
         var hasSelection = SourceViewer.SelectionStart != SourceViewer.SelectionEnd;
-        var text = hasSelection
-            ? RubyDocumentBuilder.ExtractText(SourceViewer, RubyCopyKind.Annotated)
-            : _annotatedSource;
+        var text = GetSourceCopyText(RubyCopyKind.Annotated);
 
         if (!string.IsNullOrEmpty(text))
         {
@@ -1036,9 +1044,7 @@ internal sealed partial class ResultPanelWindow : Window
     private async void OnCopyReadingSourceClick(object? sender, RoutedEventArgs e)
     {
         var hasSelection = SourceViewer.SelectionStart != SourceViewer.SelectionEnd;
-        var text = hasSelection
-            ? RubyDocumentBuilder.ExtractText(SourceViewer, RubyCopyKind.ReadingOnly)
-            : RubyTextParser.ToReadingText(_annotatedSource);
+        var text = GetSourceCopyText(RubyCopyKind.ReadingOnly);
 
         if (!string.IsNullOrEmpty(text))
         {
@@ -1068,6 +1074,7 @@ internal sealed partial class ResultPanelWindow : Window
         _isSwitchingEditMode = true;
 
         _originalEditingText = SourceTextBox.Text ?? string.Empty;
+        InvalidateAnnotation();
         _isEditingSource = true;
         SourceViewerBorder.IsVisible = false;
         SourceTextBox.IsVisible = true;
@@ -1113,8 +1120,7 @@ internal sealed partial class ResultPanelWindow : Window
 
         if (!string.Equals(edited, _originalEditingText, StringComparison.Ordinal))
         {
-            _annotatedSource = edited;
-            _annotationSourcePlain = string.Empty;
+            SetPlainSource(edited);
             _originalEditingText = edited;
             UpdateSourceViewerDisplay();
             if (_translationHasContent)
@@ -1165,8 +1171,7 @@ internal sealed partial class ResultPanelWindow : Window
         {
             // 实质修改后失焦：立即同步保存事实源，杜绝丢失修改
             var edited = SourceTextBox.Text ?? string.Empty;
-            _annotatedSource = edited;
-            _annotationSourcePlain = string.Empty;
+            SetPlainSource(edited);
 
             if (_translationHasContent)
             {
@@ -1202,7 +1207,7 @@ internal sealed partial class ResultPanelWindow : Window
             return;
         }
 
-        if (_annotatedSource.Length > 0 && !string.Equals(_annotatedSource, RubyTextParser.ToPlainText(_annotatedSource), StringComparison.Ordinal))
+        if (_sourceSpans.Count > 0)
         {
             _isRubyVisible = !_isRubyVisible;
             UpdateSourceViewerDisplay();
@@ -1213,6 +1218,30 @@ internal sealed partial class ResultPanelWindow : Window
             _isRubyVisible = true;
             _ = AnnotateSourceAsync(manual: true);
         }
+    }
+
+    /// <summary>内容、设置和语言变更统一取消旧请求并清除命中缓存，防止同文旧结果回写。</summary>
+    private void InvalidateAnnotation(bool clearSpans = false)
+    {
+        _annotationCancellation?.Cancel();
+        _annotationSourcePlain = string.Empty;
+        if (clearSpans) _sourceSpans = [];
+    }
+
+    private void SetPlainSource(string plain)
+    {
+        InvalidateAnnotation(clearSpans: true);
+        _sourcePlain = plain;
+    }
+
+    /// <summary>全文复制独立于显隐；选区沿当前词级占位提取，收藏使用相同的纯文提取路径。</summary>
+    internal string GetSourceCopyText(RubyCopyKind kind)
+    {
+        if (SourceViewer.SelectionStart != SourceViewer.SelectionEnd)
+            return RubyDocumentBuilder.ExtractText(SourceViewer, kind);
+        if (kind == RubyCopyKind.Plain) return _sourcePlain;
+        if (kind == RubyCopyKind.Annotated) return AnnotatedSourceText;
+        return AnnotatedTextFormatter.Compose(_sourcePlain, _sourceSpans, readingOnly: true);
     }
 
     private void OnClearTranslationClick(object? sender, RoutedEventArgs e) => ClearTranslation();

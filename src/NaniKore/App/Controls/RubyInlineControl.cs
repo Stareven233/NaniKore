@@ -7,6 +7,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Brushes = Avalonia.Media.Brushes;
+using NaniKore.Phonetics;
 using Point = Avalonia.Point;
 
 namespace NaniKore.App.Controls;
@@ -47,6 +48,7 @@ internal sealed class RubyInlineControl : Grid
 
     private readonly TextBlock _rubyBlock;
     private readonly TextBlock _baseBlock;
+    private readonly List<(TextBlock Reading, TextBlock Base)> _syllableColumns = [];
     private bool _isRubyPressed;
     private bool _letterSpacingResolved;
 
@@ -62,7 +64,8 @@ internal sealed class RubyInlineControl : Grid
     /// <summary>状态栏文本通知请求事件。</summary>
     public static event Action<string>? StatusNotificationRequested;
 
-    public RubyInlineControl(string baseText, string rubyText, double baseFontSize = 14)
+    public RubyInlineControl(string baseText, string rubyText, double baseFontSize = 14,
+        IReadOnlyList<AnnotationSyllable>? syllables = null, int sourceStart = 0)
     {
         BaseText = baseText;
         RubyText = rubyText;
@@ -97,8 +100,8 @@ internal sealed class RubyInlineControl : Grid
         ToolTip.SetTip(_rubyBlock, $"点击复制{readingNoun}: {rubyText}\r\n右键查看更多选项");
 
         // 悬停高亮反馈（优雅主题高亮或草地绿）：安全解析主题资源，杜绝 UnsetValue 强转异常导致进程崩溃
-        _rubyBlock.PointerEntered += (_, _) => _rubyBlock.Foreground = GetAccentBrush(this);
-        _rubyBlock.PointerExited += (_, _) => _rubyBlock.Foreground = Brushes.Gray;
+        _rubyBlock.PointerEntered += (_, _) => SetReadingForeground(GetAccentBrush(this));
+        _rubyBlock.PointerExited += (_, _) => SetReadingForeground(Brushes.Gray);
 
         Point rubyPressStartPos = default;
 
@@ -163,8 +166,39 @@ internal sealed class RubyInlineControl : Grid
         Grid.SetRow(_baseBlock, 1);
         Children.Add(_baseBlock);
 
-        // 3. 右键专属复制菜单
+        // 3. 中文逐字列只负责显示，命中与复制仍由整词读音行和上下文菜单承载。
+        if (syllables is { Count: > 0 } && syllables.Count == baseText.Length &&
+            syllables.Select((s, i) => s.Start == sourceStart + i && s.Length == 1).All(valid => valid))
+        {
+            foreach (var syllable in syllables)
+            {
+                var reading = new TextBlock
+                {
+                    Text = syllable.Reading, FontSize = _rubyBlock.FontSize, LetterSpacing = RubyLetterSpacing,
+                    Foreground = Brushes.Gray, IsHitTestVisible = false,
+                };
+                var bottom = new TextBlock
+                {
+                    Text = baseText.Substring(syllable.Start - sourceStart, syllable.Length),
+                    FontSize = baseFontSize, IsHitTestVisible = false,
+                };
+                _syllableColumns.Add((reading, bottom));
+                Children.Add(reading);
+                Children.Add(bottom);
+            }
+            _rubyBlock.Text = string.Empty;
+            _rubyBlock.HorizontalAlignment = HorizontalAlignment.Stretch;
+            _rubyBlock.Background = Brushes.Transparent;
+            _baseBlock.IsVisible = false;
+        }
+
         ContextMenu = CreateContextMenu();
+    }
+
+    private void SetReadingForeground(IBrush brush)
+    {
+        _rubyBlock.Foreground = brush;
+        foreach (var (reading, _) in _syllableColumns) reading.Foreground = brush;
     }
 
     /// <summary>
@@ -188,6 +222,19 @@ internal sealed class RubyInlineControl : Grid
 
     protected override Size MeasureOverride(Size availableSize)
     {
+        if (_syllableColumns.Count > 0)
+        {
+            foreach (var (reading, bottom) in _syllableColumns)
+            {
+                reading.Measure(Size.Infinity);
+                bottom.Measure(Size.Infinity);
+            }
+            var height = _syllableColumns.Max(c => c.Reading.DesiredSize.Height) +
+                _syllableColumns.Max(c => c.Base.DesiredSize.Height) - 1;
+            var columnsWidth = _syllableColumns.Sum(c => Math.Max(c.Reading.DesiredSize.Width, c.Base.DesiredSize.Width));
+            _rubyBlock.Measure(new Size(columnsWidth, height));
+            return new Size(columnsWidth, height);
+        }
         if (!_letterSpacingResolved)
         {
             // 首轮先按零字间距测出底字天然宽度，再结合注音宽度决定撑开多少；只结算一次，杜绝测量反馈震荡
@@ -216,6 +263,22 @@ internal sealed class RubyInlineControl : Grid
 
     protected override Size ArrangeOverride(Size finalSize)
     {
+        if (_syllableColumns.Count > 0)
+        {
+            var topHeight = _syllableColumns.Max(c => c.Reading.DesiredSize.Height);
+            var x = 0.0;
+            foreach (var (reading, bottom) in _syllableColumns)
+            {
+                var width = Math.Max(reading.DesiredSize.Width, bottom.DesiredSize.Width);
+                reading.Arrange(new Rect(x + (width - reading.DesiredSize.Width) / 2, 0,
+                    reading.DesiredSize.Width, topHeight));
+                bottom.Arrange(new Rect(x + (width - bottom.DesiredSize.Width) / 2, topHeight - 1,
+                    bottom.DesiredSize.Width, bottom.DesiredSize.Height));
+                x += width;
+            }
+            _rubyBlock.Arrange(new Rect(0, 0, finalSize.Width, topHeight));
+            return finalSize;
+        }
         var rubyDesired = _rubyBlock.DesiredSize;
         var baseDesired = _baseBlock.DesiredSize;
 

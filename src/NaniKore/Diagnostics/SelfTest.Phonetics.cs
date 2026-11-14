@@ -15,6 +15,7 @@ internal static partial class SelfTest
         TestCmuDictionarySourceParser();
         TestCmuDictionaryCandidateIndex();
         TestPinyinToneConversion();
+        TestChineseStructuredBoundaries();
         TestRegistryLanguageRouting();
         TestPhoneticLanguageCatalog();
         TestPhoneticDictionaryStates();
@@ -394,6 +395,49 @@ internal static partial class SelfTest
         Check("ou 标 o 位", PinyinToneConverter.ConvertSyllable("hao3") == "hǎo", $"actual={PinyinToneConverter.ConvertSyllable("hao3")}");
         Check("轻声去数字", PinyinToneConverter.ConvertSyllable("ma5") == "ma", $"actual={PinyinToneConverter.ConvertSyllable("ma5")}");
         Check("v 归一化为 ü", PinyinToneConverter.ConvertSyllable("lü3") == "lǚ", $"actual={PinyinToneConverter.ConvertSyllable("lü3")}");
+    }
+
+    /// <summary>未知占位不能冒充拼音，扩展标量或非法代理项不能吞掉后续已知词。</summary>
+    private static void TestChineseStructuredBoundaries()
+    {
+        foreach (var feature in new[] { "", "*", "BOS/EOS", "UNKNOWN", "unknown", "漢字\tKANJI", "龃龉\tjǔ", "龃龉\tjǔ yǔ extra", "x1" })
+        {
+            Check($"Chinese rejects unknown or mismatched feature: {feature}",
+                ChinesePinyinAnnotator.ParseSyllables(feature, 3, feature.Contains("龃龉") ? 2 : 1) is null);
+        }
+        Check("Chinese feature creates explicitly positioned syllables",
+            ChinesePinyinAnnotator.ParseSyllables("银行\tyín   háng", 3, 2) is
+                [{ Start: 3, Length: 1, Reading: "yín" }, { Start: 4, Length: 1, Reading: "háng" }]);
+        using var annotator = new ChinesePinyinAnnotator();
+        if (!annotator.IsAvailable)
+        {
+            Skip("zh 词典未就绪，跳过结构化 Unicode 边界实词典验证");
+            return;
+        }
+        foreach (var boundary in new[] { "𠮷", "😀", "\ud800", "\udc00", "\ud800\ud800", "𠮷😀" })
+        {
+            var text = "银行" + boundary + "龃龉";
+            var spans = annotator.Annotate(text, new AnnotationContext(AnnotationProfile.Load("zh", wordCount: 2)));
+            var expected = 2 + boundary.Length;
+            Check($"Chinese restores known 龃龉 after UTF16 boundary {string.Join('-', boundary.Select(c => ((int)c).ToString("X4")))}",
+                spans.Any(s => s.Start == expected && s.Length == 2 && s.Reading == "jǔ yǔ" &&
+                    s.Syllables is [{ Length: 1 }, { Length: 1 }] &&
+                    s.Syllables[0].Start == expected && s.Syllables[1].Start == expected + 1) &&
+                spans.All(s => s.Start == 0 || s.Start >= expected));
+            Check($"Chinese CountWords shares Unicode boundary length {string.Join('-', boundary.Select(c => ((int)c).ToString("X4")))}",
+                annotator.CountWords(text) == annotator.CountWords("银行") + annotator.CountWords("龃龉"));
+        }
+        var unknown = annotator.Annotate("㐀龃龉", new AnnotationContext(AnnotationProfile.Load("zh", wordCount: 2)));
+        Check("Chinese real dictionary unknown feature is never displayed as pinyin",
+            unknown.All(s => !s.Reading.Contains("KANJI", StringComparison.OrdinalIgnoreCase)) &&
+            unknown.Any(s => s.Start == 1 && s.Length == 2 && s.Reading == "jǔ yǔ"));
+        var bank = annotator.Annotate("去银行", new AnnotationContext(AnnotationProfile.Load("zh", rareOnly: false)));
+        Check("Chinese real dictionary bank span excludes preceding unannotated 去",
+            bank.Any(s => s.Start == 1 && s.Length == 2 && s.Reading == "yín háng" && s.Syllables?.Count == 2));
+        var repeated = annotator.Annotate("银行银行", new AnnotationContext(AnnotationProfile.Load("zh", wordCount: 2)));
+        Check("Chinese syllable mapping keeps word-level dedup", repeated.Count(s => s.Reading == "yín háng") == 1);
+        var filtered = annotator.Annotate("去银行", new AnnotationContext(AnnotationProfile.Load("zh")));
+        Check("Chinese syllable mapping preserves long-text rare-only filtering", filtered.Count == 0);
     }
 
     private static void TestRegistryLanguageRouting()
