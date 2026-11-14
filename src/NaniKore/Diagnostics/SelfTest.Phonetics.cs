@@ -426,6 +426,11 @@ internal static partial class SelfTest
         var bank = annotator.Annotate("去银行", new AnnotationContext(AnnotationProfile.Load("zh", rareOnly: false)));
         Check("Chinese real dictionary bank span excludes preceding unannotated 去",
             bank.Any(s => s.Start == 1 && s.Length == 2 && s.Reading == "yín háng" && s.Syllables?.Count == 2));
+        // P2 多音数据端到端：真实词典下「银行」的「行」必须携带默认 háng 与备选 xíng，供提示色与 hover 候选菜单消费
+        Check("Chinese real dictionary bank syllable carries default + alternative pronunciation candidates",
+            bank.Any(s => s.Reading == "yín háng" && s.Syllables is { Count: 2 } syl &&
+                syl[1].Reading == "háng" && syl[1].Candidates is { Count: > 1 } cand &&
+                cand[0] == "háng" && cand.Contains("xíng")));
         var repeated = annotator.Annotate("银行银行", new AnnotationContext(AnnotationProfile.Load("zh", wordCount: 2)));
         Check("Chinese syllable mapping keeps word-level dedup", repeated.Count(s => s.Reading == "yín háng") == 1);
         var filtered = annotator.Annotate("去银行", new AnnotationContext(AnnotationProfile.Load("zh")));

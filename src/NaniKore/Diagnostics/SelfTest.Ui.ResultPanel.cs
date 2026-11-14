@@ -30,6 +30,7 @@ internal static partial class SelfTest
     {
         TestResultPanelSourceAnnotation();
         TestStructuredChineseDisplayAndLayout();
+        TestChineseMultiPronunciationHint();
         TestAnnotationInvalidation();
         TestResultPanelSubscriptionCleanup();
         TestResultPanelDetectedSourceLanguage();
@@ -158,6 +159,109 @@ internal static partial class SelfTest
                 panel.SourceText == "[编辑]去银行" && panel.GetSourceCopyText(RubyCopyKind.Annotated) == "[编辑]去银行[yín háng]");
         }
         finally { panel.Close(); }
+    }
+
+    /// <summary>
+    /// 中文多音提示色与 hover 候选菜单：多音字默认注音用警示色、单音字保持灰色；
+    /// 悬停结束恢复各自底色（多音回警示色，不是统一抹灰）；候选面板逐条列出读音并用文字标注默认项，不靠颜色单独传达。
+    /// </summary>
+    private static void TestChineseMultiPronunciationHint()
+    {
+        EnsureThemedApplication();
+
+        AnnotationSyllable[] syllables =
+        [
+            new(0, 1, "yín", ["yín"]),
+            new(1, 1, "háng", ["háng", "xíng", "hàng"]),
+        ];
+        var ruby = new RubyInlineControl("银行", "yín háng", 17.5, syllables, 0);
+        ruby.Measure(Size.Infinity);
+        ruby.Arrange(new Rect(ruby.DesiredSize));
+
+        var yin = ruby.Children.OfType<TextBlock>().Single(b => b.Text == "yín");
+        var hang = ruby.Children.OfType<TextBlock>().Single(b => b.Text == "háng");
+        var hint = RubyInlineControl.GetHintBrush(ruby);
+
+        Check("single-pronunciation syllable keeps a neutral (non-hint) reading color",
+            yin.Foreground is ISolidColorBrush yinBrush && yinBrush.Color != ((ISolidColorBrush)hint).Color);
+        Check("multi-pronunciation syllable uses the warning hint color",
+            hang.Foreground is ISolidColorBrush hangBrush && hangBrush.Color == ((ISolidColorBrush)hint).Color);
+
+        Check("only the multi-pronunciation syllable contributes candidate entries",
+            ruby.HasAlternativeReadings &&
+            ruby.CandidateEntries.Count == 3 &&
+            ruby.CandidateEntries.All(e => e.BaseChar == "行") &&
+            ruby.CandidateEntries.Count(e => e.IsDefault) == 1 &&
+            ruby.CandidateEntries.Single(e => e.IsDefault).Reading == "háng" &&
+            ruby.CandidateEntries.Any(e => e.Reading == "xíng"));
+
+        // 悬停高亮后恢复：多音字回到提示色，单音字回灰
+        var accent = RubyInlineControl.GetAccentBrush(ruby);
+        ruby.ApplyReadingHoverForTest(true);
+        Check("hovering tints the multi-pronunciation reading with the accent color",
+            ((ISolidColorBrush)hang.Foreground!).Color == ((ISolidColorBrush)accent).Color);
+        ruby.ApplyReadingHoverForTest(false);
+        Check("leaving hover restores the multi-pronunciation hint color instead of flat gray",
+            ((ISolidColorBrush)hang.Foreground!).Color == ((ISolidColorBrush)hint).Color &&
+            yin.Foreground is ISolidColorBrush yinRestored && yinRestored.Color != ((ISolidColorBrush)hint).Color);
+
+        // hover 候选面板：纯文字标注默认项，不只靠颜色
+        var tip = ToolTip.GetTip(ruby.Children[0] as Control) as Control;
+        var tipTexts = tip is null ? [] : FlattenText(tip).ToArray();
+        Check("multi-pronunciation hover panel lists every candidate reading",
+            tipTexts.Length > 0 &&
+            !tipTexts.Contains("yín") &&
+            tipTexts.Contains("háng") && tipTexts.Contains("xíng") && tipTexts.Contains("hàng"));
+        Check("hover panel labels the default reading with explicit text, not color alone",
+            tipTexts.Contains("✓ 本句默认读音"));
+
+        // 视觉冒烟：把候选面板独立渲染成 PNG，留作样式证据（半透明淡绿、文字标注默认项）
+        if (tip is not null)
+        {
+            var surface = new Border { Background = Brushes.White, Padding = new Thickness(12), Child = tip };
+            surface.Measure(Size.Infinity);
+            surface.Arrange(new Rect(surface.DesiredSize));
+            using var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(new PixelSize(
+                (int)Math.Ceiling(surface.DesiredSize.Width), (int)Math.Ceiling(surface.DesiredSize.Height)));
+            bitmap.Render(surface);
+            Directory.CreateDirectory("artifacts");
+            bitmap.Save("artifacts/p2-chinese-multi-pronunciation.png",
+                new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+            Check("multi-pronunciation hover panel render smoke writes PNG",
+                new FileInfo("artifacts/p2-chinese-multi-pronunciation.png").Length > 100);
+        }
+
+        // 单音字：无候选面板、保持原样提示，不制造视觉噪音
+        var mono = new RubyInlineControl("银行", "yín háng", 17.5,
+            [new(0, 1, "yín", ["yín"]), new(1, 1, "háng", ["háng"])], 0);
+        mono.Measure(Size.Infinity);
+        Check("word without alternative readings stays plain with no candidate panel",
+            !mono.HasAlternativeReadings && ToolTip.GetTip(mono.Children[0]) is string);
+    }
+
+    /// <summary>深度优先收集控件子树内所有 TextBlock 文本，供 hover 候选面板断言。</summary>
+    private static IEnumerable<string> FlattenText(Control root)
+    {
+        if (root is TextBlock { Text: { Length: > 0 } text })
+        {
+            yield return text;
+        }
+
+        IEnumerable<Control> children = root switch
+        {
+            Panel panel => panel.Children.OfType<Control>(),
+            Border { Child: Control only } => [only],
+            ContentControl { Content: Control content } => [content],
+            _ => [],
+        };
+
+        foreach (var child in children)
+        {
+            foreach (var nested in FlattenText(child))
+            {
+                yield return nested;
+            }
+        }
     }
 
     /// <summary>可控的词典边界替身：返回真实形状的区间，允许确定性地暂停旧请求。</summary>

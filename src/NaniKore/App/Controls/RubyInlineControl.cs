@@ -48,9 +48,17 @@ internal sealed class RubyInlineControl : Grid
 
     private readonly TextBlock _rubyBlock;
     private readonly TextBlock _baseBlock;
-    private readonly List<(TextBlock Reading, TextBlock Base)> _syllableColumns = [];
+    private readonly List<(TextBlock Reading, TextBlock Base, IBrush ReadingBrush)> _syllableColumns = [];
+    /// <summary>中文多音候选条目：只在存在其他读音时填充，供 hover 候选查看面板与多音提示色。</summary>
+    private readonly List<RubyCandidateEntry> _candidateEntries = [];
     private bool _isRubyPressed;
     private bool _letterSpacingResolved;
+
+    /// <summary>是否含多音字（该词至少一个音节在词典里还有默认以外的读音）。</summary>
+    internal bool HasAlternativeReadings => _candidateEntries.Count > 0;
+
+    /// <summary>多音候选条目快照，供自测断言；生产由候选面板消费。</summary>
+    internal IReadOnlyList<RubyCandidateEntry> CandidateEntries => _candidateEntries;
 
     /// <summary>底字正文。</summary>
     public string BaseText { get; }
@@ -101,7 +109,7 @@ internal sealed class RubyInlineControl : Grid
 
         // 悬停高亮反馈（优雅主题高亮或草地绿）：安全解析主题资源，杜绝 UnsetValue 强转异常导致进程崩溃
         _rubyBlock.PointerEntered += (_, _) => SetReadingForeground(GetAccentBrush(this));
-        _rubyBlock.PointerExited += (_, _) => SetReadingForeground(Brushes.Gray);
+        _rubyBlock.PointerExited += (_, _) => RestoreReadingForeground();
 
         Point rubyPressStartPos = default;
 
@@ -172,33 +180,78 @@ internal sealed class RubyInlineControl : Grid
         {
             foreach (var syllable in syllables)
             {
+                // 多音提示：词典收录多个候选的字用警示色区分「存在其他读音」，本句默认音仍照常显示
+                var hasAlternatives = syllable.Candidates is { Count: > 1 };
+                var readingBrush = hasAlternatives ? GetHintBrush(this) : Brushes.Gray;
+                var baseChar = baseText.Substring(syllable.Start - sourceStart, syllable.Length);
                 var reading = new TextBlock
                 {
                     Text = syllable.Reading, FontSize = _rubyBlock.FontSize, LetterSpacing = RubyLetterSpacing,
-                    Foreground = Brushes.Gray, IsHitTestVisible = false,
+                    Foreground = readingBrush, IsHitTestVisible = false,
                 };
                 var bottom = new TextBlock
                 {
-                    Text = baseText.Substring(syllable.Start - sourceStart, syllable.Length),
+                    Text = baseChar,
                     FontSize = baseFontSize, IsHitTestVisible = false,
                 };
-                _syllableColumns.Add((reading, bottom));
+                _syllableColumns.Add((reading, bottom, readingBrush));
                 Children.Add(reading);
                 Children.Add(bottom);
+
+                if (hasAlternatives)
+                {
+                    foreach (var candidate in syllable.Candidates!)
+                    {
+                        _candidateEntries.Add(new RubyCandidateEntry(baseChar, candidate,
+                            string.Equals(candidate, syllable.Reading, StringComparison.Ordinal)));
+                    }
+                }
             }
             _rubyBlock.Text = string.Empty;
             _rubyBlock.HorizontalAlignment = HorizontalAlignment.Stretch;
             _rubyBlock.Background = Brushes.Transparent;
             _baseBlock.IsVisible = false;
+
+            // 只有多音字才把默认提示替换成候选查看面板，单音字保持原有简洁提示
+            if (_candidateEntries.Count > 0)
+            {
+                ToolTip.SetTip(_rubyBlock, CreateCandidateToolTip());
+            }
         }
 
         ContextMenu = CreateContextMenu();
     }
 
+    /// <summary>悬停高亮：临时把注音（含逐字列）染成主题高亮色。</summary>
     private void SetReadingForeground(IBrush brush)
     {
         _rubyBlock.Foreground = brush;
-        foreach (var (reading, _) in _syllableColumns) reading.Foreground = brush;
+        foreach (var (reading, _, _) in _syllableColumns) reading.Foreground = brush;
+    }
+
+    /// <summary>悬停结束：逐字列恢复各自底色（多音字回到提示色，其余回灰），不是统一抹成灰色。</summary>
+    private void RestoreReadingForeground()
+    {
+        if (_syllableColumns.Count == 0)
+        {
+            _rubyBlock.Foreground = Brushes.Gray;
+            return;
+        }
+
+        foreach (var (reading, _, readingBrush) in _syllableColumns) reading.Foreground = readingBrush;
+    }
+
+    /// <summary>测试入口：模拟进入/离开悬停，验证多音提示色能正确恢复。</summary>
+    internal void ApplyReadingHoverForTest(bool entered)
+    {
+        if (entered)
+        {
+            SetReadingForeground(GetAccentBrush(this));
+        }
+        else
+        {
+            RestoreReadingForeground();
+        }
     }
 
     /// <summary>
@@ -224,7 +277,7 @@ internal sealed class RubyInlineControl : Grid
     {
         if (_syllableColumns.Count > 0)
         {
-            foreach (var (reading, bottom) in _syllableColumns)
+            foreach (var (reading, bottom, _) in _syllableColumns)
             {
                 reading.Measure(Size.Infinity);
                 bottom.Measure(Size.Infinity);
@@ -267,7 +320,7 @@ internal sealed class RubyInlineControl : Grid
         {
             var topHeight = _syllableColumns.Max(c => c.Reading.DesiredSize.Height);
             var x = 0.0;
-            foreach (var (reading, bottom) in _syllableColumns)
+            foreach (var (reading, bottom, _) in _syllableColumns)
             {
                 var width = Math.Max(reading.DesiredSize.Width, bottom.DesiredSize.Width);
                 reading.Arrange(new Rect(x + (width - reading.DesiredSize.Width) / 2, 0,
@@ -366,18 +419,86 @@ internal sealed class RubyInlineControl : Grid
     /// 沿可视树优先使用 TryFindResource 查找 "Brush.Accent"，
     /// 查不到或未命中时优雅降级为草地绿，彻底杜绝直接强转 UnsetValue 导致的 InvalidCastException 致命崩溃。
     /// </summary>
-    internal static IBrush GetAccentBrush(Control control)
+    internal static IBrush GetAccentBrush(Control control) => ResolveBrush(control, "Brush.Accent", Brushes.LimeGreen);
+
+    /// <summary>
+    /// 安全解析主题画刷：优先可视树资源，其次应用级资源，最后退回兜底色，
+    /// 彻底杜绝直接强转 UnsetValue 导致的 InvalidCastException 致命崩溃。
+    /// </summary>
+    internal static IBrush ResolveBrush(Control control, string key, IBrush fallback)
     {
-        if (control.TryFindResource("Brush.Accent", out var res) && res is IBrush brush)
+        if (control.TryFindResource(key, out var res) && res is IBrush brush)
         {
             return brush;
         }
 
-        if (Application.Current?.TryGetResource("Brush.Accent", out var appRes) == true && appRes is IBrush appBrush)
+        if (Application.Current?.TryGetResource(key, out var appRes) == true && appRes is IBrush appBrush)
         {
             return appBrush;
         }
 
-        return Brushes.LimeGreen;
+        return fallback;
     }
+
+    /// <summary>多音提示色：复用主题警示色（琥珀/橙），表示该字存在其他读音而默认音仍照常。</summary>
+    internal static IBrush GetHintBrush(Control control) => ResolveBrush(control, "Brush.Warning", Brushes.Orange);
+
+    /// <summary>候选菜单半透明淡绿背景：取主题弱强调色，缺失时退回淡绿。</summary>
+    private static IBrush GetCandidateBackground(Control control) =>
+        ResolveBrush(control, "Brush.Accent.Subtle", new SolidColorBrush(Color.FromRgb(237, 247, 218)));
+
+    /// <summary>构建 hover 候选查看面板：逐字列出词典收录读音，默认项用文字标记，不只靠颜色传达。</summary>
+    private Control CreateCandidateToolTip()
+    {
+        var panel = new StackPanel { Spacing = 2 };
+        var primary = ResolveBrush(this, "Brush.Text.Primary", Brushes.Black);
+        var secondary = Brushes.Gray;
+        var hint = GetHintBrush(this);
+        var readingSize = _rubyBlock.FontSize;
+
+        foreach (var entry in _candidateEntries)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            row.Children.Add(new TextBlock
+            {
+                Text = entry.BaseChar, FontSize = readingSize, Foreground = secondary,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            row.Children.Add(new TextBlock
+            {
+                Text = entry.Reading, FontSize = readingSize, Foreground = primary,
+                FontWeight = entry.IsDefault ? FontWeight.SemiBold : FontWeight.Normal,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            if (entry.IsDefault)
+            {
+                row.Children.Add(new TextBlock
+                {
+                    Text = "✓ 本句默认读音", FontSize = Math.Max(10, readingSize - 1), Foreground = hint,
+                    VerticalAlignment = VerticalAlignment.Center,
+                });
+            }
+            panel.Children.Add(row);
+        }
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "左键复制读音 · 右键复制/更多", FontSize = Math.Max(10, readingSize - 2),
+            Foreground = secondary, Margin = new Thickness(0, 4, 0, 0),
+        });
+
+        return new Border
+        {
+            Background = GetCandidateBackground(this),
+            BorderBrush = hint,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10, 8),
+            Opacity = 0.97,
+            Child = panel,
+        };
+    }
+
+    /// <summary>多音候选条目：底字、候选读音、是否为该字本句默认读音。</summary>
+    internal readonly record struct RubyCandidateEntry(string BaseChar, string Reading, bool IsDefault);
 }
