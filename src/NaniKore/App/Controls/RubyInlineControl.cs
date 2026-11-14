@@ -50,8 +50,10 @@ internal sealed class RubyInlineControl : Grid
     private readonly TextBlock _rubyBlock;
     private readonly TextBlock _baseBlock;
     private readonly List<(TextBlock Reading, TextBlock Base, IBrush ReadingBrush)> _syllableColumns = [];
-    /// <summary>中文多音候选条目：只在存在其他读音时填充，供 hover 候选查看面板与多音提示色。</summary>
+    /// <summary>中文多音候选条目：只在存在其他读音时填充，供多音提示色与候选断言。</summary>
     private readonly List<RubyCandidateEntry> _candidateEntries = [];
+    /// <summary>逐字读音分组（含普通单音字与多音字），供 hover 面板按模板渲染。</summary>
+    private readonly List<SyllableReadingGroup> _readingGroups = [];
     /// <summary>悬浮面板：Popup 承载的半透明 Border，自带顶层宿主，不被滚动区裁切。</summary>
     private readonly Border _hoverPanel;
     private readonly Popup _hoverPopup;
@@ -196,11 +198,19 @@ internal sealed class RubyInlineControl : Grid
                 var bottom = new TextBlock
                 {
                     Text = baseChar,
-                    FontSize = baseFontSize, IsHitTestVisible = false, LineHeight = double.NaN,
+                    // 底字命中开启：让渲染出的汉字可框选、右键弹出与注音一致的菜单（事件冒泡到词容器上下文菜单）
+                    FontSize = baseFontSize, IsHitTestVisible = true, LineHeight = double.NaN,
                 };
+                // 底字可命中：悬停同样高亮并弹面板；左键拖拽与右键事件冒泡到 SelectableTextBlock / 词容器上下文菜单
+                bottom.PointerEntered += (_, _) => { SetReadingForeground(GetAccentBrush(this)); OpenHoverPanel(); };
+                bottom.PointerExited += (_, _) => { RestoreReadingForeground(); _hoverPopup?.Close(); };
                 _syllableColumns.Add((reading, bottom, readingBrush));
                 Children.Add(reading);
                 Children.Add(bottom);
+
+                // 逐字读音分组（默认音在前），供 hover 面板按「同字单换行 / 异字双换行」渲染
+                var groupReadings = syllable.Candidates is { Count: > 0 } ? syllable.Candidates : [syllable.Reading];
+                _readingGroups.Add(new SyllableReadingGroup(baseChar, groupReadings));
 
                 if (hasAlternatives)
                 {
@@ -500,56 +510,79 @@ internal sealed class RubyInlineControl : Grid
     }
 
     /// <summary>
-    /// 构建统一悬浮面板内容：多音字列出词典收录的全部读音，本句默认读音用与原文注音相同的橙色高亮；
-    /// 单音字与日/英注音只显示复制提示。两者共用同一套面板容器与样式。
+    /// 构建统一悬浮面板内容，普通字与多音字用同一模板：
+    /// 每个字一行「底字 读音」；同字的不同读音单换行紧邻；不同字之间留一空行；
+    /// 所有字之后空一行，再显示「点击复制注音 / 右键查看更多选项」。
+    /// 多音字的当前默认读音用与原文注音相同的橙色高亮（另加半粗体辅助），单音字保持常规色。
+    /// 日/英整词无逐字映射时，用一行「底字 读音」代替。
     /// </summary>
     private Control BuildHoverContent()
     {
-        var panel = new StackPanel { Spacing = 2 };
+        var panel = new StackPanel { Spacing = 0 };
         var primary = ResolveBrush(this, "Brush.Text.Primary", Brushes.White);
         var secondary = ResolveBrush(this, "Brush.Text.Secondary", Brushes.LightGray);
         var hint = GetHintBrush(this);
         var size = Math.Max(12, _rubyBlock.FontSize);
 
-        if (_candidateEntries.Count > 0)
+        if (_readingGroups.Count > 0)
         {
-            foreach (var entry in _candidateEntries)
+            var firstGroup = true;
+            foreach (var group in _readingGroups)
             {
-                var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-                row.Children.Add(new TextBlock
+                if (!firstGroup)
                 {
-                    Text = entry.BaseChar, FontSize = size - 1, Foreground = secondary,
-                    VerticalAlignment = VerticalAlignment.Center,
-                });
-                row.Children.Add(new TextBlock
+                    // 不同字之间：空一行
+                    panel.Children.Add(new Border { Height = size });
+                }
+                firstGroup = false;
+
+                var isMulti = group.Readings.Count > 1;
+                for (var i = 0; i < group.Readings.Count; i++)
                 {
-                    Text = entry.Reading, FontSize = size,
-                    // 本句默认读音与原文区注音同色（橙），并以半粗体作为非颜色的辅助区分
-                    Foreground = entry.IsDefault ? hint : primary,
-                    FontWeight = entry.IsDefault ? FontWeight.SemiBold : FontWeight.Normal,
-                    VerticalAlignment = VerticalAlignment.Center,
-                });
-                panel.Children.Add(row);
+                    var reading = group.Readings[i];
+                    var isDefault = i == 0;
+                    panel.Children.Add(BuildReadingRow(group.BaseChar, reading, size, secondary, primary, hint,
+                        highlight: isMulti && isDefault));
+                }
             }
         }
         else
         {
-            panel.Children.Add(new TextBlock
-            {
-                Text = $"点击复制{RubyReadingTerms.Reading(ReadingKind)}：{RubyText}",
-                FontSize = size, Foreground = primary,
-            });
+            // 日/英整词：没有逐字映射，用整词底字 + 读音占位
+            panel.Children.Add(BuildReadingRow(BaseText, RubyText, size, secondary, primary, hint, highlight: false));
         }
 
-        panel.Children.Add(new TextBlock
-        {
-            Text = "右键查看更多选项", FontSize = size - 2, Foreground = secondary,
-            Margin = new Thickness(0, _candidateEntries.Count > 0 ? 4 : 1, 0, 0),
-        });
+        // 字与底部提示之间空一行
+        panel.Children.Add(new Border { Height = size });
+        panel.Children.Add(new TextBlock { Text = "点击复制注音", FontSize = size, Foreground = primary });
+        panel.Children.Add(new TextBlock { Text = "右键查看更多选项", FontSize = size - 2, Foreground = secondary });
 
         return panel;
     }
 
+    /// <summary>构造一行「底字 读音」，highlight 时读音用多音提示色并半粗体。</summary>
+    private static StackPanel BuildReadingRow(string baseChar, string reading, double size, IBrush secondary,
+        IBrush primary, IBrush hint, bool highlight)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        row.Children.Add(new TextBlock
+        {
+            Text = baseChar, FontSize = size - 1, Foreground = secondary,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        row.Children.Add(new TextBlock
+        {
+            Text = reading, FontSize = size,
+            Foreground = highlight ? hint : primary,
+            FontWeight = highlight ? FontWeight.SemiBold : FontWeight.Normal,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        return row;
+    }
+
     /// <summary>多音候选条目：底字、候选读音、是否为该字本句默认读音。</summary>
     internal readonly record struct RubyCandidateEntry(string BaseChar, string Reading, bool IsDefault);
+
+    /// <summary>逐字读音分组：一个底字及其词典收录读音（首项为默认）。</summary>
+    internal readonly record struct SyllableReadingGroup(string BaseChar, IReadOnlyList<string> Readings);
 }

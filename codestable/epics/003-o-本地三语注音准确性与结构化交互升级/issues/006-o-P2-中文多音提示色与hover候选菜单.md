@@ -32,13 +32,16 @@ P1 Issue 005 的自研词组匹配引擎已为每个 `AnnotationSyllable` 产出
 - **布局踩坑（真实视觉回归）：** 逐字列的 `reading`/`bottom` TextBlock 未显式设 `LineHeight`，会继承外层 `SelectableTextBlock` 的固定 `LineHeight=36`，致使每个注音控件被撑到 ~71px、溢出原文区并把后续文字挤走。修复：两列显式 `LineHeight=double.NaN`，控件高度回到 ~34px 内，注音回到汉字上方且留在原文区内。
 - 逐字列按 `syllable.Candidates is { Count: > 1 }` 判定多音：是则默认注音用 `GetHintBrush`（`Brush.Warning`，回退橙），否则灰；底字/候选/默认项收进 `CandidateEntries` 供 hover 面板消费。
 - 悬停高亮后由 `RestoreReadingForeground` 恢复每列**各自底色**（多音回提示色，其余回灰），杜绝原先统一抹灰。
-- **统一悬浮面板：** 不再用 `ToolTip`（自带不透明外壳），改用 `Popup` 承载单个 `Border`（半透明卡片色、圆角、无边框、无淡绿/橙框），锚定注音行、层级在滚动区之上不被裁切。多音字列出全部读音、**本句默认读音用与原文注音相同的橙色高亮**（并列 SemiBold 作非颜色辅助）；单音字与日/英注音同一面板只显示「点击复制…」。多音/单音共用同一容器与样式。
+- **统一悬浮面板：** 不再用 `ToolTip`（自带不透明外壳），改用 `Popup` 承载单个 `Border`（半透明卡片色、圆角、无边框、无淡绿/橙框），锚定注音行、层级在滚动区之上不被裁切。多音/单音共用同一容器与样式。
+- **面板内容模板（普通字与多音字一致）：** 逐字分组，每行「底字 读音」；**同一个字的不同读音单换行紧邻，不同字之间留一空行**，字后空一行再接「点击复制注音 / 右键查看更多选项」；多音字的当前默认读音用与原文注音相同的橙色高亮（并列 SemiBold），单音字保持常规色。日/英整词无逐字映射时用一行「底字 读音」代替。
 - `Popup` 打开失败有防御兜底，绝不打崩 UI 线程；`DetachedFromVisualTree` 时关闭面板。
+- **修复原文区框选/右键回归：** 中文逐字列的底字 TextBlock 原为 `IsHitTestVisible=false`，导致渲染出的汉字不能拖拽框选、右键也不出菜单。改为底字可命中：左键拖拽冒泡到 `SelectableTextBlock` 正常框选，右键冒泡到词容器上下文菜单（与其注音右键一致）；同时挂在底字上的 hover 也可高亮并弹出候选面板。
 - 复制、选区、收藏、编辑再注音仍走原结构化路径（`AnnotationSpan`/`Syllables`），候选只影响显示，不进入导出/复制事实源。
 
 ## 验证
 
-- `./scripts/dev.ps1 test`（等价 `dotnet run --project src/NaniKore -- --self-test`）：**1809 checks 通过**。新增覆盖：单音列中性色、多音列警示色、候选条目只来自多音字且默认唯一、悬停高亮/移出恢复提示色、候选面板列出全部读音且默认项为橙色、单音词共用同一面板只显示复制提示、多音/单音面板样式一致、**固定 `LineHeight=36` 下注音控件不被撑高且留在原文区内的布局回归**；`SelfTest.Phonetics` 增加真实词典端到端断言「银行」的「行」携带默认 `háng` + 备选 `xíng`。
+- `./scripts/dev.ps1 test`（等价 `dotnet run --project src/NaniKore -- --self-test`）：**1809 checks 通过**。新增覆盖：单音列中性色、多音列警示色、候选条目只来自多音字且默认唯一、悬停高亮/移出恢复提示色、候选面板按模板列出「底字 读音」（多音列全部读音、普通字列唯一读音）、默认读音橙色而普通读音非橙色、单/多音面板样式一致、**固定 `LineHeight=36` 下注音控件不被撑高且留在原文区内的布局回归**；`SelfTest.Phonetics` 增加真实词典端到端断言「银行」的「行」携带默认 `háng` + 备选 `xíng`。
+- 真机冒烟：主人反馈布局与样式问题后，本轮已修复（逐字列行高、Popup 样式、底字命中）；实际框选/右键需主人再次目视确认（AI 不能操作真实鼠标）。
 - NativeAOT：`./scripts/dev.ps1 build -Release` 生成成功，直接运行 `artifacts/win-x64/NaniKore.exe --self-test` → **1809 checks 通过**，Debug/AOT 一致。\n- 真实可视树冒烟：把注音控件挂进真实 `Window` 后 `Popup` 能真正打开（`toplevel=True opened=True`），确认 hover 面板不会被静默吞掉（该临时诊断已移除）。
 
 ## 未覆盖

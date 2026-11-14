@@ -208,15 +208,17 @@ internal static partial class SelfTest
         // hover 候选面板：列出全部读音，本句默认读音响橙色，与原文注音同色
         var tip = ruby.HoverPanelContent;
         var tipTexts = tip is null ? [] : FlattenText(tip).ToArray();
-        Check("multi-pronunciation hover panel lists every candidate reading",
+        Check("multi-pronunciation hover panel lists every char reading including the normal 银 alongside multi 行",
             tipTexts.Length > 0 &&
-            !tipTexts.Contains("yín") &&
+            tipTexts.Contains("yín") &&
             tipTexts.Contains("háng") && tipTexts.Contains("xíng") && tipTexts.Contains("hàng"));
         var defaultReading = FindTextBlock(tip, "háng");
         var altReading = FindTextBlock(tip, "xíng");
+        var normalReading = FindTextBlock(tip, "yín");
         Check("hover panel highlights the in-context default reading in the same hint color as the source ruby",
             defaultReading?.Foreground is ISolidColorBrush dr && dr.Color == ((ISolidColorBrush)hint).Color &&
-            altReading?.Foreground is ISolidColorBrush ar && ar.Color != ((ISolidColorBrush)hint).Color);
+            altReading?.Foreground is ISolidColorBrush ar && ar.Color != ((ISolidColorBrush)hint).Color &&
+            normalReading?.Foreground is ISolidColorBrush nr && nr.Color != ((ISolidColorBrush)hint).Color);
 
         // 悬浮面板容器（单个 Popup 承载的 Border）：去掉橙色描边与淡绿块，仅半透明中性底
         var tipBorder = ruby.HoverPanelBorder;
@@ -224,16 +226,16 @@ internal static partial class SelfTest
             tipBorder.BorderThickness == default &&
             tipBorder.Background is ISolidColorBrush panelBg && panelBg.Color.A is > 0 and < 255);
 
-        // 单音字：共用同一套悬浮面板，内容换成复制提示而不是候选列表
+        // 单音字：共用同一套模板，逐字列出唯一读音，无多音高亮，也没有额外备选
         var mono = new RubyInlineControl("银行", "yín háng", 17.5,
             [new(0, 1, "yín", ["yín"]), new(1, 1, "háng", ["háng"])], 0);
         mono.Measure(Size.Infinity);
         var monoTip = mono.HoverPanelContent;
         var monoTexts = monoTip is null ? [] : FlattenText(monoTip).ToArray();
-        Check("word without alternative readings shows the shared panel with copy hint, not a candidate list",
+        Check("single-reading word lists its per-char readings with copy footer and no alternatives",
             !mono.HasAlternativeReadings &&
-            monoTexts.Any(t => t.Contains("点击复制")) &&
-            monoTexts.All(t => t != "xíng" && t != "háng"));
+            monoTexts.Contains("yín") && monoTexts.Contains("háng") && !monoTexts.Contains("xíng") &&
+            monoTexts.Any(t => t.Contains("点击复制")) && monoTexts.Any(t => t.Contains("右键")));
         Check("multi and single pronunciation panels share the same borderless translucent style",
             mono.HoverPanelBorder.BorderThickness == tipBorder.BorderThickness &&
             mono.HoverPanelBorder.CornerRadius == tipBorder.CornerRadius &&
