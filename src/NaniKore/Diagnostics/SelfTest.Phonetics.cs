@@ -12,6 +12,7 @@ internal static partial class SelfTest
         TestAnnotationFormatter();
         TestIpaTranscription();
         TestEnglishPipeline();
+        TestCmuDictionarySourceParser();
         TestPinyinToneConversion();
         TestRegistryLanguageRouting();
         TestPhoneticLanguageCatalog();
@@ -287,6 +288,25 @@ internal static partial class SelfTest
     /// 词典式 IPA 规范化：词典里的历史 wire format（重音贴在元音前、无音节点、IY 不带 ː）
     /// 必须归一成主人熟悉的词典形态；且对已规范化的条目幂等（将来换哈希的新词典读出来不许被动过）。
     /// </summary>
+    private static void TestCmuDictionarySourceParser()
+    {
+        var entries = CmuDictionarySourceParser.Parse([
+            ";;; fixture",
+            "lead L EH1 D",
+            "lead(2) L IY1 D",
+            "record R EH1 K ER0 D",
+            "record(2) R IH0 K AO1 R D",
+            "# invalid"
+        ]).ToArray();
+
+        Check(
+            "CMUdict 编号读音在解析层保留",
+            entries.Length == 4 &&
+            entries.Count(entry => entry.Word == "lead") == 2 &&
+            entries.Any(entry => entry.Word == "lead" && entry.Variant == 2) &&
+            entries.Count(entry => entry.IsDefault) == 2,
+            $"actual={string.Join(";", entries.Select(entry => $"{entry.Word}({entry.Variant})"))}");
+    }
     private static void TestIpaTranscription()
     {
         Check(

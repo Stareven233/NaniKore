@@ -171,37 +171,22 @@ internal static class PhoneticDictionaryBuilder
                 command.CommandText = "INSERT OR IGNORE INTO words (word, ipa) VALUES ($word, $ipa)";
                 var wordParameter = command.Parameters.Add("$word", SqliteType.Text);
                 var ipaParameter = command.Parameters.Add("$ipa", SqliteType.Text);
-                foreach (var line in File.ReadLines(cmudictPath))
+                foreach (var entry in CmuDictionarySourceParser.Parse(File.ReadLines(cmudictPath)))
                 {
-                    if (line.Length == 0 || line.StartsWith(";;;", StringComparison.Ordinal))
+                    // P0 先保留解析层的变体编号，但生产单读音数据库仍只生成默认项；
+                    // 候选存储与正式哈希迁移由英语候选 issue 单独推进，避免半成品覆盖现有产物。
+                    if (!entry.IsDefault)
                     {
                         continue;
                     }
 
-                    var space = line.IndexOf(' ', StringComparison.Ordinal);
-                    if (space <= 0)
-                    {
-                        continue;
-                    }
-
-                    var head = line[..space];
-                    if (head.Contains('(', StringComparison.Ordinal))
-                    {
-                        continue; // WORD(2) 变音只保留主音
-                    }
-
-                    if (head.Equals("#", StringComparison.Ordinal) || head.Length < 2)
-                    {
-                        continue; // 跳过单字母缩写项，主流程只处理常用词
-                    }
-
-                    var ipa = ArpabetIpaConverter.Convert(line[(space + 1)..]);
+                    var ipa = ArpabetIpaConverter.Convert(entry.Arpabet);
                     if (ipa.Length == 0)
                     {
                         continue;
                     }
 
-                    wordParameter.Value = head.ToLowerInvariant();
+                    wordParameter.Value = entry.Word;
                     ipaParameter.Value = ipa;
                     command.ExecuteNonQuery();
                     inserted++;
