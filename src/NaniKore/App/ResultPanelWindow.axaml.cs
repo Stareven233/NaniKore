@@ -30,6 +30,7 @@ namespace NaniKore.App;
 internal sealed partial class ResultPanelWindow : Window
 {
     private const nint HwndTop = 0;
+    private const nint HwndTopmost = -1;
     private const nint HwndNoTopmost = -2;
     private const uint SwpNoSize = 0x0001;
     private const uint SwpNoMove = 0x0002;
@@ -295,6 +296,10 @@ internal sealed partial class ResultPanelWindow : Window
         {
             _windowHandle = TryGetPlatformHandle()?.Handle ?? nint.Zero;
         }
+
+        // 每次打开都按按钮状态重建置顶：打开前 SetPinned 设置的 Topmost 可能未真正生效，
+        // 这里在窗口已拥有句柄后同步一次，避免“按钮选中却不置顶”
+        Topmost = PinButton.IsChecked == true;
     }
 
     protected override void OnClosed(EventArgs e)
@@ -535,9 +540,11 @@ internal sealed partial class ResultPanelWindow : Window
         var windowHeight = windowBounds.Bottom - windowBounds.Top;
         var placement = ResolvePanelPlacement(selectionOnDesktop, workArea, windowWidth, windowHeight);
 
+        // 定位后按当前置顶状态选择 Z 序锚：pinned 时必须用 HWND_TOPMOST，
+        // 否则会像旧实现那样用 HWND_NOTOPMOST 把窗口的置顶剥掉，导致按钮显示激活却不置顶
         _ = NativeMethods.SetWindowPos(
             _windowHandle,
-            HwndNoTopmost,
+            Topmost ? HwndTopmost : HwndNoTopmost,
             placement.X,
             placement.Y,
             0,

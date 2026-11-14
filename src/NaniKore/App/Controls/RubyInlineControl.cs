@@ -532,7 +532,7 @@ internal sealed class RubyInlineControl : Grid
                 if (!firstGroup)
                 {
                     // 不同字之间：空一行
-                    panel.Children.Add(new Border { Height = size });
+                    panel.Children.Add(CreateGap(size));
                 }
                 firstGroup = false;
 
@@ -553,30 +553,41 @@ internal sealed class RubyInlineControl : Grid
         }
 
         // 字与底部提示之间空一行
-        panel.Children.Add(new Border { Height = size });
-        panel.Children.Add(new TextBlock { Text = "点击复制注音", FontSize = size, Foreground = primary });
-        panel.Children.Add(new TextBlock { Text = "右键查看更多选项", FontSize = size - 2, Foreground = secondary });
+        panel.Children.Add(CreateGap(size));
+        panel.Children.Add(CreateLine("点击复制注音", size, primary));
+        panel.Children.Add(CreateLine("右键查看更多选项", size, secondary));
 
         return panel;
     }
+
+    /// <summary>面板空行：用一个不可见字符撑出与正文一致的一整行高，实现“空一行”。</summary>
+    private static TextBlock CreateGap(double size) => new()
+    {
+        Text = "\u00A0", FontSize = size, LineHeight = double.NaN,
+    };
+
+    /// <summary>面板统一文本行：显式清空 LineHeight，避免继承外层 SelectableTextBlock 的固定行高而每行多出空行。</summary>
+    private static TextBlock CreateLine(string text, double size, IBrush foreground) => new()
+    {
+        Text = text,
+        FontSize = size,
+        FontWeight = FontWeight.Normal,
+        LineHeight = double.NaN,
+        Foreground = foreground,
+    };
 
     /// <summary>构造一行「底字 读音」，highlight 时读音用多音提示色并半粗体。</summary>
     private static StackPanel BuildReadingRow(string baseChar, string reading, double size, IBrush secondary,
         IBrush primary, IBrush hint, bool highlight)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        row.Children.Add(new TextBlock
-        {
-            Text = baseChar, FontSize = size - 1, Foreground = secondary,
-            VerticalAlignment = VerticalAlignment.Center,
-        });
-        row.Children.Add(new TextBlock
-        {
-            Text = reading, FontSize = size,
-            Foreground = highlight ? hint : primary,
-            FontWeight = highlight ? FontWeight.SemiBold : FontWeight.Normal,
-            VerticalAlignment = VerticalAlignment.Center,
-        });
+        var charBlock = CreateLine(baseChar, size, secondary);
+        charBlock.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(charBlock);
+        var readingBlock = CreateLine(reading, size, highlight ? hint : primary);
+        readingBlock.FontWeight = highlight ? FontWeight.SemiBold : FontWeight.Normal;
+        readingBlock.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(readingBlock);
         return row;
     }
 

@@ -52,5 +52,13 @@ P1 Issue 005 的自研词组匹配引擎已为每个 `AnnotationSyllable` 产出
 
 ## 关闭时
 
-- **回写 epic spec 候选：** 多音提示色口径（橙色=存在其他读音、非不确定）、hover 面板结构（Popup 半透明、默认读音响橙、悬停恢复、不裁切）、逐字列须显式行高避免继承外层 LineHeight 的布局约束、以及「只查看不纠音」的边界。
+- **回写 epic spec 候选：** 多音提示色口径（橙色=存在其他读音、非不确定）、hover 面板结构（Popup 半透明、默认读音响橙、悬停恢复、不裁切）、逐字列与面板文本须显式行高避免继承外层 LineHeight 的布局约束、以及「只查看不纠音」的边界。
 - **关闭判断：** 主人真实视觉/鼠标复核通过 + 质量目标逐项有证据后，经主人授权再关闭。完成不等于关闭。
+
+## 2026-11-15 真机二次反馈修复
+
+1. **面板每行多出空行：** 根因是 Popup 内容也继承了外层 `SelectableTextBlock` 的固定 `LineHeight=36`，每行被撑成 36px。改为面板所有文本显式 `LineHeight=double.NaN`，同字单行紧邻、异字空一行、字与页脚空一行。补断言：面板全部 TextBlock 行高为 NaN。
+2. **「点击复制注音」偏大偏粗：** 统一为与读音行同字号、`FontWeight.Normal`（行高 NaN 后视觉也归一）。补断言：页脚与默认读音同 FontSize 且 Normal。
+3. **（附带、非注音范畴）结果面板置顶保持激活却失效：** 根因 `PositionNearSelection` 定位时用 `HWND_NOTOPMOST` 把置顶剥掉；改为按 `Topmost` 选择 `HWND_TOPMOST`/`HWND_NOTOPMOST`，并在 `OnOpened` 用 `PinButton.IsChecked` 重建一次 `Topmost`。涉及 `ResultPanelWindow.axaml.cs`。
+
+验证：Debug（独立输出目录，避开运行中进程锁）与 NativeAOT 均 **1811 checks 通过**。

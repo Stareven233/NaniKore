@@ -31,6 +31,7 @@ internal static partial class SelfTest
         TestResultPanelSourceAnnotation();
         TestStructuredChineseDisplayAndLayout();
         TestChineseMultiPronunciationHint();
+        RunBrushDiag();
         TestAnnotationInvalidation();
         TestResultPanelSubscriptionCleanup();
         TestResultPanelDetectedSourceLanguage();
@@ -226,6 +227,16 @@ internal static partial class SelfTest
             tipBorder.BorderThickness == default &&
             tipBorder.Background is ISolidColorBrush panelBg && panelBg.Color.A is > 0 and < 255);
 
+        // 面板文本必须显式清空 LineHeight，否则继承外层 36 行高，导致每行之间多出空行
+        var panelTexts = CollectTextBlocks(tip).ToArray();
+        Check("hover panel lines disable inherited line height so no extra blank lines appear",
+            panelTexts.Length > 0 && panelTexts.All(t => double.IsNaN(t.LineHeight)));
+        // 「点击复制注音」与读音同字号、常规字重，保持整体一致
+        var copyFooter = FindTextBlock(tip, "点击复制注音");
+        Check("copy footer uses the same font size and normal weight as reading lines",
+            copyFooter is not null && defaultReading is not null &&
+            copyFooter.FontSize == defaultReading.FontSize && copyFooter.FontWeight == FontWeight.Normal);
+
         // 单音字：共用同一套模板，逐字列出唯一读音，无多音高亮，也没有额外备选
         var mono = new RubyInlineControl("银行", "yín háng", 17.5,
             [new(0, 1, "yín", ["yín"]), new(1, 1, "háng", ["háng"])], 0);
@@ -278,6 +289,36 @@ internal static partial class SelfTest
             })));
     }
 
+    /// <summary>收集控件子树内所有 TextBlock，供面板字体/行高断言。</summary>
+    private static IEnumerable<TextBlock> CollectTextBlocks(Control? root)
+    {
+        if (root is null)
+        {
+            yield break;
+        }
+
+        if (root is TextBlock tb)
+        {
+            yield return tb;
+        }
+
+        IEnumerable<Control> children = root switch
+        {
+            Panel panel => panel.Children.OfType<Control>(),
+            Border { Child: Control only } => [only],
+            ContentControl { Content: Control content } => [content],
+            _ => [],
+        };
+
+        foreach (var child in children)
+        {
+            foreach (var nested in CollectTextBlocks(child))
+            {
+                yield return nested;
+            }
+        }
+    }
+
     /// <summary>在控件子树里按文本查找首个 TextBlock，供候选面板断言。</summary>
     private static TextBlock? FindTextBlock(Control? root, string text)
     {
@@ -309,6 +350,31 @@ internal static partial class SelfTest
         }
 
         return null;
+    }
+
+    /// <summary>TEMP：解析深/浅色下 hover 面板实际背景画刷来源。</summary>
+    private static void RunBrushDiag()
+    {
+        EnsureThemedApplication();
+        var app = Application.Current!;
+        var lines = new List<string>();
+        foreach (var variant in new[] { ThemeVariant.Dark, ThemeVariant.Light })
+        {
+            app.RequestedThemeVariant = variant;
+            string ColorOf(string key)
+            {
+                var ok = app.TryGetResource(key, variant, out var val);
+                return val is ISolidColorBrush sb ? $"{key}={sb.Color}" : $"{key}=<{(ok ? val?.GetType().Name : "null")}>";
+            }
+            lines.Add($"[{variant}] {ColorOf("Brush.Card.Background")} | {ColorOf("Brush.Window.Background")} | {ColorOf("Brush.Panel.Card")}");
+            var ruby = new RubyInlineControl("银行", "yín háng", 15,
+                [new(0, 1, "yín", ["yín"]), new(1, 1, "háng", ["háng", "xíng"])], 0);
+            var bg = ruby.HoverPanelBorder.Background as ISolidColorBrush;
+            lines.Add($"    hoverPanel actual bg = {(bg is null ? "null" : bg.Color.ToString())}");
+        }
+        app.RequestedThemeVariant = ThemeVariant.Dark;
+        Directory.CreateDirectory("artifacts");
+        File.WriteAllText("artifacts/p2-brush-diag.txt", string.Join("\n", lines));
     }
 
     /// <summary>深度优先收集控件子树内所有 TextBlock 文本，供 hover 候选面板断言。</summary>
