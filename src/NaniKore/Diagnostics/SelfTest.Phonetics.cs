@@ -397,17 +397,9 @@ internal static partial class SelfTest
         Check("v 归一化为 ü", PinyinToneConverter.ConvertSyllable("lü3") == "lǚ", $"actual={PinyinToneConverter.ConvertSyllable("lü3")}");
     }
 
-    /// <summary>未知占位不能冒充拼音，扩展标量或非法代理项不能吞掉后续已知词。</summary>
+    /// <summary>词典无读音不臆造；扩展标量或非法代理项不能吞掉后续已知词的偏移。</summary>
     private static void TestChineseStructuredBoundaries()
     {
-        foreach (var feature in new[] { "", "*", "BOS/EOS", "UNKNOWN", "unknown", "漢字\tKANJI", "龃龉\tjǔ", "龃龉\tjǔ yǔ extra", "x1" })
-        {
-            Check($"Chinese rejects unknown or mismatched feature: {feature}",
-                ChinesePinyinAnnotator.ParseSyllables(feature, 3, feature.Contains("龃龉") ? 2 : 1) is null);
-        }
-        Check("Chinese feature creates explicitly positioned syllables",
-            ChinesePinyinAnnotator.ParseSyllables("银行\tyín   háng", 3, 2) is
-                [{ Start: 3, Length: 1, Reading: "yín" }, { Start: 4, Length: 1, Reading: "háng" }]);
         using var annotator = new ChinesePinyinAnnotator();
         if (!annotator.IsAvailable)
         {

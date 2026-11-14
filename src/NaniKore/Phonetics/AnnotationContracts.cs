@@ -10,8 +10,12 @@ namespace NaniKore.Phonetics;
 internal readonly record struct AnnotationSpan(int Start, int Length, string Reading,
     IReadOnlyList<AnnotationSyllable>? Syllables = null);
 
-/// <summary>中文适配器产出的逐字读音，Start 为原文的绝对 UTF-16 偏移。</summary>
-internal readonly record struct AnnotationSyllable(int Start, int Length, string Reading);
+/// <summary>
+/// 中文适配器产出的逐字读音，Start 为原文的绝对 UTF-16 偏移。
+/// <see cref="Candidates"/> 为词典收录的该字候选读音（首项即本句默认），供 P2 多音查看；本轮仅携带不展示。
+/// </summary>
+internal readonly record struct AnnotationSyllable(int Start, int Length, string Reading,
+    IReadOnlyList<string>? Candidates = null);
 
 /// <summary>
 /// 多语言注音标注器契约：初版 ja（振假名）/ en（IPA）/ zh（简体拼音），预留 ko 等扩展位。

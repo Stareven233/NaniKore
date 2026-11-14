@@ -56,6 +56,11 @@ internal static class Program
             return BuildPhonetics(args);
         }
 
+        if (args.Contains("--build-zh-data", StringComparer.OrdinalIgnoreCase))
+        {
+            return BuildZhPinyinData();
+        }
+
         if (args.Contains("--phonetics-probe", StringComparer.OrdinalIgnoreCase))
         {
             PhoneticsProbe.Run();
@@ -143,8 +148,8 @@ internal static class Program
     }
 
     /// <summary>
-    /// 开发期注音词典生成：CMUdict → 英语 SQLite；CC-CEDICT + Unihan → 中文 MeCab 词典（mecab-dict-index）。
-    /// 用法：dotnet run --project src/NaniKore -- --build-phonetics [--dict-index &lt;mecab-dict-index.exe&gt;]
+    /// 开发期注音词典生成：CMUdict → 英语 SQLite；pypinyin + CC-CEDICT + Unihan → 中文拼音数据表。
+    /// 用法：dotnet run --project src/NaniKore -- --build-phonetics（或单独 --build-zh-data 只重建中文）
     /// 详见 codestable/notes/phonetics-pipeline.md；产物落盘 deps/phonetics/，控制台打印 SHA-256 供回填清单。
     /// </summary>
     private static int BuildPhonetics(string[] args)
@@ -168,6 +173,48 @@ internal static class Program
             Console.Error.WriteLine($"注音词典生成失败：{exception.Message}");
             return 1;
         }
+    }
+
+    /// <summary>单独重建中文拼音运行期数据：从 resources/phonetics 合并源料，不依赖 mecab-dict-index。</summary>
+    private static int BuildZhPinyinData()
+    {
+        try
+        {
+            var repoRoot = LocateResourceRoot();
+            if (repoRoot is null)
+            {
+                Console.Error.WriteLine("未找到仓库根目录（需存在 resources/phonetics/pypinyin）");
+                return 1;
+            }
+
+            NaniKore.Phonetics.ChinesePinyinDataBuilder.Build(repoRoot);
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine($"中文拼音数据构建失败：{exception.Message}");
+            return 1;
+        }
+    }
+
+    /// <summary>从输出目录或当前目录向上找含 resources/phonetics/pypinyin 的仓库根。</summary>
+    private static string? LocateResourceRoot()
+    {
+        foreach (var start in new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() })
+        {
+            var directory = new DirectoryInfo(start);
+            while (directory is not null)
+            {
+                if (Directory.Exists(Path.Combine(directory.FullName, "resources", "phonetics", "pypinyin")))
+                {
+                    return directory.FullName;
+                }
+
+                directory = directory.Parent;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>把标准输出切成 UTF-8：诊断输出含中文与 IPA，默认 OEM 代码页会花屏。</summary>

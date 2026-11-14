@@ -1,5 +1,4 @@
 using System.Globalization;
-using NMeCab;
 using NaniKore.Translation;
 
 namespace NaniKore.Phonetics;
@@ -73,34 +72,6 @@ internal static class PhoneticsProbe
             Console.WriteLine($"[{language}]   仅难词=关 {text} => {Dump(AnnotatedTextFormatter.Compose(text, rawSpans))} (spans={rawSpans.Count})");
         }
 
-        if (registry.GetAnnotator("zh") is ITextAnnotator zhAnnotator)
-        {
-            DumpRawTagger(MeCabTagger.Create(PhoneticDependencyPaths.ChineseDictionaryDirectory, null), "龃龉不行就去银行", "zh");
-            DumpRawTagger(MeCabTagger.Create(PhoneticDependencyPaths.ChineseDictionaryDirectory, null), "你好世界", "zh2");
-        }
-    }
-
-    private static void DumpRawTagger(MeCabTagger tagger, string text, string label)
-    {
-        Console.WriteLine($"[raw-{label}] {Dump(text)}");
-        foreach (var node in tagger.Parse(text))
-        {
-            var surface = node.Surface;
-            if (string.IsNullOrEmpty(surface))
-            {
-                continue;
-            }
-
-            Console.WriteLine($"[raw-{label}] 词面={Dump(surface)} feature={Dump(node.Feature)} f0={Dump(node.GetFeatureAt(0))}");
-            var parts = new List<string>();
-            for (var i = 0; i < 8; i++)
-            {
-                var value = node.GetFeatureAt(i);
-                parts.Add($"{i}:{(string.IsNullOrEmpty(value) ? "<空>" : value)}");
-            }
-
-            Console.WriteLine($"[raw-{label}]   各列：{string.Join(" | ", parts)}");
-        }
     }
 
     private static int CountLines(string resourceName)

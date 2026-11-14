@@ -20,8 +20,9 @@ deps/phonetics/            # 仓库内唯一真实源；ModelScope 仓库 Noetuu
 | --- | --- | --- | --- |
 | ja | IPAdic（taku910/mecab 官方词典） | NuGet `LibNMeCab.IpaDicBin` 0.10.2（nupkg 内 `content/IpaDic/`） | IPAdic 许可（文件随附 COPYING，见 NOTICE） |
 | en | CMUdict 0.7b | https://raw.githubusercontent.com/cmusphinx/cmudict/master/cmudict.dict | CMUdict 许可（BSD 风格，见 NOTICE） |
-| zh | CC-CEDICT 汉英词典 | https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz | CC BY-SA 4.0（见 NOTICE） |
-| zh 补字 | Unihan `Unihan_Readings.txt`（kMandarin） | https://www.unicode.org/Public/UCD/latest/Unihan.zip | Unicode 许可（见 NOTICE） |
+| zh | CC-CEDICT 汉英词典 | https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.txt.gz → `resources/phonetics/cc-cedict/` | CC BY-SA 4.0（见 NOTICE） |
+| zh | pypinyin 0.55.0（词组表 + 单字频率默认） | pypinyin wheel → `resources/phonetics/pypinyin/` | MIT（数据派生自 CC-CEDICT 等，见其 METADATA） |
+| zh 补字 | Unihan `Unihan_Readings.txt`（kMandarin） | https://www.unicode.org/Public/UCD/latest/ucd/Unihan.zip → `resources/phonetics/unihan/` | Unicode 许可（见 NOTICE） |
 
 判据词表（`src/NaniKore/Phonetics/Data/`）不在此管线：学年別漢字配当表第1・2学年（文部科学省 240 字，2026-10-04 起由 2136 字收紧）、
 通用规范汉字表一级字表（3500 字，2026-10-04 起取代此前来源不明的 6489 字混合表）、三语停用/高频策展表
@@ -54,30 +55,27 @@ dotnet run --project src/NaniKore -- --build-phonetics
 多音词只取 CMUdict 主读音（美式口径在生成期定音，不随运行期切换）；
 屈折形式大多不在 CMUdict 中，运行期由 `EnglishLemmatizer`（词干还原候选）兜底查询。
 
-## 5. 简体中文（zh）：CC-CEDICT + Unihan → MeCab 词典
+## 5. 简体中文（zh）：pypinyin + CC-CEDICT + Unihan → 进程内拼音数据
 
-需要 `mecab-dict-index.exe`（源码编译工具；Windows 二进制由社区发布，如 Pusnow/mecab-ko-msvc 的 release）：
+中文不再使用 NMeCab 与 `mecab-dict-index`：`ChinesePinyinEngine` 在进程内做词组最长匹配。
+源料统一放 `resources/phonetics/`（`pypinyin/`、`cc-cedict/`、`unihan/`），单独重建：
 
 ```powershell
-dotnet run --project src/NaniKore -- --build-phonetics --dict-index <path-to-mecab-dict-index.exe>
+dotnet run --project src/NaniKore -- --build-zh-data
 ```
 
-管线（`PhoneticDictionaryBuilder.BuildChineseDictionary`）：
+管线（`ChinesePinyinDataBuilder.Build`）：
 
-1. 解析 CC-CEDICT（正则取 简体 / 繁体 / `[拼音]`），只收纯汉字词面；拼音声调数字 → 声调符号
-   （`PinyinToneConverter`，含 ü/v 归一、轻声去数字）；
-2. Unihan `kMandarin` 补充 CC-CEDICT 未覆盖的汉字单字默认读音；
-3. 写 `_build/zh/main.csv`：`词面,0,0,成本,拼音`，成本 = 多字词 100 / 单字 3000（长词面优先）；
-   同一词面的多个读音各自成条（`行 háng / xíng`），MeCab 选择最小成本路径；当前固定成本与 1×1 连接矩阵不具备可靠语义消歧，不能据此声称按上下文读对；
-4. 写骨架（`WriteMeCabSkeleton`）：`matrix.def`（1x1 + 非零项 `0 0 1`）、`char.def`（仅 BMP 区间，
-   MeCab 的 char_property 要求区间端 < 0xFFFF，CJK 扩展 B 段不可写）、`unk.def`（三类默认 20000）、
-   `dicrc`（**必须有 `cost-factor = 800`**，mecab-dict-index 缺它直接报
-   `cost factor needs to be positive value`）；
-5. 调 `mecab-dict-index -d _build/zh -o _build/zh -f utf-8 -t utf-8`；
-6. 复制 `sys.dic / unk.dic / matrix.bin / char.bin / dicrc` 到 `deps/phonetics/zh/`。
+1. 载 `pypinyin/phrases_dict.json`（词组 → 逐字默认读音）与 `pinyin_dict.json`（码位 → 候选读音，首项默认）作基座；
+2. 解析 `cc-cedict/...txt`：只收纯汉字词面；拼音声调数字 → 声调符号（`PinyinToneConverter`）。
+   CC 词条**只补 pypinyin 未覆盖的词面**（pypinyin 优先），并收单字读音作兜底；
+3. 词级等长对齐构建 繁→简 单字映射（查音前归一，展示仍用原文）；
+4. `unihan/Unihan_Readings.txt` 的 `kMandarin` 兜底 pypinyin/CC 都没覆盖的 BMP 单字；
+5. 写 `deps/phonetics/zh/zh_pinyin.txt.gz`（TSV+gzip，全量排序保证确定性）：
+   `S 码位 候选1,候选2` / `C 码位 兜底读音` / `P 词面 字1音 字2音 …` / `T 繁 简`，首行 `NaniKore.zh.pinyin.v1`。
 
-全部门户文件用无 BOM UTF-8（骨架 `Utf8NoBom`）：BOM 会让 dicrc/CSV 首行解析失败
-（表现为 `no such file or directory: dicrc`）。
+运行期 `ChinesePinyinEngine.Segment`：代理项边界切段 → 词表最长匹配（词组→单字默认）→ 逐字默认音 + 候选，
+全程保留原文 UTF-16 偏移；`AnnotationSyllable.Candidates` 携带候选（首项为本句默认）。缺失/损坏数据软降级为纯文本。
 
 ## 6. 哈希回填（哈希即版本）
 
@@ -107,8 +105,7 @@ dotnet run --project src/NaniKore -- --self-test         # 全量无 UI 自测�
 
 ## 8. 口径备注（实测，改代码前先读）
 
-- **LibNMeCab 的 `node.Feature` 是「词面\t素性」整体**：拼音/读音取最后一个制表符后的内容
-  （`ChinesePinyinAnnotator.ExtractFeature`）。`node.GetFeatureAt(0)` 返回的是整串。中文适配器拒绝未知占位及非等长音节，保留显式逐字 UTF-16 映射；输入在代理项边界分段，补充平面字自身保留纯文，避免破坏后续已知词。
+- **中文已弃 NMeCab**：改为进程内 `ChinesePinyinEngine`（pypinyin + CC-CEDICT + Unihan 合并表）。读音不再来自 MeCab `Feature`，而是词表最长匹配 + 单字默认；输入仍在代理项边界分段，补充平面字保留纯文，避免破坏后续已知词的 UTF-16 偏移。旧的 `sys.dic` 等 MeCab 产物已不再被中文链路读取。
 - **IPAdic 的振假名取 `読み`（片假名）而非 `発音`**：`発音` 是音便表记（ちゅうちょ→ちゅーちょ），
   取错会出现长音符；`JapaneseFuriganaAnnotator` 统一转写平假名。
 - **停用词表 vs 常用字符表的边界**：zh 判据为通用规范汉字表**一级字表 3500 字**（2026-10-04 由一·二级 6500

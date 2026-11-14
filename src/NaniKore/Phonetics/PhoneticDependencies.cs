@@ -62,12 +62,12 @@ internal static class PhoneticDependencyPaths
 
     public static string ChineseDictionaryDirectory => Path.Combine(PhoneticsRootDirectory, "zh");
 
+    /// <summary>中文拼音运行期数据（pypinyin + CC-CEDICT + Unihan 合并表，见 <see cref="ChinesePinyinDataBuilder"/>）。</summary>
+    public static string ChinesePinyinDataFile => Path.Combine(ChineseDictionaryDirectory, "zh_pinyin.txt.gz");
+
     public static IReadOnlyList<string> ChineseDictionaryFiles =>
     [
-        Path.Combine(ChineseDictionaryDirectory, "sys.dic"),
-        Path.Combine(ChineseDictionaryDirectory, "unk.dic"),
-        Path.Combine(ChineseDictionaryDirectory, "matrix.bin"),
-        Path.Combine(ChineseDictionaryDirectory, "char.bin")
+        ChinesePinyinDataFile
     ];
 }
 
@@ -120,10 +120,7 @@ internal static class PhoneticDependencyManifest
 
     public static IReadOnlyList<PhoneticDictionaryFile> ChineseFiles { get; } = Build(
     [
-        ("zh/sys.dic", "D98AE5D8F1D5A524C2B15EBB745BE71AF70A6F969D13C1CF7FEED77017F11EEF"),
-        ("zh/unk.dic", "BF87973D9DD328D71A17DABF4EFCFAFA91EC4271EA1732445A93FA825B30FCA0"),
-        ("zh/matrix.bin", "CD0BAE01D09803811B7A14B69461D4B28F8D6E0F0B779AC030ADFE1CDC0DEE6A"),
-        ("zh/char.bin", "FCB88F2B8AD45EC617B8E9123D9925334D39A4CCC11AA7BCA715613E64735ABC")
+        ("zh/zh_pinyin.txt.gz", "2B5C68679BD393624D17B77BCA5734F9A608EB758FFA2F98D69D1DE0E520A981")
     ]);
 
     /// <summary>取某语言的文件清单；不支持的语言返回空。</summary>
