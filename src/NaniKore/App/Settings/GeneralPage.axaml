@@ -120,6 +120,35 @@
             </StackPanel>
         </controls:SettingsGroup>
 
+        <!--
+            原生注音语言包（issue 009）：与上方旧词典卡片并存**只是过渡态**。
+            009 交付 ABI 客户端、状态机与生命周期；010/011 把 ja/en provider 切到原生包，
+            随后由 014 把上面那组旧词典卡片随旧 provider 一起下线，最终每个语言只保留一条语言包入口（中文卡片在 012 内嵌后改为只读的就绪行）。
+            在此之前不能删：那两张卡片仍在下程序当前真正使用的旧词典（IPAdic / CMUdict）。
+        -->
+        <controls:SettingsGroup x:Name="NativePhoneticsGroup" Header="注音语言包（本地原生）">
+            <StackPanel>
+                <controls:SettingsRow x:Name="NativePackJaRow"
+                                      Header="日本語语言包"
+                                      Description="Misaki + UniDic 3.1.0 原生包（21.8 MB），提供书面假名注音。"
+                                      ContentWidth="96">
+                    <Button x:Name="NativePackJa"
+                            Tag="ja"
+                            Width="96" />
+                </controls:SettingsRow>
+                <Border Classes="divider-row" />
+                <controls:SettingsRow x:Name="NativePackEnRow"
+                                      Header="English 语言包"
+                                      Description="Misaki 原生包（8.9 MB），提供美音 IPA 注音与整词候选。"
+                                      ContentWidth="96">
+                    <Button x:Name="NativePackEn"
+                            Tag="en"
+                            Width="96" />
+                </controls:SettingsRow>
+                <controls:InfoBar x:Name="NativePackStatus" Margin="14,0,14,12" />
+            </StackPanel>
+        </controls:SettingsGroup>
+
         <!-- OCR 与注音共用回收策略，独立于当前流水线模式，始终显示。 -->
         <controls:SettingsGroup x:Name="LocalResourcesGroup" Header="本地资源">
             <controls:SettingsRow Header="闲置回收时长"

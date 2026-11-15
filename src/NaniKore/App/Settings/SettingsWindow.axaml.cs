@@ -64,6 +64,7 @@ internal sealed partial class SettingsWindow : Window
         Action<HotkeyRecordingState>? suspendGlobalHotkey = null,
         Func<IProgress<string>, CancellationToken, Task>? downloadDependencies = null,
         Func<string, IProgress<string>, CancellationToken, Task>? downloadPhoneticDictionary = null,
+        Func<string, IProgress<string>, CancellationToken, Task>? downloadNativePhoneticPack = null,
         IFavoriteService? favoriteService = null,
         Func<string?>? templateVersion = null,
         SettingsTab initialTab = SettingsTab.General)
@@ -88,7 +89,7 @@ internal sealed partial class SettingsWindow : Window
         _translationNav = new NavigationItem("翻译", "\uE8C1", () => new TranslationPage { TestConnection = testConnection });
         _navItems =
         [
-            new NavigationItem("通用", "\uE713", () => new GeneralPage(downloadDependencies, downloadPhoneticDictionary)),
+            new NavigationItem("通用", "\uE713", () => new GeneralPage(downloadDependencies, downloadPhoneticDictionary, downloadNativePhoneticPack)),
             _translationNav,
             new NavigationItem("热键", "\uE765", () =>
             {

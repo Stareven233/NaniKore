@@ -130,6 +130,16 @@ public partial class NaniKoreApp : Application
         TryRegisterHotkey(HotkeySlot.Paste);
         ConfigureOcrHttpServer(_configStore.Current.General.OcrListen);
 
+        // 启动时先把上次暂存的新版语言包提升为正式包：这就是「重启生效」的落地点。
+        try
+        {
+            _ = NativePhoneticPackHostHolder.Default.ApplyStagedPacks();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            _trayIcon?.ShowWarning($"注音语言包暂存包提升失败：{exception.Message}");
+        }
+
         Console.WriteLine("NaniKore translation pipeline is ready.");
         Console.WriteLine($"Press {_configStore.Current.Hotkeys.Capture} to capture and translate a region.");
         if (HotkeyGesture.IsEnabled(_configStore.Current.Hotkeys.Paste))
@@ -153,6 +163,7 @@ public partial class NaniKoreApp : Application
         _providerFactory?.Dispose();
         _ocrEngine.Dispose();
         PhoneticAnnotatorRegistryHolder.Default.Dispose();
+        NativePhoneticPackHostHolder.Default.Dispose();
         _captureHotkey?.Dispose();
         _pasteHotkey?.Dispose();
         ThemeManager.Shutdown();
@@ -874,6 +885,7 @@ public partial class NaniKoreApp : Application
             SuspendHotkey,
             DownloadOcrDependenciesAsync,
             DownloadPhoneticDictionaryAsync,
+            DownloadNativePhoneticPackAsync,
             _favoriteService,
             () => ConfigStore.ReadTemplateVersion(),
             tab);
@@ -1061,6 +1073,18 @@ public partial class NaniKoreApp : Application
         PhoneticAnnotatorRegistryHolder.ResetAvailability(languageCode);
     }
 
+    /// <summary>
+    /// 原生语言包下载（issue 009）：落暂存目录 → 校验哈希/清单 → 未加载则即时替换，已加载则重启生效。
+    /// 状态机在 <see cref="NativePhoneticPackHost"/> 里，设置页只负责触发与展示。
+    /// </summary>
+    private static async Task DownloadNativePhoneticPackAsync(
+        string languageCode,
+        IProgress<string> progress,
+        CancellationToken cancellationToken)
+    {
+        await NativePhoneticPackHostHolder.Default.DownloadAsync(languageCode, progress, cancellationToken);
+    }
+
     private OcrResult RecognizeWithCachedEngine(SKBitmap bitmap) =>
         _ocrEngine.Use(engine => engine.Recognize(bitmap));
 
@@ -1073,6 +1097,8 @@ public partial class NaniKoreApp : Application
         }
         _ocrEngine.Configure(timeout);
         PhoneticAnnotatorRegistryHolder.Default.ConfigureIdleTimeout(timeout);
+        // 原生语言包的词表/模型与 OCR、旧词典共用同一闲置策略（释放只解引用，不卸载 DLL）。
+        NativePhoneticPackHostHolder.Default.ConfigureIdleTimeout(timeout);
     }
 
     private void AcceptNewInput(byte[]? imagePng)

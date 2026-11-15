@@ -25,6 +25,7 @@ internal static partial class SelfTest
         TestChinesePinyinDictionary();
         TestEnglishIpaDictionary();
         TestEnglishCandidateDatabase();
+        RunNativePhoneticPackTests();
     }
 
     /// <summary>语言清单是设置页卡片与源语言下拉的共同口径：代码、展示名、顺序必须稳定。</summary>

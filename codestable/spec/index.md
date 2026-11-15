@@ -41,6 +41,7 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 - 本地知识库（生词本）：收藏持久化到数据目录 `程序目录\.data\collections.db`（SQLite，由随包旁置的 `e_sqlite3.dll` 驱动，首次收藏惰性建库），设置面板 `[收藏]` Tab 支持类别筛选、关键词搜索、单条复制/删除与复制全部；收藏不写入 `config.yaml`。收藏库不可用（只读、被独占、文件损坏）时卡片星标、划词气泡与收藏页统一给出中文原因与恢复建议并保持可用：写失败不改星标、不报成功，列表读取失败保留上一次快照，条件恢复后同一入口可直接重试。
 - 配置与密钥管理：`config.yaml` 基于 YamlDotNet 18.1.0 静态上下文（`ConfigYamlStaticContext`，0 反射）读写；API Key 保存在 `程序目录\.data\keys.bin`，带方案版本头（NKKEY + Scheme 1 + Version 1），向后透明兼容旧 DPAPI 密文；全部 JSON 序列化（SecretStore、OcrHttpServer、LLM 请求体 JsonNode 结构化组装）均通过 AOT 安全静态化。读取失败不视为首次使用：`config.yaml` 或 `keys.bin` 格式错误、无权限、被占用或无法解密时，内存虽退回默认仅供启动，但保存会被拒绝且原文件/整份旧密文保持不动，同时给出点名出错配置行的中文说明，需手动修正或删除后重启（`ConfigWriteRefusedException` / `SecretStoreWriteRefusedException`）。DPAPI 绑定当前 Windows 用户，换用户/机器后密钥无法解密、需在目标机重填，不承诺跨机恢复。
 - 注音设置分为「通用 → 允许本地注音」（`phonetics.enabled` 总开关，关闭则自动/手动均不加载本地词典）和「翻译 → 识别后自动注音」（`general.auto_annotate`，关闭后只允许面板手动触发）。自动策略同时覆盖 OCR、视觉原文到达、翻译完成与编辑后的自动调用，不因翻译完成而绕过关闭设置。
+- 原生注音语言包骨架（issue 009）：`src/NaniKore/Phonetics/Native/` 提供 ABI v1 客户端（`nk_phonetics_*`）、`deps/phonetics/misaki/<lang>/` 包身份清单（库 SHA-256 即版本，与 `pack.json` 及许可哈希双向核对）、PE win-x64 与四个导出/ABI 比对、同 DLL 释放；状态机区分缺失/需更新/下载中/失败/就绪/重启生效，新版本先落 `.staging-<lang>` 校验后替换，已加载语言只暂存、下次启动提升；原生词表挂在现有闲置策略上（只解除引用，不卸载 DLL、不强制 GC），失败一律退化为纯文本并在设置页写明原因。**生产 provider 尚未切换**：日语仍 IPAdic、英语仍 CMUdict，结果面板注音仍走旧标注器，切换在 010/011；设置页新增「注音语言包（本地原生）」分组与旧词典卡片并存至切换完成。
 - 结果卡底部状态栏呈现本次调用的 Token 消耗与首字延迟（TTFT）、TPS指标。
 
 ### UI 引擎与平台边界

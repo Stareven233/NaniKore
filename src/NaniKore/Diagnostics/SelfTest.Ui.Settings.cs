@@ -391,6 +391,25 @@ internal static partial class SelfTest
             "dictionary card button enables once a downloader is injected",
             jaButton?.IsEnabled == true);
 
+        // 原生语言包卡片（issue 009）：按钮文案跟着状态机走，未注入下载器时只读。
+        foreach (var language in NativePhoneticManifest.SupportedLanguages)
+        {
+            var buttonName = language == NativePhoneticManifest.JapaneseCode ? "NativePackJa" : "NativePackEn";
+            var button = Find<Button>(page, buttonName);
+            var expected = NativePhoneticPackHostHolder.Default.GetState(language);
+            Check(
+                $"{language} native pack card mirrors the host state and stays disabled without a downloader",
+                button is not null &&
+                button.Content as string == GeneralPage.NativePackButtonLabel(expected) &&
+                !button.IsEnabled);
+        }
+
+        var withNativeDownloader = new GeneralPage(downloadNativePhoneticPack: (_, _, _) => Task.CompletedTask);
+        Check(
+            "native pack card enables once a downloader is injected",
+            Find<Button>(withNativeDownloader, "NativePackJa")?.IsEnabled == true &&
+            Find<Button>(withNativeDownloader, "NativePackEn")?.IsEnabled == true);
+
         var config = new AppConfig { Phonetics = new PhoneticsConfig { Enabled = false, RareOnly = false } };
         page.Load(config);
         var enabledToggle = Find<ToggleSwitch>(page, "PhoneticsEnabledToggle");

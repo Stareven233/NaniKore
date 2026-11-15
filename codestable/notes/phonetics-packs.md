@@ -88,9 +88,19 @@ void    nk_phonetics_free(uint8_t* buffer);
 PE 普通导入表只有系统 DLL 与 UCRT：`KERNEL32/ADVAPI32`（英语另有 `USER32`、`api-ms-win-core-synch`）、
 `api-ms-win-crt-*`、`bcrypt`、`ole32`；不含 VCRUNTIME/MSVCP。这是静态证据，干净系统部署验收留给 014。
 
+## 宿主接入骨架（009）
+
+`src/NaniKore/Phonetics/Native/` 已落地 ABI v1 客户端、包身份清单、状态机、下载安装与闲置释放，**但生产 provider 尚未切换**（日语仍 IPAdic、英语仍 CMUdict，切换在 010/011）。
+
+- 清单：`NativePhoneticManifest` 记录库字节、SHA-256、ABI、架构、四个导出与随包许可哈希；`deps/phonetics/misaki/<lang>/pack.json` 与之双向核对，任何一项不符即拒绝装载。
+- 客户端：先校验文件与 PE（win-x64）再按绝对路径 `NativeLibrary.TryLoad`，绑定后比对 ABI 与导出；输出交回同 DLL 释放，模块永不卸载。
+- 生命周期：每语一个惰性资源，闲置回收只调 `nk_phonetics_release`；新版本落 `.staging-<lang>`，已加载则等重启提升。
+- 设置页新增「注音语言包（本地原生）」分组，状态覆盖缺失/需更新/下载中/失败/就绪/重启生效。
+- 实测：Debug 与 NativeAOT 宿主自测均 1911 项通过；`NaniKore.exe` 23,062,528 → 23,261,184 B（+198,656）。详见 [issue 009](../epics/003-o-本地三语注音准确性与结构化交互升级/issues/009-o-原生ABI下载与资源生命周期接入.md)。
+
 ## 未覆盖
 
-- 主程序尚未接入：下载/校验/状态机/闲置释放/重启更新在 009，日语与英语 provider 在 010/011。
-- 未做真实宿主 UI、复制/选区/收藏回归，未做干净系统 AOT 部署。
+- provider 未切换：结果面板注音仍走旧标注器；日语书面假名、英语整词候选与 hover 的 UI 验收在 010/011。
+- 真实网络下载与断网重试未验证；**未上传 ModelScope**，`scripts/sync-deps.py` 与 `scripts/dev.ps1 publish -full` 的依赖清单仍是旧路径（014 处理）。
+- 未做干净系统 AOT 部署，也未在真实 UI 上练习重启替换与复制/选区/收藏回归。
 - NativeAOT 产物字节不承诺可复现；`pack.json` 记录的是本次实测值，重跑只覆写清单与包文件。
-- 未上传 ModelScope；`scripts/sync-deps.py` 与 `scripts/dev.ps1 publish -full` 的依赖清单仍是旧路径（014 处理）。
