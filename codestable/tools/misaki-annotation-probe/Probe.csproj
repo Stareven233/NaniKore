@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Inspect.cs" />
+    <Compile Include="ProbeIpa.cs" />
+    <Compile Include="../../../src/NaniKore/Phonetics/IpaTranscription.cs" Link="IpaTranscription.cs" />
+    <Reference Include="MisakiSharp" HintPath="$(MisakiAssembly)" />
+    <Reference Include="Mono.Cecil" HintPath="$(CecilAssembly)" />
+  </ItemGroup>
+</Project>

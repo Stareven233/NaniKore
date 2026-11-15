@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>annotations</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishAot>true</PublishAot>
+    <NativeLib>Shared</NativeLib>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <StripSymbols>true</StripSymbols>
+    <DebugType>none</DebugType>
+    <DefineConstants Condition="'$(Package)' == 'ja'">$(DefineConstants);JAPANESE</DefineConstants>
+    <DefineConstants Condition="'$(Package)' == 'en-core'">$(DefineConstants);NO_FALLBACK</DefineConstants>
+    <DefineConstants Condition="'$(Patched)' == 'true'">$(DefineConstants);PATCHED</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="NativeExports.cs" />
+    <Compile Include="ProbeIpa.cs" />
+    <Compile Include="../../../src/NaniKore/Phonetics/IpaTranscription.cs" Link="IpaTranscription.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Patched)' != 'true'">
+    <Reference Include="MisakiSharp" HintPath="$(MisakiAssembly)" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Patched)' == 'true'">
+    <Compile Include="$(PatchedSources)/*.cs" />
+    <EmbeddedResource Include="$(ResourcesRoot)/*.gz" LogicalName="MisakiSharp.%(Filename)%(Extension)" WithCulture="false" />
+  </ItemGroup>
+</Project>
