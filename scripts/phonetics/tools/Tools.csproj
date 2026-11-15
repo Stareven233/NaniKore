@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- 单独构建时回落到仓库根；构建脚本会显式传入。 -->
+    <RepositoryRoot Condition="'$(RepositoryRoot)' == ''">$(MSBuildThisFileDirectory)../../..</RepositoryRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../native/KokoroIpa.cs" Link="KokoroIpa.cs" />
+    <Compile Include="$(RepositoryRoot)/src/NaniKore/Phonetics/IpaTranscription.cs" Link="IpaTranscription.cs" />
+  </ItemGroup>
+</Project>

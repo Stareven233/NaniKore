@@ -1,0 +1,183 @@
+diff --git a/EnglishG2P.Lexicon.cs b/EnglishG2P.Lexicon.cs
+index 15c73d8..eb3df36 100644
+--- a/EnglishG2P.Lexicon.cs
++++ b/EnglishG2P.Lexicon.cs
+@@ -40,6 +40,14 @@ public sealed partial class EnglishG2P {
+             return (sections["GOLD"], sections["SILVER"]);
+         }
+ 
++        /// <summary> 只认明确收录的词条，返回全部读音；自动拼字与词干还原不能冒充候选来源。 </summary>
++        public string[] Candidates(string word) {
++            var entry = golds.GetValueOrDefault(word) ?? silvers.GetValueOrDefault(word)
++                ?? golds.GetValueOrDefault(word.ToLowerInvariant()) ?? silvers.GetValueOrDefault(word.ToLowerInvariant());
++            return entry is string single ? [single] : entry is Dictionary<string, string> tagged
++                ? tagged.Values.Where(p => !string.IsNullOrEmpty(p)).Distinct().ToArray() : [];
++        }
++
+         /// <summary> Registers custom pronunciations as gold entries, so they win over silver and the espeak fallback. </summary>
+         /// <remarks> Grows capitalization variants like misaki's grow_dictionary ("kokoro" also covers "Kokoro"), with explicitly listed words winning over grown ones. </remarks>
+         public void AddWords(List<(string word, string phonemes)> dict) {
+diff --git a/EnglishG2P.cs b/EnglishG2P.cs
+index 5a728fb..e9c9fb7 100644
+--- a/EnglishG2P.cs
++++ b/EnglishG2P.cs
+@@ -61,11 +61,20 @@ public sealed partial class EnglishG2P {
+     /// <summary> Teaches this G2P custom pronunciations (e.g. brand names), registered as gold entries so they win over silver and the espeak fallback. </summary>
+     /// <remarks> Capitalization variants are grown automatically ("kokoro" also covers "Kokoro"). Phonemes use misaki's IPA, e.g. "kOkˈOɹO". </remarks>
+     public void AddWords(List<(string word, string phonemes)> dict) => lexicon.AddWords(dict);
++    /// <summary> 取词典里该词明确收录的全部读音，不做拼字或词干猜测。 </summary>
++    public string[] Candidates(string word) => lexicon.Candidates(word);
+ 
+     /// <summary> Converts text to misaki-style IPA, also returning the per-word tokens with their phonemes and 1-5 confidence ratings. </summary>
+     public (string Phonemes, List<MToken> Tokens) Phonemize(string text) {
+         var (processed, spans, features) = Preprocess(text);
+-        var words = Retokenize(FoldLeft(Tokenize(processed, spans, features)));
++        var sourceTokens = Tokenize(processed, spans, features);
++        // tab/换行在 tokenizer 中可能独立成词元；保留分隔关系，禁止 TTS 重组把空白粘到下一个单词。
++        for (int i = sourceTokens.Count - 1; i >= 0; i--) {
++            if (!sourceTokens[i].Text.All(char.IsWhiteSpace)) continue;
++            if (i > 0) sourceTokens[i - 1].Whitespace += sourceTokens[i].Text + sourceTokens[i].Whitespace;
++            sourceTokens.RemoveAt(i);
++        }
++        var words = Retokenize(FoldLeft(sourceTokens));
+         var ctx = new TokenContext();
+         for (int i = words.Count - 1; i >= 0; i--) {
+             if (words[i].Single is { } single) {
+@@ -107,29 +116,7 @@ public sealed partial class EnglishG2P {
+ 
+     /// <summary> Pulls misaki's [text](feature) links out of the text, remembering each token's span so features can be re-attached after tagging. </summary>
+     static (string Text, List<(int Start, int Length)> Spans, Dictionary<int, object> Features) Preprocess(string text) {
+-        var (result, spans, features) = (new StringBuilder(), new List<(int, int)>(), new Dictionary<int, object>());
+-        text = text.TrimStart();
+-        int lastEnd = 0;
+-        foreach (Match m in LinkRegex.Matches(text)) {
+-            AddChunkSpans(text[lastEnd..m.Index]);
+-            if (ParseFeature(m.Groups[2].Value) is { } feature) { features[spans.Count] = feature; }
+-            spans.Add((result.Length, m.Groups[1].Value.Length));
+-            result.Append(m.Groups[1].Value);
+-            lastEnd = m.Index + m.Length;
+-        }
+-        if (lastEnd < text.Length) { AddChunkSpans(text[lastEnd..]); }
+-        return (result.ToString(), spans, features);
+-
+-        void AddChunkSpans(string chunk) {
+-            for (int s = 0; s < chunk.Length;) {
+-                if (char.IsWhiteSpace(chunk[s])) { s++; continue; }
+-                int e = s + 1;
+-                while (e < chunk.Length && !char.IsWhiteSpace(chunk[e])) { e++; }
+-                spans.Add((result.Length + s, e - s));
+-                s = e;
+-            }
+-            result.Append(chunk);
+-        }
++        return (text, [], []);
+     }
+ 
+     /// <summary> A feature is a stress number, /phonemes/, or #numberflags# -- anything else is silently dropped, like misaki does. </summary>
+diff --git a/EnglishTagger.cs b/EnglishTagger.cs
+index 6189514..ae04a9d 100644
+--- a/EnglishTagger.cs
++++ b/EnglishTagger.cs
+@@ -10,7 +10,7 @@ using System.IO.Compression;
+ /// in) against integer weights, then argmaxes over the tag set with ordinal-string tie-breaks.
+ /// </remarks>
+ public static class EnglishTagger {
+-    static readonly Lazy<(string[] Tags, Dictionary<string, string> TagDict, Dictionary<string, uint[]> Weights)> model = new(Load);
++    static Lazy<(string[] Tags, Dictionary<string, string> TagDict, Dictionary<string, uint[]> Weights)> model = new(Load);
+ 
+     /// <summary> Weights pack as (tagIndex &lt;&lt; 16) | (ushort)weight per uint, sparse per feature -- unpacked on the fly while scoring. </summary>
+     static (string[], Dictionary<string, string>, Dictionary<string, uint[]>) Load() {
+@@ -88,4 +88,6 @@ public static class EnglishTagger {
+     }
+ 
+     static string Suffix(string s, int k) => s.Length <= k ? s : s[^k..];
++    /// <summary> 释放感知机权重，只解除引用；调用方必须持有本语言的锁。 </summary>
++    public static void Release() => model = new(Load);
+ }
+diff --git a/EnglishTokenizer.cs b/EnglishTokenizer.cs
+index 2351151..5cbd675 100644
+--- a/EnglishTokenizer.cs
++++ b/EnglishTokenizer.cs
+@@ -16,8 +16,8 @@ public static class EnglishTokenizer {
+     public static string TablePath { get; set; }
+ 
+     static Regex prefixSearch, suffixSearch, infixFinditer, urlMatch;
+-    static readonly Dictionary<string, string[]> specialRules = [];
+-    static readonly Lazy<Dictionary<string, List<string[]>>> specialMatcher = new(LoadTables);
++    static Dictionary<string, string[]> specialRules = [];
++    static Lazy<Dictionary<string, List<string[]>>> specialMatcher = new(LoadTables);
+ 
+     /// <summary> Tokenizes text exactly like spacy's `[(t.text, t.whitespace_) for t in nlp.tokenizer(text)]` -- concatenating Text+Whitespace reproduces the input. </summary>
+     public static List<(string Text, string Whitespace)> Tokenize(string text) {
+@@ -172,4 +172,6 @@ public static class EnglishTokenizer {
+         tokens.Clear();
+         tokens.AddRange(result);
+     }
++    /// <summary> 释放分词表与正则，只解除引用；调用方必须持有本语言的锁。 </summary>
++    public static void Release() { specialRules = []; specialMatcher = new(LoadTables); prefixSearch = suffixSearch = infixFinditer = urlMatch = null; }
+ }
+diff --git a/EspeakReplay.cs b/EspeakReplay.cs
+index 2f163ed..f07149d 100644
+--- a/EspeakReplay.cs
++++ b/EspeakReplay.cs
+@@ -411,4 +411,6 @@ public sealed class EspeakReplay {
+     }
+ 
+     static bool IsNasal(char phoneme) => phoneme is 'n' or 'm' or 'ŋ' or 'ɲ' or 'ɳ';
++    /// <summary> 释放回退语音缓存，只解除引用；调用方必须持有本语言的锁。 </summary>
++    public static void Release() { lock (loaded) { loaded.Clear(); } }
+ }
+diff --git a/JapaneseTagger.cs b/JapaneseTagger.cs
+index 02de274..d6ffe74 100644
+--- a/JapaneseTagger.cs
++++ b/JapaneseTagger.cs
+@@ -8,7 +8,7 @@ using System.Text;
+ public static class JapaneseTagger {
+     const int MaxGroupingSize = 24;
+ 
+-    class Token { public ushort Lc, Rc; public short WCost; public string Pron; }
++    class Token { public ushort Lc, Rc; public short WCost; public string Pron, Kana; }
+     class Node { public int Begin, End; public Token Token; public bool IsUnk; }
+     class EndEntry { public long Cost; public ushort Rc; public Node Node; public EndEntry Prev; }
+ 
+@@ -16,7 +16,7 @@ public static class JapaneseTagger {
+     static Dictionary<int, int[]> lexiconLengths;
+     static uint[] charInfo;  // per-codepoint CharInfo bitfield: compat mask:18 | default category:8 | length:4 | group:1 | invoke:1
+     static Token[][] unkTokens;
+-    static readonly Lazy<bool> loaded = new(Load);
++    static Lazy<bool> loaded = new(Load);
+ 
+     // Connection costs: an int8 low-rank base (integer-exact, so it matches the generator bit-for-bit)
+     // overridden by exact values for the ~1% of pairs real text actually consults, stored CSR by left rcAttr.
+@@ -106,7 +106,7 @@ public static class JapaneseTagger {
+         }
+         var result = new List<(string, string, int, bool)>();
+         for (var entry = eosLeft; entry.Node is Node node; entry = entry.Prev) {
+-            result.Add((text[charIdx[node.Begin]..charIdx[node.End]], node.Token.Pron, DefaultType(Info(cp[node.Begin])), node.IsUnk));
++            result.Add((text[charIdx[node.Begin]..charIdx[node.End]], node.Token.Kana, DefaultType(Info(cp[node.Begin])), node.IsUnk));
+         }
+         result.Reverse();
+         return result;
+@@ -129,8 +129,8 @@ public static class JapaneseTagger {
+                 var parts = line.Split('\t');
+                 var tokens = new Token[parts.Length - 1];
+                 for (int i = 1; i < parts.Length; i++) {
+-                    var f = parts[i].Split(',', 4);
+-                    tokens[i - 1] = new() { Lc = ushort.Parse(f[0]), Rc = ushort.Parse(f[1]), WCost = short.Parse(f[2]), Pron = Unescape(f[3]) };
++                    var f = parts[i].Split(',', 5);
++                    tokens[i - 1] = new() { Lc = ushort.Parse(f[0]), Rc = ushort.Parse(f[1]), WCost = short.Parse(f[2]), Pron = Unescape(f[3]), Kana = Unescape(f[4]) };
+                 }
+                 lexicon[Unescape(parts[0])] = tokens;
+             }
+@@ -208,4 +208,11 @@ public static class JapaneseTagger {
+         }
+         return sb.ToString();
+     }
++    /// <summary> 释放词表与连接矩阵，只解除引用；调用方必须持有本语言的锁。 </summary>
++    public static void Release() {
++        lexicon = null; lexiconLengths = null; charInfo = null; unkTokens = null;
++        rowMean = null; colMean = null; shiftA = null; factorA = null; factorB = null;
++        cacheRowOffsets = null; cacheCols = null; cacheVals = null;
++        loaded = new(Load);
++    }
+ }

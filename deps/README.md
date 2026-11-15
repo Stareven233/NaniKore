@@ -40,9 +40,16 @@ deps/phonetics/
 ├─ en/     ipa_dict.db（SQLite，CMUdict 转 IPA，约 3.8 MB）
 ├─ zh/     CC-CEDICT + Unihan 转译 MeCab 词典（约 10 MB）
 │         + dicrc（MeCab 编译期材料，运行期不读取：无 dicrc 时 MeCab 直接按目录加载 sys.dic）
+├─ misaki/           正式日英注音语言包（替代 ja/en，尚未接入主程序）
+│  ├─ ja/  NaniKore.Phonetics.Ja.dll + pack.json + licenses/（约 20.8 MB）
+│  └─ en/  NaniKore.Phonetics.En.dll + pack.json + licenses/（约 8.5 MB）
 ├─ _source/  公开数据源原件（仅供再生管线，gitignore）
 ├─ _build/   MeCab 词典编译中间产物（gitignore）
 ```
+
+`misaki/` 由 `scripts/phonetics/Build-MisakiPacks.ps1` 生成，每包的 `pack.json` 记录字节、SHA-256、ABI 版本、
+win-x64 架构、导出列表、PE 普通导入表与资源哈希；`licenses/` 附上游许可、UniDic 许可与派生说明。
+构建与实测见 `codestable/notes/phonetics-packs.md`。主程序尚未接入，下载器与 manifest 仍在旧 `ja/en/zh` 路径。
 
 下载器实际获取的是 PhoneticDependencyManifest 登记的九个文件（ja 4、en 1、zh 4）；IPAdic-COPYING.txt 与 dicrc 不在下载清单中，仅随目录镜像一并同步，分别供许可归属与再生管线使用。
 

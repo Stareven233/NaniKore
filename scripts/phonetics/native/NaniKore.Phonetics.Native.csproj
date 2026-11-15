@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    注音语言包的原生工程：每个语言包编出一份自包含的 NativeAOT DLL。
+    源码由构建脚本准备（$(SourcesRoot)：打过补丁的上游源文件），
+    资源由构建脚本按白名单裁剪（$(ResourcesRoot)），这里不引用 NuGet 的 MisakiSharp 原件。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <RootNamespace>NaniKore.Phonetics.Native</RootNamespace>
+    <AssemblyName>$(PackAssemblyName)</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishAot>true</PublishAot>
+    <NativeLib>Shared</NativeLib>
+    <!-- 语言引擎依赖区域设置（UniDic/词典表都是 UTF-8），包本身不能编成 invariant。 -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <StripSymbols>true</StripSymbols>
+    <DebugType>none</DebugType>
+    <DefineConstants Condition="'$(PackLanguage)' == 'ja'">$(DefineConstants);JAPANESE</DefineConstants>
+    <!-- 单独构建时回落到仓库根；构建脚本会显式传入 SourcesRoot/ResourcesRoot。 -->
+    <RepositoryRoot Condition="'$(RepositoryRoot)' == ''">$(MSBuildThisFileDirectory)../../..</RepositoryRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Exports.cs" />
+    <Compile Include="KokoroIpa.cs" />
+    <Compile Include="$(SourcesRoot)/*.cs" />
+    <Compile Include="$(RepositoryRoot)/src/NaniKore/Phonetics/IpaTranscription.cs" Link="IpaTranscription.cs" />
+    <EmbeddedResource Include="$(ResourcesRoot)/*.gz" LogicalName="MisakiSharp.%(Filename)%(Extension)" WithCulture="false" />
+  </ItemGroup>
+</Project>

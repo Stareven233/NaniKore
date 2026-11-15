@@ -1,0 +1,112 @@
+{
+  "schema": 1,
+  "abi": 1,
+  "architecture": "win-x64",
+  "toolchain": {
+    "dotnet": "11.0.100",
+    "python": "3.14"
+  },
+  "exports": [
+    "nk_phonetics_abi_version",
+    "nk_phonetics_annotate",
+    "nk_phonetics_release",
+    "nk_phonetics_free"
+  ],
+  "upstream": {
+    "package": "MisakiSharp",
+    "version": "2.2.0",
+    "repository": "https://github.com/Lyrcaxis/MisakiSharp",
+    "commit": "beb91a9f06ebe5e25e595b5a3c990ee616ad75e5",
+    "license": "Apache-2.0",
+    "nupkg": {
+      "path": "misakisharp/2.2.0/misakisharp.2.2.0.nupkg",
+      "bytes": 69280086,
+      "sha256": "C590870B16782306E3E7F5446DCA29A12CAA0CD067C6F9A34B8736534615CB50"
+    },
+    "assembly": {
+      "path": "misakisharp/2.2.0/lib/netstandard2.0/MisakiSharp.dll",
+      "sha256": "8D20DB9721A35C41A3AF4417B45659F86AE818F23F53FD40B64ACD1B884FD09B"
+    },
+    "sources": {
+      "JapaneseTagger.cs": "283A0A6CB93B2D9B38E478007535CA72EA34031961AFDB2ECC921600D1A4D1E5",
+      "EnglishG2P.cs": "CAC5820D855A36C8E5C7A194D7F708DC981EC6AF3F3D22495051209FC5C6993E",
+      "EnglishG2P.Lexicon.cs": "9F8940AF416C8FEE61268962E789BD8DA8BF929AAE86D3516ED405C4627C80B2",
+      "EnglishTokenizer.cs": "393A7368078B45C2647BEAC449A2C8A45EBC9AD28B2788FB6211A2069462C65D",
+      "EnglishTagger.cs": "F03EA0070AAE445AC56FDEA6982F6C2FA16269BA8E453EE31F041AB2E7546ECC",
+      "EspeakG2P.cs": "C0BD9A759A070B18CFD88D3A4A4182EECFF22DE6CF490F089CBF7BB1ECF2BED1",
+      "EspeakReplay.cs": "99902281740D310EB285B33EC0074E4537CCEDA94668EE3F85CEF05669DA8ACE",
+      "LICENSE": "CFC7749B96F63BD31C3C42B5C471BF756814053E847C10F3EB003417BC523D30",
+      "NOTICE": "6528653B3D03B15F2A52A311842A060972F6D1705624CDC522729D634850E69C"
+    },
+    "patch": {
+      "file": "patches/misakisharp-2.2.0.patch",
+      "sha256": "46818E35F52DE09DD3CB1989A5FF6B5C5F8CEB8615D559D3F934575D84E11863",
+      "patched": {
+        "JapaneseTagger.cs": "1FB80C93717F3958F4D9B466DB2EE8B3B049F2330B28B2DC6B8C58A862EFEB5B",
+        "EnglishG2P.cs": "997DB0D90B501BD141180DF2CC137640E93D0330AB34110641E2564AFF6617F6",
+        "EnglishG2P.Lexicon.cs": "93399EC57A6D4B39290B6D041933FEC8E646C82EC3564BDDEE3292C8A8D4D6C1",
+        "EnglishTokenizer.cs": "98C270E2F0A4D33AABF5EC5F7324DB3015EAD7077D244A33F7BDBE045CEF8B94",
+        "EnglishTagger.cs": "4A7A40E37B36D09F16EE919898FAFA84D2ECC42609C9FFC8DF8608D2BFD4F38D",
+        "EspeakReplay.cs": "84CC4928BE2A28C93822F3CD5C8C9ED120747B238127510CBDCE9BF24DF57B23"
+      }
+    }
+  },
+  "dictionary": {
+    "name": "UniDic",
+    "version": "3.1.0",
+    "source": "https://cotonoha-dic.s3-ap-northeast-1.amazonaws.com/unidic-3.1.0.zip",
+    "sourceIndex": "https://github.com/polm/unidic-py/blob/master/dicts.json",
+    "license": "BSD-3-Clause",
+    "archive": {
+      "bytes": 525943040,
+      "sha256": "638718C4C63625AB300DE4C92C67925D54C0E9E3830009EAA992F29819D59C43"
+    },
+    "sysDic": {
+      "sha256": "F019F95838242CD614953A25201AD0B623B9C1CBCA90DE2507DF4510DB1B192C"
+    },
+    "fieldIndex": {
+      "pron": 9,
+      "kana": 20
+    },
+    "licenseFiles": [
+      "licenses/BSD",
+      "licenses/COPYING",
+      "dicrc"
+    ]
+  },
+  "packs": {
+    "ja": {
+      "library": "NaniKore.Phonetics.Ja.dll",
+      "language": "ja",
+      "sources": [
+        "JapaneseTagger.cs"
+      ],
+      "resources": [
+        "ja_lexicon.tsv.gz",
+        "ja_char_unk.tsv.gz",
+        "ja_matrix_compact.bin.gz"
+      ],
+      "regenerated": {
+        "ja_lexicon.tsv.gz": "由 UniDic 3.1.0 sys.dic 再生：保留原字段并追加书面 kana 列"
+      }
+    },
+    "en": {
+      "library": "NaniKore.Phonetics.En.dll",
+      "language": "en",
+      "sources": [
+        "EnglishG2P.cs",
+        "EnglishG2P.Lexicon.cs",
+        "EnglishTokenizer.cs",
+        "EnglishTagger.cs",
+        "EspeakG2P.cs",
+        "EspeakReplay.cs"
+      ],
+      "resources": [
+        "en_lexicon_us.tsv.gz",
+        "en_tokenizer.tsv.gz",
+        "en_tagger.bin.gz"
+      ],
+      "regenerated": {}
+    }
+  }
+}

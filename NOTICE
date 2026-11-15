@@ -81,6 +81,9 @@ NaniKore 自身代码依据 GNU 通用公共许可证第 3 版或（可选）更
 
 ## 3. 词典与数据（按语言下载至 `deps/phonetics/`，镜像于 ModelScope `Noetuu/nanikore-deps`）
 
+> 2026-11-15 起正式日英包切换为 `deps/phonetics/misaki/`（见 3.4）：日语采用 UniDic 3.1.0 再生的书面假名词表，
+> 英语采用 MisakiSharp 选音与词典候选。3.1 IPAdic 与 3.2 CMUdict 保留为当前生产链的既有事实记录，
+
 ### 3.1 IPAdic（日语文档形态素词典，编译态）
 
 - 许可：IPAdic 授权文本，全文随附如下（版权 2000-2003 Nara Institute of Science and Technology）：
@@ -181,6 +184,24 @@ NaniKore 自身代码依据 GNU 通用公共许可证第 3 版或（可选）更
   CC-CEDICT 未收录单字的默认读音以 Unicode Unihan Database `kMandarin` 字段补充
   （Unicode License v3，<https://www.unicode.org/license.txt>）。
 - 用途：简体中文拼音注音的词面/读音来源。
+
+### 3.4 日英原生语言包（MisakiSharp 2.2.0 + UniDic 3.1.0）
+
+- **MisakiSharp 2.2.0**（<https://github.com/Lyrcaxis/MisakiSharp>，提交 `beb91a9f06ebe5e25e595b5a3c990ee616ad75e5`）
+  - 许可：Apache License 2.0。全文与上游 NOTICE 随包附于 `deps/phonetics/misaki/*/licenses/`。
+  - 用途：日语分词与英语 G2P 引擎。以最小源码补丁编译进 NativeAOT 语言包，补丁原文在仓库
+    `scripts/phonetics/patches/misakisharp-2.2.0.patch`，修改内容见随包 `licenses/DERIVED.md`。
+  - 上游 NOTICE 中 misaki（Apache-2.0）、spaCy（MIT）、PaddleSpeech（Apache-2.0）、jieba（MIT）、
+    pypinyin（MIT）、num2words（LGPL-2.1）、phonemizer（GPL-3.0）、cutlet（MIT）、MeCab（BSD/LGPL/GPL）等
+    来源声明继续适用。
+- **UniDic 3.1.0**（<https://clrd.ninjal.ac.jp/unidic/>，经 <https://cotonoha-dic.s3-ap-northeast-1.amazonaws.com/unidic-3.1.0.zip> 获取）
+  - 许可：BSD-3-Clause。`licenses/UniDic-BSD.txt`、`licenses/UniDic-COPYING.txt` 与 `licenses/UniDic-dicrc.txt`
+    随日语包附送。
+  - 修改/派生说明：`ja_lexicon.tsv.gz` 由本仓库从同版 `sys.dic` 再生——保留 MisakiSharp 原有词表字段，
+    逐词条追加 UniDic 第 20 字段（`kana`，书面假名）；`*` 条目写空串表示词典无书面读音。
+    逐条核对词面、词条顺序、左右连接 ID、成本与原始发音，身份失配为 0。
+  - 英语包资源 `en_lexicon_us.tsv.gz`、`en_tokenizer.tsv.gz`、`en_tagger.bin.gz` 为上游原样裁剪。
+  - 每包附带 `pack.json`，记录字节、SHA-256、ABI 版本、架构、导出列表、PE 普通导入表、资源哈希与上游版本。
 
 ## 4. OCR / ONNX Runtime（按需下载至 `deps/`）
 
