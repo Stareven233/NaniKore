@@ -1109,7 +1109,7 @@ internal static partial class SelfTest
 
         if (PhoneticAnnotatorRegistryHolder.Default.GetAnnotator("ja")?.IsAvailable != true)
         {
-            Skip("ja 词典未就绪（deps/phonetics/ja），跳过短文本全注端到端断言");
+            Skip("ja 原生语言包未就绪（deps/phonetics/misaki/ja），跳过短文本全注端到端断言");
             return;
         }
 
@@ -1118,9 +1118,10 @@ internal static partial class SelfTest
 
         panel.Reset("日本語を勉強する", "OCR 完成", autoTranslate: false);
         WaitForAnnotation(panel);
+        // UniDic 把 日本語 切成 日本 + 語（旧 IPAdic 是一个词），断言按新分词写，不机械追求与旧口径等价。
         Check(
             "short source annotates every candidate word instead of filtering common ones",
-            panel.AnnotatedSourceText == "日本語[にほんご]を勉強[べんきょう]する",
+            panel.AnnotatedSourceText == "日本[にっぽん]語[ご]を勉強[べんきょう]する",
             $"actual={panel.AnnotatedSourceText}");
 
         const string longSource = "先生は日本語で問題を説明して、生徒たちは静かに聞いていた。その後みんなで復习を始めた。";

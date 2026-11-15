@@ -1,8 +1,11 @@
 # 日英原生注音语言包：构建链与实测
 
 > 2026-11-15。对应 [Epic 003 / 008](../../epics/003-o-本地三语注音准确性与结构化交互升级/issues/008-o-原生语言包正式重打包与数据再生.md)。
-> 本文只记录正式构建链的产物与实测；**生产 provider 尚未切换**，主程序仍用 IPAdic / CMUdict / 外部中文数据（009 起接入）。
+> 本文只记录正式构建链的产物与实测。**日语 provider 已于 010 切换到原生包**（英语仍 CMUdict，011 切换；中文仍外部数据，012 内嵌），
+> 宿主接入从 009 开始。
 > 穿刺结论与旧口径失败证据见 [注音适配穿刺](misaki-annotation-spike.md)。
+> 速查：为什么日语词表要再生（体积代价）见「日语词表为什么来自 UniDic 再生」；
+> 裁剪与构建步骤见「语言包是怎么裁与怎么编的」；升版本要动哪几处见「将来怎么升级」。
 
 ## 入口与固定输入
 
@@ -90,7 +93,7 @@ PE 普通导入表只有系统 DLL 与 UCRT：`KERNEL32/ADVAPI32`（英语另有
 
 ## 宿主接入骨架（009）
 
-`src/NaniKore/Phonetics/Native/` 已落地 ABI v1 客户端、包身份清单、状态机、下载安装与闲置释放，**但生产 provider 尚未切换**（日语仍 IPAdic、英语仍 CMUdict，切换在 010/011）。
+`src/NaniKore/Phonetics/Native/` 已落地 ABI v1 客户端、包身份清单、状态机、下载安装与闲置释放；日语 provider 在 010 已切到该链路，英语仍 CMUdict（011 切换）。
 
 - 清单：`NativePhoneticManifest` 记录库字节、SHA-256、ABI、架构、四个导出与随包许可哈希；`deps/phonetics/misaki/<lang>/pack.json` 与之双向核对，任何一项不符即拒绝装载。
 - 客户端：先校验文件与 PE（win-x64）再按绝对路径 `NativeLibrary.TryLoad`，绑定后比对 ABI 与导出；输出交回同 DLL 释放，模块永不卸载。
@@ -98,9 +101,63 @@ PE 普通导入表只有系统 DLL 与 UCRT：`KERNEL32/ADVAPI32`（英语另有
 - 设置页新增「注音语言包（本地原生）」分组，状态覆盖缺失/需更新/下载中/失败/就绪/重启生效。
 - 实测：Debug 与 NativeAOT 宿主自测均 1911 项通过；`NaniKore.exe` 23,062,528 → 23,261,184 B（+198,656）。详见 [issue 009](../epics/003-o-本地三语注音准确性与结构化交互升级/issues/009-o-原生ABI下载与资源生命周期接入.md)。
 
+## 日语 provider 切换（010）
+
+- `TextAnnotatorRegistry.CreateDefault()` 的 `ja` 槽位直接取 `NativePhoneticPackHost` 的原生包标注器，不再新建旧 IPAdic 标注器；旧 `JapaneseFuriganaAnnotator`（LibNMeCab）已留档到 `.temp/010-日语/`，包引用与旧 ja 词典卡片、NOTICE 3.1 随旧 provider 在 014 清理。
+- 宿主侧切分 `src/NaniKore/Phonetics/JapaneseRuby.cs`：UniDic 给整词片假名，界面要只覆盖汉字的振假名——词首词尾送假名切回底字之外（`食べ`→`食[た]べ`、`凍り付く`→`凍り付[こおりつ]く`），内部送假名留在底字里（`買い出し`→`買い出[かいだ]し`），底字只允许汉字+假名且必须含汉字；片假名转平假名后输出。
+- 金样本（Debug 与 NativeAOT 均通过）：`東京→とうきょう`、`躊躇→ちゅうちょ`、`今日→きょう`、`凍り付く→こおりつ`；送假名 `食べた→食[た]べた`、`お祝い→お祝[いわ]い`、`買い出し→買い出[かいだ]し`、`行きます→行[い]きます`；未知词/数字/拉丁/纯假名不注音；emoji（代理项对）、换行与全角空白按原文 UTF-16 定位且区间不重叠。
+- 分词差异（记录、不追求与旧口径等价）：`日本語` → `日本 + 語`；`睡眠薬` → `睡眠 + 薬`；`行く` 等词面仍是整词，过滤与去重继续按整词词面裁决。
+- `NativeTextAnnotator` 的包目录可注入，使「设置页状态」与「真实加载」永远指向同一处（注入目录缺失时即真降级为纯文本，不抛异常）。
+- 实测：`./scripts/dev.ps1 test` 与 `--self-test` 均 1922 项通过（NativeAOT 宿主同样 1922）；日语冷加载 ~1.33 s、热态 20 次 0.4–0.6 ms。详见 [issue 010](../epics/003-o-本地三语注音准确性与结构化交互升级/issues/010-o-日语书面振假名接入.md)。
+
+## 日语词表为什么来自 UniDic 再生，而不是 misaki 自带
+
+一句话：**是同一份词典，只把上游生成器丢掉的一列补回来**。misaki 的 `ja_lexicon.tsv.gz` 本来就是 UniDic 转的，但 `generate_ja_dict.py` 只存第 9 列 `pron`（发音表记），丢了第 20 列 `kana`（书面假名），于是 `東京→トーキョー`、`は→ワ`。假名要表达「怎么写」不是「怎么念」，猜不出来，只能有数据。
+
+| 词面 | misaki 自带（pron） | 界面需要（kana） |
+| --- | --- | --- |
+| 東京 | トーキョー | トウキョウ |
+| 今日 | キョー | キョウ |
+| 凍り付く | コーリツク | コオリツク |
+
+体积账（唯一变动的是词表，另两份资源原样照抄）：
+
+| 资源 | misaki 自带 | 本包 | 差 |
+| --- | ---: | ---: | ---: |
+| `ja_lexicon.tsv.gz` | 8,286,957 | 10,143,927 | **+1.86 MB** |
+| `ja_char_unk.tsv.gz` / `ja_matrix_compact.bin.gz` | 885 / 10,018,877 | 同 | 0 |
+| 日语 DLL | 18.98 MiB | 20.76 MiB | **+1.86 MB（+9%）** |
+
+代价可接受：多出的就是 87.9 万条词条各一列假名（gzip 后 +22%）；包按需下载、不进主 exe，精简包不带。收益是同一条词条同时给分词与 kana，不会出现「分词给了 東京、另挂的 kana 表却查不到」的分叉。
+
+曾考虑但**未实测**的省体积方案：原版词表 + 运行时另挂一张「词面→kana」表。2026-11-15 决定保持现状，不再为此改动已验收的链。
+
+## 语言包是怎么裁与怎么编的
+
+```powershell
+./scripts/phonetics/Build-MisakiPacks.ps1 -Stage All      # Prepare → Native → Verify
+```
+
+- **裁剪 = 资源白名单 + 源码白名单**，都写在 `scripts/phonetics/misaki-packs.json`，不在代码里硬编码。ja 只留 `ja_lexicon / ja_char_unk / ja_matrix_compact`（不要 `ja_words`）；en 只留 `en_lexicon_us / en_tokenizer / en_tagger`（**不含 espeak 回退表**，未收录词宁可不读），`zh_*` 与 `es/fr/hi/it/pt_*` 一律不进包。
+- **Prepare**：NuGet 原件与包缓存只读；`git apply --check` 先验再打补丁；只导出白名单资源；日语词表换成再生版；跑 `tools audit-ipa` 全量审计（转不了的字符要能点名，不许静默丢）。下载只在缺失时发生（UniDic 压缩包 500 MiB 不会每次重拉）。
+- **Native**：每包一份独立源码目录，只编本包需要的上游文件（ja 只编 `JapaneseTagger.cs`），加我们固定的 `Exports.cs`（C ABI）与 `KokoroIpa.cs`，用 `NativeAOT + Shared` 出 DLL；`InvariantGlobalization=false`（词典表是 UTF-8）。
+- **产物落 `deps/phonetics/misaki/<lang>/`**：DLL + `pack.json` + `licenses/`；`.lib` 等副产品留在 `.temp/misaki-pack`，旧产物移入 `.temp/misaki-pack/previous`（不删）。
+- **Verify**：413 项断言（哈希/字节/架构/ABI/四个导出/UTF-16 对齐/候选/释放重建/并发）。
+
+## 将来怎么升级
+
+1. **改 `misaki-packs.json`**：升 MisakiSharp 要同时换 version / commit / nupkg 与 assembly 哈希 / 逐文件源码哈希，并重做 `patches/misakisharp-2.2.0.patch`（锚点漂移就直接失败，不自动修补）。
+2. **升 UniDic**：换 `dictionary.version/source/sysDic.sha256`，重跑 `RegenerateKana.py`（mtime=0，可重复生成）。**字段序号以同版 `dicrc` 为准**，不要照搬 3.1.0 的 `pron=9/kana=20`（早期照旧版第 17 列读到一堆 `*` 的产物已作废）。
+3. **重跑构建链** → 得新 DLL 字节数与 SHA-256。
+4. **回填 `NativePhoneticManifest.Packs`**：DLL 字节/SHA，许可文件变过也要同步。**只换 DLL 不改清单会被判为「需更新」并拒绝装载**。
+5. **跑验收**：`./scripts/phonetics/verify`（413 项）+ `./scripts/dev.ps1 test`（Debug 与 AOT 宿主），再看日语金样本与分词变化是否可接受。
+6. **上传 ModelScope 并更新哈希**（014 之后）：未上传前不要写「分发完成」。
+
+NativeAOT 产物不承诺二进制可复现，所以每轮都覆盖 `pack.json`，并以哈希而非版本号判定身份。
+
 ## 未覆盖
 
-- provider 未切换：结果面板注音仍走旧标注器；日语书面假名、英语整词候选与 hover 的 UI 验收在 010/011。
+- 英语 provider 未切换：结果面板的整词候选与 hover 仍在 011；日语单读（无候选）。
+- 旧 ja 词典下载卡片仍与原生包卡片并存（契约内的过渡态），014 随旧 provider 一起下线。
 - 真实网络下载与断网重试未验证；**未上传 ModelScope**，`scripts/sync-deps.py` 与 `scripts/dev.ps1 publish -full` 的依赖清单仍是旧路径（014 处理）。
 - 未做干净系统 AOT 部署，也未在真实 UI 上练习重启替换与复制/选区/收藏回归。
-- NativeAOT 产物字节不承诺可复现；`pack.json` 记录的是本次实测值，重跑只覆写清单与包文件。

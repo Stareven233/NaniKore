@@ -21,7 +21,7 @@ internal static partial class SelfTest
         TestPhoneticDictionaryStates();
         TestRegistryResetAvailability();
         TestAnnotationPerformanceBudget();
-        TestJapaneseFuriganaDictionary();
+        TestJapaneseWrittenKana();
         TestChinesePinyinDictionary();
         TestEnglishIpaDictionary();
         TestEnglishCandidateDatabase();
@@ -75,13 +75,14 @@ internal static partial class SelfTest
         var japanese = registry.GetAnnotator("ja");
         if (japanese is null || !japanese.IsAvailable)
         {
-            Skip("ja 词典未就绪（deps/phonetics/ja），跳过日语词数金样本");
+            Skip("ja 原生语言包未就绪（deps/phonetics/misaki/ja），跳过日语词数金样本");
         }
         else
         {
+            // 分词口径换成 UniDic：日本語 = 日本 + 語，比 IPAdic 多一个候选词（issue 010 记录的差异）。
             Check(
                 "日语词数：含汉字词面计数，纯假名与拉丁不计",
-                japanese.CountWords("日本語を勉強する") == 2 &&
+                japanese.CountWords("日本語を勉強する") == 3 &&
                 japanese.CountWords("躊躇した") == 1 &&
                 japanese.CountWords("これはiPhoneです") == 0 &&
                 japanese.CountWords("薬の過剰摂取で亡くなった被害者。その原因は致死量を超える6錠の睡眠薬。") >= AnnotationProfile.ShortTextWordThreshold);
@@ -137,7 +138,9 @@ internal static partial class SelfTest
 
         foreach (var (language, text) in warmups)
         {
-            registry.ResetAvailability();
+            // 只重置本语言：注音器已换成原生语言包（010），重置全部会让其他语言把日语再拆一遍冷加载，
+            // 1.3s 的冷启动就会稀里糊涂地跑进计时区。
+            registry.ResetAvailability(language);
             _ = registry.GetAnnotator(language)?.Annotate(text, new AnnotationContext(AnnotationProfile.Load(language)));
         }
 
@@ -470,62 +473,140 @@ internal static partial class SelfTest
         }
     }
 
-    private static void TestJapaneseFuriganaDictionary()
+    /// <summary>
+    /// 日语书面振假名金样本（issue 010）：全走生产同一链——原生 UniDic 语言包 + 宿主信号切分。
+    /// 短文本全注口径（wordCount 小于阈值）用于避开停用/难词过滤，只验证「词面→底字+书面假名」本身；
+    /// 缺包时跳过而不是假失败，但「缺包仍然可用」必须验明为纯文本降级。
+    /// 分词与旧 IPAdic 不同（日本+语、睡眠+药），断言按 UniDic 实结果写，不机械要求数量等价。
+    /// </summary>
+    private static void TestJapaneseWrittenKana()
     {
-        var annotator = new JapaneseFuriganaAnnotator();
-        if (!annotator.IsAvailable)
+        using var host = new NativePhoneticPackHost();
+        using var registry = TextAnnotatorRegistry.Create(host);
+        var annotator = registry.GetAnnotator("ja");
+        if (annotator is null || !annotator.IsAvailable)
         {
-            Skip("ja 词典未就绪（deps/phonetics/ja），跳过日语金样本");
+            Skip("ja 原生语言包未就绪（deps/phonetics/misaki/ja），跳过日语书面假名金样本");
             return;
         }
 
-        var defaultContext = new AnnotationContext(AnnotationProfile.Load("ja"));
-        var annotated = Annotated(annotator, "躊躇した", defaultContext);
-        Check("日语金样本：纯汉字日语词注振假名", annotated == "躊躇[ちゅうちょ]した", $"expected=躊躇[ちゅうちょ]した, actual={annotated}");
+        // 短文本全注：2 个候选词远低于阈值，两张过滤器都让位，只凸显切分与书面假名。
+        var shortText = AnnotationProfile.Load("ja", wordCount: 2);
 
-        var userSentence = Annotated(annotator, "薬の過剰摂取で亡くなった被害者。その原因は致死量を超える6錠の睡眠薬。", new AnnotationContext(AnnotationProfile.Load("ja")));
+        Check(
+            "书面假名金样本：東京 → とうきょう（不从长音符猜 とーきょう）",
+            Annotated(annotator, "東京へ行く。", new AnnotationContext(shortText)) == "東京[とうきょう]へ行[い]く。",
+            $"actual={Annotated(annotator, "東京へ行く。", new AnnotationContext(shortText))}");
+
+        Check(
+            "书面假名金样本：躊躇 → ちゅうちょ",
+            Annotated(annotator, "躊躇した", new AnnotationContext(shortText)) == "躊躇[ちゅうちょ]した",
+            $"actual={Annotated(annotator, "躊躇した", new AnnotationContext(shortText))}");
+
+        Check(
+            "书面假名金样本：今日 → きょう",
+            Annotated(annotator, "今日はいい天気です。", new AnnotationContext(shortText)) == "今日[きょう]はいい天気[てんき]です。",
+            $"actual={Annotated(annotator, "今日はいい天気です。", new AnnotationContext(shortText))}");
+
+        // 凍り付く：后接送假名 く 不在底字里，读音取书面假名 こおりつ（全音便的 こーりつ 不被接受）。
+        var frozen = annotator.Annotate("凍り付く", new AnnotationContext(shortText));
+        Check(
+            "书面假名金样本：凍り付く → 底字 凍り付 / 读音 こおりつ",
+            frozen is [{ Start: 0, Length: 3, Reading: "こおりつ" }],
+            $"actual={AnnotatedTextFormatter.Compose("凍り付く", frozen)}");
+
+        var tabeta = Annotated(annotator, "食べた", new AnnotationContext(shortText));
+        Check("送假名切分：食べた → 食[た]べた", tabeta == "食[た]べた", $"actual={tabeta}");
+
+        var oiwai = Annotated(annotator, "お祝い", new AnnotationContext(shortText));
+        Check("送假名切分：お祝い → お祝[いわ]い", oiwai == "お祝[いわ]い", $"actual={oiwai}");
+
+        var kaimonoshi = Annotated(annotator, "買い出しに行く", new AnnotationContext(shortText));
+        Check(
+            "内部送假名：買い出し → 買い出[かいだ]し",
+            kaimonoshi == "買い出[かいだ]しに行[い]く",
+            $"actual={kaimonoshi}");
+
+        var ikimasu = Annotated(annotator, "行きます", new AnnotationContext(shortText));
+        Check("送假名切分：行きます → 行[い]きます", ikimasu == "行[い]きます", $"actual={ikimasu}");
+
+        var ocha = Annotated(annotator, "お茶を飲む", new AnnotationContext(shortText));
+        Check("前缀假名剥离：お茶 → お茶[ちゃ]", ocha.Contains("お茶[ちゃ]"), $"actual={ocha}");
+
+        // 复合词在 UniDic 里拆成两个词元：睡眠 + 药，不再是整词 睡眠薬[すいみんやく]。
+        var nemurigusuri = Annotated(annotator, "睡眠薬", new AnnotationContext(shortText));
+        Check(
+            "复合词按 UniDic 词元分开注音：睡眠藥 → 睡眠[すいみん]薬[やく]",
+            nemurigusuri == "睡眠[すいみん]薬[やく]",
+            $"actual={nemurigusuri}");
+
+        var mochikaeri = Annotated(annotator, "持ち帰り", new AnnotationContext(shortText));
+        Check("内部送假名：持ち帰り → 持ち帰[もちかえ]り", mochikaeri == "持ち帰[もちかえ]り", $"actual={mochikaeri}");
+
+        const string userSentence = "薬の過剰摂取で亡くなった被害者。その原因は致死量を超える6錠の睡眠薬。";
+        var userAnnotated = Annotated(annotator, userSentence, new AnnotationContext(AnnotationProfile.Load("ja")));
         Check(
             "小1-2年级240字基准下难词正常注音",
-            userSentence.Contains("薬[くすり]") &&
-            userSentence.Contains("過剰[かじょう]") &&
-            userSentence.Contains("摂取[せっしゅ]") &&
-            userSentence.Contains("致死[ちし]量[りょう]") &&
-            userSentence.Contains("睡眠薬[すいみんやく]"),
-            $"actual={userSentence}");
+            userAnnotated.Contains("薬[くすり]") &&
+            userAnnotated.Contains("過剰[かじょう]") &&
+            userAnnotated.Contains("摂取[せっしゅ]") &&
+            userAnnotated.Contains("致死[ちし]量[りょう]") &&
+            userAnnotated.Contains("睡眠[すいみん]薬[やく]"),
+            $"actual={userAnnotated}");
 
-        // 每个黄金样例只求值一次：cond 与 detail 共用同一局部，避免同一句子注两遍
-        //（AnnotationContext 的去重是单篇状态，重复调用可能悄悄吞掉首现注音）。
-        var allContext = new AnnotationContext(AnnotationProfile.Load("ja", rareOnly: false));
-        var tabeta = Annotated(annotator, "食べた", allContext);
+        // 同词异音：日本在同一句里先读 にっぽん、后读 にほん，两处都得注（同音才去重）。
+        var repeated = Annotated(annotator, "日本語を勉強する日本語", new AnnotationContext(shortText));
         Check(
-            "送假名切分：食べた",
-            tabeta == "食[た]べた",
-            $"actual={tabeta}");
-        var kaimonoshi = Annotated(annotator, "買い出しに行く", allContext);
-        Check(
-            "送假名切分：買い出しに行く",
-            kaimonoshi == "買い出[かいだ]しに行く",
-            $"actual={kaimonoshi}");
-        var ikimasu = Annotated(annotator, "行きます", allContext);
-        Check(
-            "送假名切分：行きます",
-            ikimasu == "行[い]きます",
-            $"actual={ikimasu}");
-        var ocha = Annotated(annotator, "お茶を飲む", allContext);
-        Check(
-            "前缀假名剥离：お茶 -> お茶[ちゃ]",
-            ocha.Contains("お茶[ちゃ]"),
-            $"actual={ocha}");
-        var repeated = Annotated(annotator, "日本語を勉強する日本語", allContext);
-        Check(
-            "同篇重复词形只注首现",
-            repeated == "日本語[にほんご]を勉強[べんきょう]する日本語",
+            "同词异音补标、同词同音去重（语 只注首现）",
+            repeated == "日本[にっぽん]語[ご]を勉強[べんきょう]する日本[にほん]語",
             $"actual={repeated}");
-        var mixedLatin = annotator.Annotate("これはiPhoneです", allContext);
+
+        var duplicate = annotator.Annotate("躊躇した。また躊躇した。", new AnnotationContext(shortText));
+        Check(
+            "同篇重复词形同读音只注首现",
+            duplicate.Count == 1,
+            $"actual={AnnotatedTextFormatter.Compose("躊躇した。また躊躇した。", duplicate)}");
+
+        // 未知词、数字、拉丁与纯假名：只有合法汉字底字才产生注音。
+        var mixedLatin = annotator.Annotate("これはiPhoneです", new AnnotationContext(shortText));
         Check(
             "中英混排：拉丁词元不被日语标注器认领",
             mixedLatin.Count == 0,
             $"actual={AnnotatedTextFormatter.Compose("これはiPhoneです", mixedLatin)}");
+
+        var kanaOnly = annotator.Annotate("こんにちは、ふりがな", new AnnotationContext(shortText));
+        Check("纯假名不注音", kanaOnly.Count == 0, $"actual={AnnotatedTextFormatter.Compose("こんにちは、ふりがな", kanaOnly)}");
+
+        const string digits = "A株100株と3.14円";
+        var digitSpans = annotator.Annotate(digits, new AnnotationContext(shortText));
+        Check(
+            "数字与拉丁字符不进入底字区间",
+            digitSpans.Count > 0 &&
+            digitSpans.All(span => digits.AsSpan(span.Start, span.Length).ToArray().All(RubyTextParser.IsCjkKanji)),
+            $"actual={AnnotatedTextFormatter.Compose(digits, digitSpans)}");
+
+        // Unicode 边界：emoji（代理项对）、换行与空白按原文 UTF-16 定位，区间不重叠且能对回原文。
+        const string mixed = "😀東京\n\u3000大阪😀";
+        var mixedSpans = annotator.Annotate(mixed, new AnnotationContext(shortText));
+        Check(
+            "emoji/换行/空白：区间按 UTF-16 定位且不重叠",
+            mixedSpans.Count == 2 &&
+            mixedSpans[0] is { Start: 2, Length: 2, Reading: "とうきょう" } &&
+            mixedSpans[1] is { Start: 6, Length: 2, Reading: "おおさか" } &&
+            mixedSpans.Zip(mixedSpans.Skip(1)).All(pair => pair.First.Start + pair.First.Length <= pair.Second.Start) &&
+            string.Equals(AnnotatedTextFormatter.Compose(mixed, mixedSpans), "😀東京[とうきょう]\n\u3000大阪[おおさか]😀", StringComparison.Ordinal),
+            $"actual={AnnotatedTextFormatter.Compose(mixed, mixedSpans)}");
+
+        // 缺包行为：同一个宿主指向不存在的目录时只能退化为纯文本，不能抛异常也不能回退旧引擎。
+        using var emptyHost = new NativePhoneticPackHost(
+            packDirectory: language => Path.Combine(Path.GetTempPath(), "nani-kore-ja-missing", language));
+        var missing = emptyHost.GetAnnotator("ja")!;
+        Check(
+            "缺包：状态缺失、不可用、注音为空且不抛异常",
+            emptyHost.GetState("ja") == NativePhoneticPackState.Missing &&
+            !missing.IsAvailable &&
+            missing.Annotate("東京へ行く", new AnnotationContext(shortText)).Count == 0 &&
+            missing.CountWords("東京へ行く") == 0);
     }
 
     private static void TestChinesePinyinDictionary()

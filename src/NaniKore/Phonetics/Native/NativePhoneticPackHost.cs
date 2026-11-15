@@ -86,7 +86,7 @@ internal sealed class NativePhoneticPackSlot : ITextAnnotator, IIdleTextAnnotato
         Pack = pack;
         _packDirectory = packDirectory ?? NativePhoneticManifest.GetPackDirectory;
         _installer = installer ?? NativePhoneticPackInstaller.Default;
-        _resource = new IdleResource<NativeTextAnnotator>(() => new NativeTextAnnotator(pack.Language), clock);
+        _resource = new IdleResource<NativeTextAnnotator>(() => new NativeTextAnnotator(pack.Language, _packDirectory), clock);
         _resource.Configure(idleTimeout);
     }
 

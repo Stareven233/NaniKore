@@ -299,20 +299,28 @@ internal static partial class SelfTest
     /// <summary>
     /// 安装生命周期全链（临时目录 + 本地复制代替网络）：缺失 → 下载失败可重试 → 安装成功 →
     /// 已加载时新版本只暂存 → 重启后提升 → 取消下载。不联网、不碰 deps 下的正式包。
+    /// 提升（PromoteStaged）必须用未在本进程加载过的包来验：已加载的 NativeAOT DLL 在进程内不可卸载，
+    /// Windows 会拒绝覆盖它的文件，而真实「重启」是另一个进程，不存在这个困扰——所以暂存/提升用 en，
+    /// 首次安装与真实注音用 ja。
     /// </summary>
     private static void TestNativePhoneticInstallLifecycle()
     {
-        var pack = NativePhoneticManifest.GetPack("ja")!;
-        var source = NativePhoneticManifest.GetPackDirectory("ja");
-        if (NativePhoneticPackVerifier.Verify(pack, source, out _) != NativePhoneticPackageFailure.None)
+        var jaPack = NativePhoneticManifest.GetPack("ja")!;
+        var enPack = NativePhoneticManifest.GetPack("en")!;
+        var sources = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            Skip("ja 正式包未就绪，跳过安装生命周期断言");
+            [jaPack.Language] = NativePhoneticManifest.GetPackDirectory(jaPack.Language),
+            [enPack.Language] = NativePhoneticManifest.GetPackDirectory(enPack.Language)
+        };
+        if (sources.Any(source => NativePhoneticPackVerifier.Verify(NativePhoneticManifest.GetPack(source.Key)!, source.Value, out _) != NativePhoneticPackageFailure.None))
+        {
+            Skip("ja/en 正式包未就绪，跳过安装生命周期断言");
             return;
         }
 
         var root = Path.Combine(Path.GetTempPath(), "nani-kore-native-lifecycle-" + Guid.NewGuid().ToString("N"));
-        var target = Path.Combine(root, "pack");
-        var staging = Path.Combine(root, "staging");
+        string Target(string language) => Path.Combine(root, "pack", language);
+        string Staging(string language) => Path.Combine(root, "staging", language);
         var failNext = true;
         // 模拟一个刚启动的宿主进程：没有语言被加载过，「首次安装即时生效」才有意义。
         NativePhoneticLibrary.ResetLoadedLanguagesForTests();
@@ -320,8 +328,8 @@ internal static partial class SelfTest
         {
             // 下载器直接把正式包里的文件复制过来：模拟一次成功的 HTTP 下载，不依赖网络。
             var installer = new NativePhoneticPackInstaller(
-                _ => staging,
-                _ => target,
+                Staging,
+                Target,
                 (url, destination, _, cancellationToken) =>
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -330,14 +338,17 @@ internal static partial class SelfTest
                         throw new HttpRequestException("模拟网络失败");
                     }
 
-                    var relative = url[(url.IndexOf("/phonetics/misaki/ja/", StringComparison.Ordinal) + "/phonetics/misaki/ja/".Length)..];
-                    relative = relative[..relative.IndexOf('?')].Replace('/', Path.DirectorySeparatorChar);
+                    const string marker = "/phonetics/misaki/";
+                    var tail = url[(url.IndexOf(marker, StringComparison.Ordinal) + marker.Length)..];
+                    tail = tail[..tail.IndexOf('?')];
+                    var language = tail[..tail.IndexOf('/')];
+                    var relative = tail[(tail.IndexOf('/') + 1)..].Replace('/', Path.DirectorySeparatorChar);
                     Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                    File.Copy(Path.Combine(source, relative), destination, overwrite: true);
+                    File.Copy(Path.Combine(sources[language], relative), destination, overwrite: true);
                     return Task.CompletedTask;
                 });
 
-            using var host = new NativePhoneticPackHost(installer: installer, packDirectory: _ => target);
+            using var host = new NativePhoneticPackHost(installer: installer, packDirectory: Target);
             Check("首次安装前状态为缺失", host.GetState("ja") == NativePhoneticPackState.Missing);
 
             Check(
@@ -352,30 +363,45 @@ internal static partial class SelfTest
                 "失败后重试可安装成功（首次安装即时生效）",
                 host.DownloadAsync("ja", null, CancellationToken.None).GetAwaiter().GetResult() &&
                 host.GetState("ja") == NativePhoneticPackState.Ready &&
-                !Directory.Exists(staging),
+                !Directory.Exists(Staging("ja")),
                 $"state={host.GetState("ja")}");
 
             var annotator = host.GetAnnotator("ja")!;
             Check("安装后的语言包可以真实注音", annotator.IsAvailable && annotator.CountWords("東京へ行く") == 2);
 
-            // 模拟「有新版本」：删掉正式包的 pack.json 让安装器不再认为已是最新。
-            File.Delete(Path.Combine(target, NativePhoneticManifest.PackManifestFileName));
-            Check(
-                "已加载时新版本只暂存并提示重启生效",
-                host.DownloadAsync("ja", null, CancellationToken.None).GetAwaiter().GetResult() &&
-                host.GetState("ja") == NativePhoneticPackState.RestartPending &&
-                Directory.Exists(staging),
-                $"state={host.GetState("ja")}");
+            // en 在本进程里先真正加载一次正式包（模拟「该语言已在使用」），后续新版本就只会落暂存。
+            if (NativePhoneticLibrary.TryOpen(enPack.Language, out var loadedEnglish, out _, out _))
+            {
+                loadedEnglish!.Dispose();
+                Check("已加载时新版本只暂存并提示重启生效",
+                    host.DownloadAsync(enPack.Language, null, CancellationToken.None).GetAwaiter().GetResult() &&
+                    host.GetState(enPack.Language) == NativePhoneticPackState.RestartPending &&
+                    Directory.Exists(Staging(enPack.Language)),
+                    $"state={host.GetState(enPack.Language)}");
 
-            Check(
-                "重启时把暂存包提升为正式包（不覆盖使用中的 DLL）",
-                host.ApplyStagedPacks() == 1 &&
-                host.GetState("ja") == NativePhoneticPackState.Ready &&
-                !Directory.Exists(staging));
+                // 再塞一份坏暂存包：提升时必须整份丢弃，绝不用来覆盖正式包。
+                var brokenStaging = Staging(jaPack.Language);
+                Directory.CreateDirectory(brokenStaging);
+                File.WriteAllText(Path.Combine(brokenStaging, jaPack.LibraryFileName), "not a real pack");
+                File.WriteAllText(Path.Combine(brokenStaging, NativePhoneticManifest.PackManifestFileName), "{}");
+
+                Check(
+                    "重启时把有效暂存包提升为正式包、坏包整份丢弃",
+                    host.ApplyStagedPacks() == 1 &&
+                    host.GetState(enPack.Language) == NativePhoneticPackState.Ready &&
+                    !Directory.Exists(Staging(enPack.Language)) &&
+                    !Directory.Exists(brokenStaging) &&
+                    NativePhoneticPackVerifier.Verify(jaPack, Target(jaPack.Language), out _) == NativePhoneticPackageFailure.None,
+                    $"en={host.GetState(enPack.Language)} 坏暂存包残留={Directory.Exists(brokenStaging)}");
+            }
+            else
+            {
+                Skip("en 正式包未能加载，跳过暂存与重启提升断言");
+            }
 
             using var cancelHost = new NativePhoneticPackHost(
-                installer: new NativePhoneticPackInstaller(_ => staging + "-cancel", _ => target + "-cancel"),
-                packDirectory: _ => target + "-cancel");
+                installer: new NativePhoneticPackInstaller(language => Staging(language) + "-cancel", language => Target(language) + "-cancel"),
+                packDirectory: language => Target(language) + "-cancel");
             using var cancellation = new CancellationTokenSource();
             cancellation.Cancel();
             Check(

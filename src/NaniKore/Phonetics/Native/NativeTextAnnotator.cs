@@ -11,13 +11,16 @@ namespace NaniKore.Phonetics;
 internal sealed class NativeTextAnnotator : ITextAnnotator, IDisposable
 {
     private readonly Lock _gate = new();
+    private readonly Func<string, string> _packDirectory;
     private NativePhoneticLibrary? _library;
     private bool _disposed;
 
-    public NativeTextAnnotator(string languageCode)
+    /// <param name="packDirectory">包目录解析（生产用正式目录；自测可注临时目录，使状态与真实加载永远指向同一处）。</param>
+    public NativeTextAnnotator(string languageCode, Func<string, string>? packDirectory = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(languageCode);
         LanguageCode = languageCode;
+        _packDirectory = packDirectory ?? NativePhoneticManifest.GetPackDirectory;
     }
 
     public string LanguageCode { get; }
@@ -74,6 +77,7 @@ internal sealed class NativeTextAnnotator : ITextAnnotator, IDisposable
             return [];
         }
 
+        var japanese = string.Equals(LanguageCode, NativePhoneticManifest.JapaneseCode, StringComparison.OrdinalIgnoreCase);
         var spans = new List<AnnotationSpan>();
         foreach (var token in RunEngine(plainText))
         {
@@ -92,12 +96,28 @@ internal sealed class NativeTextAnnotator : ITextAnnotator, IDisposable
                 continue;
             }
 
+            // 日语：UniDic 给的是整词书面假名，界面上要的是只覆盖汉字的振假名，送假名切回底字之外。
+            var start = token.Start;
+            var length = token.Length;
+            if (japanese)
+            {
+                if (!JapaneseRuby.TrySplit(token.Surface, reading, out var baseOffset, out var baseLength, out var baseReading))
+                {
+                    continue;
+                }
+
+                start += baseOffset;
+                length = baseLength;
+                reading = baseReading;
+            }
+
+            // 过滤与去重仍按整词词面裁决：停用词表、常用汉字表与去重键都以词面为准，不因切送假名而变。
             if (!context.ShouldEmit(token.Surface, reading))
             {
                 continue;
             }
 
-            spans.Add(new AnnotationSpan(token.Start, token.Length, reading));
+            spans.Add(new AnnotationSpan(start, length, reading));
         }
 
         return spans;
@@ -142,7 +162,7 @@ internal sealed class NativeTextAnnotator : ITextAnnotator, IDisposable
                 return _library;
             }
 
-            if (NativePhoneticLibrary.TryOpen(LanguageCode, out var library, out var failure, out var detail))
+            if (NativePhoneticLibrary.TryOpenAt(LanguageCode, _packDirectory(LanguageCode), out var library, out var failure, out var detail))
             {
                 _library = library;
                 Failure = NativePhoneticPackageFailure.None;

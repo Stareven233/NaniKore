@@ -12,24 +12,40 @@ namespace NaniKore.Phonetics;
 internal sealed class TextAnnotatorRegistry : IDisposable
 {
     private readonly Dictionary<string, ITextAnnotator> _annotators;
+    private readonly IReadOnlyList<ITextAnnotator> _owned;
 
-    public TextAnnotatorRegistry(IEnumerable<ITextAnnotator> annotators)
+    public TextAnnotatorRegistry(IEnumerable<ITextAnnotator> annotators) : this(annotators, annotators)
     {
+    }
+
+    private TextAnnotatorRegistry(IEnumerable<ITextAnnotator> annotators, IEnumerable<ITextAnnotator> owned)
+    {
+        var list = annotators.ToList();
+        _owned = owned.ToList();
         _annotators = new Dictionary<string, ITextAnnotator>(StringComparer.OrdinalIgnoreCase);
-        foreach (var annotator in annotators)
+        foreach (var annotator in list)
         {
             _annotators[annotator.LanguageCode] = annotator;
         }
     }
 
-    /// <summary>默认装配：初版三语；词典缺哪语哪语自动软降级（IsAvailable=false）。</summary>
-    public static TextAnnotatorRegistry CreateDefault() =>
-        new(
-        [
-            new CachedTextAnnotator<JapaneseFuriganaAnnotator>("ja", static () => new()),
-            new CachedTextAnnotator<EnglishIpaAnnotator>("en", static () => new()),
-            new CachedTextAnnotator<ChinesePinyinAnnotator>("zh", static () => new())
-        ]);
+    /// <summary>
+    /// 默认装配：日语已切到原生语言包（010），英语/中文仍走旧 provider（011 切英语、012 内嵌中文）。
+    /// 原生槽位的生命周期由 <see cref="NativePhoneticPackHost"/> 统一管理（闲置释放与重启更新都在那边），
+    /// 因此注册表不持有它——否则退出时两处各释放一次，还会把应用的宿主单例提前拆掉。
+    /// </summary>
+    public static TextAnnotatorRegistry CreateDefault() => Create(NativePhoneticPackHostHolder.Default);
+
+    /// <summary>用指定的原生包宿主装配：生产传进程单例，自测传独立宿主，避免互相污染闲置状态。</summary>
+    public static TextAnnotatorRegistry Create(NativePhoneticPackHost nativeHost)
+    {
+        ArgumentNullException.ThrowIfNull(nativeHost);
+        var japanese = nativeHost.GetAnnotator(NativePhoneticManifest.JapaneseCode)
+            ?? throw new InvalidOperationException("原生日语语言包未装配。");
+        var english = new CachedTextAnnotator<EnglishIpaAnnotator>("en", static () => new());
+        var chinese = new CachedTextAnnotator<ChinesePinyinAnnotator>("zh", static () => new());
+        return new TextAnnotatorRegistry([japanese, english, chinese], [english, chinese]);
+    }
 
     /// <summary>共用策略、分语言计时；设置保存后按已有空闲时长重新判断。</summary>
     public void ConfigureIdleTimeout(TimeSpan timeout)
@@ -45,7 +61,7 @@ internal sealed class TextAnnotatorRegistry : IDisposable
 
     public void Dispose()
     {
-        foreach (var annotator in _annotators.Values)
+        foreach (var annotator in _owned)
         {
             (annotator as IDisposable)?.Dispose();
         }

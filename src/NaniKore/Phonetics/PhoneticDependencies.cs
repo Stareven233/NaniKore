@@ -46,16 +46,6 @@ internal static class PhoneticDependencyPaths
     }
 
     /// <summary>EXE 同级 deps/phonetics 根目录（复用 OCR 依赖的运行目录口径：跟随 EXE 不随工作目录漂移）。</summary>
-    public static string JapaneseDictionaryDirectory => Path.Combine(PhoneticsRootDirectory, "ja");
-
-    public static IReadOnlyList<string> JapaneseDictionaryFiles =>
-    [
-        Path.Combine(JapaneseDictionaryDirectory, "sys.dic"),
-        Path.Combine(JapaneseDictionaryDirectory, "unk.dic"),
-        Path.Combine(JapaneseDictionaryDirectory, "matrix.bin"),
-        Path.Combine(JapaneseDictionaryDirectory, "char.bin")
-    ];
-
     public static string EnglishDictionaryDirectory => Path.Combine(PhoneticsRootDirectory, "en");
 
     public static string EnglishDictionaryFile => Path.Combine(EnglishDictionaryDirectory, "ipa_dict.db");

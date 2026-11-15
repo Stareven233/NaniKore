@@ -63,6 +63,6 @@ created: 2026-11-15
 - 真实网络下载、断网重试与 ModelScope 上传未验证（本次未上传，014 处理）；`scripts/sync-deps.py` / `dev.ps1 publish -full` 的依赖清单仍是旧路径（014）。
 - ABI 版本不符分支缺可复现夹具（需要一份自报错误 ABI 的 DLL），目前只有代码路径与文案。
 - 真实 UI 点击、重启替换的人工演练、复制/选区/收藏回归留给 010/011（provider 切换）与 014（分发验收）。
-- 生产 provider 未切换：日语仍 IPAdic、英语仍 CMUdict，结果面板注音仍走旧标注器；本项只交付可加载、可释放、可重建、可观测的骨架，`NativePhoneticPackHost.Annotators` 已按 `ITextAnnotator` + 闲置策略就绪，010/011 可直接装配。
+- 生产 provider：日语已在 010 切到原生包（旧 IPAdic 标注器下线），英语仍 CMUdict（011 切换）；本项只交付可加载、可释放、可重建、可观测的骨架，`NativePhoneticPackHost.Annotators` 已按 `ITextAnnotator` + 闲置策略就绪，010 已按此装配，011 可直接沿用。
 - **交接提醒**：011 用 008 构建链重建最终英语包后，必须把 `NativePhoneticManifest` 里 `en` 的字节数/SHA-256（以及变更过的许可哈希）同步回填，否则宿主会按新口径判为「需更新」而拒绝装载；日语包重建同理。
 - 主程序 invariant 配置保持原样：非 invariant 的包在真实 AOT 宿主（`InvariantGlobalization=true`）里加载、注音、释放、重建、并发全部通过，无需调整。
