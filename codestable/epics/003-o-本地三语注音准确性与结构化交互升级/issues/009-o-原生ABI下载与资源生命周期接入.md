@@ -8,7 +8,7 @@ created: 2026-11-15
 
 # 009 原生 ABI、下载与资源生命周期接入
 
-依赖 008 的可验证日语包与清单；英语质量未通过不阻止骨架工作。输入为现有后台注音/IdleResource/下载链及 [穿刺 ABI](../../../tools/misaki-annotation-probe/README.md)，产物为真实宿主的受控加载、生命周期和设置状态。
+依赖 008 的可验证日语包与清单；英语 IPA 适配和整词候选由 011 完成，不阻止本项骨架工作。输入为现有后台注音/IdleResource/下载链及 [穿刺 ABI](../../../tools/misaki-annotation-probe/README.md)，产物为真实宿主的受控加载、生命周期和设置状态。
 
 完成条件：
 

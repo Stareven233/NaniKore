@@ -1,6 +1,6 @@
 # MisakiSharp 穿刺笔记（2026-11-15）
 
-> **同日复核修正：** 最新结论与复跑入口见 [界面注音适配穿刺](misaki-annotation-spike.md)。原版日语 `Reading` 是 `pron`，英语逐词结果是 Kokoro 编码，二者都不能直接作界面书面注音；裁剪/生命周期已补测通过，但英语质量未通过。以下早期命令、体积与热态数字仅作历史记录，不是生产验收；新验证统一使用 `misaki-annotation-probe` 并将产物放 `.temp`。
+> **同日复核与最终取舍：** 最新结论与复跑入口见 [界面注音适配穿刺](misaki-annotation-spike.md)。原版日语 `Reading` 是 `pron`，英语逐词结果是 Kokoro 编码，均需适配；裁剪/生命周期已补测通过。英语已决定直接采用 Misaki，允许美音发音变体，通过整词 hover 展示已收录候选，已知误选/缺项不阻塞本轮；适配和 UI 尚待实现。以下早期命令、体积与热态数字仅作历史记录，不是生产验收；新验证统一使用 `misaki-annotation-probe` 并将产物放 `.temp`。
 
 可复用的实测结论与踩坑。探针源码（均仅本地、不发布）：
 - `codestable/tools/misaki-spike/` — 各语输出/内部数据/资源格式。
