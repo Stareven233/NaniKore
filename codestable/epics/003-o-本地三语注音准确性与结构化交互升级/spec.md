@@ -49,19 +49,38 @@ UniDic 2.1.2 的隔离验证已完成，结论为**可进入生产适配设计�
 
 可复跑探针源码位于 `codestable/tools/unidic-probe/`，不随桌面程序发布；完整命令、样本与证据见 [Issue 002](issues/002-x-P0-UniDic字段与运行时兼容性验证.md)。日语生产切换仍属 P3，尚未创建对应实施 Issue，推进前需明确上述策略与结构决策。
 
+### P0 基线结论（001/002/003 已闭合）
+
+三个 P0 issue 均满足「可复跑命令 + 样例期望 + 实测结果 + 明确未覆盖边界」，已闭合；稳定结论如下：
+
+- **三语基线（001）：** `codestable/tools/phonetics-baseline/` 固定 22 条三语样本、链接生产标注器，不引用桌面工程、不改生产词典；退出码 0/1/2（无偏差/明确失败/依赖未就绪）。P1 换引擎后曾因 csproj 未链接 `ChinesePinyinEngine` 等新文件而编译失败，已补链修复；复跑 **76 PASS / 2 KNOWN_FAIL / 18 UNCOVERED**。2 个 KNOWN_FAIL 仅为旧「方括号→反解析」出口的银行挂载反例（`RubyTextParser.FindBaseWordStart` 缺 span 起点）——本地 UI 已改吃原文 + spans，该歧义不影响本地显示。中文候选对照（csharp-pinyin）在 P1 前生产 10/候选 12、P1 后生产 11/候选 12，存在语义退步、跨边界匹配与原生入口丢字，收益不足，**确定不采用**；该对照工具依赖外部 clone 与旧 MeCab 词典，保留为历史证据、不再复跑。
+- **UniDic（002）：** 见上「日语 P0 结论与生产切换前提」，可进入生产适配设计、尚不能直接替换 IPAdic。
+- **英语候选（003）：** `CmuDictionarySourceParser` 与 `EnglishPronunciationIndex` 在解析层与隔离内存契约完整保留编号候选（真实源 9,113 条编号备选、8,446 多读音词），`Lookup` 默认仍取 `Variant=1`、`LookupAll` 返回全部。**正式 SQLite 仍只存默认读音项**，候选未进入发布文件，也不具备语境/词性/口音消歧。工具 `codestable/tools/english-candidates/` 已修链接可编译，实跑需按 README 下载 CMUdict 源（不入库）。
+- **横切约束：** 三语数据均按语言独立目录 `resources/phonetics/<子目录>/` 管理、按 SHA-256 作版本、随附许可；验证失败不得覆盖生产产物或静默回退成通过。
+
+### P1/P2 结构与选音、多音交互结论（004/005/006 已闭合）
+
+- **结构化事实源：** 本地链路 = 纯原文 → 单语言标注器 → `AnnotationSpan(Start, Length, Reading, Syllables)` → 按 UTF-16 区间直接构建 Ruby Inlines。纯原文与 spans 贯穿面板、复制、渲染；方括号仅作导出与既有 LLM 输入协议，**不再作为本地显示事实源，也绝不反解析重建**。中文逐字音节由适配层按绝对 UTF-16 生成，词级容器内逐字对齐，选区/复制仍在词级。非 BMP/非法代理项在代理项边界切段、原始偏移加回，不臆造扩展字读音。
+- **中文默认选音（005）：** 弃 zh MeCab，改进程内自研词组最匹配引擎：pypinyin 词组（最长 2–4 字）+ 单字频率默认 + CC-CEDICT/Unihan 稀有变体覆盖 + 繁体 t2s（仅查音、不改原文）。13 目标命中，「还 hái / 罅缝 xià fèng」修正且不回退「俳佪 pái huái / 周长大于 cháng dà」。运行期表 `deps/phonetics/zh/zh_pinyin.txt.gz`（TSV+gzip），构建期由 `resources/phonetics/{pypinyin,cc-cedict,unihan}` 合并生成，不再依赖 `mecab-dict-index`。
+- **候选契约：** `AnnotationSyllable.Candidates` 携带「默认音 + 候选集合」，`Candidates[0]` 即本句默认；候选 = 所用词典收录读音，不凭空造。P2 只消费候选、不制造候选。
+- **多音交互（006）：** 多音字默认注音用警示色（橙/琥珀，`Brush.Warning`）表示「存在其他读音」而非「不确定」；hover 用 `Popup` 半透明面板按模板列「底字 读音」，默认读音响橙，多音/单音共用样式；不挤压正文、不被裁切，移出恢复提示色。只查看不纠音、不改原文、不持久化偏好。逐字列与面板文本须显式 `LineHeight=double.NaN`（避免继承外层固定行高致注音溢出原文区）；面板底色用中性 `Brush.Control.Background` 并按系统深浅色取主题字典；底字可命中以支持框选/右键冒泡。
+- **数据/许可：** pypinyin(MIT) + CC-CEDICT(CC BY-SA 4.0) + Unihan(Unicode)；数据按 `resources/phonetics/<子目录>/` 管理、SHA-256 作版本、随附 NOTICE。
+- **明确未覆盖（后续 P3/P4）：** 手动纠音/改全文/个人读音偏好、可点击常驻候选菜单、姓名/自定义词典、口语连读变调、英语橙色标记/右键异读列表、日语异读交互、英语候选正式 SQLite 迁移、日语生产词典切换。
+
 ## 现在推什么、先搁什么
 
-**当前进度：** P0 中文固定候选已完成 Debug/AOT 对照与期望分级复核，候选（csharp-pinyin）未满足采用条件；P1 已独立推进区间贯通、逐字布局与 Unicode/未知项切片，并由自研词组匹配引擎（Issue 005）落地中文默认选音与逐字候选传递，Debug/AOT 1807 checks 通过。P2 首个切片（Issue 006）已实现多音提示色与 hover 候选查看，并修复逐字列继承外层 LineHeight 导致注音溢出原文区的真实视觉回归；hover 改用 Popup 半透明面板、多音/单音按同模板列「底字 读音」（同字单换行、异字双换行）、默认读音响橙；并修复中文逐字底字不可框选/右键的回归（底字可命中，右键冒泡到词容器菜单）；Debug/AOT 1809 checks 一致。人工视觉复核待主人再次确认，不将 P0/P1/P2 整体标为完成。
+**当前进度：** P0（001/002/003）已闭合——三语基线工具复跑 76 PASS / 2 KNOWN_FAIL / 18 UNCOVERED，UniDic 与英语候选结论见下「P0 基线结论」；P1 已独立推进区间贯通、逐字布局与 Unicode/未知项切片，并由自研词组匹配引擎（Issue 005）落地中文默认选音与逐字候选传递，Debug/AOT 1807 checks 通过。P2 首个切片（Issue 006）已实现多音提示色与 hover 候选查看，并修复逐字列继承外层 LineHeight 导致注音溢出原文区的真实视觉回归；hover 改用 Popup 半透明面板、多音/单音按同模板列「底字 读音」（同字单换行、异字双换行）、默认读音响橙；并修复中文逐字底字不可框选/右键的回归（底字可命中，右键冒泡到词容器菜单）；Debug/AOT 1809 checks 一致。P0/P1/P2 均已闭合，主人已真机目视确认多音提示色与 hover 候选无问题。P4（Issue 007）已落地英语候选正式数据：`ipa_dict.db` 改为多读音表（126,026 词面 / 135,139 条读音），`LookupAll` 返回全部候选、`Lookup` 默认口径不变，Debug/AOT 均 1815 checks 通过——仅差 ModelScope 上传（本机不可执行）。下一步 P3 或收尾 P4 分发。
 
 **Issues：**（编号仅在本 Epic 内有效）
 
-- [ ] `issues/001-o-P0-三语基线与验证工具.md` — 三语历史基线为 73 PASS / 5 明确失败 / 18 未覆盖。中文候选固定 13 目标在 P1 前生产10/候选12通过，P1后生产11/候选12；候选存在语义退步、跨边界匹配与原生入口丢字，不采用。规范来源已分级，完整 P0 资源证据仍未完成。
+- [x] `issues/001-x-P0-三语基线与验证工具.md` — 已闭合。三语基线工具（P1 后修复 csproj 链接）复跑 76 PASS / 2 KNOWN_FAIL / 18 UNCOVERED；2 KNOWN_FAIL 为旧方括号出口银行挂载反例。中文候选（csharp-pinyin）P1 前生产10/候选12、P1 后生产11/候选12，存在语义退步、跨边界匹配与原生入口丢字，**不采用**。完整资源基准/宿主交互/分发证据为明确未覆盖边界。
 - [x] `issues/002-x-P0-UniDic字段与运行时兼容性验证.md` — 隔离验证完成；通用入口与非 invariant AOT 可行，生产切换仍受上述前提约束。
-- [ ] `issues/003-o-P0-英语异读候选保留验证.md` — 真实源候选模型验证切片完成（15 checks 通过，9,113 条编号备选保留），尚未关闭；正式 SQLite 仍只存默认项，不具备语义消歧。
+- [x] `issues/003-x-P0-英语异读候选保留验证.md` — 已闭合。真实源候选模型验证切片完成（15 checks 通过，9,113 条编号备选、8,446 多读音词），默认查询仍取 Variant=1；正式 SQLite 仍只存默认项，不具备语义消歧。工具已修复 P1 后 csproj 链接可编译。
 
-- [ ] `issues/004-o-P1-中文结构化区间与逐字对齐.md` — 首切片已实现，银行挂载与扩展字后龃龉修复，未知 Feature 不展示；Debug/独立目录实际 NativeAOT 各1807 checks通过。默认发布目录被现有进程锁定未更新；人工视觉/鼠标交互、完整候选与选音仍未完成。
-- [ ] `issues/005-o-P1-中文选音引擎与候选传递.md` — 弃 zh MeCab，改自研词组最匹配引擎；13 目标命中、默认选音修正「还/罅缝」且不回退「俳佪/周长大于」；`AnnotationSyllable.Candidates` 携带候选（首项默认）；Debug/AOT 1807/1797 checks。真实控件鼠标交互与 P2 UI 不在内。
-- [ ] `issues/006-o-P2-中文多音提示色与hover候选菜单.md` — 多音字默认注音用警示色（橙色=存在其他读音、非不确定），Popup 半透明 hover 面板按模板列「底字 读音」（同字单换行/异字双换行）且默认读音响橙，多音/单音共用样式；修复逐字列继承 LineHeight 致注音溢出原文区、以及底字不可框选/右键两处回归；Debug/AOT 1809 checks、真实词典「行」候选端到端；人工视觉复核待主人确认。
+- [x] `issues/004-x-P1-中文结构化区间与逐字对齐.md` — 已闭合。纯原文 + spans 贯穿面板/复制/渲染，中文逐字对齐，银行只挂银行、未知项不展示、扩展字不破坏后续；Debug/AOT 通过；人工视觉由 006 承接确认。
+- [x] `issues/005-x-P1-中文选音引擎与候选传递.md` — 已闭合。弃 zh MeCab，改进程内自研词组最匹配引擎；13 目标命中、默认选音修正「还/罅缝」且不回退「俳佪/周长大于」；`AnnotationSyllable.Candidates` 携带候选（首项默认）；Debug/AOT 通过，数据源/哈希/许可可追溯。
+- [x] `issues/006-x-P2-中文多音提示色与hover候选菜单.md` — 已闭合。多音字默认注音用警示色（橙色=存在其他读音、非不确定），Popup 半透明 hover 面板按模板列「底字 读音」（同字单换行/异字双换行）且默认读音响橙，多音/单音共用样式；修复逐字列继承 LineHeight 溢出、底字不可框选/右键、面板行高、主题色解析等回归；Debug/AOT 1812 checks、真实词典「行」候选端到端；主人真机目视确认无问题。
+- [ ] `issues/007-o-P4-英语候选正式数据落地.md` — 已落地多读音 schema（`words(word,variant,ipa)`）+ 写全量编号备选，`EnglishIpaDictionary.LookupAll` 返回全部候选、`Lookup` 默认仍取 variant=1；`--build-en-data` 重建 `ipa_dict.db` 126,026 词面 / 135,139 条读音，manifest 哈希已回填；Debug/AOT 1815 checks；**仅差 ModelScope 上传**（本机无令牌），故保持 open。
 
 **暂不推进：** 中文多音 hover 的可点击常驻菜单、日语生产词典切换、英语橙色标记/右键列表、口语连读变调、手动纠音与个人读音偏好。P0 候选未证明收益前，不维护多套生产引擎兼容/回退链。
 

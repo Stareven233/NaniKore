@@ -35,25 +35,26 @@ deps/phonetics/            # 仓库内唯一真实源；ModelScope 仓库 Noetuu
    `sys.dic / unk.dic / matrix.bin / char.bin / COPYING` 复制到 `deps/phonetics/ja/` 即完成。
 2. 复制 `IPAdic-COPYING.txt` 到同目录，与 NOTICE 一起构成许可归属。
 
-## 4. 英语（en）：CMUdict → SQLite IPA 词典
+## 4. 英语（en）：CMUdict → SQLite IPA 多读音词典
 
-一条命令即完成（无外部工具依赖）：
+只重建英语（不触碰中文产物，避免无关哈希漂移）：
 
 ```powershell
-dotnet run --project src/NaniKore -- --build-phonetics
+dotnet run --project src/NaniKore -- --build-en-data
 ```
+
+（与中文一起重建仍用 `--build-phonetics`。）
 
 管线（`PhoneticDictionaryBuilder.BuildEnglishDatabase`）：
 
-1. 逐行读 `_source/cmudict.dict`，跳过 `;;;` 注释、`WORD(2)` 变音条目与单字母缩写；
+1. 逐行读 `_source/cmudict.dict`，跳过 `;;;` 注释、`#` 行尾来源标签与单字母缩写；`WORD(n)` 的编号读音**作为候选保留**（不再丢弃）；
 2. 词面统一小写；ARPAbet → IPA 由 `ArpabetIpaConverter` 转换，音节切分、重音归位与长音符补全
    统一委托 `IpaTranscription`（应激位 1/2 转写为 `ˈ`/`ˌ` 并放到音节首，音节点 `.` 分隔音节，
    重读 `AH` 记 `ʌ`；约定见下“口径备注”）；
-3. 写入 `Data Source=...` 的单表（`words(word TEXT PRIMARY KEY, ipa TEXT) WITHOUT ROWID`）SQLite；
-4. 落地 `deps/phonetics/en/ipa_dict.db`。
+3. 写入多读音表（`words(word TEXT, variant INTEGER, ipa TEXT, PRIMARY KEY(word, variant)) WITHOUT ROWID`），`variant=1` 为默认读音；
+4. 落地 `deps/phonetics/en/ipa_dict.db`（约 126,026 词面 / 135,139 条读音，含编号备选）。
 
-多音词只取 CMUdict 主读音（美式口径在生成期定音，不随运行期切换）；
-屈折形式大多不在 CMUdict 中，运行期由 `EnglishLemmatizer`（词干还原候选）兜底查询。
+运行期 `EnglishIpaDictionary`：`Lookup` 取 `variant` 最小者（默认读音，口径不变）；`LookupAll` 返回该词全部候选（升序），供后续多音查看。屈折形式大多不在 CMUdict 中，运行期由 `EnglishLemmatizer`（词干还原候选）兜底查询。英语多音 UI（橙色/右键列表）尚未做，本轮只落数据。
 
 ## 5. 简体中文（zh）：pypinyin + CC-CEDICT + Unihan → 进程内拼音数据
 
@@ -126,5 +127,5 @@ dotnet run --project src/NaniKore -- --self-test         # 全量无 UI 自测�
   重音位前移到音节首，音节点 `.` 分隔，`IY/UW` 带长音符（`iː/uː`），重读 `AH` 记 `ʌ`。
   **已发布的历史条目是旧 wire format**（重音贴在元音前、无音节点、`IY` 不带 ː，如 treason 存的是
   `trˈizən`），因此 `EnglishIpaDictionary.Lookup` 读出后必须过 `IpaTranscription.Normalize` 归一——
-  ipa_dict.db 是「哈希即版本」的分布式产物，不能随代码一起重建换哈希；该归一对新口径条目幂等，
-  将来真重生词典并回填哈希后，运行期这一遍就是空转。
+  ipa_dict.db 是「哈希即版本」的分布式产物，不能随代码一起重建换哈希；该归一对新口径条目幂等。
+  **2026-11-14（P4）已重生 ipa_dict.db 为多读音表并回填新哈希，运行期这一遍对新条目即空转。**

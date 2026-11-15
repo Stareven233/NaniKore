@@ -9,7 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- 链接生产实现与资源；工具不复制选音、过滤或 Ruby 语义。 -->
-    <Compile Include="../../../src/NaniKore/Phonetics/AnnotationContracts.cs;../../../src/NaniKore/Phonetics/AnnotatedTextFormatter.cs;../../../src/NaniKore/Phonetics/JapaneseFuriganaAnnotator.cs;../../../src/NaniKore/Phonetics/ChinesePinyinAnnotator.cs;../../../src/NaniKore/Phonetics/EnglishIpaAnnotator.cs;../../../src/NaniKore/Phonetics/EnglishIpaDictionary.cs;../../../src/NaniKore/Phonetics/IpaTranscription.cs;../../../src/NaniKore/Phonetics/PhoneticDependencies.cs;../../../src/NaniKore/Translation/RubyTextParser.cs" Link="Production/%(Filename)%(Extension)" />
+    <Compile Include="../../../src/NaniKore/Phonetics/AnnotationContracts.cs;../../../src/NaniKore/Phonetics/AnnotatedTextFormatter.cs;../../../src/NaniKore/Phonetics/JapaneseFuriganaAnnotator.cs;../../../src/NaniKore/Phonetics/ChinesePinyinAnnotator.cs;../../../src/NaniKore/Phonetics/ChinesePinyinEngine.cs;../../../src/NaniKore/Phonetics/ChinesePinyinDataBuilder.cs;../../../src/NaniKore/Phonetics/PhoneticDictionaryBuilder.cs;../../../src/NaniKore/Phonetics/CmuDictionarySourceParser.cs;../../../src/NaniKore/Phonetics/EnglishIpaAnnotator.cs;../../../src/NaniKore/Phonetics/EnglishIpaDictionary.cs;../../../src/NaniKore/Phonetics/IpaTranscription.cs;../../../src/NaniKore/Phonetics/PhoneticDependencies.cs;../../../src/NaniKore/Translation/RubyTextParser.cs" Link="Production/%(Filename)%(Extension)" />
     <EmbeddedResource Include="../../../src/NaniKore/Phonetics/Data/*.txt" LogicalName="NaniKore.Phonetics.Data.%(Filename)%(Extension)" />
     <PackageReference Include="LibNMeCab" Version="0.10.2" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />

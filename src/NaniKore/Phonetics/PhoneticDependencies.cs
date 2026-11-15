@@ -115,7 +115,7 @@ internal static class PhoneticDependencyManifest
 
     public static IReadOnlyList<PhoneticDictionaryFile> EnglishFiles { get; } = Build(
     [
-        ("en/ipa_dict.db", "7B5BC5C0E8D75F7A1C4E7E0C1F990E0F629091CEE7EFAD42A7749AAB94152C13")
+        ("en/ipa_dict.db", "CA3B1DC874AB3CC3E5BC9274274DD4137F189F4ACCC67C865505FECDCA8CA5CA")
     ]);
 
     public static IReadOnlyList<PhoneticDictionaryFile> ChineseFiles { get; } = Build(

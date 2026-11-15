@@ -24,6 +24,7 @@ internal static partial class SelfTest
         TestJapaneseFuriganaDictionary();
         TestChinesePinyinDictionary();
         TestEnglishIpaDictionary();
+        TestEnglishCandidateDatabase();
     }
 
     /// <summary>语言清单是设置页卡片与源语言下拉的共同口径：代码、展示名、顺序必须稳定。</summary>
@@ -597,6 +598,30 @@ internal static partial class SelfTest
             "英语金样本：treason 注成词典式 IPA",
             treason is [{ Start: 0, Length: 7, Reading: "ˈtriː.zən" }],
             $"actual={AnnotatedTextFormatter.Compose("treason", treason)}");
+    }
+
+    /// <summary>真实 en/ipa_dict.db 的候选库断言：多读音词全部编号进库、默认查询取首项。</summary>
+    private static void TestEnglishCandidateDatabase()
+    {
+        using var dictionary = EnglishIpaDictionary.TryOpen(PhoneticDependencyPaths.EnglishDictionaryFile);
+        if (dictionary is null)
+        {
+            Skip("en 词典未就绪（deps/phonetics/en），跳过英语候选库断言");
+            return;
+        }
+
+        var record = dictionary.LookupAll("record");
+        var lead = dictionary.LookupAll("lead");
+        var defaultRecord = dictionary.Lookup("record");
+        Check(
+            "英语候选库：多读音词全部编号进库且按 variant 升序（record≥3、lead=2）",
+            record.Count >= 3 && lead.Count == 2 && record[0].Variant == 1 && record[0].Variant < record[1].Variant,
+            $"record={record.Count} lead={lead.Count}");
+        Check(
+            "英语候选库：默认查询等于候选首项（variant=1）",
+            record.Count > 0 && defaultRecord == record[0].Ipa,
+            $"default={defaultRecord} first={(record.Count > 0 ? record[0].Ipa : "<none>")}");
+        Check("英语候选库：未登录词候选为空", dictionary.LookupAll("zzzznotaword").Count == 0);
     }
 
     /// <summary>黄金样例辅助：一次标注一次拼装（AnnotationContext 的去重是单篇状态，重复调用会清空结果）。</summary>

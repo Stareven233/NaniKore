@@ -3,8 +3,8 @@ using Microsoft.Data.Sqlite;
 namespace NaniKore.Phonetics;
 
 /// <summary>
-/// 英语 IPA 词典（deps/phonetics/en/ipa_dict.db）：word 小写主键 + IPA 读音，
-/// 查询 O(log n) 且 &lt; 0.1ms；词条由 tools 管线以 CMUdict 为基座生成（后续并入 Wiktionary IPA 扩充版）。
+/// 英语 IPA 词典（deps/phonetics/en/ipa_dict.db）：(word, variant) 多读音表，variant=1 为默认读音。
+/// 默认查询 O(log n)；候选完整保留供后续查看。词条由管线以 CMUdict 为基座生成。
 /// 缺失时整个英语标注器软降级（不注音，不报错）。
 /// </summary>
 internal sealed class EnglishIpaDictionary : IDisposable
@@ -36,11 +36,11 @@ internal sealed class EnglishIpaDictionary : IDisposable
         }
     }
 
-    /// <summary>按小写词形查主读音；未命中返回 null。</summary>
+    /// <summary>按小写词形查默认读音（variant 最小者，即编号 1）；未命中返回 null。</summary>
     /// <remarks>
     /// 读出的历史条目是生成期 wire format（重音贴在元音前、无音节点、IY 不带 ː，如 treason → trˈizən），
     /// 必须过 <see cref="IpaTranscription.Normalize"/> 归一成词典式 IPA（ˈtriː.zən）再给界面；
-    /// 该归一对按新口径生成的条目幂等，词典二进制因此无需重建换哈希。
+    /// 该归一对按新口径生成的条目幂等。
     /// </remarks>
     public string? Lookup(string word)
     {
@@ -50,10 +50,33 @@ internal sealed class EnglishIpaDictionary : IDisposable
         }
 
         using var command = _connection.CreateCommand();
-        command.CommandText = "SELECT ipa FROM words WHERE word = $word LIMIT 1";
+        // 多读音表：默认取 variant 最小者（编号 1 必存在，ORDER BY 仅兜底）。
+        command.CommandText = "SELECT ipa FROM words WHERE word = $word ORDER BY variant LIMIT 1";
         command.Parameters.AddWithValue("$word", word.ToLowerInvariant());
         var stored = command.ExecuteScalar() as string;
         return stored is null ? null : IpaTranscription.Normalize(stored);
+    }
+
+    /// <summary>按小写词形查全部候选读音（variant 升序，首项即默认）；每条过 Normalize，未命中返回空。</summary>
+    public IReadOnlyList<EnglishPronunciationCandidate> LookupAll(string word)
+    {
+        if (string.IsNullOrEmpty(word))
+        {
+            return [];
+        }
+
+        var normalized = word.ToLowerInvariant();
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT variant, ipa FROM words WHERE word = $word ORDER BY variant";
+        command.Parameters.AddWithValue("$word", normalized);
+        using var reader = command.ExecuteReader();
+        var candidates = new List<EnglishPronunciationCandidate>();
+        while (reader.Read())
+        {
+            candidates.Add(new EnglishPronunciationCandidate(normalized, reader.GetInt32(0), IpaTranscription.Normalize(reader.GetString(1))));
+        }
+
+        return candidates;
     }
 
     public void Dispose() => _connection.Dispose();

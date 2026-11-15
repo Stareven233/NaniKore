@@ -61,6 +61,11 @@ internal static class Program
             return BuildZhPinyinData();
         }
 
+        if (args.Contains("--build-en-data", StringComparer.OrdinalIgnoreCase))
+        {
+            return BuildEnData();
+        }
+
         if (args.Contains("--phonetics-probe", StringComparer.OrdinalIgnoreCase))
         {
             PhoneticsProbe.Run();
@@ -171,6 +176,28 @@ internal static class Program
         catch (Exception exception)
         {
             Console.Error.WriteLine($"注音词典生成失败：{exception.Message}");
+            return 1;
+        }
+    }
+
+    /// <summary>单独重建英语 IPA 词典：从 _source/cmudict.dict 生成多读音表，不触碰中文产物。</summary>
+    private static int BuildEnData()
+    {
+        try
+        {
+            var repoRoot = LocateRepositoryRoot();
+            if (repoRoot is null)
+            {
+                Console.Error.WriteLine("未找到仓库根目录（需含 deps/phonetics/_source 的目录）。");
+                return 1;
+            }
+
+            PhoneticDictionaryBuilder.RunEnglishOnly(repoRoot);
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine($"英语词典生成失败：{exception.Message}");
             return 1;
         }
     }

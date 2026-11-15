@@ -148,6 +148,14 @@ internal static class PhoneticDictionaryBuilder
         return 0;
     }
 
+    /// <summary>只重建英语 IPA 词典：从 _source/cmudict.dict 生成多读音表，不触碰中文产物（避免无关哈希漂移）。</summary>
+    internal static int RunEnglishOnly(string repoRoot)
+    {
+        BuildEnglishDatabase(Path.Combine(repoRoot, "deps", "phonetics", "_source"), repoRoot);
+        PrintManifest(repoRoot);
+        return 0;
+    }
+
     private static void BuildEnglishDatabase(string sourceDirectory, string repoRoot)
     {
         var cmudictPath = Path.Combine(sourceDirectory, "cmudict.dict");
@@ -161,26 +169,23 @@ internal static class PhoneticDictionaryBuilder
             connection.Open();
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = "CREATE TABLE words (word TEXT PRIMARY KEY, ipa TEXT NOT NULL) WITHOUT ROWID";
+                // 多读音表：同词面按 CMUdict 编号各存一行，默认项为 variant=1（P0 已验证 (word,variant) 无冲突）。
+                command.CommandText = "CREATE TABLE words (word TEXT NOT NULL, variant INTEGER NOT NULL, ipa TEXT NOT NULL, PRIMARY KEY (word, variant)) WITHOUT ROWID";
                 command.ExecuteNonQuery();
             }
 
-            var inserted = 0;
+            var rows = 0;
+            var words = new HashSet<string>(StringComparer.Ordinal);
             using (var transaction = connection.BeginTransaction())
             {
                 using var command = connection.CreateCommand();
-                command.CommandText = "INSERT OR IGNORE INTO words (word, ipa) VALUES ($word, $ipa)";
+                command.CommandText = "INSERT OR IGNORE INTO words (word, variant, ipa) VALUES ($word, $variant, $ipa)";
                 var wordParameter = command.Parameters.Add("$word", SqliteType.Text);
+                var variantParameter = command.Parameters.Add("$variant", SqliteType.Integer);
                 var ipaParameter = command.Parameters.Add("$ipa", SqliteType.Text);
                 foreach (var entry in CmuDictionarySourceParser.Parse(File.ReadLines(cmudictPath)))
                 {
-                    // P0 先保留解析层的变体编号，但生产单读音数据库仍只生成默认项；
-                    // 候选存储与正式哈希迁移由英语候选 issue 单独推进，避免半成品覆盖现有产物。
-                    if (!entry.IsDefault)
-                    {
-                        continue;
-                    }
-
+                    // variant=1 是默认读音，其余编号作为候选一并进库（不丢候选）。
                     var ipa = ArpabetIpaConverter.Convert(entry.Arpabet);
                     if (ipa.Length == 0)
                     {
@@ -188,15 +193,17 @@ internal static class PhoneticDictionaryBuilder
                     }
 
                     wordParameter.Value = entry.Word;
+                    variantParameter.Value = entry.Variant;
                     ipaParameter.Value = ipa;
                     command.ExecuteNonQuery();
-                    inserted++;
+                    words.Add(entry.Word);
+                    rows++;
                 }
 
                 transaction.Commit();
             }
 
-            Console.WriteLine($"[en] ipa_dict.db: {inserted} 词条, {new FileInfo(target).Length / 1024.0 / 1024.0:F2} MB");
+            Console.WriteLine($"[en] ipa_dict.db: {words.Count} 词面 / {rows} 条读音（含编号备选）, {new FileInfo(target).Length / 1024.0 / 1024.0:F2} MB");
         }
     }
 

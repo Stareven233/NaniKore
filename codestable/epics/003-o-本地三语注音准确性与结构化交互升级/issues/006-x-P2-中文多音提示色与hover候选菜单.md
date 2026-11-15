@@ -2,7 +2,7 @@
 kind: issue
 type: feature
 title: "P2 中文多音提示色与 hover 候选菜单"
-status: open
+status: closed
 created: 2026-11-15
 ---
 
@@ -64,3 +64,10 @@ P1 Issue 005 的自研词组匹配引擎已为每个 `AnnotationSyllable` 产出
 4. **悬浮面板底色用错了主题键（主人追问）：** 原用 `Brush.Card.Background`，但深色主题下它是亮绿 `#77EE66`（非中性），且旧 `ResolveBrush` 用了不带 `ThemeVariant` 的 `TryGetResource` 重载、不展开 ThemeDictionaries，实际一直落到兜底 `#202020`；面板文字色也没随主题。改为：`ResolveBrush` 用 `Application.Current.ActualThemeVariant` 查询主题字典；面板底色改用中性 `Brush.Control.Background`（浅 `#F8FBF9`／深 `#2A342E`）加 240 alpha，随系统深浅色自动切换。补断言：面板底色等于当前主题 `Brush.Control.Background` 且非亮绿。**说明：应用本身没有手动主题开关，但会跟随 Windows 系统深浅色热切换（`ThemeManager` 监听 `PlatformSettings.ColorValuesChanged`），故需要 Light/Dark 两套色板。**
 
 验证：Debug（独立输出目录，避开运行中进程锁）与 NativeAOT 均 **1812 checks 通过**。
+
+## 2026-11-15 关闭
+
+- **判断：** P2 多音提示色 + hover 候选查看达成目标；主人已真机目视确认多音提示色与 hover 候选「没问题」。
+- **验证摘要：** Debug 与 NativeAOT 均 1812 checks 通过；真实词典「银行」的「行」端到端携带默认 háng + 备选 xíng；修复逐字列 LineHeight 继承溢出、底字不可框选/右键、面板行高、主题色解析等回归。
+- **回写位置：** 稳定结论并入 Epic spec「P1/P2 结论」。
+- **遗留事项：** 可点击常驻菜单、英语橙色标记/右键列表、日语异读交互、手动纠音/偏好持久化为后续。
