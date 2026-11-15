@@ -7,92 +7,79 @@ created: 2026-11-14
 
 # 本地三语注音准确性与结构化交互升级
 
-> **读者：** 负责推进中文选音与逐字对齐、日语本地词典验证、英语异读数据保留及结果区交互的开发者。本文承载第一部分本期计划的活规格；实现结论以代码和实测证据为准。
-> **来源：** `codestable/talks/004-本地三语注音优化与后续能力规划.md` 第一部分。
+> **读者：** 推进注音升级的开发者。本文是该 Epic 唯一活规格：只记现在为真的事实、目标与可复跑证据。
+> **决策与计划：** [talks/004](../talks/004-本地三语注音优化与后续能力规划.md)；**穿刺证据：** [notes/misaki-spike](../notes/misaki-spike.md)。
+> **2026-11-15 方向定稿：** 中文保留自研引擎（内嵌随包）；日/英 + 未来 5 语走 MisakiSharp，编成**原生 DLL 按语言裁小包、ModelScope 按需下载、懒加载**；只取管线中间产物、按原文偏移对齐；复用现有 span/candidates/hover 契约。
 
 ## 这条线要改变什么
 
-当前三语注音已经能在本地离线完成基础标注，但词语上下文、底字与音节对应、备选读音和词典资源验证还没有形成完整的结构化契约。这个 Epic 先用统一样例和隔离探针证明候选方案，再按证据推进中文选音/对齐、中文多音查看、日语词典切换和英语异读数据保留。
+把日语、英语的读音来源迁到 MisakiSharp（日语 unidic 3.1.0 振假名；英语词性/时态消歧 + 词性多候选），中文维持自研引擎；把注音词典分发从“按语言下载原始词典”改为“按语言下载裁剪后的 Misaki 原生 DLL 包”，主程序不膨胀、注音仍可选。守住本地离线、中间产物、原文偏移对齐、Debug/AOT、只管读音不管释义。
 
-本期守住：本地离线优先、中文规范标音、原文展示与内部归一化分离、按语言独立资源、Debug 与 NativeAOT 均需验证。TTS、OCR API、口语连读变调以及日语/英语异读交互不在本 Epic 的完成条件内。
+## 当前真相（截至 2026-11-15，代码尚未切换）
 
-## 当前怎么理解（活规格）
+本地链路仍为：纯原文 → 单语言标注器 → `AnnotationSpan(Start, Length, Reading, Syllables)`（含 `Candidates`，首项默认）→ 按 UTF-16 区间构建 Ruby。中文走自研 `ChinesePinyinEngine`（**保留**）；日语仍 IPAdic（`JapaneseFuriganaAnnotator`）；英语仍 CMUdict 单词典（`EnglishIpaDictionary`，候选库 issue 007 已落）。分发仍 `PhoneticDependencies` 按语言下载 ja/en/zh 词典 + SHA-256。
 
-本地链路现为：纯原文 → 单语言标注器 → `AnnotationSpan(Start, Length, Reading, Syllables)` → 直接按区间构建 Ruby 文档。P1 首切片已将纯原文与 spans 保持到面板/复制/渲染，中文适配器提供绝对 UTF-16 逐字音节，控件在词级容器内逐字对齐；方括号保留为导出与现有 LLM 输入协议，不再作为本地显示事实源。中文 MeCab 运行期仍只返回 Viterbi 选中的词条，未提供完整候选；英语解析层已保留 CMUdict 编号候选、正式数据库生成仍只写默认项，日语生产适配仍是 IPAdic 专用类型。
+穿刺已完成（`tools/misaki-spike`、`tools/misaki-native`、`tools/misaki-native-client`）：AOT 主程序可运行时 `LoadLibrary` 原生 DLL；MisakiNative.dll 只依赖 Windows 内置 UCRT，纯便携；内嵌资源 66MB 可按语言裁剪为日~18MB/英~8MB/5语~22MB；中文单字多读=0（无候选）；英语多音按词性存在数据里可直接取。详见 notes/misaki-spike。
 
-推进顺序：
+## 三语目标
 
-1. **P0：** 固定三语金样本和现状基线，隔离验证中文候选、UniDic 2.1.2 字段/加载、英语 CMUdict 多读音保留及资源/AOT 可行性；失败也必须留下边界，不改生产词典。
-2. **P1：** 依据 P0 结论实现中文默认选音、结构化位置/逐字对齐和候选传递，保持纯原文为事实源。
-3. **P2：** 在结构化数据之上实现中文多音提示色、hover 候选查看和现有复制/选区/收藏协调。
-4. **P3/P4：** 证据通过后再切换日语词典、落地英语候选数据并完成分发、离线、懒加载和 NativeAOT 回归。
+| 语言 | 读音来源 | 候选/hover | 分发 |
+|---|---|---|---|
+| 中 | 自研引擎（保留） | 自研提供 | 数据 ~1.5MB 内嵌随包 |
+| 日 | Misaki `JapaneseTagger.Parse`（unidic 3.1.0） | 单读，需要时补 unidic 倒排 | MisakiJa.dll ~18MB 按需下载 |
+| 英 | Misaki `Phonemize` 默认读音 | Misaki 词典词性多读 | MisakiEn.dll ~8–20MB 按需下载 |
+| 5 语 | Misaki `EspeakG2P` | 无候选 | Misaki5Lang.dll ~22MB 按需下载 |
 
-### 质量承诺
+## 现在推什么（可执行路线，按序）
 
-- **功能适宜性：** 金样本必须区分已验证、失败和未覆盖；不得把保留候选误称为已经完成语境消歧。
-- **性能效率：** 记录词典磁盘体积、冷启动、稳态注音、使用期间内存和重新加载，不预设未经测量的阈值。
-- **交互能力：** P1/P2 不从 `底字[读音]` 反推结构；候选菜单必须能指出当前默认项，并不以颜色作为唯一信息。
-- **兼容性与可靠性：** 资源下载、哈希、Debug/NativeAOT 打开和离线运行必须可复现；验证失败不得覆盖生产产物或静默回退成“通过”。
-- **可维护性：** 数据来源、许可、再生流程和已知限制均可追溯；真实变化出现前不为未来语言或引擎抽象空接口。
+1. **重打包链** — Cecil 剥资源脚本 + 按语言出原生 DLL（ja/en/5语）+ 版本哈希 + NOTICE。
+2. **主程序接入骨架** — P/Invoke 客户端 + 各语 Lazy 单例 + 后台/锁 + 设置页多语包下载 UI + AOT 烟测。
+3. **日语接入** — `JapaneseTagger.Parse` 出振假名，保留 span 契约与原文偏移；送假名/长音/复合词/未登录回归。
+4. **英语接入** — 默认读音 + 词性多候选；数字/缩写对齐回归。
+5. **中文内嵌收口** — 自研数据由下载改为随包内嵌，核对与现网一致、候选/hover 复用。
+6. **5 语接入** — EspeakG2P 单读音。
+7. **分发简化与收尾** — 移除旧 ModelScope ja/en/zh 注音下载；离线/AOT 回归；更新 `spec/index.md` 与 `notes/phonetics-pipeline.md`；关闭旧 Epic/issue。
 
-### 日语 P0 结论与生产切换前提
+## Issues
 
-UniDic 2.1.2 的隔离验证已完成，结论为**可进入生产适配设计，尚不能直接替换 IPAdic**。通用 MeCab 入口在 Debug 和非 invariant NativeAOT 中可加载、读取原始字段和重载；固定样例的 44 个节点及全部检查结果在两种运行时一致。4 个送假名金样本、7 个字段/边界检查、9 个策略检查通过，其中两项明确验证已知迁移差异，不代表展示与计数已达到生产验收。
+**历史（旧计划，已闭合；结论以本规格与 talks/004 为准）：**
 
-- 字段：原始 Feature 按 CSV 解析，已知词元有 26 列；书面振假名优先 `kana`（17），缺失才取 `pron`（9），均转平假名并切送假名；缺列与 `*` 视为缺值。`lemma`（7）、`pronBase`（11）、`aType`（23）、`aConType`（24）已验证可读。重音多值需保留引号内的逗号。IPAdic 专用属性在 UniDic 上语义错位，不得直接沿用。
-- 准确性边界：四个样本证明字段适配可行；`躊躇` 的书面假名与发音长音确有区别，但尚未证明比正确读取 IPAdic「読み」的生产实现整体更准确。更细分词可能改变复合词读音与标注边界，不能预设质量提升。
-- 策略：现有过滤与去重规则可复用；候选词数随分词变化。同一固定句可由 IPAdic 的 9 词变成 UniDic 的 10 词，跨过短文本全注阈值；药物长句为 12→13 词，`睡眠薬` 由整词注音变为分段注音。切换前必须明确词数口径并验收具体变化。
-- 展示：`日本` 被过滤、仅 `語` 带注音时，旧字符串 `日本語[ご]` 被实际 Ruby 解析器回溯为整串底字，证明区间会丢失。切换前必须将明确底字区间保持到渲染端，并验证复制、选区、收藏；不通过修改原文或插入分隔符掩盖歧义。
-- 运行时：UniDic UTF-8 词典的 invariant globalization 探针曾加载失败，非 invariant 探针已通过。生产宿主目前仍为既有 IPAdic 契约；切换时须验证真实宿主非 invariant NativeAOT、离线加载、懒加载、闲置释放及重载，不能用隔离探针替代宿主证据。
-- 成本：原包展开约 260 MB，既有压缩包记录约 46.3 MB；当前 AOT 探针约 3.06 MB。单次 AOT 观测初次打开约 17.37 ms、再次 Parse 约 0.017 ms、重载约 2.38 ms，工作集约 10.4→16.2→13.3 MB；均为独立进程观测，不是产品阈值或冷磁盘/完整内存基准。
-- 分发：隔离验证要求 `sys.dic`、`unk.dic`、`matrix.bin`、`char.bin`、`dicrc`，原件指纹保存在关闭 Issue。原 `COPYING` 允许 GPL/LGPL/BSD 三选一；可按 BSD 随附 UniDic Consortium 2011–2013 版权、完整条款与免责声明，完整包和按需下载都须带声明。生产切换时再更新资源清单、哈希、NOTICE 和离线交付验证；本轮未修改生产资源或上传 ModelScope。
+- [x] `issues/001-x-P0-三语基线与验证工具.md`
+- [x] `issues/002-x-P0-UniDic字段与运行时兼容性验证.md` — unidic 结论并入 Misaki 日语路径。
+- [x] `issues/003-x-P0-英语异读候选保留验证.md` — 英语候选形状验证（Misaki 词典已自带词性多读，旧 CMUdict 候选库作废）。
+- [x] `issues/004-x-P1-中文结构化区间与逐字对齐.md` — span/逐字对齐（**复用**）。
+- [x] `issues/005-x-P1-中文选音引擎与候选传递.md` — 自研中文引擎（**保留**）。
+- [x] `issues/006-x-P2-中文多音提示色与hover候选菜单.md` — 多音 hover（**复用**）。
+- [x] `issues/007-o-P4-英语候选正式数据落地.md` — 英语候选 SQLite；被 Misaki 词性多候选取代，作废。
 
-可复跑探针源码位于 `codestable/tools/unidic-probe/`，不随桌面程序发布；完整命令、样本与证据见 [Issue 002](issues/002-x-P0-UniDic字段与运行时兼容性验证.md)。日语生产切换仍属 P3，尚未创建对应实施 Issue，推进前需明确上述策略与结构决策。
+**待推进（按路线建 issue，编号续 008 起）：**
 
-### P0 基线结论（001/002/003 已闭合）
+- [ ] 008 重打包链：Cecil 剥资源 + 按语言原生 DLL + 哈希 + NOTICE。
+- [ ] 009 主程序接入骨架：P/Invoke + Lazy 单例 + 后台/锁 + 设置页多语包下载 + AOT 烟测。
+- [ ] 010 日语接入（tagger 振假名）。
+- [ ] 011 英语接入（默认读音 + 词性多候选）。
+- [ ] 012 中文内嵌收口。
+- [ ] 013 5 语接入（espeak 单读音）。
+- [ ] 014 分发简化与收尾（移除旧下载、spec/pipeline 更新、关闭）。
 
-三个 P0 issue 均满足「可复跑命令 + 样例期望 + 实测结果 + 明确未覆盖边界」，已闭合；稳定结论如下：
+## 质量承诺
 
-- **三语基线（001）：** `codestable/tools/phonetics-baseline/` 固定 22 条三语样本、链接生产标注器，不引用桌面工程、不改生产词典；退出码 0/1/2（无偏差/明确失败/依赖未就绪）。P1 换引擎后曾因 csproj 未链接 `ChinesePinyinEngine` 等新文件而编译失败，已补链修复；复跑 **76 PASS / 2 KNOWN_FAIL / 18 UNCOVERED**。2 个 KNOWN_FAIL 仅为旧「方括号→反解析」出口的银行挂载反例（`RubyTextParser.FindBaseWordStart` 缺 span 起点）——本地 UI 已改吃原文 + spans，该歧义不影响本地显示。中文候选对照（csharp-pinyin）在 P1 前生产 10/候选 12、P1 后生产 11/候选 12，存在语义退步、跨边界匹配与原生入口丢字，收益不足，**确定不采用**；该对照工具依赖外部 clone 与旧 MeCab 词典，保留为历史证据、不再复跑。
-- **UniDic（002）：** 见上「日语 P0 结论与生产切换前提」，可进入生产适配设计、尚不能直接替换 IPAdic。
-- **英语候选（003）：** `CmuDictionarySourceParser` 与 `EnglishPronunciationIndex` 在解析层与隔离内存契约完整保留编号候选（真实源 9,113 条编号备选、8,446 多读音词），`Lookup` 默认仍取 `Variant=1`、`LookupAll` 返回全部。**正式 SQLite 仍只存默认读音项**，候选未进入发布文件，也不具备语境/词性/口音消歧。工具 `codestable/tools/english-candidates/` 已修链接可编译，实跑需按 README 下载 CMUdict 源（不入库）。
-- **横切约束：** 三语数据均按语言独立目录 `resources/phonetics/<子目录>/` 管理、按 SHA-256 作版本、随附许可；验证失败不得覆盖生产产物或静默回退成通过。
+- **功能适宜性：** 金样本区分已验证/失败/未覆盖；不把“取到读音”说成语境消歧完成；候选按语言如实标注来源。
+- **性能效率：** 记录原生 DLL 下载体积、冷启动（首加载+建表）、稳态、内存；内存按语言懒加载。
+- **交互能力：** 不从 `底字[读音]` 反推结构；候选菜单标默认项、颜色非唯一信息。
+- **可靠性与兼容性：** 只取中间产物、按原文偏移对齐；Debug/AOT/离线可复现；纯便携（仅系统 UCRT）。
+- **可维护性：** 重打包脚本可重跑升版；数据来源、许可（UniDic BSD、misaki/Apache、phonemizer GPL、num2words LGPL 等）、哈希可追溯。
 
-### P1/P2 结构与选音、多音交互结论（004/005/006 已闭合）
+## 边界
 
-- **结构化事实源：** 本地链路 = 纯原文 → 单语言标注器 → `AnnotationSpan(Start, Length, Reading, Syllables)` → 按 UTF-16 区间直接构建 Ruby Inlines。纯原文与 spans 贯穿面板、复制、渲染；方括号仅作导出与既有 LLM 输入协议，**不再作为本地显示事实源，也绝不反解析重建**。中文逐字音节由适配层按绝对 UTF-16 生成，词级容器内逐字对齐，选区/复制仍在词级。非 BMP/非法代理项在代理项边界切段、原始偏移加回，不臆造扩展字读音。
-- **中文默认选音（005）：** 弃 zh MeCab，改进程内自研词组最匹配引擎：pypinyin 词组（最长 2–4 字）+ 单字频率默认 + CC-CEDICT/Unihan 稀有变体覆盖 + 繁体 t2s（仅查音、不改原文）。13 目标命中，「还 hái / 罅缝 xià fèng」修正且不回退「俳佪 pái huái / 周长大于 cháng dà」。运行期表 `deps/phonetics/zh/zh_pinyin.txt.gz`（TSV+gzip），构建期由 `resources/phonetics/{pypinyin,cc-cedict,unihan}` 合并生成，不再依赖 `mecab-dict-index`。
-- **候选契约：** `AnnotationSyllable.Candidates` 携带「默认音 + 候选集合」，`Candidates[0]` 即本句默认；候选 = 所用词典收录读音，不凭空造。P2 只消费候选、不制造候选。
-- **多音交互（006）：** 多音字默认注音用警示色（橙/琥珀，`Brush.Warning`）表示「存在其他读音」而非「不确定」；hover 用 `Popup` 半透明面板按模板列「底字 读音」，默认读音响橙，多音/单音共用样式；不挤压正文、不被裁切，移出恢复提示色。只查看不纠音、不改原文、不持久化偏好。逐字列与面板文本须显式 `LineHeight=double.NaN`（避免继承外层固定行高致注音溢出原文区）；面板底色用中性 `Brush.Control.Background` 并按系统深浅色取主题字典；底字可命中以支持框选/右键冒泡。
-- **数据/许可：** pypinyin(MIT) + CC-CEDICT(CC BY-SA 4.0) + Unihan(Unicode)；数据按 `resources/phonetics/<子目录>/` 管理、SHA-256 作版本、随附 NOTICE。
-- **明确未覆盖（后续 P3/P4）：** 手动纠音/改全文/个人读音偏好、可点击常驻候选菜单、姓名/自定义词典、口语连读变调、英语橙色标记/右键异读列表、日语异读交互、英语候选正式 SQLite 迁移、日语生产词典切换。
+暂不做：中文切 Misaki、音调核展示、手动纠音/个人偏好、口语连读变调；TTS/OCR API 仅备忘。
 
-## 现在推什么、先搁什么
-
-**当前进度：** P0（001/002/003）已闭合——三语基线工具复跑 76 PASS / 2 KNOWN_FAIL / 18 UNCOVERED，UniDic 与英语候选结论见下「P0 基线结论」；P1 已独立推进区间贯通、逐字布局与 Unicode/未知项切片，并由自研词组匹配引擎（Issue 005）落地中文默认选音与逐字候选传递，Debug/AOT 1807 checks 通过。P2 首个切片（Issue 006）已实现多音提示色与 hover 候选查看，并修复逐字列继承外层 LineHeight 导致注音溢出原文区的真实视觉回归；hover 改用 Popup 半透明面板、多音/单音按同模板列「底字 读音」（同字单换行、异字双换行）、默认读音响橙；并修复中文逐字底字不可框选/右键的回归（底字可命中，右键冒泡到词容器菜单）；Debug/AOT 1809 checks 一致。P0/P1/P2 均已闭合，主人已真机目视确认多音提示色与 hover 候选无问题。P4（Issue 007）已落地英语候选正式数据：`ipa_dict.db` 改为多读音表（126,026 词面 / 135,139 条读音），`LookupAll` 返回全部候选、`Lookup` 默认口径不变，Debug/AOT 均 1815 checks 通过——仅差 ModelScope 上传（本机不可执行）。下一步 P3 或收尾 P4 分发。
-
-**Issues：**（编号仅在本 Epic 内有效）
-
-- [x] `issues/001-x-P0-三语基线与验证工具.md` — 已闭合。三语基线工具（P1 后修复 csproj 链接）复跑 76 PASS / 2 KNOWN_FAIL / 18 UNCOVERED；2 KNOWN_FAIL 为旧方括号出口银行挂载反例。中文候选（csharp-pinyin）P1 前生产10/候选12、P1 后生产11/候选12，存在语义退步、跨边界匹配与原生入口丢字，**不采用**。完整资源基准/宿主交互/分发证据为明确未覆盖边界。
-- [x] `issues/002-x-P0-UniDic字段与运行时兼容性验证.md` — 隔离验证完成；通用入口与非 invariant AOT 可行，生产切换仍受上述前提约束。
-- [x] `issues/003-x-P0-英语异读候选保留验证.md` — 已闭合。真实源候选模型验证切片完成（15 checks 通过，9,113 条编号备选、8,446 多读音词），默认查询仍取 Variant=1；正式 SQLite 仍只存默认项，不具备语义消歧。工具已修复 P1 后 csproj 链接可编译。
-
-- [x] `issues/004-x-P1-中文结构化区间与逐字对齐.md` — 已闭合。纯原文 + spans 贯穿面板/复制/渲染，中文逐字对齐，银行只挂银行、未知项不展示、扩展字不破坏后续；Debug/AOT 通过；人工视觉由 006 承接确认。
-- [x] `issues/005-x-P1-中文选音引擎与候选传递.md` — 已闭合。弃 zh MeCab，改进程内自研词组最匹配引擎；13 目标命中、默认选音修正「还/罅缝」且不回退「俳佪/周长大于」；`AnnotationSyllable.Candidates` 携带候选（首项默认）；Debug/AOT 通过，数据源/哈希/许可可追溯。
-- [x] `issues/006-x-P2-中文多音提示色与hover候选菜单.md` — 已闭合。多音字默认注音用警示色（橙色=存在其他读音、非不确定），Popup 半透明 hover 面板按模板列「底字 读音」（同字单换行/异字双换行）且默认读音响橙，多音/单音共用样式；修复逐字列继承 LineHeight 溢出、底字不可框选/右键、面板行高、主题色解析等回归；Debug/AOT 1812 checks、真实词典「行」候选端到端；主人真机目视确认无问题。
-- [ ] `issues/007-o-P4-英语候选正式数据落地.md` — 已落地多读音 schema（`words(word,variant,ipa)`）+ 写全量编号备选，`EnglishIpaDictionary.LookupAll` 返回全部候选、`Lookup` 默认仍取 variant=1；`--build-en-data` 重建 `ipa_dict.db` 126,026 词面 / 135,139 条读音，manifest 哈希已回填；Debug/AOT 1815 checks；**仅差 ModelScope 上传**（本机无令牌），故保持 open。
-
-**暂不推进：** 中文多音 hover 的可点击常驻菜单、日语生产词典切换、英语橙色标记/右键列表、口语连读变调、手动纠音与个人读音偏好。P0 候选未证明收益前，不维护多套生产引擎兼容/回退链。
-
-**关闭时要满足：** 三个 P0 issue 都有可复跑命令、样例期望值、实测结果和明确的未覆盖边界；P1/P2 的结构与交互不再依赖字符串反解析；资源与许可结论能指导后续切换决策。
-
-**合并回 project spec 的候选：** 只合并最终采用的引擎、词典字段、分发文件、哈希/许可和已验证运行边界；候选失败原因留在 Epic/Issue 或 note，不把未决方案写成当前真相。
-
-**Vision 同步检查：** Epic 关闭时检查本地离线优先、学习型注音体验和资源成本方向是否仍一致；不因实现便利静默扩大目标。
+**合并回 project spec 的候选：** 最终采用的读音来源、原生 DLL 包形态/体积、许可、已验证运行边界。旧计划失败/保留原因留 Epic 与 notes。
 
 ## 相关材料
 
-- `codestable/talks/004-本地三语注音优化与后续能力规划.md` — 已确认的本期范围、阶段和验收证据。
-- `codestable/spec/index.md` — 当前注音、懒加载、NativeAOT 与分发真相。
-- `codestable/notes/phonetics-pipeline.md` — 当前词典再生、许可和已知踩坑。
-- `src/NaniKore/Phonetics/` — 三语现状实现与运行期依赖清单。
+- [talks/004 决策与计划](../talks/004-本地三语注音优化与后续能力规划.md)
+- [notes/misaki-spike](../notes/misaki-spike.md)
+- [notes/phonetics-pipeline](../notes/phonetics-pipeline.md)
+- `codestable/tools/misaki-spike/`、`misaki-native/`、`misaki-native-client/` — 穿刺源码
+- `src/NaniKore/Phonetics/` — 现状实现

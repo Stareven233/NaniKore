@@ -1,5 +1,7 @@
 # 注音词典再生管线
 
+> ⚠️ **计划变更（2026-11-15）：** 三语读音将转向 MisakiSharp，**日/英（+未来 5 语）改用其管线中间产物，中文保留自研引擎（数据内嵌随包）**；分发从“按语言下载原始词典 + 哈希校验”改为“**按语言下载裁剪后的 Misaki 原生 DLL 包**（MisakiJa/En/5Lang，ModelScope 按需下载、懒加载）”。**本文件描述的仍是当前生效的旧管线；切换实施时整体重写。** 决策见 [talks/004](../talks/004-本地三语注音优化与后续能力规划.md)，穿刺证据见 [misaki-spike](./misaki-spike.md)。
+
 本地注音引擎的词典二进制从公开数据源再生的完整流程。本文档面向维护者；运行期行为（按语言下载、哈希校验、软降级）见 `src/NaniKore/Phonetics/PhoneticDependencies.cs` 与 `deps/README.md`。
 
 ## 1. 目录契约

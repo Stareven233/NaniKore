@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <!-- 多语言字符处理必须关闭 invariant -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- AOT 在 publish 时再开；此处默认 JIT 探针 -->
+    <PublishAot Condition="'$(Aot)' == 'true'">true</PublishAot>
+    <StripSymbols>false</StripSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MisakiSharp" Version="2.2.0" />
+  </ItemGroup>
+
+</Project>

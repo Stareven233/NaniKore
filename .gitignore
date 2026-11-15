@@ -18,8 +18,7 @@ deps/*
 
 # 临时文件与日志
 *.log
-*.tmp
-*.trash
+*.temp
 _todo.md
 *~
 
