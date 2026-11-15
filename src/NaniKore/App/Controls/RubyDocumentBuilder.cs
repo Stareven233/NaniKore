@@ -51,7 +51,7 @@ internal static class RubyDocumentBuilder
             }
             AddPlain(plain[cursor..span.Start]);
             var control = new RubyInlineControl(plain.Substring(span.Start, span.Length), span.Reading, fontSize,
-                span.Syllables, span.Start);
+                span.Syllables, span.Start, span.WholeWord?.Candidates);
             inlines.Add(new InlineUIContainer(control) { BaselineAlignment = BaselineAlignment.TextBottom });
             cursor = span.Start + span.Length;
         }

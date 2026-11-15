@@ -6,9 +6,21 @@ namespace NaniKore.Phonetics;
 /// 一段原文上的注音落点：从 <see cref="Start"/> 起 <see cref="Length"/> 个字符为底字，读音是 <see cref="Reading"/>。
 /// 区间使用原文 UTF-16 偏移，直接传至渲染层；方括号格式仅用于导出。
 /// 区间不重叠：汉字区间与拉丁词元天然互斥，日语/中文/英语标注器各自只认领自己脚本的区段。
+/// 候选有两套互斥形状：中文用逐字 <see cref="Syllables"/>，英语用整词 <see cref="WholeWord"/>（issue 011）。
 /// </summary>
 internal readonly record struct AnnotationSpan(int Start, int Length, string Reading,
-    IReadOnlyList<AnnotationSyllable>? Syllables = null);
+    IReadOnlyList<AnnotationSyllable>? Syllables = null, WholeWordReadings? WholeWord = null);
+
+/// <summary>
+/// 英语整词读音候选（issue 011 对候选契约的最小扩展）：一条覆盖整个底字的读音组，首项是本句选中读音。
+/// 与中文逐字 <see cref="AnnotationSyllable"/>（每条 Length=1）互斥——消费方按「有一条覆盖整词」判定整词组，
+/// 不把英语塞进中文逐字列；停用/难词过滤、短文本豁免与同词同音去重与中文完全共用。
+/// </summary>
+internal readonly record struct WholeWordReadings(int Start, int Length, IReadOnlyList<string> Candidates)
+{
+    /// <summary>本句选中读音（候选首项，引擎按本句语境选出的那一个）。</summary>
+    public string Reading => Candidates.Count > 0 ? Candidates[0] : string.Empty;
+}
 
 /// <summary>
 /// 中文适配器产出的逐字读音，Start 为原文的绝对 UTF-16 偏移。

@@ -30,9 +30,9 @@ internal sealed class TextAnnotatorRegistry : IDisposable
     }
 
     /// <summary>
-    /// 默认装配：日语已切到原生语言包（010），英语/中文仍走旧 provider（011 切英语、012 内嵌中文）。
+    /// 默认装配：日英都已切到原生语言包（010/011），中文仍走旧 provider（012 内嵌）。
     /// 原生槽位的生命周期由 <see cref="NativePhoneticPackHost"/> 统一管理（闲置释放与重启更新都在那边），
-    /// 因此注册表不持有它——否则退出时两处各释放一次，还会把应用的宿主单例提前拆掉。
+    /// 因此注册表不持有它们——否则退出时两处各释放一次，还会把应用的宿主单例提前拆掉。
     /// </summary>
     public static TextAnnotatorRegistry CreateDefault() => Create(NativePhoneticPackHostHolder.Default);
 
@@ -42,9 +42,10 @@ internal sealed class TextAnnotatorRegistry : IDisposable
         ArgumentNullException.ThrowIfNull(nativeHost);
         var japanese = nativeHost.GetAnnotator(NativePhoneticManifest.JapaneseCode)
             ?? throw new InvalidOperationException("原生日语语言包未装配。");
-        var english = new CachedTextAnnotator<EnglishIpaAnnotator>("en", static () => new());
+        var english = nativeHost.GetAnnotator(NativePhoneticManifest.EnglishCode)
+            ?? throw new InvalidOperationException("原生英语语言包未装配。");
         var chinese = new CachedTextAnnotator<ChinesePinyinAnnotator>("zh", static () => new());
-        return new TextAnnotatorRegistry([japanese, english, chinese], [english, chinese]);
+        return new TextAnnotatorRegistry([japanese, english, chinese], [chinese]);
     }
 
     /// <summary>共用策略、分语言计时；设置保存后按已有空闲时长重新判断。</summary>

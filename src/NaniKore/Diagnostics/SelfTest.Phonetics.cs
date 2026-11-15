@@ -22,8 +22,9 @@ internal static partial class SelfTest
         TestRegistryResetAvailability();
         TestAnnotationPerformanceBudget();
         TestJapaneseWrittenKana();
+        TestEnglishNativeAnnotation();
+        TestEnglishNativeWholeWordCandidates();
         TestChinesePinyinDictionary();
-        TestEnglishIpaDictionary();
         TestEnglishCandidateDatabase();
         RunNativePhoneticPackTests();
     }
@@ -648,41 +649,10 @@ internal static partial class SelfTest
             $"actual={AnnotatedTextFormatter.Compose("持有300股A股股票", mixedChinese)}");
     }
 
-    private static void TestEnglishIpaDictionary()
-    {
-        var annotator = new EnglishIpaAnnotator();
-        if (!annotator.IsAvailable)
-        {
-            Skip("en 词典未就绪（deps/phonetics/en），跳过英语金样本");
-            return;
-        }
-
-        var defaultProfile = AnnotationProfile.Load("en");
-        var ubiquitous = Annotated(annotator, "The ubiquitous government", new AnnotationContext(defaultProfile));
-        Check(
-            "英语金样本：难词注 IPA，停用/高频词不注",
-            ubiquitous == "The ubiquitous[juː.ˈbɪk.wɪ.təs] government",
-            $"actual={ubiquitous}");
-        var inflection = Annotated(annotator, "abandoned the field", new AnnotationContext(defaultProfile));
-        Check(
-            "英语金样本：屈折词被停用词包围仍只注自身",
-            inflection == "abandoned[ə.ˈbæn.dənd] the field",
-            $"actual={inflection}");
-        var possessive = annotator.Annotate("Bob's device", new AnnotationContext(defaultProfile));
-        Check(
-            "英语金样本：所有格只给词干注音",
-            possessive is [{ Start: 0, Length: 3 }, ..],
-            $"actual={AnnotatedTextFormatter.Compose("Bob's device", possessive)}");
-
-        // 主人反馈的样本：历史条目读出来必须是词典式 ˈtriː.zən，而不是 trˈizən
-        var treason = annotator.Annotate("treason", new AnnotationContext(defaultProfile));
-        Check(
-            "英语金样本：treason 注成词典式 IPA",
-            treason is [{ Start: 0, Length: 7, Reading: "ˈtriː.zən" }],
-            $"actual={AnnotatedTextFormatter.Compose("treason", treason)}");
-    }
-
-    /// <summary>真实 en/ipa_dict.db 的候选库断言：多读音词全部编号进库、默认查询取首项。</summary>
+    /// <summary>
+    /// 旧 en/ipa_dict.db 的候选库断言（数据保留、不再被 provider 使用，随旧 provider 在 014 下线）：
+    /// 多读音词全部编号进库、默认查询取首项。英语注音生产路径已经是原生语言包，见 TestEnglishNativeAnnotation。
+    /// </summary>
     private static void TestEnglishCandidateDatabase()
     {
         using var dictionary = EnglishIpaDictionary.TryOpen(PhoneticDependencyPaths.EnglishDictionaryFile);

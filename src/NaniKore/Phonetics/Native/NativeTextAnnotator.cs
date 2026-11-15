@@ -78,6 +78,8 @@ internal sealed class NativeTextAnnotator : ITextAnnotator, IDisposable
         }
 
         var japanese = string.Equals(LanguageCode, NativePhoneticManifest.JapaneseCode, StringComparison.OrdinalIgnoreCase);
+        // 英语：字面方括号区段沿用旧标注器口径不注音（如用户手贴的带注音文本、代码数组下标）。
+        var bracketed = japanese ? null : MarkBracketRegions(plainText);
         var spans = new List<AnnotationSpan>();
         foreach (var token in RunEngine(plainText))
         {
@@ -92,6 +94,11 @@ internal sealed class NativeTextAnnotator : ITextAnnotator, IDisposable
             }
 
             if (!plainText.AsSpan(token.Start, token.Length).SequenceEqual(token.Surface))
+            {
+                continue;
+            }
+
+            if (bracketed is not null && IsBracketed(bracketed, token.Start))
             {
                 continue;
             }
@@ -117,7 +124,18 @@ internal sealed class NativeTextAnnotator : ITextAnnotator, IDisposable
                 continue;
             }
 
-            spans.Add(new AnnotationSpan(start, length, reading));
+            // 英语：候选按「本句读音 + 真正异读」折叠；只剩一条时不挂候选（没有其他读法可看）。
+            WholeWordReadings? wholeWord = null;
+            if (!japanese && token.Candidates is { Count: > 1 } candidates)
+            {
+                var readable = EnglishReadingCandidates.Collapse(reading, candidates);
+                if (readable.Count > 1)
+                {
+                    wholeWord = new WholeWordReadings(start, length, readable);
+                }
+            }
+
+            spans.Add(new AnnotationSpan(start, length, reading, null, wholeWord));
         }
 
         return spans;
@@ -175,6 +193,41 @@ internal sealed class NativeTextAnnotator : ITextAnnotator, IDisposable
             return null;
         }
     }
+
+    /// <summary>
+    /// 标记方括号区段（含括号本身）：英语不注音字面方括号内部的内容。
+    /// 口径沿用旧英语标注器——上轮残留的方括号注音、代码数组下标不应该被再注一次；没有括号时返回 null。
+    /// </summary>
+    private static bool[]? MarkBracketRegions(string plainText)
+    {
+        var mask = new bool[plainText.Length];
+        var inBracket = false;
+        var any = false;
+        for (var index = 0; index < plainText.Length; index++)
+        {
+            var ch = plainText[index];
+            if (ch == '[')
+            {
+                inBracket = true;
+            }
+
+            if (inBracket)
+            {
+                mask[index] = true;
+                any = true;
+            }
+
+            if (ch == ']')
+            {
+                inBracket = false;
+            }
+        }
+
+        return any ? mask : null;
+    }
+
+    /// <summary>词元是否落在方括号区段里（只看首字足够：词元不会跨括号生成）。</summary>
+    private static bool IsBracketed(bool[] mask, int start) => start >= 0 && start < mask.Length && mask[start];
 
     /// <summary>
     /// 能被认领的词元：日语只认含汉字的词面（假名/拉丁不注），英语只认至少两个拉丁字母的词面

@@ -1,7 +1,7 @@
 # 日英原生注音语言包：构建链与实测
 
 > 2026-11-15。对应 [Epic 003 / 008](../../epics/003-o-本地三语注音准确性与结构化交互升级/issues/008-o-原生语言包正式重打包与数据再生.md)。
-> 本文只记录正式构建链的产物与实测。**日语 provider 已于 010 切换到原生包**（英语仍 CMUdict，011 切换；中文仍外部数据，012 内嵌），
+> 本文只记录正式构建链的产物与实测。**日语（010）与英语（011）provider 均已切换到原生包**（中文仍外部数据，012 内嵌），
 > 宿主接入从 009 开始。
 > 穿刺结论与旧口径失败证据见 [注音适配穿刺](misaki-annotation-spike.md)。
 > 速查：为什么日语词表要再生（体积代价）见「日语词表为什么来自 UniDic 再生」；
@@ -93,7 +93,7 @@ PE 普通导入表只有系统 DLL 与 UCRT：`KERNEL32/ADVAPI32`（英语另有
 
 ## 宿主接入骨架（009）
 
-`src/NaniKore/Phonetics/Native/` 已落地 ABI v1 客户端、包身份清单、状态机、下载安装与闲置释放；日语 provider 在 010 已切到该链路，英语仍 CMUdict（011 切换）。
+`src/NaniKore/Phonetics/Native/` 已落地 ABI v1 客户端、包身份清单、状态机、下载安装与闲置释放；日语 provider 在 010、英语 provider 在 011 已切到该链路。
 
 - 清单：`NativePhoneticManifest` 记录库字节、SHA-256、ABI、架构、四个导出与随包许可哈希；`deps/phonetics/misaki/<lang>/pack.json` 与之双向核对，任何一项不符即拒绝装载。
 - 客户端：先校验文件与 PE（win-x64）再按绝对路径 `NativeLibrary.TryLoad`，绑定后比对 ABI 与导出；输出交回同 DLL 释放，模块永不卸载。
@@ -109,6 +109,14 @@ PE 普通导入表只有系统 DLL 与 UCRT：`KERNEL32/ADVAPI32`（英语另有
 - 分词差异（记录、不追求与旧口径等价）：`日本語` → `日本 + 語`；`睡眠薬` → `睡眠 + 薬`；`行く` 等词面仍是整词，过滤与去重继续按整词词面裁决。
 - `NativeTextAnnotator` 的包目录可注入，使「设置页状态」与「真实加载」永远指向同一处（注入目录缺失时即真降级为纯文本，不抛异常）。
 - 实测：`./scripts/dev.ps1 test` 与 `--self-test` 均 1922 项通过（NativeAOT 宿主同样 1922）；日语冷加载 ~1.33 s、热态 20 次 0.4–0.6 ms。详见 [issue 010](../epics/003-o-本地三语注音准确性与结构化交互升级/issues/010-o-日语书面振假名接入.md)。
+
+## 英语 provider 切换与整词候选（011）
+
+- `TextAnnotatorRegistry` 的 `en` 槽位改取 `NativePhoneticPackHost` 的原生包标注器（与日语同一套宿主、闲置释放与重启更新），旧 `EnglishIpaAnnotator`（CMUdict 逐词标注器）留档 `.temp/011-英语/`；旧 `deps/phonetics/en/ipa_dict.db` 仍作为数据保留到 014（provider 已不再读取它）。
+- 美音 IPA 直接采用引擎的 Kokoro 编码转换（`KokoroIpa` + `IpaTranscription`）：`water[ˈwɔːɾ.ər]`、`better[ˈbeɾ.ər]`、`city[ˈsɪɾ.iː]`；闪音 `ɾ` 与喉塞音 `ʔ` 原样保留，不猜回 /t/、/d/。
+- 整词候选：`AnnotationSpan.WholeWord`（`WholeWordReadings(Start, Length, Candidates)`）承载一条覆盖整词的读音组，与中文逐字 `Syllables` 互斥；宿主 `EnglishReadingCandidates.Collapse` 折叠精确重复与仅差 `ˈ/ˌ` 的句重音变体，`record` 这类词义重音差别保留。UI 在 `RubyInlineControl` 里用同一套 hover 模板逐条列出读音并对本句选中项高亮。
+- 包字节未变（仍是 008 产物）：`-Stage Verify` 413 项断言 0 失败；新口径符号审计 `converted=366,846 / rejected=0 / unknownSymbols={}`。
+- 实测：Debug 与 NativeAOT 宿主自测 1957 项通过；英语冷加载 0.65–1.36 s（随机器负载波动）、热态 20 次 2.6–35 ms、重建 0.63–1.09 s。详见 [issue 011](../epics/003-o-本地三语注音准确性与结构化交互升级/issues/011-o-英语标准IPA质量与整词候选接入.md)。
 
 ## 日语词表为什么来自 UniDic 再生，而不是 misaki 自带
 
@@ -157,7 +165,7 @@ NativeAOT 产物不承诺二进制可复现，所以每轮都覆盖 `pack.json`�
 
 ## 未覆盖
 
-- 英语 provider 未切换：结果面板的整词候选与 hover 仍在 011；日语单读（无候选）。
+- 英语已是原生包（011），但旧 `ipa_dict.db`、旧 ja/en 词典下载卡片与 `scripts/dev.ps1` / `scripts/sync-deps.py` 的旧依赖清单仍在大；014 统一下线与重写。
 - 旧 ja 词典下载卡片仍与原生包卡片并存（契约内的过渡态），014 随旧 provider 一起下线。
 - 真实网络下载与断网重试未验证；**未上传 ModelScope**，`scripts/sync-deps.py` 与 `scripts/dev.ps1 publish -full` 的依赖清单仍是旧路径（014 处理）。
 - 未做干净系统 AOT 部署，也未在真实 UI 上练习重启替换与复制/选区/收藏回归。

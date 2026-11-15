@@ -1,6 +1,6 @@
 # 注音词典再生管线
 
-> **计划复核（2026-11-15）：** 本轮仅中日英。正式日英包构建链已落地（`scripts/phonetics/Build-MisakiPacks.ps1`，产物 `deps/phonetics/misaki/{ja,en}/`，实测见 [日英原生注音语言包](phonetics-packs.md)）；中文拟改数据内嵌；日语拟用最小修改的 Misaki 原生 DLL，并从同版 UniDic 再生书面 kana；英语已确定直接采用 Misaki 选音和已收录候选，转换为可读美音 IPA 并通过整词 hover 展示异读；允许发音变体，已知误选/缺项不阻塞本轮，**生产适配尚未实施**。原生架构与数据释放已隔离验证，5 语另立探索。**本文件正文仍描述当前生效的旧管线，切换实施后再重写，不能据本次穿刺更新生产哈希或宣称远端分发已完成。** 决策见 [talks/004](../talks/004-本地三语注音优化与后续能力规划.md)，最新证据见 [注音适配穿刺](misaki-annotation-spike.md)。
+> **计划复核（2026-11-15）：** 本轮仅中日英。正式日英包构建链已落地（`scripts/phonetics/Build-MisakiPacks.ps1`，产物 `deps/phonetics/misaki/{ja,en}/`，实测见 [日英原生注音语言包](phonetics-packs.md)）；中文拟改数据内嵌；日语拟用最小修改的 Misaki 原生 DLL，并从同版 UniDic 再生书面 kana；英语已确定直接采用 Misaki 选音和已收录候选，转换为可读美音 IPA 并通过整词 hover 展示异读；允许发音变体，已知误选/缺项不阻塞本轮，**生产适配已在 011 实施并验收**（日英 provider 均已切到原生包）。原生架构与数据释放已隔离验证，5 语另立探索。**本文件正文仍描述当前生效的旧管线，切换实施后再重写，不能据本次穿刺更新生产哈希或宣称远端分发已完成。** 决策见 [talks/004](../talks/004-本地三语注音优化与后续能力规划.md)，最新证据见 [注音适配穿刺](misaki-annotation-spike.md)。
 
 本地注音引擎的词典二进制从公开数据源再生的完整流程。本文档面向维护者；运行期行为（按语言下载、哈希校验、软降级）见 `src/NaniKore/Phonetics/PhoneticDependencies.cs` 与 `deps/README.md`。
 
@@ -31,13 +31,13 @@ deps/phonetics/            # 仓库内唯一真实源；ModelScope 仓库 Noetuu
 均为随程序集内嵌的静态资源，单独维护。表内 `#` 注释行只承载来源/许可/口径元信息，
 `EmbeddedData` 装载时按行跳过——切勿把例字写进注释行（曾因此把「龃龉」误收进判据集合）。
 
-## 3. 日语（ja）：无编译，直接采用 IPAdic 编译态
+## 3. 日语（ja）：无编译，直接采用 IPAdic 编译态（旧管线，provider 已在 010 下线）
 
 1. `dotnet run --project src/NaniKore -- --inspect-models` 之外无需任何步骤：把 nupkg 解出的
    `sys.dic / unk.dic / matrix.bin / char.bin / COPYING` 复制到 `deps/phonetics/ja/` 即完成。
 2. 复制 `IPAdic-COPYING.txt` 到同目录，与 NOTICE 一起构成许可归属。
 
-## 4. 英语（en）：CMUdict → SQLite IPA 多读音词典
+## 4. 英语（en）：CMUdict → SQLite IPA 多读音词典（旧管线，provider 已在 011 下线）
 
 只重建英语（不触碰中文产物，避免无关哈希漂移）：
 

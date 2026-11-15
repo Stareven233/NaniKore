@@ -49,10 +49,12 @@ internal sealed class RubyInlineControl : Grid
 
     private readonly TextBlock _rubyBlock;
     private readonly TextBlock _baseBlock;
+    /// <summary>注音行默认底色：整词/整句存在其他读音时用多读提示色，否则灰色（与逐字列的底色口径一致）。</summary>
+    private readonly IBrush _readingBrush;
     private readonly List<(TextBlock Reading, TextBlock Base, IBrush ReadingBrush)> _syllableColumns = [];
-    /// <summary>中文多音候选条目：只在存在其他读音时填充，供多音提示色与候选断言。</summary>
+    /// <summary>多读候选条目（中文逐字多音 + 英语整词多读）：只在存在其他读音时填充，供提示色与候选断言。</summary>
     private readonly List<RubyCandidateEntry> _candidateEntries = [];
-    /// <summary>逐字读音分组（含普通单音字与多音字），供 hover 面板按模板渲染。</summary>
+    /// <summary>读音分组（中文逐字、英语整词），供 hover 面板按模板渲染。</summary>
     private readonly List<SyllableReadingGroup> _readingGroups = [];
     /// <summary>悬浮面板：Popup 承载的半透明 Border，自带顶层宿主，不被滚动区裁切。</summary>
     private readonly Border _hoverPanel;
@@ -60,7 +62,7 @@ internal sealed class RubyInlineControl : Grid
     private bool _isRubyPressed;
     private bool _letterSpacingResolved;
 
-    /// <summary>是否含多音字（该词至少一个音节在词典里还有默认以外的读音）。</summary>
+    /// <summary>是否含多读（该词至少一个音节/整词在词典里还有默认以外的读音）。</summary>
     internal bool HasAlternativeReadings => _candidateEntries.Count > 0;
 
     /// <summary>多音候选条目快照，供自测断言；生产由候选面板消费。</summary>
@@ -78,12 +80,21 @@ internal sealed class RubyInlineControl : Grid
     /// <summary>状态栏文本通知请求事件。</summary>
     public static event Action<string>? StatusNotificationRequested;
 
+    /// <param name="syllables">中文逐字读音（每条 Length=1）；仅当恰好逐字覆盖整词时按列渲染。</param>
+    /// <param name="sourceStart">该词在原文中的起始偏移（校验逐字映射用）。</param>
+    /// <param name="wholeWordCandidates">
+    /// 英语整词候选（issue 011）：首项必须等于 <paramref name="rubyText"/>，多于一项时才展示为多读；
+    /// 不进逐字列，只用同一套 hover 模板列出本句读音与其他已收录读音。
+    /// </param>
     public RubyInlineControl(string baseText, string rubyText, double baseFontSize = 14,
-        IReadOnlyList<AnnotationSyllable>? syllables = null, int sourceStart = 0)
+        IReadOnlyList<AnnotationSyllable>? syllables = null, int sourceStart = 0,
+        IReadOnlyList<string>? wholeWordCandidates = null)
     {
         BaseText = baseText;
         RubyText = rubyText;
         ReadingKind = RubyReadingTerms.Detect(rubyText);
+        // 有备选读音时注音行用提示色（与中文多音字同一视觉），否则灰色
+        _readingBrush = wholeWordCandidates is { Count: > 1 } ? GetHintBrush(this) : Brushes.Gray;
 
         Focusable = false;
         VerticalAlignment = VerticalAlignment.Bottom;
@@ -102,7 +113,7 @@ internal sealed class RubyInlineControl : Grid
             FontSize = Math.Max(10, baseFontSize * RubyFontScale),
             LetterSpacing = RubyLetterSpacing,
             LineHeight = double.NaN,
-            Foreground = Brushes.Gray,
+            Foreground = _readingBrush,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
             Margin = new Thickness(0, 0, 0, -1),
@@ -228,6 +239,17 @@ internal sealed class RubyInlineControl : Grid
 
         }
 
+        // 英语整词候选（issue 011）：一条覆盖整词的读音组，不套入中文逐字列；
+        // hover 面板复用同一模板逐条列出本句读音与词典里其他已收录读音，首项即本句选中项。
+        if (_syllableColumns.Count == 0 && wholeWordCandidates is { Count: > 1 })
+        {
+            _readingGroups.Add(new SyllableReadingGroup(baseText, wholeWordCandidates));
+            for (var index = 0; index < wholeWordCandidates.Count; index++)
+            {
+                _candidateEntries.Add(new RubyCandidateEntry(baseText, wholeWordCandidates[index], index == 0));
+            }
+        }
+
         // 悬浮候选面板：Popup 承载单个半透明 Border，避免 ToolTip 自带的不透明外壳；锚定注音行
         _hoverPanel = new Border
         {
@@ -282,12 +304,12 @@ internal sealed class RubyInlineControl : Grid
         foreach (var (reading, _, _) in _syllableColumns) reading.Foreground = brush;
     }
 
-    /// <summary>悬停结束：逐字列恢复各自底色（多音字回到提示色，其余回灰），不是统一抹成灰色。</summary>
+    /// <summary>悬停结束：逐字列恢复各自底色（多音字回到提示色，其余回灰），整词行恢复到本词的默认注音色。</summary>
     private void RestoreReadingForeground()
     {
         if (_syllableColumns.Count == 0)
         {
-            _rubyBlock.Foreground = Brushes.Gray;
+            _rubyBlock.Foreground = _readingBrush;
             return;
         }
 
@@ -528,7 +550,7 @@ internal sealed class RubyInlineControl : Grid
     /// 每个字一行「底字 读音」；同字的不同读音单换行紧邻；不同字之间留一空行；
     /// 所有字之后空一行，再显示「点击复制注音 / 右键查看更多选项」。
     /// 多音字的当前默认读音用与原文注音相同的橙色高亮（另加半粗体辅助），单音字保持常规色。
-    /// 日/英整词无逐字映射时，用一行「底字 读音」代替。
+    /// 日/英整词无逐字映射时：日语用一行「底字 读音」；英语整词有候选时把整词当作一组，逐条列出读音。
     /// </summary>
     private Control BuildHoverContent()
     {
@@ -605,7 +627,7 @@ internal sealed class RubyInlineControl : Grid
         return row;
     }
 
-    /// <summary>多音候选条目：底字、候选读音、是否为该字本句默认读音。</summary>
+    /// <summary>多读候选条目：底字（中文单字 / 英语整词）、候选读音、是否为本句默认读音。</summary>
     internal readonly record struct RubyCandidateEntry(string BaseChar, string Reading, bool IsDefault);
 
     /// <summary>逐字读音分组：一个底字及其词典收录读音（首项为默认）。</summary>

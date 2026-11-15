@@ -64,7 +64,12 @@ internal static class PhoneticsProbe
             ("en", "The ubiquitous government and treason"),
             ("en", "abandoned the field"),
             ("en", "treason"),
-            ("en", "Bob's device")
+            ("en", "Bob's device"),
+            // 011 整词候选与实际阅读样本：短文本全注，可直接看 IPA 与跨词对齐
+            ("en", "The water is better in the city."),
+            ("en", "They will record a new record tomorrow."),
+            ("en", "I read a book yesterday, but please read it again."),
+            ("en", "The 2026 price is $50 for Dr. Smith.")
         };
 
         foreach (var (language, text) in samples)
@@ -79,6 +84,15 @@ internal static class PhoneticsProbe
             // 黄金样例调试视角：关闭难词过滤后的原始候选（停用词仍生效），与生产口径对照看过滤吃掉了什么
             var rawSpans = annotator is null ? [] : annotator.Annotate(text, new AnnotationContext(AnnotationProfile.Load(language, rareOnly: false)));
             Console.WriteLine($"[{language}]   仅难词=关 {text} => {Dump(AnnotatedTextFormatter.Compose(text, rawSpans))} (spans={rawSpans.Count})");
+
+            // 英语整词候选（issue 011）：直观看本句读音与其他已收录读音的排列
+            foreach (var span in spans)
+            {
+                if (span.WholeWord is { } wholeWord)
+                {
+                    Console.WriteLine($"[{language}]   候选 {text.Substring(span.Start, span.Length)} => {string.Join(" | ", wholeWord.Candidates)}");
+                }
+            }
         }
 
     }

@@ -5,7 +5,7 @@ namespace NaniKore.Phonetics;
 /// 存在的理由：设置页下载/更新语言包成功后必须重置标注器的「不可用」闩锁（热生效，无需重启），
 /// 而结果面板（issue 008 Phase 3）读原文注音时也走同一实例——两处不能各建一份，
 /// 否则下载后面板侧仍是旧的不可用探针。自测不经过本类，直接 new 独立实例，互不影响。
-/// 日语已在 010 切到原生语言包（槽位由 <see cref="NativePhoneticPackHost"/> 持有）。
+/// 日语已在 010、英语已在 011 切到原生语言包（槽位由 <see cref="NativePhoneticPackHost"/> 持有）。
 /// </summary>
 internal static class PhoneticAnnotatorRegistryHolder
 {

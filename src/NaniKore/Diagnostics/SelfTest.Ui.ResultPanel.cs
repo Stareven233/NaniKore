@@ -31,6 +31,7 @@ internal static partial class SelfTest
         TestResultPanelSourceAnnotation();
         TestStructuredChineseDisplayAndLayout();
         TestChineseMultiPronunciationHint();
+        TestEnglishWholeWordHover();
         TestAnnotationInvalidation();
         TestResultPanelSubscriptionCleanup();
         TestResultPanelDetectedSourceLanguage();
@@ -404,6 +405,116 @@ internal static partial class SelfTest
             return start >= 0 && context.ShouldEmit("银行", "yín háng")
                 ? [new(start, 2, "yín háng", [new(start, 1, "yín"), new(start + 1, 1, "háng")])] : [];
         }
+    }
+
+    /// <summary>
+    /// 英语整词候选（issue 011）：候选组不套入中文逐字列，用同一套 hover 模板列出
+    /// 本句选中读音（首项、提示色高亮）与其他已收录读音；颜色、默认项与复制语义在真实控件上逐项验收。
+    /// </summary>
+    private static void TestEnglishWholeWordHover()
+    {
+        EnsureThemedApplication();
+
+        // 走生产装配路径：AnnotationSpan → RubyDocumentBuilder → RubyInlineControl
+        AnnotationSpan[] spans =
+        [
+            new(0, 6, "rə.ˈkɔːrd", null, new WholeWordReadings(0, 6, ["rə.ˈkɔːrd", "ˈrek.ərd"]))
+        ];
+        var inlines = RubyDocumentBuilder.BuildInlines("record a record", spans, 17.5);
+        var ruby = inlines.OfType<InlineUIContainer>().Select(c => c.Child).OfType<RubyInlineControl>().Single();
+        ruby.Measure(Size.Infinity);
+        ruby.Arrange(new Rect(ruby.DesiredSize));
+
+        var rubyText = ruby.Children.OfType<TextBlock>().Single(b => b.Text == "rə.ˈkɔːrd");
+        var baseText = ruby.Children.OfType<TextBlock>().Single(b => b.Text == "record");
+        var hint = RubyInlineControl.GetHintBrush(ruby);
+
+        Check("English whole-word span keeps the sentence reading as the ruby text",
+            ruby.BaseText == "record" && ruby.RubyText == "rə.ˈkɔːrd");
+        Check("English whole-word candidates stay a single word, never per-character columns",
+            baseText.IsVisible &&
+            ruby.Children.OfType<TextBlock>().All(b => b.Text is not ("r" or "e" or "c")));
+        Check("English whole-word with alternatives tints the reading with the hint color",
+            ruby.HasAlternativeReadings &&
+            rubyText.Foreground is ISolidColorBrush rubyBrush &&
+            rubyBrush.Color == ((ISolidColorBrush)hint).Color);
+        Check("English candidate entries list the sentence reading first and mark it default",
+            ruby.CandidateEntries.Count == 2 &&
+            ruby.CandidateEntries.All(entry => entry.BaseChar == "record") &&
+            ruby.CandidateEntries.Count(entry => entry.IsDefault) == 1 &&
+            ruby.CandidateEntries[0] is { IsDefault: true, Reading: "rə.ˈkɔːrd" } &&
+            ruby.CandidateEntries[1].Reading == "ˈrek.ərd");
+
+        // hover 面板：同一模板逐条列出读音，本句默认读音响提示色，其他读音常规色。
+        var tip = ruby.HoverPanelContent;
+        var tipTexts = tip is null ? [] : FlattenText(tip).ToArray();
+        Check("English whole-word hover panel lists the sentence reading plus the recorded alternative",
+            tipTexts.Contains("record") && tipTexts.Contains("rə.ˈkɔːrd") && tipTexts.Contains("ˈrek.ərd") &&
+            tipTexts.Any(text => text.Contains("点击复制")));
+        var defaultReading = FindTextBlock(tip, "rə.ˈkɔːrd");
+        var alternativeReading = FindTextBlock(tip, "ˈrek.ərd");
+        Check("English whole-word hover panel highlights only the in-context reading",
+            defaultReading?.Foreground is ISolidColorBrush defaultBrush &&
+            defaultBrush.Color == ((ISolidColorBrush)hint).Color &&
+            alternativeReading?.Foreground is ISolidColorBrush alternativeBrush &&
+            alternativeBrush.Color != ((ISolidColorBrush)hint).Color);
+
+        // 悬停高亮后恢复到本词默认注音色，而不是统一抹灰
+        var accent = RubyInlineControl.GetAccentBrush(ruby);
+        ruby.ApplyReadingHoverForTest(true);
+        Check("hovering an English whole-word reading uses the accent color",
+            rubyText.Foreground is ISolidColorBrush accentBrush && accentBrush.Color == ((ISolidColorBrush)accent).Color);
+        ruby.ApplyReadingHoverForTest(false);
+        Check("leaving hover restores the English hint color instead of flat gray",
+            rubyText.Foreground is ISolidColorBrush restored && restored.Color == ((ISolidColorBrush)hint).Color);
+
+        // 复制/选区语义不变：底字是整词，读音只取本句选中项，不把候选拼进去
+        Check("English whole-word copy formats keep the base word and the sentence reading",
+            RubyDocumentBuilder.ExtractFromInlines(inlines, 0, 1, RubyCopyKind.Plain) == "record" &&
+            RubyDocumentBuilder.ExtractFromInlines(inlines, 0, 1, RubyCopyKind.Annotated) == "record[rə.ˈkɔːrd]" &&
+            RubyDocumentBuilder.ExtractFromInlines(inlines, 0, 1, RubyCopyKind.ReadingOnly) == "rə.ˈkɔːrd" &&
+            AnnotatedTextFormatter.Compose("record a record", spans) == "record[rə.ˈkɔːrd] a record");
+
+        // 单读音词：保持常规灰色，面板只有一行读音，不挂多读提示
+        var single = new RubyInlineControl("water", "ˈwɔːɾ.ər", 17.5, null, 0, ["ˈwɔːɾ.ər"]);
+        single.Measure(Size.Infinity);
+        single.Arrange(new Rect(single.DesiredSize));
+        var singleTexts = single.HoverPanelContent is null ? [] : FlattenText(single.HoverPanelContent).ToArray();
+        Check("single-reading English word keeps a neutral color and no alternative rows",
+            !single.HasAlternativeReadings &&
+            single.Children.OfType<TextBlock>().Single(b => b.Text == "ˈwɔːɾ.ər").Foreground is ISolidColorBrush singleBrush &&
+            singleBrush.Color != ((ISolidColorBrush)hint).Color &&
+            singleTexts.Contains("ˈwɔːɾ.ər") && !singleTexts.Contains("ˈrek.ərd"));
+
+        // 真实渲染冒烟：整词注音与邻接文本的实际排版（hover 面板是 Popup，不在位图里）。
+        const string renderText = "record a record of water and treason";
+        var renderSpans = new List<AnnotationSpan>
+        {
+            new(0, 6, "rə.ˈkɔːrd", null, new WholeWordReadings(0, 6, ["rə.ˈkɔːrd", "ˈrek.ərd"])),
+            new(15, 5, "ˈwɔːɾ.ər"),
+            new(25, 7, "ˈtriː.zən"),
+        };
+        var viewer = new SelectableTextBlock
+        {
+            FontSize = 17.5,
+            LineHeight = 36,
+            TextWrapping = TextWrapping.Wrap,
+            Inlines = RubyDocumentBuilder.BuildInlines(renderText, renderSpans, 17.5),
+            Foreground = Brushes.Black,
+        };
+        var surface = new Border { Background = Brushes.White, Padding = new Thickness(12), Child = viewer };
+        surface.Measure(Size.Infinity);
+        surface.Arrange(new Rect(surface.DesiredSize));
+        using (var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(new PixelSize(
+            (int)Math.Ceiling(surface.DesiredSize.Width), (int)Math.Ceiling(surface.DesiredSize.Height))))
+        {
+            bitmap.Render(surface);
+            Directory.CreateDirectory("artifacts");
+            bitmap.Save("artifacts/p2-english-whole-word.png", new Avalonia.Media.Imaging.PngBitmapEncoderOptions());
+        }
+
+        Check("English whole-word ruby render smoke writes PNG",
+            new FileInfo("artifacts/p2-english-whole-word.png").Length > 100);
     }
 
     /// <summary>缓存配置快照与请求取消覆盖同文重置、语言、编辑、关闭及后发请求。</summary>

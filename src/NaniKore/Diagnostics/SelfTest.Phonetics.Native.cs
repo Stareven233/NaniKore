@@ -178,10 +178,12 @@ internal static partial class SelfTest
         using (library)
         {
             const string text = "The water is better in the city.";
+            var coldWatch = System.Diagnostics.Stopwatch.StartNew();
             var result = library!.Annotate(text);
+            coldWatch.Stop();
             Check("en 注音调用成功", result.Succeeded, result.Error ?? string.Empty);
             var water = result.Tokens.FirstOrDefault(token => token.Surface == "water");
-            Check("en 词典式 IPA：water 有读音", water.Reading is { Length: > 0 }, $"actual={water.Reading}");
+            Check("en 词典式 IPA：water 有读音（闪音 ɾ 原样保留）", water.Reading == "ˈwɔːɾ.ər", $"actual={water.Reading}");
             Check(
                 "en 候选首项即本句读音且去重",
                 water.Candidates is { Count: > 0 } candidates &&
@@ -195,6 +197,26 @@ internal static partial class SelfTest
                 result.Tokens.All(token => token.Length == token.Surface.Length &&
                     token.Start + token.Length <= text.Length &&
                     text.AsSpan(token.Start, token.Length).SequenceEqual(token.Surface)));
+
+            // 冷/热/释放重建：与日语同一套观测口径（首调用含词表解析，热态是稳态单次成本）。
+            var first = string.Join('|', result.Tokens.Select(token => $"{token.Start}:{token.Length}:{token.Reading}:{string.Join(',', token.Candidates ?? [])}"));
+            var warmWatch = System.Diagnostics.Stopwatch.StartNew();
+            for (var i = 0; i < 20; i++)
+            {
+                _ = library.Annotate(text);
+            }
+
+            warmWatch.Stop();
+            Check("en 释放返回成功", library.Release() == 0);
+            var rebuildWatch = System.Diagnostics.Stopwatch.StartNew();
+            var rebuiltResult = library.Annotate(text);
+            rebuildWatch.Stop();
+            var rebuilt = string.Join('|', rebuiltResult.Tokens.Select(token => $"{token.Start}:{token.Length}:{token.Reading}:{string.Join(',', token.Candidates ?? [])}"));
+            Console.WriteLine(
+                $"[native] en cold={coldWatch.Elapsed.TotalMilliseconds:F0}ms warm20={warmWatch.Elapsed.TotalMilliseconds:F1}ms " +
+                $"rebuild={rebuildWatch.Elapsed.TotalMilliseconds:F0}ms 托管堆={GC.GetTotalMemory(false) / (1024 * 1024)}MB 工作集={Environment.WorkingSet / (1024 * 1024)}MB");
+            Check("en 释放后重建的读音与候选完全一致", string.Equals(first, rebuilt, StringComparison.Ordinal));
+            Check("en 重复释放不报错（幂等）", library.Release() == 0 && library.Release() == 0);
         }
     }
 
