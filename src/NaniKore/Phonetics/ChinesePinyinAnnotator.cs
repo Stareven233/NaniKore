@@ -4,7 +4,7 @@ namespace NaniKore.Phonetics;
 
 /// <summary>
 /// 简体中文拼音标注器：进程内 <see cref="ChinesePinyinEngine"/> 做词组最长匹配与单字兜底，
-/// 数据来自 pypinyin + CC-CEDICT + Unihan 合并表，随程序集内嵌（见 <see cref="ChinesePinyinDataBuilder"/>）。
+/// 数据来自 pypinyin + CC-CEDICT + Unihan 合并表，放 `deps/phonetics/zh/` 按需下载（见 <see cref="ChinesePinyinDataBuilder"/>）。
 /// 逐字音节带候选集合；展示/复制/收藏/选区一律用原文 code point 与 UTF-16 区间。
 /// </summary>
 internal sealed class ChinesePinyinAnnotator : ITextAnnotator, IDisposable
@@ -69,7 +69,7 @@ internal sealed class ChinesePinyinAnnotator : ITextAnnotator, IDisposable
         }
     }
 
-    /// <summary>清闩锁：下一次探测重新装载内嵌数据（闲置释放、热更口径共用同一入口）。</summary>
+    /// <summary>词典下载落地后清闩锁：下一次探测重新装载数据，实现无需重启的热生效。</summary>
     public void ResetAvailability()
     {
         lock (_gate)
@@ -87,7 +87,6 @@ internal sealed class ChinesePinyinAnnotator : ITextAnnotator, IDisposable
         }
 
         _probed = true;
-        // 内嵌资源，无外部文件可缺；每次重载都新开一条资源流（闲置释放后同样走这里）
-        _engine = ChinesePinyinEngine.TryLoad();
+        _engine = ChinesePinyinEngine.TryLoad(PhoneticDependencyPaths.ChinesePinyinDataFile);
     }
 }

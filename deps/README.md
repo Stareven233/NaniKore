@@ -31,15 +31,15 @@ deps/
 
 ## 注音词典（phonetics/）
 
-本地注音引擎使用的词典二进制与语料来源。目录结构与 ModelScope 仓库 Noetuu/nanikore-deps 的 phonetics/ 严格镜像。日英词典不随程序集分发，在设置页按需下载；哈希即版本（不符则提示更新）。判据词表（停用/高频/常用字符表）与中文拼音数据（pypinyin + CC-CEDICT + Unihan 合并表，约 1.5 MB）是随程序集内嵌的静态资源，不进本目录也不下载。
+本地注音引擎使用的词典与数据文件。目录结构与 ModelScope 仓库 Noetuu/nanikore-deps 的 phonetics/ 严格镜像。三语注音数据都**不随程序集分发**，在设置页按需下载；哈希即版本（不符则提示更新）。判据词表（停用/高频/常用字符表）仍是 KB 级内嵌策展资源，与词典哈希解耦。
 
 ```text
 deps/phonetics/
 ├─ ja/     IPAdic 编译态（sys.dic/unk.dic/matrix.bin/char.bin，约 53 MB）
 │         + IPAdic-COPYING.txt（许可随行；下载器不取，仅许可归属）
 ├─ en/     ipa_dict.db（SQLite，CMUdict 转 IPA，约 3.8 MB）
-├─ zh/     旧 MeCab 中文词典（已下线：拼音数据 012 起随程序集内嵌，本目录仅留历史副本）
-│         + dicrc（MeCab 编译期材料，运行期不读取）
+├─ zh/     zh_pinyin.txt.gz（pypinyin + CC-CEDICT + Unihan 合并表，约 1.5 MB）
+│         （旧 MeCab 产物 sys.dic/unk.dic/matrix.bin/char.bin/dicrc 已下线，随 014 归档）
 ├─ misaki/           正式日英注音语言包（替代 ja/en，尚未接入主程序）
 │  ├─ ja/  NaniKore.Phonetics.Ja.dll + pack.json + licenses/（约 20.8 MB）
 │  └─ en/  NaniKore.Phonetics.En.dll + pack.json + licenses/（约 8.5 MB）
@@ -50,15 +50,16 @@ deps/phonetics/
 `misaki/` 由 `scripts/phonetics/Build-MisakiPacks.ps1` 生成，每包的 `pack.json` 记录字节、SHA-256、ABI 版本、
 win-x64 架构、导出列表、PE 普通导入表与资源哈希；`licenses/` 附上游许可、UniDic 许可与派生说明。
 构建与实测见 `codestable/notes/phonetics-packs.md`。日英 provider 已切到原生包（010/011），
-下载器与 manifest 里旧的 `ja/en/zh` 条目只剩过渡卡片，随 014 下线；中文拼音数据自 012 起随程序集内嵌，无下载项。
+下载器与 manifest 里旧的 `ja/en` 条目只剩过渡卡片，随 014 下线；中文拼音数据自 012 起与日英同类，
+`deps/phonetics/zh/zh_pinyin.txt.gz` 也走设置页下载（约 1.5 MB）。
 
-下载器实际获取的是 PhoneticDependencyManifest 登记的五个文件（ja 4、en 1）；IPAdic-COPYING.txt 与 dicrc 不在下载清单中，仅随目录镜像一并同步，分别供许可归属与再生管线使用。中文没有下载清单（状态恒为「内置就绪」）。
+下载器实际获取的是 PhoneticDependencyManifest 登记的六个文件（ja 4、en 1、zh 1）；IPAdic-COPYING.txt 与 dicrc 不在下载清单中，仅随目录镜像一并同步，分别供许可归属与再生管线使用。
 
 | 语言 | 数据来源 | 许可 | 生成方式 |
 | --- | --- | --- | --- |
 | ja | IPAdic（mecab 官方发布词典） | IPAdic 许可（见 NOTICE） | 直接采用编译态二进制，无本地编译 |
 | en | CMUdict（发音词典，ARPAbet 音标） | CMUdict 许可（BSD 风格，见 NOTICE） | 管线转 IPA 写 SQLite；主读音（美式）在生成期定音 |
-| zh | pypinyin（词组/单字默认读音）+ CC-CEDICT（词条读音、繁→简）+ Unihan kMandarin 补字 | MIT / CC BY-SA 4.0 / Unicode License v3（见 NOTICE） | 合并为 TSV+gzip 随程序集内嵌，运行期进程内最长匹配（无外部文件） |
+| zh | pypinyin（词组/单字默认读音）+ CC-CEDICT（词条读音、繁→简）+ Unihan kMandarin 补字 | MIT / CC BY-SA 4.0 / Unicode License v3（见 NOTICE） | 合并为 TSV+gzip 放 `deps/phonetics/zh/`，运行期进程内最长匹配 |
 
 再生管线见 codestable/notes/phonetics-pipeline.md；许可归属见[仓库](https://github.com/Stareven233/NaniKore)根 NOTICE。
 

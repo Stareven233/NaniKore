@@ -173,17 +173,24 @@ NaniKore 自身代码依据 GNU 通用公共许可证第 3 版或（可选）更
 - 用途：英语 IPA 注音（ARPAbet → IPA 在生成期转换为单主读音）。
 - 源地址：<https://github.com/cmusphinx/cmudict>
 
-### 3.3 简体中文（CC-CEDICT 派生 MeCab 词典）
+### 3.3 简体中文（pypinyin + CC-CEDICT + Unihan 内嵌拼音数据）
 
 - 基础数据：CC-CEDICT（汉英词典），许可 Creative Commons Attribution-ShareAlike 4.0 International
   （CC BY-SA 4.0，<https://creativecommons.org/licenses/by-sa/4.0/>）。
-- 归属标注：本词典由 CC-CEDICT 派生，再分发时标注「CC-CEDICT, CC BY-SA 4.0」。
+- 基础数据：pypinyin 0.55.0（词组表 + 单字频率默认读音），许可 MIT
+  （<https://github.com/mozillazg/python-pinyin>）。
+- 补充数据：Unicode Unihan Database `kMandarin` 字段（Unicode License v3，
+  <https://www.unicode.org/license.txt>）。
+- 归属标注：本拼音数据由 CC-CEDICT、pypinyin 与 Unihan 合并派生，再分发时标注
+  「CC-CEDICT, CC BY-SA 4.0；pypinyin (MIT)；Unihan (Unicode License v3)」。
   本 NOTICE 及随应用分发的说明文件即该标注。
-- 修改/派生说明：管线抽取 CC-CEDICT 的词形、拼音与英文义项，转写为 MeCab CSV 后由
-  mecab-dict-index 编译为 MeCab 二进制词典；多音字按读音各自成条；
-  CC-CEDICT 未收录单字的默认读音以 Unicode Unihan Database `kMandarin` 字段补充
-  （Unicode License v3，<https://www.unicode.org/license.txt>）。
-- 用途：简体中文拼音注音的词面/读音来源。
+- 修改/派生说明：管线合并 pypinyin 词组/单字读音（优先）与 CC-CEDICT 词条读音、词级对齐的繁→简映射，
+  CC-CEDICT 与 pypinyin 都未覆盖的 BMP 单字用 Unihan `kMandarin` 兜底；声调数字转为声调符号，
+  输出为全量排序的 TSV + gzip 合并表（`NaniKore.zh.pinyin.v1`），随程序集内嵌分发。
+  不包含 CC-CEDICT 的英文义项。
+- 用途：简体中文拼音注音的词面/读音来源（逐字默认读音与多音候选）。
+- 分发口径：中文拼音数据与日英一致，放在应用目录 `deps/phonetics/zh/`，设置页按需下载（哈希即版本）；
+  本 NOTICE 随应用分发即该数据的随附许可声明。
 
 ### 3.4 日英原生语言包（MisakiSharp 2.2.0 + UniDic 3.1.0）
 

@@ -13,19 +13,10 @@ internal readonly record struct ChineseToken(int Start, int Length, IReadOnlyLis
 /// <summary>
 /// 进程内中文拼音引擎：pypinyin 词组/单字数据 + CC-CEDICT 覆盖 + 繁体 t2s 折叠，
 /// 以最长匹配产出词级单元。不依赖 NMeCab 或二进制词典，纯数据 + 逐字对齐。
-/// 数据由 <see cref="ChinesePinyinDataBuilder"/> 生成（TSV，gzip），随程序集内嵌（issue 012）。
+/// 数据由 <see cref="ChinesePinyinDataBuilder"/> 生成（TSV，gzip），放在 `deps/phonetics/zh/` 按需下载（issue 012）。
 /// </summary>
 internal sealed class ChinesePinyinEngine
 {
-    /// <summary>内嵌资源名（csproj 里以 LogicalName 固定，与文件名解耦）。</summary>
-    internal const string EmbeddedResourceName = "NaniKore.Phonetics.Data.zh_pinyin.txt.gz";
-
-    /// <summary>
-    /// 内嵌数据字节的 SHA-256（哈希即版本）：重生成数据后必须同步更新，自测会核对。
-    /// 与内嵌前的 `deps/phonetics/zh/zh_pinyin.txt.gz` 原件逐字节一致。
-    /// </summary>
-    internal const string EmbeddedDataSha256 = "2B5C68679BD393624D17B77BCA5734F9A608EB758FFA2F98D69D1DE0E520A981";
-
     private readonly Dictionary<int, string[]> _single;      // 码位 -> 候选读音（首项为默认）
     private readonly Dictionary<int, string[]> _fallbackSingle; // CC-CEDICT 单字兜底（仅单字无 pypinyin 时用）
     private readonly Dictionary<string, string[]> _phrase;   // 简体词面 -> 每字默认读音
@@ -47,14 +38,25 @@ internal sealed class ChinesePinyinEngine
     }
 
     /// <summary>
-    /// 从程序集内嵌资源装载：每次调用新开一条资源流（闲置释放后可原样重载），
-    /// 不读 deps/phonetics/zh，也没有任何外部旧数据回退。
-    /// 资源缺失或数据损坏返回 null（标注链路软降级为纯文本）。
+    /// 从磁盘数据文件装载（`deps/phonetics/zh/zh_pinyin.txt.gz`）：读完即关，不常驻句柄。
+    /// 文件缺失或数据损坏返回 null（标注链路软降级为纯文本，不回退内嵌数据）。
     /// </summary>
-    public static ChinesePinyinEngine? TryLoad()
+    public static ChinesePinyinEngine? TryLoad(string path)
     {
-        using var resource = typeof(ChinesePinyinEngine).Assembly.GetManifestResourceStream(EmbeddedResourceName);
-        return resource is null ? null : TryLoad(resource);
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var file = File.OpenRead(path);
+            return TryLoad(file);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     private static ChinesePinyinEngine? TryLoad(Stream compressed)

@@ -84,18 +84,11 @@
   <ItemGroup>
     <!--
       注音判据数据：三语停用/高频词表与常用字符表（KB 级策展内容，与词典哈希解耦、随程序集分发）。
-      日英词典二进制（deps/phonetics/misaki/）不在此列，走 ModelScope 按语言下载。
+      三语词典与拼音数据（deps/phonetics/）均不在此列，走 ModelScope 按语言下载；
+      中文拼音表也是一份可下载数据包，不再内嵌进程序集（issue 012）。
     -->
     <EmbeddedResource Include="Phonetics\Data\*.txt">
       <LogicalName>NaniKore.Phonetics.Data.%(Filename)%(Extension)</LogicalName>
-    </EmbeddedResource>
-    <!--
-      中文拼音运行期数据（issue 012 内嵌）：pypinyin + CC-CEDICT + Unihan 合并表，
-      由 ChinesePinyinDataBuilder 生成（CLI 入口 build-zh-data），约 1.5 MB（gzip）。
-      随程序集分发，不落 deps/、不下载，设置页中文恒为「内置就绪」。
-    -->
-    <EmbeddedResource Include="Phonetics\Data\zh_pinyin.txt.gz">
-      <LogicalName>NaniKore.Phonetics.Data.zh_pinyin.txt.gz</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

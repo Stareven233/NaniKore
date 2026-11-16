@@ -305,8 +305,8 @@ function New-NaniKoreReleaseArchive {
 
     if ($IncludeFullDependencies) {
         # 完整包承诺「解压即用」：本地 OCR 权重、ONNX Runtime 与注音数据缺一不可（issue 008）。
-        # 中文拼音数据已在 012 内嵌进程序集，不再需要 deps/phonetics/zh；
-        # ja/en 旧词典条目属旧 provider 过渡数据，随 014 一并下线。
+        # 注音：三语一致均按需下载（中文拼音表自 012 起与日英同类），完整包把它们一并带上；
+        # 旧 ja/en 词典条目属旧 provider 过渡数据，随 014 下线。
         $requiredDependencies = @(
             'ocr-onnx\pp-ocr-v6-small\det\inference.onnx',
             'ocr-onnx\pp-ocr-v6-small\det\inference.yml',
@@ -318,7 +318,8 @@ function New-NaniKoreReleaseArchive {
             'phonetics\ja\unk.dic',
             'phonetics\ja\matrix.bin',
             'phonetics\ja\char.bin',
-            'phonetics\en\ipa_dict.db'
+            'phonetics\en\ipa_dict.db',
+            'phonetics\zh\zh_pinyin.txt.gz'
         )
         $missingDependencies = @(
             $requiredDependencies |

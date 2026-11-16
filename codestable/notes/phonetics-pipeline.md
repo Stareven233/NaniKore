@@ -1,6 +1,6 @@
 # 注音词典再生管线
 
-> **计划复核（2026-11-15）：** 本轮仅中日英。正式日英包构建链已落地（`scripts/phonetics/Build-MisakiPacks.ps1`，产物 `deps/phonetics/misaki/{ja,en}/`，实测见 [日英原生注音语言包](phonetics-packs.md)）；中文已改为数据内嵌（012 交付）；日语拟用最小修改的 Misaki 原生 DLL，并从同版 UniDic 再生书面 kana；英语已确定直接采用 Misaki 选音和已收录候选，转换为可读美音 IPA 并通过整词 hover 展示异读；允许发音变体，已知误选/缺项不阻塞本轮，**生产适配已在 011 实施并验收**（日英 provider 均已切到原生包）。原生架构与数据释放已隔离验证，5 语另立探索。**本文件正文描述第 3/4/6/8 节的旧日英管线仍为历史口径（旧的 IPAdic/CMUdict 下载卡片、`deps/phonetics/{ja,en}` 哈希清单随 014 下线）**，中文第 5 节已按 012 改为内嵌。决策见 [talks/004](../talks/004-本地三语注音优化与后续能力规划.md)，最新证据见 [注音适配穿刺](misaki-annotation-spike.md)。
+> **计划复核（2026-11-15）：** 本轮仅中日英。正式日英包构建链已落地（`scripts/phonetics/Build-MisakiPacks.ps1`，产物 `deps/phonetics/misaki/{ja,en}/`，实测见 [日英原生注音语言包](phonetics-packs.md)）；中文已改为与日英一致的「放 `deps/phonetics/`、按需下载」（012 交付，不内嵌）；日语拟用最小修改的 Misaki 原生 DLL，并从同版 UniDic 再生书面 kana；英语已确定直接采用 Misaki 选音和已收录候选，转换为可读美音 IPA 并通过整词 hover 展示异读；允许发音变体，已知误选/缺项不阻塞本轮，**生产适配已在 011 实施并验收**（日英 provider 均已切到原生包）。原生架构与数据释放已隔离验证，5 语另立探索。**本文件正文描述第 3/4/6/8 节的旧日英管线仍为历史口径（旧的 IPAdic/CMUdict 下载卡片、`deps/phonetics/{ja,en}` 哈希清单随 014 下线）**，中文第 5 节已按 012 改为外置下载。决策见 [talks/004](../talks/004-本地三语注音优化与后续能力规划.md)，最新证据见 [注音适配穿刺](misaki-annotation-spike.md)。
 
 本地注音引擎的词典二进制从公开数据源再生的完整流程。本文档面向维护者；运行期行为（按语言下载、哈希校验、软降级）见 `src/NaniKore/Phonetics/PhoneticDependencies.cs` 与 `deps/README.md`。
 
@@ -9,7 +9,7 @@
 ```text
 deps/phonetics/            # 仓库内唯一真实源；ModelScope 仓库 Noetuu/nanikore-deps 的 phonetics/ 严格镜像
 ├─ ja/  en/               # 旧下载词典（010/011 后已不由 provider 读取，随 014 下线）
-├─ zh/                    # 旧 MeCab 中文词典副本（012 起不再读取，拼音数据改为内嵌）
+├─ zh/                    # 中文拼音数据 zh_pinyin.txt.gz（012 起与日英同类，按需下载）
 ├─ misaki/{ja,en}/        # 正式日英原生语言包（当前生效）
 ├─ _source/                # 公开数据源原件（gitignore）
 └─ _build/zh/              # MeCab 编译中间产物（gitignore）
@@ -17,7 +17,7 @@ deps/phonetics/            # 仓库内唯一真实源；ModelScope 仓库 Noetuu
 
 `deps/phonetics/{ja,en}/` 的每个下载文件都必须与 `src/NaniKore/Phonetics/PhoneticDependencies.cs` 中
 `PhoneticDependencyManifest` 登记的 SHA-256 一致（哈希即版本；不符时设置页提示更新、运行期软降级）；
-`misaki/{ja,en}/` 的哈希与 ABI 由各自的 `pack.json` 自描述。中文没有下载清单（内嵌，见第 5 节）。
+`misaki/{ja,en}/` 的哈希与 ABI 由各自的 `pack.json` 自描述。中文拼音表同样按 `PhoneticDependencyManifest.ChineseFiles` 校验。
 
 ## 2. 数据源与许可
 
@@ -63,7 +63,7 @@ dotnet run --project src/NaniKore -- --build-en-data
 
 ## 5. 简体中文（zh）：pypinyin + CC-CEDICT + Unihan → 进程内拼音数据
 
-中文不再使用 NMeCab 与 `mecab-dict-index`：`ChinesePinyinEngine` 在进程内做词组最长匹配，数据随程序集内嵌（issue 012）。
+中文不再使用 NMeCab 与 `mecab-dict-index`：`ChinesePinyinEngine` 在进程内做词组最长匹配，数据放 `deps/phonetics/zh/` 按需下载（issue 012）。
 源料统一放 `resources/phonetics/`（`pypinyin/`、`cc-cedict/`、`unihan/`），单独重建：
 
 ```powershell
@@ -77,22 +77,21 @@ dotnet run --project src/NaniKore -- --build-zh-data
    CC 词条**只补 pypinyin 未覆盖的词面**（pypinyin 优先），并收单字读音作兜底；
 3. 词级等长对齐构建 繁→简 单字映射（查音前归一，展示仍用原文）；
 4. `unihan/Unihan_Readings.txt` 的 `kMandarin` 兜底 pypinyin/CC 都没覆盖的 BMP 单字；
-5. 写 `src/NaniKore/Phonetics/Data/zh_pinyin.txt.gz`（TSV+gzip，全量排序保证确定性；由 csproj 的
-   `EmbeddedResource` 以 LogicalName `NaniKore.Phonetics.Data.zh_pinyin.txt.gz` 内嵌进程序集）：
+5. 写 `deps/phonetics/zh/zh_pinyin.txt.gz`（TSV+gzip，全量排序保证确定性）：
    `S 码位 候选1,候选2` / `C 码位 兜底读音` / `P 词面 字1音 字2音 …` / `T 繁 简`，首行 `NaniKore.zh.pinyin.v1`。
-   生成结束会打印字节数与 SHA-256，回填到 `ChinesePinyinEngine.EmbeddedDataSha256`（自测逐字节核对）。
+   生成结束会打印字节数与 SHA-256，回填到 `PhoneticDependencyManifest.ChineseFiles`（自测与下载器都按它校验）。
 
-运行期 `ChinesePinyinEngine.Segment`（数据只从内嵌资源读，每次 `TryLoad` 新开一条 `GetManifestResourceStream`，
-不读 `deps/phonetics/zh`、无外部回退）：代理项边界切段 → 词表最长匹配（词组→单字默认）→ 逐字默认音 + 候选，
+运行期 `ChinesePinyinEngine.Segment`（`TryLoad` 读 `deps/phonetics/zh/zh_pinyin.txt.gz`，读完即关；缺失/版本不符/解压失败直接软降级为纯文，
+不回退内嵌也不回退旧 MeCab）：代理项边界切段 → 词表最长匹配（词组→单字默认）→ 逐字默认音 + 候选，
 全程保留原文 UTF-16 偏移；`AnnotationSyllable.Candidates` 携带候选（首项为本句默认）。缺失/损坏数据软降级为纯文本。
 
 ## 6. 哈希回填（哈希即版本）
 
-任一产物变化后，`--build-phonetics` 结束时会打印八个文件的 SHA-256 清单行
+任一产物变化后，`--build-phonetics` 结束时会打印九个文件的 SHA-256 清单行
 （`相对路径="HASH"`；漏看也可以用 `python scripts/sync-deps.py phonetics --print-hashes`
-随时重算）。把它们回填到 `PhoneticDependencyManifest` 的 `JapaneseFiles / EnglishFiles`，
-然后用通用同步脚本上传到 ModelScope `Noetuu/nanikore-deps` 的 `phonetics/` 子树
-（下载器取 `phonetics/<lang>/<file>` 直链，用 `?download=true`）：
+随时重算）。把它们回填到 `PhoneticDependencyManifest` 的 `JapaneseFiles /
+EnglishFiles / ChineseFiles`，然后用通用同步脚本上传到 ModelScope `Noetuu/nanikore-deps`
+的 `phonetics/` 子树（下载器取 `phonetics/<lang>/<file>` 直链，用 `?download=true`）：
 
 ```powershell
 python scripts/sync-deps.py phonetics --dry-run   # 预检：列文件 + 自动核对源码清单哈希，不联网
@@ -104,8 +103,7 @@ python scripts/sync-deps.py phonetics             # 核对通过后上传
 
 未匹配哈希时：设置页显示“缺失/待更新”，`ITextAnnotator.IsAvailable` 为 false，
 标注链路整体软降级为纯文本，翻译主链路不受影响（见 `SelfTest.Phonetics.cs` 金样本）。
-中文不在此列：拼音数据随程序集内嵌（`ChinesePinyinEngine.EmbeddedDataSha256`），
-设置页只显示「内置就绪」，无下载/更新入口，也无外部文件可缺。
+中文不在此列：拼音数据与日英一致放在 `deps/phonetics/zh/zh_pinyin.txt.gz`，设置页显示下载/更新/就绪状态，无内嵌产物也无旧 MeCab 回退。
 
 ## 7. 排查工具
 
@@ -116,7 +114,7 @@ dotnet run --project src/NaniKore -- --self-test         # 全量无 UI 自测�
 
 ## 8. 口径备注（实测，改代码前先读）
 
-- **中文已弃 NMeCab**：改为进程内 `ChinesePinyinEngine`（pypinyin + CC-CEDICT + Unihan 合并表），数据自 012 起随程序集内嵌。读音不再来自 MeCab `Feature`，而是词表最长匹配 + 单字默认；输入仍在代理项边界分段，补充平面字保留纯文，避免破坏后续已知词的 UTF-16 偏移。旧的 `sys.dic` 等 MeCab 产物与 `deps/phonetics/zh/zh_pinyin.txt.gz` 均已不再被读取（后者字节已被原样复制进 `src/NaniKore/Phonetics/Data/`，SHA-256 不变）。
+- **中文已弃 NMeCab**：改为进程内 `ChinesePinyinEngine`（pypinyin + CC-CEDICT + Unihan 合并表），数据自 012 起与日英同类放 `deps/phonetics/zh/` 按需下载。读音不再来自 MeCab `Feature`，而是词表最长匹配 + 单字默认；输入仍在代理项边界分段，补充平面字保留纯文，避免破坏后续已知词的 UTF-16 偏移。旧 MeCab 产物 `sys.dic` 等已不再被读取，随 014 归档到 `.temp/`；`zh_pinyin.txt.gz` 字节与 1.5 MB 体积不变（SHA-256 仍为 `2B5C68…A981`）。
 - **IPAdic 的振假名取 `読み`（片假名）而非 `発音`**：`発音` 是音便表记（ちゅうちょ→ちゅーちょ），
   取错会出现长音符；`JapaneseFuriganaAnnotator` 统一转写平假名。
 - **停用词表 vs 常用字符表的边界**：zh 判据为通用规范汉字表**一级字表 3500 字**（2026-10-04 由一·二级 6500
