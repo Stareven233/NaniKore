@@ -14,7 +14,7 @@
 - 支持 OpenAI、Claude、Gemini 协议的流式翻译配置，以及 `local_ocr`、`vision_oneshot` 两条输入管线。
 - 结果自动复制到剪贴板；设置、热键和 API Key 可在应用内管理。
 - 结果卡精讲与正文划词均可一键收藏进本地生词本：SQLite 持久化（`.data/collections.db`），支持类别/语言/关键词筛选与就地编辑。
-- 原文区本地注音：日语标振假名、英语标国际音标、简体中文标拼音，由本地引擎叠加（词典按语言按需下载）；面板「注音」按钮可随时对当前原文重新标注并查看读音，无需先点「翻译」。短原文（可注音单词不足 10 个）视为短语，全部单词都注音，不再按难词过滤。
+- 原文区本地注音：日语标振假名、英语标国际音标、简体中文标拼音，由本地引擎叠加（日英语言包按需下载，中文拼音数据随程序内置）；面板「注音」按钮可随时对当前原文重新标注并查看读音，无需先点「翻译」。短原文（可注音单词不足 10 个）视为短语，全部单词都注音，不再按难词过滤。
 - API Key 仅使用当前 Windows 用户的 DPAPI 保存，不会写入仓库、配置模板或 `.data/config.yaml`。DPAPI 绑定当前 Windows 账户，换用户或换机器后密文无法解密；此时程序不会覆盖原密文，会提示手动处理。
 - 程序目录根只放交付物（精简 exe、随包原生 DLL、`config.template.yaml`、`NOTICE`、`LICENSE`）；配置、密钥与收藏库全部收拢在 `程序目录\.data\`，解压覆盖升级碰不到它们。
 
@@ -79,7 +79,7 @@ deps/                        # （仅 -full 完整包携带，或设置页按需
 ├─ onnxruntime/
 │  ├─ onnxruntime.dll
 │  └─ onnxruntime_providers_shared.dll
-└─ phonetics/                # 中/日/英三语形态素与注音词典
+└─ phonetics/                # 日英注音语言包（中文拼音数据随程序集内嵌，不占此目录）
 ```
 
 发布包不含 `.data/`：首次启动时程序把 `config.template.yaml` 按字节原样复制到 `程序目录\.data\config.yaml` 作为用户配置，密钥落在 `.data/keys.bin`（整块 DPAPI 密文），收藏库是 `.data/collections.db`。因此解压覆盖升级不会冲掉任何本机数据。备份整个软件只需复制 `.data/`；但其中 `keys.bin` 由当前 Windows 用户的 DPAPI 加密，复制到其它 Windows 用户或其它机器后无法解密，需在目标机重新填写 API Key（程序不会覆盖无法解密的原文件，会提示手动处理）。
@@ -142,5 +142,5 @@ artifacts/      发布产物（Git 忽略）
 ## 许可证与第三方声明
 
 仓库自身代码以 [GNU 通用公共许可证第 3 版或更高版本](LICENSE)（GPL-3.0-or-later）授权，完整文本见根目录 `LICENSE`。
-所引用的第三方组件、词典与模型权重的许可声明、归属与再分发口径见 [NOTICE](NOTICE)：LibNMeCab 在 Native AOT 静态链接下按 GPL-3.0 选用；OCR 权重为 PaddlePaddle PP-OCRv6-small（Apache-2.0）；日语词典为 IPAdic（NAIST 许可，全文随 NOTICE 附带）；简体中文词典为 CC-CEDICT（CC BY-SA 4.0）派生。
+所引用的第三方组件、词典与模型权重的许可声明、归属与再分发口径见 [NOTICE](NOTICE)：LibNMeCab 在 Native AOT 静态链接下按 GPL-3.0 选用；OCR 权重为 PaddlePaddle PP-OCRv6-small（Apache-2.0）；日语词典为 IPAdic（NAIST 许可，全文随 NOTICE 附带）；简体中文拼音数据由 pypinyin（MIT）、CC-CEDICT（CC BY-SA 4.0）与 Unihan（Unicode License v3）合并派生并随程序集内嵌。
 分发本程序的二进制时，对应源码（Corresponding Source）可从 <https://github.com/Stareven233/NaniKore> 免费获取。

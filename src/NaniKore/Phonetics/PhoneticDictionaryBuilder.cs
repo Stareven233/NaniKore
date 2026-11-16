@@ -132,7 +132,7 @@ internal static class PinyinToneConverter
 /// <summary>
 /// 词典生成管线（开发期 CLI：--build-phonetics）：把公开数据源编译为 deps/phonetics/ 下的运行期产物。
 ///   英语：CMUdict（ARPAbet）→ ipa_dict.db（SQLite，word 小写主键 + IPA）；
-///   中文：pypinyin 词组/单字 + CC-CEDICT + Unihan → 进程内拼音数据 zh_pinyin.txt.gz（见 <see cref="ChinesePinyinDataBuilder"/>，无需 mecab-dict-index）；
+///   中文：pypinyin 词组/单字 + CC-CEDICT + Unihan → 进程内拼音数据内嵌资源（见 <see cref="ChinesePinyinDataBuilder"/>，无需 mecab-dict-index）；
 ///   日语：直接采用 IPAdic 编译态二进制（无需编译，见 codestable/notes/phonetics-pipeline.md）。
 /// 生成后按控制台输出的 SHA-256 回填 PhoneticDependencyManifest（哈希即版本）。
 /// 单独重建中文数据可用 --build-zh-data（只依赖 resources/phonetics 源料）。

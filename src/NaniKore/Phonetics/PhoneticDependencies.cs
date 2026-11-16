@@ -49,16 +49,6 @@ internal static class PhoneticDependencyPaths
     public static string EnglishDictionaryDirectory => Path.Combine(PhoneticsRootDirectory, "en");
 
     public static string EnglishDictionaryFile => Path.Combine(EnglishDictionaryDirectory, "ipa_dict.db");
-
-    public static string ChineseDictionaryDirectory => Path.Combine(PhoneticsRootDirectory, "zh");
-
-    /// <summary>中文拼音运行期数据（pypinyin + CC-CEDICT + Unihan 合并表，见 <see cref="ChinesePinyinDataBuilder"/>）。</summary>
-    public static string ChinesePinyinDataFile => Path.Combine(ChineseDictionaryDirectory, "zh_pinyin.txt.gz");
-
-    public static IReadOnlyList<string> ChineseDictionaryFiles =>
-    [
-        ChinesePinyinDataFile
-    ];
 }
 
 /// <summary>注音词典清单条目：相对 deps/phonetics/ 的路径 + SHA-256（大写十六进制）+ ModelScope 直链。</summary>
@@ -69,6 +59,9 @@ internal enum PhoneticDictionaryState
 {
     /// <summary>未装配该语言（如未来的 ko 在初版清单里没有条目）。</summary>
     Unsupported,
+
+    /// <summary>随程序集内嵌、恒就绪，没有下载/更新入口（issue 012 起的中文拼音数据）。</summary>
+    BuiltIn,
 
     /// <summary>本地一个文件都没有，需要完整下载。</summary>
     Missing,
@@ -82,7 +75,8 @@ internal enum PhoneticDictionaryState
 
 /// <summary>
 /// 按语言组织的注音词典清单：哈希即版本（不符即提示更新，另设版本号）。
-/// 日语 = IPAdic 编译态；简体中文 = CC-CEDICT 转译 MeCab 词典；英语 = CMUdict 基座 IPA 词典。
+/// 日语 = IPAdic 编译态；英语 = CMUdict 基座 IPA 词典（两者已在 010/011 切到原生包，旧清单仅作过渡数据保留）。
+/// 中文 = 拼音数据随程序集内嵌（012），不属于下载清单；无外部文件可缺，恒为 <see cref="PhoneticDictionaryState.BuiltIn"/>。
 /// </summary>
 internal static class PhoneticDependencyManifest
 {
@@ -94,6 +88,9 @@ internal static class PhoneticDependencyManifest
     public const string ChineseCode = "zh";
 
     public static IReadOnlyList<string> SupportedLanguages { get; } = [JapaneseCode, EnglishCode, ChineseCode];
+
+    /// <summary>随程序集内嵌、无需下载的语言（中文拼音数据，issue 012）。</summary>
+    public static IReadOnlyList<string> BuiltInLanguages { get; } = [ChineseCode];
 
     public static IReadOnlyList<PhoneticDictionaryFile> JapaneseFiles { get; } = Build(
     [
@@ -108,33 +105,42 @@ internal static class PhoneticDependencyManifest
         ("en/ipa_dict.db", "CA3B1DC874AB3CC3E5BC9274274DD4137F189F4ACCC67C865505FECDCA8CA5CA")
     ]);
 
-    public static IReadOnlyList<PhoneticDictionaryFile> ChineseFiles { get; } = Build(
-    [
-        ("zh/zh_pinyin.txt.gz", "2B5C68679BD393624D17B77BCA5734F9A608EB758FFA2F98D69D1DE0E520A981")
-    ]);
-
-    /// <summary>取某语言的文件清单；不支持的语言返回空。</summary>
+    /// <summary>取某语言的文件清单；内置语言与不支持的语言都没有下载条目。</summary>
     public static IReadOnlyList<PhoneticDictionaryFile> GetFiles(string languageCode) => languageCode switch
     {
         JapaneseCode => JapaneseFiles,
         EnglishCode => EnglishFiles,
-        ChineseCode => ChineseFiles,
         _ => []
     };
 
-    /// <summary>本地文件是否全部存在且哈希相符（设置页版本检测与软降级口径）。</summary>
+    /// <summary>该语言是否随程序集内嵌（无下载/更新入口）。</summary>
+    public static bool IsBuiltIn(string languageCode) =>
+        BuiltInLanguages.Contains(languageCode, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>本地文件是否全部存在且哈希相符（设置页版本检测与软降级口径）；内置语言恒为 true。</summary>
     public static bool IsComplete(string languageCode)
     {
+        if (IsBuiltIn(languageCode))
+        {
+            return true;
+        }
+
         var files = GetFiles(languageCode);
         return files.Count > 0 && files.All(file => HashMismatch(file) is null);
     }
 
     /// <summary>
-    /// 该语言词典的本地状态：区分「完全缺失」与「哈希不符需更新」——
+    /// 该语言词典的本地状态：内置语言恒为 <see cref="PhoneticDictionaryState.BuiltIn"/>；
+    /// 其余区分「完全缺失」与「哈希不符需更新」——
     /// 前者引导首次下载，后者提示版本更新，两者都走同一下载器（已存在且相符的文件自动跳过）。
     /// </summary>
     public static PhoneticDictionaryState GetState(string languageCode)
     {
+        if (IsBuiltIn(languageCode))
+        {
+            return PhoneticDictionaryState.BuiltIn;
+        }
+
         var files = GetFiles(languageCode);
         if (files.Count == 0)
         {
@@ -197,7 +203,9 @@ internal sealed class PhoneticDependencyDownloader
         var files = PhoneticDependencyManifest.GetFiles(languageCode);
         if (files.Count == 0)
         {
-            throw new InvalidOperationException($"未知的注音词典语言代码：{languageCode}");
+            throw new InvalidOperationException(PhoneticDependencyManifest.IsBuiltIn(languageCode)
+                ? $"{languageCode} 的注音数据随程序集内嵌，无需下载。"
+                : $"未知的注音词典语言代码：{languageCode}");
         }
 
         foreach (var file in files)

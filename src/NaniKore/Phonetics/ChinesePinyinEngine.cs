@@ -13,10 +13,19 @@ internal readonly record struct ChineseToken(int Start, int Length, IReadOnlyLis
 /// <summary>
 /// 进程内中文拼音引擎：pypinyin 词组/单字数据 + CC-CEDICT 覆盖 + 繁体 t2s 折叠，
 /// 以最长匹配产出词级单元。不依赖 NMeCab 或二进制词典，纯数据 + 逐字对齐。
-/// 数据格式由 <see cref="ChinesePinyinDataBuilder"/> 生成（TSV，gzip）。
+/// 数据由 <see cref="ChinesePinyinDataBuilder"/> 生成（TSV，gzip），随程序集内嵌（issue 012）。
 /// </summary>
 internal sealed class ChinesePinyinEngine
 {
+    /// <summary>内嵌资源名（csproj 里以 LogicalName 固定，与文件名解耦）。</summary>
+    internal const string EmbeddedResourceName = "NaniKore.Phonetics.Data.zh_pinyin.txt.gz";
+
+    /// <summary>
+    /// 内嵌数据字节的 SHA-256（哈希即版本）：重生成数据后必须同步更新，自测会核对。
+    /// 与内嵌前的 `deps/phonetics/zh/zh_pinyin.txt.gz` 原件逐字节一致。
+    /// </summary>
+    internal const string EmbeddedDataSha256 = "2B5C68679BD393624D17B77BCA5734F9A608EB758FFA2F98D69D1DE0E520A981";
+
     private readonly Dictionary<int, string[]> _single;      // 码位 -> 候选读音（首项为默认）
     private readonly Dictionary<int, string[]> _fallbackSingle; // CC-CEDICT 单字兜底（仅单字无 pypinyin 时用）
     private readonly Dictionary<string, string[]> _phrase;   // 简体词面 -> 每字默认读音
@@ -37,14 +46,19 @@ internal sealed class ChinesePinyinEngine
         _maxPhraseLength = maxPhraseLength;
     }
 
-    /// <summary>从磁盘数据文件装载；文件缺失或损坏返回 null（标注链路软降级为纯文本）。</summary>
-    public static ChinesePinyinEngine? TryLoad(string path)
+    /// <summary>
+    /// 从程序集内嵌资源装载：每次调用新开一条资源流（闲置释放后可原样重载），
+    /// 不读 deps/phonetics/zh，也没有任何外部旧数据回退。
+    /// 资源缺失或数据损坏返回 null（标注链路软降级为纯文本）。
+    /// </summary>
+    public static ChinesePinyinEngine? TryLoad()
     {
-        if (string.IsNullOrEmpty(path) || !File.Exists(path))
-        {
-            return null;
-        }
+        using var resource = typeof(ChinesePinyinEngine).Assembly.GetManifestResourceStream(EmbeddedResourceName);
+        return resource is null ? null : TryLoad(resource);
+    }
 
+    private static ChinesePinyinEngine? TryLoad(Stream compressed)
+    {
         try
         {
             var single = new Dictionary<int, string[]>();
@@ -53,8 +67,7 @@ internal sealed class ChinesePinyinEngine
             var t2s = new Dictionary<char, char>();
             var maxLen = 1;
 
-            using var file = File.OpenRead(path);
-            using var gzip = new GZipStream(file, CompressionMode.Decompress);
+            using var gzip = new GZipStream(compressed, CompressionMode.Decompress);
             using var reader = new StreamReader(gzip, Encoding.UTF8);
             // 首行版本标记，格式不认时直接视为不可用
             if (reader.ReadLine() != ChinesePinyinDataBuilder.FormatVersion)
@@ -95,7 +108,7 @@ internal sealed class ChinesePinyinEngine
 
             return new ChinesePinyinEngine(single, fallback, phrase, t2s, maxLen);
         }
-        catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or InvalidDataException)
         {
             return null;
         }

@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -7,9 +8,9 @@ namespace NaniKore.Phonetics;
 
 /// <summary>
 /// 中文拼音运行期数据的构建器：把 `resources/phonetics/` 下的公开源料合并为一张紧凑表
-/// （`deps/phonetics/zh/zh_pinyin.txt.gz`）。合并口径：pypinyin 词组 + 单字候选为基座，
+/// （`src/NaniKore/Phonetics/Data/zh_pinyin.txt.gz`，随程序集内嵌）。合并口径：pypinyin 词组 + 单字候选为基座，
 /// CC-CEDICT 补稀有字词与整词覆盖、并提供词级对齐的繁->简映射，Unihan kMandarin 兜底单字。
-/// 产物确定性（全量排序），供「哈希即版本」分发。
+/// 产物确定性（全量排序），供「哈希即版本」校验。
 /// </summary>
 internal static class ChinesePinyinDataBuilder
 {
@@ -55,14 +56,21 @@ internal static class ChinesePinyinDataBuilder
             unihanAdded = LoadUnihanFallback(unihan, single, fallback);
         }
 
-        var target = PhoneticDependencyPaths.ChinesePinyinDataFile;
+        var target = EmbeddedDataFile(repoRoot);
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         WriteDataFile(target, single, fallback, phrase, t2s);
 
+        // 哈希即版本：内嵌资源的 SHA-256 回填到 ChinesePinyinEngine.EmbeddedDataSha256（自测会核对）
+        var hash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(target)));
         Console.WriteLine($"[zh] 单字 {single.Count}（兜底 {fallback.Count}，Unihan 新增 {unihanAdded}），"
             + $"词组 {phrase.Count}（CC 新增 {ccAdded}），繁简映射 {t2s.Count} → {target}");
+        Console.WriteLine($"[zh] 内嵌数据 {new FileInfo(target).Length} 字节，SHA-256={hash}");
         return target;
     }
+
+    /// <summary>内嵌资源在仓库源码树里的落地路径（与 csproj 的 EmbeddedResource 子路径一致）。</summary>
+    public static string EmbeddedDataFile(string repoRoot) =>
+        Path.Combine(repoRoot, "src", "NaniKore", "Phonetics", "Data", "zh_pinyin.txt.gz");
 
     private static Dictionary<int, string[]> LoadPypinyinSingles(string path)
     {

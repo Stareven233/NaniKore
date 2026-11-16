@@ -23,7 +23,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     private readonly Func<string, IProgress<string>, CancellationToken, Task>? _downloadPhoneticDictionary;
     private readonly Func<string, IProgress<string>, CancellationToken, Task>? _downloadNativePhoneticPack;
 
-    /// <summary>语言代码 → 该语言词典卡片的下载按钮（集中装配）。</summary>
+    /// <summary>语言代码 → 该语言词典卡片的下载按钮（集中装配）；内置语言（zh）没有下载入口，故不入此表。</summary>
     private readonly Dictionary<string, Button> _phoneticDownloadButtons;
 
     /// <summary>语言代码 → 原生语言包卡片的下载按钮（issue 009）。</summary>
@@ -46,7 +46,6 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         {
             ["ja"] = PhoneticsDownloadJa,
             ["en"] = PhoneticsDownloadEn,
-            ["zh"] = PhoneticsDownloadZh,
         };
 
         _nativePackButtons = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase)
@@ -75,7 +74,6 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         DownloadDependenciesButton.Click += OnDownloadDependenciesClick;
         PhoneticsDownloadJa.Click += OnDownloadPhoneticsClick;
         PhoneticsDownloadEn.Click += OnDownloadPhoneticsClick;
-        PhoneticsDownloadZh.Click += OnDownloadPhoneticsClick;
         NativePackJa.Click += OnDownloadNativePackClick;
         NativePackEn.Click += OnDownloadNativePackClick;
 
@@ -384,15 +382,23 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
                 btn.IsEnabled = _downloadPhoneticDictionary is not null;
             }
         }
+
+        // 内置语言（zh）：没有按钮也没有下载器，只反映恒定的内置就绪状态
+        PhoneticsBuiltInZh.Text = BuiltInPhoneticLabel(PhoneticDependencyManifest.GetState(PhoneticDependencyManifest.ChineseCode));
     }
 
     /// <summary>本地 OCR 依赖就绪状态 → 按钮文案（页面与自测共用）。</summary>
     internal static string OcrButtonLabel(bool isComplete) => isComplete ? "已就绪" : "下载";
 
+    /// <summary>内置语言（zh 拼音数据随程序集内嵌）的只读状态文字，页面与自测共用。</summary>
+    internal static string BuiltInPhoneticLabel(PhoneticDictionaryState state) =>
+        state == PhoneticDictionaryState.BuiltIn ? "内置就绪" : PhoneticButtonLabel(state);
+
     /// <summary>词典状态 → 按钮文案（页面与自测共用同一映射，避免两处各写一份 switch）。</summary>
     internal static string PhoneticButtonLabel(PhoneticDictionaryState state) => state switch
     {
         PhoneticDictionaryState.Ready => "已就绪",
+        PhoneticDictionaryState.BuiltIn => "内置就绪",
         PhoneticDictionaryState.NeedsUpdate => "更新",
         PhoneticDictionaryState.Missing => "下载",
         _ => "不可用",

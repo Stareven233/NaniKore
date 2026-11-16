@@ -109,12 +109,14 @@
                             Width="96" />
                 </controls:SettingsRow>
                 <Border Classes="divider-row" />
-                <controls:SettingsRow Header="中文（简体）词典"
-                                      Description="CC-CEDICT 转译 MeCab 词典（约 10 MB）"
+                <controls:SettingsRow Header="中文（简体）拼音"
+                                      Description="pypinyin + CC-CEDICT + Unihan 合并表，压缩后约 1.5 MB，随程序集内嵌，无需下载。"
                                       ContentWidth="96">
-                    <Button x:Name="PhoneticsDownloadZh"
-                            Tag="zh"
-                            Width="96" />
+                    <!-- issue 012：中文数据已内嵌，卡片只反映内置就绪，不提供下载/更新入口 -->
+                    <TextBlock x:Name="PhoneticsBuiltInZh"
+                               Text="内置就绪"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource Brush.Text.Secondary}" />
                 </controls:SettingsRow>
                 <controls:InfoBar x:Name="PhoneticsStatus" Margin="14,0,14,12" />
             </StackPanel>
@@ -123,8 +125,9 @@
         <!--
             原生注音语言包（issue 009）：与上方旧词典卡片并存**只是过渡态**。
             009 交付 ABI 客户端、状态机与生命周期；010/011 把 ja/en provider 切到原生包，
-            随后由 014 把上面那组旧词典卡片随旧 provider 一起下线，最终每个语言只保留一条语言包入口（中文卡片在 012 内嵌后改为只读的就绪行）。
-            在此之前不能删：那两张卡片仍在下程序当前真正使用的旧词典（IPAdic / CMUdict）。
+            随后由 014 把上面那组旧词典卡片随旧 provider 一起下线，最终每个语言只保留一条语言包入口。
+            中文已在 012 内嵌，上面只剩一条只读的就绪行，不再有下载卡片。
+            在此之前不能删 ja/en 两张卡片：它们仍在下程序当前真正使用的旧词典（IPAdic / CMUdict）。
         -->
         <controls:SettingsGroup x:Name="NativePhoneticsGroup" Header="注音语言包（本地原生）">
             <StackPanel>

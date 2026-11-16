@@ -16,6 +16,7 @@ internal static partial class SelfTest
         TestCmuDictionaryCandidateIndex();
         TestPinyinToneConversion();
         TestChineseStructuredBoundaries();
+        TestChineseEmbeddedPinyinData();
         TestRegistryLanguageRouting();
         TestPhoneticLanguageCatalog();
         TestPhoneticDictionaryStates();
@@ -90,25 +91,38 @@ internal static partial class SelfTest
         }
 
         var chinese = registry.GetAnnotator("zh");
-        if (chinese is null || !chinese.IsAvailable)
+        Check("中文拼音数据内嵌：标注器始终可用", chinese is not null && chinese.IsAvailable);
+        if (chinese is null)
         {
-            Skip("zh 词典未就绪（deps/phonetics/zh），跳过中文词数金样本");
+            return;
         }
-        else
-        {
-            Check(
-                "中文词数：含汉字词面计数",
-                chinese.CountWords("日本") == 1 &&
-                chinese.CountWords("不行就去银行") == 4);
-        }
+
+        Check(
+            "中文词数：含汉字词面计数",
+            chinese.CountWords("日本") == 1 &&
+            chinese.CountWords("不行就去银行") == 4);
     }
 
-    /// <summary>按语言词典状态：Ready 必须与清单完整性判定一致（哈希即版本）；未装配语言（如 ko）返回 Unsupported 而不是崩溃。</summary>
+    /// <summary>
+    /// 按语言词典状态：内置语言（zh）恒为 BuiltIn 且恒完整；下载语言 Ready 必须与清单完整性判定一致（哈希即版本）；
+    /// 未装配语言（如 ko）返回 Unsupported 而不是崩溃。
+    /// </summary>
     private static void TestPhoneticDictionaryStates()
     {
         foreach (var language in PhoneticLanguages.All)
         {
             var state = PhoneticDependencyManifest.GetState(language.Code);
+            if (PhoneticDependencyManifest.IsBuiltIn(language.Code))
+            {
+                Check(
+                    $"{language.Code} 内置语言：状态为 BuiltIn、恒完整且没有下载文件",
+                    state == PhoneticDictionaryState.BuiltIn &&
+                    PhoneticDependencyManifest.IsComplete(language.Code) &&
+                    PhoneticDependencyManifest.GetFiles(language.Code).Count == 0 &&
+                    PhoneticDependencyManifest.GetIncompleteFiles(language.Code).Count == 0);
+                continue;
+            }
+
             Check(
                 $"{language.Code} 词典状态与清单完整性一致",
                 state == PhoneticDictionaryState.Ready == PhoneticDependencyManifest.IsComplete(language.Code) &&
@@ -120,6 +134,85 @@ internal static partial class SelfTest
             PhoneticDependencyManifest.GetState("ko") == PhoneticDictionaryState.Unsupported &&
             PhoneticDependencyManifest.GetState("") == PhoneticDictionaryState.Unsupported &&
             PhoneticDependencyManifest.GetFiles("ko").Count == 0);
+        Check(
+            "内置语言只有中文，且不包含未装配语言",
+            PhoneticDependencyManifest.BuiltInLanguages.SequenceEqual([PhoneticDependencyManifest.ChineseCode]) &&
+            !PhoneticDependencyManifest.IsBuiltIn("ko"));
+    }
+
+    /// <summary>
+    /// 中文拼音数据内嵌（issue 012）：资源存在且哈希与登记值一致、引擎从资源流式装载（每次新开一条流）、
+    /// 外部 zh 目录存不存在都不影响可用性，旧数据版本标记不对时不会被误用。
+    /// </summary>
+    private static void TestChineseEmbeddedPinyinData()
+    {
+        var assembly = typeof(ChinesePinyinEngine).Assembly;
+        using var resource = assembly.GetManifestResourceStream(ChinesePinyinEngine.EmbeddedResourceName);
+        Check("中文拼音数据以固定资源名内嵌", resource is not null);
+        if (resource is null)
+        {
+            return;
+        }
+
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(resource));
+        Check(
+            "内嵌数据字节哈希与登记值一致（哈希即版本）",
+            hash == ChinesePinyinEngine.EmbeddedDataSha256,
+            $"expected={ChinesePinyinEngine.EmbeddedDataSha256}, actual={hash}");
+        Check(
+            "内嵌数据压缩后不超过 2 MB",
+            resource.Length is > 0 and < 2 * 1024 * 1024,
+            $"bytes={resource.Length}");
+
+        // 流式资源重开：每次 TryLoad 都新开一条流并独立解析，闲置释放后重建走同一条路径
+        var first = ChinesePinyinEngine.TryLoad();
+        var second = ChinesePinyinEngine.TryLoad();
+        Check(
+            "引擎每次从内嵌资源重新装载，旧实例不影响新实例",
+            first is not null && second is not null && !ReferenceEquals(first, second));
+        var reloaded = first!.Segment("银行");
+        Check(
+            "重新装载后的分词与读音与首次一致",
+            reloaded.Count == 1 && reloaded[0].Syllables is [{ Reading: "yín" }, { Reading: "háng" }]);
+
+        // 外部 deps/phonetics/zh 已不属下载清单：中文可用性不依赖任何外部文件
+        Check(
+            "中文不依赖外部数据文件：下载清单无 zh 条目",
+            PhoneticDependencyManifest.GetFiles(PhoneticDependencyManifest.ChineseCode).Count == 0);
+
+        // 闲置释放后重建：新实例重新打开资源流，注音结果不变（不把内嵌等同于词表常驻）
+        using var annotator = new ChinesePinyinAnnotator();
+        var context = new AnnotationContext(AnnotationProfile.Load("zh", rareOnly: false));
+        var before = Annotated(annotator, "不行就去银行", context);
+        annotator.Dispose();
+        annotator.ResetAvailability();
+        var after = Annotated(annotator, "不行就去银行", new AnnotationContext(AnnotationProfile.Load("zh", rareOnly: false)));
+        Check(
+            "释放后重开资源流，注音结果不变",
+            before == "不行[bù xíng]就去银行[yín háng]" && after == before,
+            $"before={before}, after={after}");
+
+        // 冷启动/热态/重建时长与宿主内存增量：只打印实测值供 issue 记录，不断言时间阈值。
+        var heapBefore = GC.GetTotalMemory(forceFullCollection: true);
+        var coldWatch = System.Diagnostics.Stopwatch.StartNew();
+        var coldEngine = ChinesePinyinEngine.TryLoad();
+        coldWatch.Stop();
+        var heapAfter = GC.GetTotalMemory(forceFullCollection: true);
+        var warmWatch = System.Diagnostics.Stopwatch.StartNew();
+        for (var i = 0; i < 20; i++)
+        {
+            _ = coldEngine?.Segment("不行就去银行");
+        }
+
+        warmWatch.Stop();
+        var rebuildWatch = System.Diagnostics.Stopwatch.StartNew();
+        var rebuiltEngine = ChinesePinyinEngine.TryLoad();
+        rebuildWatch.Stop();
+        Console.WriteLine(
+            $"[zh] 内嵌 {resource.Length / 1024.0:F0}KB cold={coldWatch.Elapsed.TotalMilliseconds:F0}ms " +
+            $"warm20={warmWatch.Elapsed.TotalMilliseconds:F1}ms rebuild={rebuildWatch.Elapsed.TotalMilliseconds:F0}ms " +
+            $"托管堆增量={(heapAfter - heapBefore) / (1024 * 1024)}MB 当前堆={GC.GetTotalMemory(false) / (1024 * 1024)}MB 工作集={Environment.WorkingSet / (1024 * 1024)}MB");
+        Check("重建的新引擎读音与冷加载一致", rebuiltEngine?.Segment("银行") is [{ Syllables: [{ Reading: "yín" }, { Reading: "háng" }] }]);
     }
 
     /// <summary>
@@ -407,11 +500,8 @@ internal static partial class SelfTest
     private static void TestChineseStructuredBoundaries()
     {
         using var annotator = new ChinesePinyinAnnotator();
-        if (!annotator.IsAvailable)
-        {
-            Skip("zh 词典未就绪，跳过结构化 Unicode 边界实词典验证");
-            return;
-        }
+        // 数据随程序集内嵌（012），没有任何外部文件可缺：不可用即真失败，不再跳过
+        Check("内嵌拼音数据下中文标注器始终可用", annotator.IsAvailable);
         foreach (var boundary in new[] { "𠮷", "😀", "\ud800", "\udc00", "\ud800\ud800", "𠮷😀" })
         {
             var text = "银行" + boundary + "龃龉";
@@ -613,11 +703,8 @@ internal static partial class SelfTest
     private static void TestChinesePinyinDictionary()
     {
         var annotator = new ChinesePinyinAnnotator();
-        if (!annotator.IsAvailable)
-        {
-            Skip("zh 词典未就绪（deps/phonetics/zh），跳过中文金样本");
-            return;
-        }
+        // 内嵌数据（012）：中文金样本永远可跑，加载不到就是真失败
+        Check("中文金样本依赖的内嵌数据可用", annotator.IsAvailable);
 
         var defaultContext = new AnnotationContext(AnnotationProfile.Load("zh"));
         var annotated = Annotated(annotator, "俳佪", defaultContext);

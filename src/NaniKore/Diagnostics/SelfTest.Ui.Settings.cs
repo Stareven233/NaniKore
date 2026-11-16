@@ -367,6 +367,21 @@ internal static partial class SelfTest
         page.RefreshDependenciesSync();
         foreach (var language in PhoneticLanguages.All)
         {
+            if (PhoneticDependencyManifest.IsBuiltIn(language.Code))
+            {
+                // 内置语言（012 内嵌的中文拼音数据）：只有只读就绪文字，没有下载/更新入口
+                var builtIn = Find<TextBlock>(page, "PhoneticsBuiltInZh");
+                var builtInState = PhoneticDependencyManifest.GetState(language.Code);
+                Check(
+                    $"{language.Code} built-in phonetic data shows a read-only ready label",
+                    builtIn is not null &&
+                    builtInState == PhoneticDictionaryState.BuiltIn &&
+                    builtIn.Text == GeneralPage.BuiltInPhoneticLabel(builtInState) &&
+                    builtIn.Text == "内置就绪" &&
+                    Find<Button>(page, $"PhoneticsDownload{char.ToUpperInvariant(language.Code[0])}{language.Code[1..]}") is null);
+                continue;
+            }
+
             var buttonName = $"PhoneticsDownload{char.ToUpperInvariant(language.Code[0])}{language.Code[1..]}";
             var button = Find<Button>(page, buttonName);
             Check(
@@ -390,6 +405,10 @@ internal static partial class SelfTest
         Check(
             "dictionary card button enables once a downloader is injected",
             jaButton?.IsEnabled == true);
+        Check(
+            "built-in chinese card never gains a download button even with a downloader",
+            Find<Button>(withDownloader, "PhoneticsDownloadZh") is null &&
+            Find<TextBlock>(withDownloader, "PhoneticsBuiltInZh")?.Text == "内置就绪");
 
         // 原生语言包卡片（issue 009）：按钮文案跟着状态机走，未注入下载器时只读。
         foreach (var language in NativePhoneticManifest.SupportedLanguages)
