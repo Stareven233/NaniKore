@@ -14,9 +14,9 @@ created: 2026-11-14
 
 中文保留自研 `ChinesePinyinEngine`，数据与日英一致放 `deps/phonetics/zh/` 按需下载（不内嵌）；日语采用 Misaki 分词与 UniDic 3.1.0 书面假名；英语直接采用 Misaki 的本句选音与词典候选，转换为可读的美音 IPA，允许闪音 `ɾ`、喉塞音 `ʔ` 等发音变体，不强求还原词典式 /t/、/d/。英文整词 hover 展示本句选中项和其他已收录读音；有限的误选与缺项记为已知限制，不要求全面解决时态/词义消歧，也不引入第二套 CMUdict 数据链。本轮保持本地离线，数字/货币不注音，缩写仅接受明确收录的读法。5 语移至 [独立探索](../../talks/005-其他五语本地注音探索.md)。
 
-**生产代码切换完成（012 后）。** 日语已在 010、英语已在 011 切到原生包 provider（日语书面假名 + 送假名切分，旧 IPAdic 标注器下线；英语采用 Misaki 本句选音 + 可读美音 IPA + 整词候选，旧 CMUdict 标注器下线）；中文拼音数据已在 012 改为与日英同类的「放 `deps/phonetics/zh/`、设置页按需下载」形态（主人复核后推翻了原先的内嵌决定）。分发仍是 `PhoneticDependencies` 的 ja/en/zh 原始词典路径，旧 en `ipa_dict.db` 与旧 zh MeCab 目录作为数据保留到 014。现有 `AnnotationSpan(Start, Length, Reading, Syllables, WholeWord)` 保留 UTF-16 区间；候选有两套互斥形状：中文逐字在 `AnnotationSyllable`，英语整词在 `WholeWordReadings`，UI 两种都能消费。
+**生产代码切换完成，旧链已退出生产（012 后 + 014 清理）。** 日语已在 010、英语已在 011 切到原生包 provider（日语书面假名 + 送假名切分，旧 IPAdic 标注器下线；英语采用 Misaki 本句选音 + 可读美音 IPA + 整词候选，旧 CMUdict 标注器下线）；中文拼音数据已在 012 改为与日英同类的「放 `deps/phonetics/zh/`、设置页按需下载」形态（主人复核后推翻了原先的内嵌决定）。014 已把旧链彻底上收：`PhoneticDependencyManifest` 收敛为中文拼音单文件清单（`ChinesePinyinData`），旧 CMUdict 构建链（`CmuDictionarySourceParser` / `EnglishIpaDictionary` / `IpaTranscription` / `--build-phonetics` / `--build-en-data`）、未使用的 `LibNMeCab` 包引用与旧 ja/en 下载卡片全部下线（文件归档 `.temp/`，不删除）；设置页每个语言只剩一条语言包入口，`dev.ps1` 完整包清单与 `sync-deps.py` 白名单改按正式产物枚举。剩余未完成项仅为 014 的发布与干净目录验收（ZIP、干净目录离线、坏包路径、ModelScope 上传）。现有 `AnnotationSpan(Start, Length, Reading, Syllables, WholeWord)` 保留 UTF-16 区间；候选有两套互斥形状：中文逐字在 `AnnotationSyllable`，英语整词在 `WholeWordReadings`，UI 两种都能消费。
 
-中文结构化区间、自研选音和逐字 hover 已验收；不因换 provider 重写这些逻辑。旧英语词典（`deps/phonetics/en/ipa_dict.db`）已不再被 provider 读取，但作为数据保留，本次不提前作废、删除或上传它，旧卡片与旧依赖清单随 014 下线。
+中文结构化区间、自研选音和逐字 hover 已验收；不因换 provider 重写这些逻辑。旧英语词典（`deps/phonetics/en/ipa_dict.db`）、旧 IPAdic 目录与旧 zh MeCab 产物已随 014 归档到 `.temp/014-旧词典/`，不再被读取、不再上传、不再进入完整包。
 
 ## 前置证据与放行门槛
 
@@ -53,7 +53,7 @@ created: 2026-11-14
 | [010 日语接入](issues/010-o-日语书面振假名接入.md) | 已交付：provider 已切到原生包，Debug/NativeAOT 自测 1922 项通过 | 书面假名、送假名/内部假名、未知词、过滤与原文区间，复制/选区/收藏通过 |
 | [011 Misaki 英语与整词候选](issues/011-o-英语标准IPA质量与整词候选接入.md) | 已交付：provider 已切到原生包，Debug/NativeAOT 自测 1957 项通过，包验收 413 项通过 | 美音 IPA、provider、已收录整词候选与 hover、原文对齐；记录已知选音/缺项限制，按 G2/G5 验收 |
 | [012 中文外置与下载](issues/012-o-中文拼音数据外置与按需下载.md) | 已交付：拼音数据与日英同类放 `deps/phonetics/zh/`、设置页按需下载，Debug/NativeAOT 自测 1964 项通过 | 缺包时纯文本降级、放回即用，现有哈希/金样本一致，候选与闲置释放保留 |
-| [014 分发与收尾](issues/014-o-分发构建与验收收尾.md) | 依赖 008–012 与 G2/G5 | 精简/完整 ZIP、干净目录离线、下载校验、真实宿主 AOT、许可和文档通过 |
+| [014 分发与收尾](issues/014-o-分发构建与验收收尾.md) | 依赖 008–012 与 G2/G5；代码侧清尾已落地（旧链与旧卡片下线、依赖清单与同步白名单重写），待发布与干净目录验收 | 精简/完整 ZIP、干净目录离线、下载校验、真实宿主 AOT、许可和文档通过 |
 
 013 保留为独立 5 语探索编号，不列入本 Epic 的必做任务；[探索记录](../../talks/005-其他五语本地注音探索.md) 尚不承诺交付形式或日期。
 

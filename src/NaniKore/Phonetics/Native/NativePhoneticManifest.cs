@@ -51,16 +51,10 @@ internal static class NativePhoneticManifest
     /// <summary>待重启生效的暂存目录前缀：deps/phonetics/misaki/.staging-&lt;lang&gt;/。</summary>
     public const string StagingDirectoryPrefix = ".staging-";
 
-    public const string JapaneseCode = "ja";
-    public const string EnglishCode = "en";
-
     public const string AbiVersionExport = "nk_phonetics_abi_version";
     public const string AnnotateExport = "nk_phonetics_annotate";
     public const string ReleaseExport = "nk_phonetics_release";
     public const string FreeExport = "nk_phonetics_free";
-
-    private const string ModelScopeBaseUrl =
-        "https://modelscope.cn/models/Noetuu/nanikore-deps/resolve/master/phonetics/";
 
     private static readonly string[] RequiredExports =
     [
@@ -70,14 +64,14 @@ internal static class NativePhoneticManifest
         FreeExport
     ];
 
-    /// <summary>本轮已装配的原生包语言（中文走自研内嵌引擎，见 012；不在此列）。</summary>
-    public static IReadOnlyList<string> SupportedLanguages { get; } = [JapaneseCode, EnglishCode];
+    /// <summary>本轮已装配的原生包语言；中文没有原生 DLL，走拼音数据文件（见 <see cref="ChinesePinyinData"/>）。</summary>
+    public static IReadOnlyList<string> SupportedLanguages { get; } = [PhoneticLanguages.JapaneseCode, PhoneticLanguages.EnglishCode];
 
     /// <summary>语言包身份清单：库哈希取自 008 实测产物，重跑构建链后必须同步回填。</summary>
     public static IReadOnlyList<NativePhoneticPack> Packs { get; } =
     [
         new NativePhoneticPack(
-            JapaneseCode,
+            PhoneticLanguages.JapaneseCode,
             "日本語",
             "NaniKore.Phonetics.Ja.dll",
             21_767_680,
@@ -93,7 +87,7 @@ internal static class NativePhoneticManifest
             ],
             RequiredExports),
         new NativePhoneticPack(
-            EnglishCode,
+            PhoneticLanguages.EnglishCode,
             "English",
             "NaniKore.Phonetics.En.dll",
             8_868_864,
@@ -117,7 +111,7 @@ internal static class NativePhoneticManifest
 
     /// <summary>包根目录：deps/phonetics/misaki/。</summary>
     public static string PackRootDirectory =>
-        Path.Combine(PhoneticDependencyPaths.PhoneticsRootDirectory, PackRootName);
+        Path.Combine(PhoneticDataPaths.PhoneticsRootDirectory, PackRootName);
 
     /// <summary>正式包目录：deps/phonetics/misaki/&lt;lang&gt;/。</summary>
     public static string GetPackDirectory(string languageCode) =>
@@ -133,5 +127,5 @@ internal static class NativePhoneticManifest
 
     /// <summary>ModelScope 直链（与 008 上传口径一致）。</summary>
     public static string GetDownloadUrl(string languageCode, string relativePath) =>
-        ModelScopeBaseUrl + PackRootName + "/" + languageCode + "/" + relativePath + "?download=true";
+        PhoneticDataPaths.ModelScopeBaseUrl + PackRootName + "/" + languageCode + "/" + relativePath + "?download=true";
 }

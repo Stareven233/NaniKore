@@ -77,7 +77,7 @@ internal sealed class NativeTextAnnotator : ITextAnnotator, IDisposable
             return [];
         }
 
-        var japanese = string.Equals(LanguageCode, NativePhoneticManifest.JapaneseCode, StringComparison.OrdinalIgnoreCase);
+        var japanese = string.Equals(LanguageCode, PhoneticLanguages.JapaneseCode, StringComparison.OrdinalIgnoreCase);
         // 英语：字面方括号区段沿用旧标注器口径不注音（如用户手贴的带注音文本、代码数组下标）。
         var bracketed = japanese ? null : MarkBracketRegions(plainText);
         var spans = new List<AnnotationSpan>();
@@ -240,7 +240,7 @@ internal sealed class NativeTextAnnotator : ITextAnnotator, IDisposable
             return false;
         }
 
-        if (string.Equals(LanguageCode, NativePhoneticManifest.JapaneseCode, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(LanguageCode, PhoneticLanguages.JapaneseCode, StringComparison.OrdinalIgnoreCase))
         {
             foreach (var ch in token.Surface)
             {

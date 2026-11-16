@@ -11,11 +11,14 @@ internal static class PhoneticsProbe
 {
     public static void Run()
     {
-        Console.WriteLine($"[定位] 词典根目录：{PhoneticDependencyPaths.PhoneticsRootDirectory}");
-        foreach (var language in PhoneticDependencyManifest.SupportedLanguages)
+        Console.WriteLine($"[定位] 数据根目录：{PhoneticDataPaths.PhoneticsRootDirectory}");
+        foreach (var pack in NativePhoneticManifest.Packs)
         {
-            Console.WriteLine($"[定位] {language} 完整：{PhoneticDependencyManifest.IsComplete(language)}，缺失文件 {PhoneticDependencyManifest.GetIncompleteFiles(language).Count}");
+            var failure = NativePhoneticPackVerifier.Verify(pack, NativePhoneticManifest.GetPackDirectory(pack.Language), out _);
+            Console.WriteLine($"[定位] native {pack.Language} 完整：{failure == NativePhoneticPackageFailure.None}（{failure}）");
         }
+
+        Console.WriteLine($"[定位] zh 数据完整：{ChinesePinyinData.IsComplete()}（{ChinesePinyinData.GetState()}）");
 
         foreach (var language in new[] { "ja", "zh", "en" })
         {
@@ -31,7 +34,6 @@ internal static class PhoneticsProbe
             + $" common-chars-ja={CountLines("common-chars-ja")}, common-chars-zh={CountLines("common-chars-zh")}");
         Console.WriteLine($"[判据] 短文本全注阈值={AnnotationProfile.ShortTextWordThreshold}：ja 3词={AnnotationProfile.Load("ja", wordCount: 3).AnnotateAll}，ja 12词={AnnotationProfile.Load("ja", wordCount: 12).AnnotateAll}");
 
-        Console.WriteLine($"[arpabet] ubiquitous 码点：{(Dump(ArpabetIpaConverter.Convert("Y UW0 B IH1 K W IH0 T AH0 S")))}");
         Console.WriteLine($"[拼音] ri4={Dump(PinyinToneConverter.ConvertSyllable("ri4"))}, Ri4 Ben3={Dump(PinyinToneConverter.ConvertPhrase("Ri4 Ben3"))}");
 
         var registry = TextAnnotatorRegistry.CreateDefault();

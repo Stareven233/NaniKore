@@ -16,7 +16,7 @@ internal enum NativePhoneticPackageFailure
     /// <summary>校验通过，可以使用。</summary>
     None,
 
-    /// <summary>该语言没有原生包（如中文走内嵌引擎，不在原生包清单里）。</summary>
+    /// <summary>该语言没有原生包（中文走拼音数据文件，不在原生包清单里）。</summary>
     Unsupported,
 
     /// <summary>包目录或包内文件缺失，需要首次下载。</summary>

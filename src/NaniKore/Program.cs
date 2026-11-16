@@ -51,19 +51,9 @@ internal static class Program
             return InspectModels();
         }
 
-        if (args.Contains("--build-phonetics", StringComparer.OrdinalIgnoreCase))
-        {
-            return BuildPhonetics(args);
-        }
-
         if (args.Contains("--build-zh-data", StringComparer.OrdinalIgnoreCase))
         {
             return BuildZhPinyinData();
-        }
-
-        if (args.Contains("--build-en-data", StringComparer.OrdinalIgnoreCase))
-        {
-            return BuildEnData();
         }
 
         if (args.Contains("--phonetics-probe", StringComparer.OrdinalIgnoreCase))
@@ -153,56 +143,10 @@ internal static class Program
     }
 
     /// <summary>
-    /// 开发期注音词典生成：CMUdict → 英语 SQLite；pypinyin + CC-CEDICT + Unihan → 中文拼音数据表。
-    /// 用法：dotnet run --project src/NaniKore -- --build-phonetics（或单独 --build-zh-data 只重建中文）
-    /// 详见 codestable/notes/phonetics-pipeline.md；产物落盘 deps/phonetics/，控制台打印 SHA-256 供回填清单。
+    /// 开发期拼音数据生成：pypinyin + CC-CEDICT + Unihan → deps/phonetics/zh/zh_pinyin.txt.gz。
+    /// 用法：dotnet run --project src/NaniKore -- --build-zh-data
+    /// 详见 codestable/notes/phonetics-pipeline.md；控制台打印字节数与 SHA-256 供回填 ChinesePinyinData.Sha256。
     /// </summary>
-    private static int BuildPhonetics(string[] args)
-    {
-        try
-        {
-            var repoRoot = LocateRepositoryRoot();
-            if (repoRoot is null)
-            {
-                Console.Error.WriteLine("未找到仓库根目录（含 deps/phonetics/_source 的目录）。");
-                return 1;
-            }
-
-            var dictIndexIndex = FindOption(args, "--dict-index");
-            var dictIndexPath = dictIndexIndex >= 0 && dictIndexIndex + 1 < args.Length ? args[dictIndexIndex + 1] : null;
-            PhoneticDictionaryBuilder.Run(repoRoot, dictIndexPath);
-            return 0;
-        }
-        catch (Exception exception)
-        {
-            Console.Error.WriteLine($"注音词典生成失败：{exception.Message}");
-            return 1;
-        }
-    }
-
-    /// <summary>单独重建英语 IPA 词典：从 _source/cmudict.dict 生成多读音表，不触碰中文产物。</summary>
-    private static int BuildEnData()
-    {
-        try
-        {
-            var repoRoot = LocateRepositoryRoot();
-            if (repoRoot is null)
-            {
-                Console.Error.WriteLine("未找到仓库根目录（需含 deps/phonetics/_source 的目录）。");
-                return 1;
-            }
-
-            PhoneticDictionaryBuilder.RunEnglishOnly(repoRoot);
-            return 0;
-        }
-        catch (Exception exception)
-        {
-            Console.Error.WriteLine($"英语词典生成失败：{exception.Message}");
-            return 1;
-        }
-    }
-
-    /// <summary>单独重建中文拼音运行期数据：从 resources/phonetics 合并源料，不依赖 mecab-dict-index。</summary>
     private static int BuildZhPinyinData()
     {
         try
@@ -255,23 +199,6 @@ internal static class Program
         {
             // 输出被重定向且不支持切换编码时保持默认，不影响日志流
         }
-    }
-
-    /// <summary>从输出目录向上找仓库根：以 deps/phonetics/_source 存在为锚。</summary>
-    private static string? LocateRepositoryRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            if (Directory.Exists(Path.Combine(directory.FullName, "deps", "phonetics", "_source")))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        return null;
     }
 
     private static int RunFileOcr(IReadOnlyList<string> args, int optionIndex)

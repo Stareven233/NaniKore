@@ -10,7 +10,7 @@ namespace NaniKore.Phonetics;
 /// </summary>
 internal enum NativePhoneticPackState
 {
-    /// <summary>该语言没有原生包（中文走内嵌引擎）。</summary>
+    /// <summary>该语言没有原生包（中文走拼音数据文件）。</summary>
     Unsupported,
 
     /// <summary>包目录或文件缺失，需要首次下载。</summary>
@@ -299,13 +299,12 @@ internal sealed class NativePhoneticPackSlot : ITextAnnotator, IIdleTextAnnotato
 
 /// <summary>
 /// 原生注音语言包的宿主：按语种惰性加载、状态机、闲置释放与「重启生效」的暂存更新。
-/// 本项只交付骨架（ABI 客户端 + 生命周期 + 设置状态）；把 ja/en 标注器正式接进结果面板由 010/011 完成，
-/// 因此这里不改变现有 provider 装配，只保证骨架在真实宿主里可加载、可释放、可重建、可观测。
+/// 结果面板与设置页共用进程单例（<see cref="NativePhoneticPackHostHolder"/>），
+/// 使下载完成与状态展示永远指向同一份状态。
 /// </summary>
 internal sealed class NativePhoneticPackHost : IDisposable
 {
     private readonly Dictionary<string, NativePhoneticPackSlot> _slots;
-    private readonly List<NativePhoneticPackSlot> _ordered;
     private readonly NativePhoneticPackInstaller _installer;
     private readonly Lock _gate = new();
     private TimeSpan _idleTimeout;
@@ -320,17 +319,11 @@ internal sealed class NativePhoneticPackHost : IDisposable
         _idleTimeout = idleTimeout;
         _installer = installer ?? NativePhoneticPackInstaller.Default;
         _slots = [];
-        _ordered = [];
         foreach (var pack in NativePhoneticManifest.Packs)
         {
-            var slot = new NativePhoneticPackSlot(pack, idleTimeout, clock, packDirectory ?? NativePhoneticManifest.GetPackDirectory, _installer);
-            _slots[pack.Language] = slot;
-            _ordered.Add(slot);
+            _slots[pack.Language] = new NativePhoneticPackSlot(pack, idleTimeout, clock, packDirectory ?? NativePhoneticManifest.GetPackDirectory, _installer);
         }
     }
-
-    /// <summary>已装配的原生包标注器（010/011 切换 provider 时直接取用，无需再包一层惰性资源）。</summary>
-    public IReadOnlyList<ITextAnnotator> Annotators => _ordered;
 
     /// <summary>按语言取标注器；该语言没有原生包时返回 null。</summary>
     public ITextAnnotator? GetAnnotator(string? languageCode) =>
@@ -488,7 +481,7 @@ internal sealed class NativePhoneticPackHost : IDisposable
 }
 
 /// <summary>
-/// 应用级原生语言包宿主（进程内单例）：设置页状态、下载入口与结果面板将来共用同一实例，
+/// 应用级原生语言包宿主（进程内单例）：设置页状态、下载入口与结果面板共用同一实例，
 /// 避免两处各建一份状态机（下载完成一处生效、另一处还是旧状态）。
 /// </summary>
 internal static class NativePhoneticPackHostHolder

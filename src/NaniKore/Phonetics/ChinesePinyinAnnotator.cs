@@ -87,6 +87,6 @@ internal sealed class ChinesePinyinAnnotator : ITextAnnotator, IDisposable
         }
 
         _probed = true;
-        _engine = ChinesePinyinEngine.TryLoad(PhoneticDependencyPaths.ChinesePinyinDataFile);
+        _engine = ChinesePinyinEngine.TryLoad(PhoneticDataPaths.ChinesePinyinDataFile);
     }
 }

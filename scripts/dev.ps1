@@ -304,9 +304,8 @@ function New-NaniKoreReleaseArchive {
     }
 
     if ($IncludeFullDependencies) {
-        # 完整包承诺「解压即用」：本地 OCR 权重、ONNX Runtime 与注音数据缺一不可（issue 008）。
-        # 注音：三语一致均按需下载（中文拼音表自 012 起与日英同类），完整包把它们一并带上；
-        # 旧 ja/en 词典条目属旧 provider 过渡数据，随 014 下线。
+        # 完整包承诺「解压即用」：本地 OCR 权重、ONNX Runtime 与三语注音数据缺一不可。
+        # 注音：三语一致均按需下载，完整包把它们一并带上（日英原生包含随包许可，中文是单份拼音表）。
         $requiredDependencies = @(
             'ocr-onnx\pp-ocr-v6-small\det\inference.onnx',
             'ocr-onnx\pp-ocr-v6-small\det\inference.yml',
@@ -314,11 +313,12 @@ function New-NaniKoreReleaseArchive {
             'ocr-onnx\pp-ocr-v6-small\rec\inference.yml',
             'onnxruntime\onnxruntime.dll',
             'onnxruntime\onnxruntime_providers_shared.dll',
-            'phonetics\ja\sys.dic',
-            'phonetics\ja\unk.dic',
-            'phonetics\ja\matrix.bin',
-            'phonetics\ja\char.bin',
-            'phonetics\en\ipa_dict.db',
+            'phonetics\misaki\ja\NaniKore.Phonetics.Ja.dll',
+            'phonetics\misaki\ja\pack.json',
+            'phonetics\misaki\ja\licenses\UniDic-BSD.txt',
+            'phonetics\misaki\en\NaniKore.Phonetics.En.dll',
+            'phonetics\misaki\en\pack.json',
+            'phonetics\misaki\en\licenses\MisakiSharp-LICENSE.txt',
             'phonetics\zh\zh_pinyin.txt.gz'
         )
         $missingDependencies = @(
@@ -349,12 +349,20 @@ function New-NaniKoreReleaseArchive {
         if ($IncludeFullDependencies) {
             Copy-Item -LiteralPath $DependenciesDirectory -Destination $stagingDirectory -Recurse -Force
 
-            # 注音词典的生成暂存（源码 zip / 解包件 / CSV 中间产物）不随发布包分发：
-            # 完整包只承诺「解压即用」的编译态词典（issue 008），暂存件几十 MB 且仅供 codestable/notes/phonetics-pipeline.md 再生。
-            foreach ($staleDirectory in @('phonetics\_source', 'phonetics\_build')) {
-                $stalePath = Join-Path $stagingDirectory "deps\$staleDirectory"
-                if (Test-Path -LiteralPath $stalePath) {
-                    Remove-Item -LiteralPath $stalePath -Recurse -Force
+            # 注音数据只带正式产物：misaki/<lang>/（DLL + pack.json + licenses）与 zh/zh_pinyin.txt.gz。
+            # 白名单而不是黑名单：旧 ja/en 词典、旧 MeCab 中文产物、_source/_build 与下载暂存目录
+            # 即使还留在 deps/，也进不了交付物（issue 014）。
+            $phoneticsStaging = Join-Path $stagingDirectory 'deps\phonetics'
+            if (Test-Path -LiteralPath $phoneticsStaging) {
+                Get-ChildItem -LiteralPath $phoneticsStaging -Force |
+                    Where-Object { $_.Name -notin @('misaki', 'zh') } |
+                    Remove-Item -Recurse -Force
+
+                $chineseStaging = Join-Path $phoneticsStaging 'zh'
+                if (Test-Path -LiteralPath $chineseStaging) {
+                    Get-ChildItem -LiteralPath $chineseStaging -Force |
+                        Where-Object { $_.Name -ne 'zh_pinyin.txt.gz' } |
+                        Remove-Item -Recurse -Force
                 }
             }
         }

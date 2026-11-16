@@ -20,45 +20,24 @@ namespace NaniKore.App.Settings;
 internal sealed partial class GeneralPage : UserControl, ISettingsPage
 {
     private readonly Func<IProgress<string>, CancellationToken, Task>? _downloadDependencies;
-    private readonly Func<string, IProgress<string>, CancellationToken, Task>? _downloadPhoneticDictionary;
-    private readonly Func<string, IProgress<string>, CancellationToken, Task>? _downloadNativePhoneticPack;
+    private readonly Func<string, IProgress<string>, CancellationToken, Task>? _downloadPhoneticPack;
 
-    /// <summary>语言代码 → 该语言词典卡片的下载按钮（集中装配）。</summary>
-    private readonly Dictionary<string, Button> _phoneticDownloadButtons;
-
-    /// <summary>语言代码 → 原生语言包卡片的下载按钮（issue 009）。</summary>
-    private readonly Dictionary<string, Button> _nativePackButtons;
-
-    /// <summary>语言代码 → 原生语言包行的原始说明（失败时在后面追加原因，恢复后还原）。</summary>
-    private readonly Dictionary<string, (SettingsRow Row, string Description)> _nativePackRows;
+    /// <summary>语言代码 → 该语言的语言包卡片（按钮 + 行内说明，集中装配）。</summary>
+    private readonly Dictionary<string, PhoneticPackCard> _packCards;
 
     public GeneralPage(
         Func<IProgress<string>, CancellationToken, Task>? downloadDependencies = null,
-        Func<string, IProgress<string>, CancellationToken, Task>? downloadPhoneticDictionary = null,
-        Func<string, IProgress<string>, CancellationToken, Task>? downloadNativePhoneticPack = null)
+        Func<string, IProgress<string>, CancellationToken, Task>? downloadPhoneticPack = null)
     {
         InitializeComponent();
         _downloadDependencies = downloadDependencies;
-        _downloadPhoneticDictionary = downloadPhoneticDictionary;
-        _downloadNativePhoneticPack = downloadNativePhoneticPack;
+        _downloadPhoneticPack = downloadPhoneticPack;
 
-        _phoneticDownloadButtons = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase)
+        _packCards = new Dictionary<string, PhoneticPackCard>(StringComparer.OrdinalIgnoreCase)
         {
-            ["ja"] = PhoneticsDownloadJa,
-            ["en"] = PhoneticsDownloadEn,
-            ["zh"] = PhoneticsDownloadZh,
-        };
-
-        _nativePackButtons = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase)
-        {
-            [NativePhoneticManifest.JapaneseCode] = NativePackJa,
-            [NativePhoneticManifest.EnglishCode] = NativePackEn,
-        };
-
-        _nativePackRows = new Dictionary<string, (SettingsRow Row, string Description)>(StringComparer.OrdinalIgnoreCase)
-        {
-            [NativePhoneticManifest.JapaneseCode] = (NativePackJaRow, NativePackJaRow.Description),
-            [NativePhoneticManifest.EnglishCode] = (NativePackEnRow, NativePackEnRow.Description),
+            [PhoneticLanguages.JapaneseCode] = new(PhoneticsPackJa, PhoneticsPackJaRow),
+            [PhoneticLanguages.EnglishCode] = new(PhoneticsPackEn, PhoneticsPackEnRow),
+            [PhoneticLanguages.ChineseCode] = new(PhoneticsPackZh, PhoneticsPackZhRow),
         };
 
         // 字体输入（issue 033）：输入框即搜索框；候选源挂在展开下拉时才取，避免无意义的字体表枚举。
@@ -73,25 +52,18 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         LocalResourceIdleTimeoutBox.ItemsSource = new[] { "0", "30s", "10m", "24h" };
 
         DownloadDependenciesButton.Click += OnDownloadDependenciesClick;
-        PhoneticsDownloadJa.Click += OnDownloadPhoneticsClick;
-        PhoneticsDownloadEn.Click += OnDownloadPhoneticsClick;
-        PhoneticsDownloadZh.Click += OnDownloadPhoneticsClick;
-        NativePackJa.Click += OnDownloadNativePackClick;
-        NativePackEn.Click += OnDownloadNativePackClick;
+        foreach (var card in _packCards.Values)
+        {
+            card.Button.Click += OnDownloadPhoneticPackClick;
+        }
 
         // 首屏秒开：初始化按钮禁用/启用状态，将耗时磁盘哈希探测移入后台异步执行
         DownloadDependenciesButton.Content = "检测中…";
         DownloadDependenciesButton.IsEnabled = _downloadDependencies is not null;
-        foreach (var button in _phoneticDownloadButtons.Values)
+        foreach (var card in _packCards.Values)
         {
-            button.Content = "检测中…";
-            button.IsEnabled = _downloadPhoneticDictionary is not null;
-        }
-
-        foreach (var button in _nativePackButtons.Values)
-        {
-            button.Content = "检测中…";
-            button.IsEnabled = _downloadNativePhoneticPack is not null;
+            card.Button.Content = "检测中…";
+            card.Button.IsEnabled = _downloadPhoneticPack is not null;
         }
 
         _ = RefreshDependenciesAsync();
@@ -323,119 +295,101 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     }
 
     /// <summary>
-    /// 同步刷新本地 OCR 依赖卡片、旧词典卡片与原生语言包卡片（自测与下载完成后调用）。
+    /// 同步刷新本地 OCR 依赖卡片与三语语言包卡片（自测与下载完成后调用）。
     /// </summary>
     internal void RefreshDependenciesSync()
     {
-        var isOcrComplete = OcrDependencyManifest.IsComplete();
-        var dictStates = new Dictionary<string, PhoneticDictionaryState>(StringComparer.OrdinalIgnoreCase);
-        foreach (var lang in _phoneticDownloadButtons.Keys)
-        {
-            dictStates[lang] = PhoneticDependencyManifest.GetState(lang);
-        }
-
-        ApplyDependencyStates(isOcrComplete, dictStates);
-        ApplyNativePackStates(NativePhoneticPackHostHolder.Default.GetStates());
+        DownloadDependenciesButton.Content = OcrButtonLabel(OcrDependencyManifest.IsComplete());
+        DownloadDependenciesButton.IsEnabled = _downloadDependencies is not null;
+        ApplyPackStates(ReadPackStates());
     }
 
-    /// <summary>
-    /// 后台异步探测磁盘 OCR、旧词典与原生包依赖，完成时安全更新 UI，杜绝阻塞主线程首屏秒开。
-    /// </summary>
+    /// <summary>后台异步探测 OCR 依赖与三语语言包，完成时安全更新 UI，杜绝阻塞主线程首屏秒开。</summary>
     internal async Task RefreshDependenciesAsync()
     {
-        var host = NativePhoneticPackHostHolder.Default;
-        var (isOcrComplete, dictStates, nativeStates) = await Task.Run(() =>
-        {
-            var ocr = OcrDependencyManifest.IsComplete();
-            var states = new Dictionary<string, PhoneticDictionaryState>(StringComparer.OrdinalIgnoreCase);
-            foreach (var lang in _phoneticDownloadButtons.Keys)
-            {
-                states[lang] = PhoneticDependencyManifest.GetState(lang);
-            }
-
-            return (ocr, states, host.GetStates());
-        }).ConfigureAwait(false);
+        var (isOcrComplete, packStates) = await Task.Run(() => (OcrDependencyManifest.IsComplete(), ReadPackStates())).ConfigureAwait(false);
 
         if (Avalonia.Threading.Dispatcher.UIThread.CheckAccess())
         {
-            ApplyDependencyStates(isOcrComplete, dictStates);
-            ApplyNativePackStates(nativeStates);
+            ApplyOcrState(isOcrComplete);
+            ApplyPackStates(packStates);
         }
         else
         {
             await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
             {
-                ApplyDependencyStates(isOcrComplete, dictStates);
-                ApplyNativePackStates(nativeStates);
+                ApplyOcrState(isOcrComplete);
+                ApplyPackStates(packStates);
             });
         }
     }
 
-    private void ApplyDependencyStates(bool isOcrComplete, IReadOnlyDictionary<string, PhoneticDictionaryState> states)
+    private void ApplyOcrState(bool isOcrComplete)
     {
         DownloadDependenciesButton.Content = OcrButtonLabel(isOcrComplete);
         DownloadDependenciesButton.IsEnabled = _downloadDependencies is not null;
-
-        foreach (var (lang, state) in states)
-        {
-            if (_phoneticDownloadButtons.TryGetValue(lang, out var btn))
-            {
-                btn.Content = PhoneticButtonLabel(state);
-                btn.IsEnabled = _downloadPhoneticDictionary is not null;
-            }
-        }
     }
 
     /// <summary>本地 OCR 依赖就绪状态 → 按钮文案（页面与自测共用）。</summary>
     internal static string OcrButtonLabel(bool isComplete) => isComplete ? "已就绪" : "下载";
 
-    /// <summary>词典状态 → 按钮文案（页面与自测共用同一映射，避免两处各写一份 switch）。</summary>
-    internal static string PhoneticButtonLabel(PhoneticDictionaryState state) => state switch
+    /// <summary>
+    /// 三语语言包状态快照：日英来自原生包宿主的状态机，中文来自拼音数据的磁盘哈希判定。
+    /// 两者的磁盘状态统一映射到 <see cref="NativePhoneticPackState"/>，卡片因此只维护一套文案。
+    /// </summary>
+    internal static IReadOnlyDictionary<string, NativePhoneticPackState> ReadPackStates()
     {
-        PhoneticDictionaryState.Ready => "已就绪",
-        PhoneticDictionaryState.NeedsUpdate => "更新",
-        PhoneticDictionaryState.Missing => "下载",
-        _ => "不可用",
-    };
+        var states = new Dictionary<string, NativePhoneticPackState>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (languageCode, state) in NativePhoneticPackHostHolder.Default.GetStates())
+        {
+            states[languageCode] = state;
+        }
 
-    /// <summary>原生语言包状态 → 按钮文案（页面与自测共用同一映射）。</summary>
-    internal static string NativePackButtonLabel(NativePhoneticPackState state) => NativePhoneticPackStateText.ButtonLabel(state);
+        states[PhoneticLanguages.ChineseCode] = ChinesePinyinData.GetState() switch
+        {
+            PhoneticDataState.Ready => NativePhoneticPackState.Ready,
+            PhoneticDataState.NeedsUpdate => NativePhoneticPackState.NeedsUpdate,
+            _ => NativePhoneticPackState.Missing,
+        };
+        return states;
+    }
 
-    /// <summary>刷新原生语言包卡片：按钮文案跟状态，失败原因写回行内说明（恢复后还原）。</summary>
-    internal void ApplyNativePackStates(IReadOnlyDictionary<string, NativePhoneticPackState> states)
+    /// <summary>语言包状态 → 按钮文案（页面与自测共用同一映射）。</summary>
+    internal static string PackButtonLabel(NativePhoneticPackState state) => NativePhoneticPackStateText.ButtonLabel(state);
+
+    /// <summary>刷新语言包卡片：按钮文案跟状态，失败原因写回行内说明（恢复后还原）。</summary>
+    internal void ApplyPackStates(IReadOnlyDictionary<string, NativePhoneticPackState> states)
     {
         var host = NativePhoneticPackHostHolder.Default;
         foreach (var (languageCode, state) in states)
         {
-            if (_nativePackButtons.TryGetValue(languageCode, out var button))
-            {
-                button.Content = NativePackButtonLabel(state);
-                button.IsEnabled = _downloadNativePhoneticPack is not null && state != NativePhoneticPackState.Downloading;
-            }
-
-            if (!_nativePackRows.TryGetValue(languageCode, out var row))
+            if (!_packCards.TryGetValue(languageCode, out var card))
             {
                 continue;
             }
 
+            card.Button.Content = PackButtonLabel(state);
+            card.Button.IsEnabled = _downloadPhoneticPack is not null && state != NativePhoneticPackState.Downloading;
+
             // 失败时把原因钉在该语言行内：主人不用去翻日志就知道是哈希、架构、ABI 还是缺导出。
             var detail = state == NativePhoneticPackState.Failed ? host.GetDetail(languageCode) : null;
-            row.Row.Description = string.IsNullOrWhiteSpace(detail)
-                ? row.Description
-                : row.Description + "\n当前状态：" + NativePhoneticPackStateText.Description(state) + "（" + detail + "）";
+            card.Row.Description = string.IsNullOrWhiteSpace(detail)
+                ? card.Description
+                : card.Description + "\n当前状态：" + NativePhoneticPackStateText.Description(state) + "（" + detail + "）";
         }
     }
 
-    private async void OnDownloadNativePackClick(object? sender, RoutedEventArgs e)
+    /// <summary>下载入口三语同形：语言代码交给宿主侧统一分派（原生包或拼音数据），卡片不区分机制。</summary>
+    private async void OnDownloadPhoneticPackClick(object? sender, RoutedEventArgs e)
     {
-        if (_downloadNativePhoneticPack is null ||
+        if (_downloadPhoneticPack is null ||
             sender is not Button { Tag: string languageCode } button ||
             string.IsNullOrEmpty(languageCode) ||
             !MessageDialog.Confirm(
                 TopLevel.GetTopLevel(this) as Window,
-                $"下载{NativePhoneticManifest.GetPack(languageCode)?.DisplayName ?? languageCode}注音语言包？",
-                "将从 ModelScope 下载该语言的本地原生注音包（含许可文件）到程序目录的 deps/phonetics/misaki 下，" +
-                "校验哈希后即时生效；若当前版本正在使用，新版本会暂存并提示重启生效。",
+                $"下载{PhoneticLanguages.DisplayName(languageCode) ?? languageCode}注音语言包？",
+                "将从 ModelScope 下载该语言的注音数据到程序目录的 deps/phonetics 下，校验哈希后即时生效；" +
+                "若原生包当前正在使用，新版本会暂存并提示重启生效。",
                 "下载",
                 InfoSeverity.Warning))
         {
@@ -443,14 +397,14 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         }
 
         button.IsEnabled = false;
-        NativePackStatus.Show("正在准备下载…", InfoSeverity.Neutral);
-        var progress = new Progress<string>(message => NativePackStatus.Show(message, InfoSeverity.Neutral));
+        PhoneticsStatus.Show("正在准备下载…", InfoSeverity.Neutral);
+        var progress = new Progress<string>(message => PhoneticsStatus.Show(message, InfoSeverity.Neutral));
         string message;
         InfoSeverity severity;
         try
         {
-            await _downloadNativePhoneticPack(languageCode, progress, CancellationToken.None);
-            var state = NativePhoneticPackHostHolder.Default.GetState(languageCode);
+            await _downloadPhoneticPack(languageCode, progress, CancellationToken.None);
+            var state = ReadPackStates()[languageCode];
             message = NativePhoneticPackStateText.Description(state);
             severity = state is NativePhoneticPackState.Ready or NativePhoneticPackState.RestartPending
                 ? InfoSeverity.Success
@@ -464,43 +418,12 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
 
         // 先刷新卡片（会把失败原因写进行内说明），再压上本次操作的结论，避免被刷新清掉。
         RefreshDependenciesSync();
-        NativePackStatus.Show(message, severity);
+        PhoneticsStatus.Show(message, severity);
     }
 
-    private async void OnDownloadPhoneticsClick(object? sender, RoutedEventArgs e)
+    /// <summary>语言包卡片：按钮与行内说明；<see cref="Description"/> 是失败原因追加前的原文。</summary>
+    private sealed record PhoneticPackCard(Button Button, SettingsRow Row)
     {
-        if (_downloadPhoneticDictionary is null ||
-            sender is not Button { Tag: string languageCode } button ||
-            string.IsNullOrEmpty(languageCode) ||
-            !MessageDialog.Confirm(
-                TopLevel.GetTopLevel(this) as Window,
-                $"下载{PhoneticLanguages.DisplayName(languageCode) ?? languageCode}注音词典？",
-                "将从 ModelScope 下载该语言的注音词典并保存到当前程序目录的 deps/phonetics 文件夹，下载完成后立即生效。",
-                "下载",
-                InfoSeverity.Warning))
-        {
-            return;
-        }
-
-        button.IsEnabled = false;
-        PhoneticsStatus.Show("正在准备下载…", InfoSeverity.Neutral);
-        var progress = new Progress<string>(message => PhoneticsStatus.Show(message, InfoSeverity.Neutral));
-        try
-        {
-            await _downloadPhoneticDictionary(languageCode, progress, CancellationToken.None);
-            RefreshDependenciesSync();
-            var state = PhoneticDependencyManifest.GetState(languageCode);
-            PhoneticsStatus.Show(
-                state == PhoneticDictionaryState.Ready ? "词典已就绪，即时生效。" : "下载结束，但词典仍未完整就绪，请重试。",
-                state == PhoneticDictionaryState.Ready ? InfoSeverity.Success : InfoSeverity.Warning);
-        }
-        catch (Exception exception)
-        {
-            PhoneticsStatus.Show(exception.Message, InfoSeverity.Error);
-        }
-        finally
-        {
-            RefreshDependenciesSync();
-        }
+        public string Description { get; } = Row.Description;
     }
 }

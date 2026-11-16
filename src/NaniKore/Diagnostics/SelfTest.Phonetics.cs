@@ -10,10 +10,6 @@ internal static partial class SelfTest
         TestAnnotationProfileAndDedupe();
         TestAnnotationShortTextWordCount();
         TestAnnotationFormatter();
-        TestIpaTranscription();
-        TestEnglishPipeline();
-        TestCmuDictionarySourceParser();
-        TestCmuDictionaryCandidateIndex();
         TestPinyinToneConversion();
         TestChineseStructuredBoundaries();
         TestChinesePinyinExternalData();
@@ -26,7 +22,6 @@ internal static partial class SelfTest
         TestEnglishNativeAnnotation();
         TestEnglishNativeWholeWordCandidates();
         TestChinesePinyinDictionary();
-        TestEnglishCandidateDatabase();
         RunNativePhoneticPackTests();
     }
 
@@ -54,7 +49,7 @@ internal static partial class SelfTest
         var english = registry.GetAnnotator("en");
         if (english is null || !english.IsAvailable)
         {
-            Skip("en 词典未就绪（deps/phonetics/en），跳过英语词数与短语边界金样本");
+            Skip("en 原生语言包未就绪（deps/phonetics/misaki/en），跳过英语词数与短语边界金样本");
         }
         else
         {
@@ -93,7 +88,7 @@ internal static partial class SelfTest
         var chinese = registry.GetAnnotator("zh");
         if (chinese is null || !chinese.IsAvailable)
         {
-            Skip("zh 词典未就绪（deps/phonetics/zh），跳过中文词数金样本");
+            Skip("zh 拼音数据未就绪（deps/phonetics/zh），跳过中文词数金样本");
         }
         else
         {
@@ -104,29 +99,20 @@ internal static partial class SelfTest
         }
     }
 
-    /// <summary>按语言词典状态：三语一致，Ready 必须与清单完整性判定一致（哈希即版本）；未装配语言（如 ko）返回 Unsupported 而不是崩溃。</summary>
+    /// <summary>拼音数据状态与清单一致：Ready 必须与哈希判定一致（哈希即版本），三语各自只有一个下载入口。</summary>
     private static void TestPhoneticDictionaryStates()
     {
-        foreach (var language in PhoneticLanguages.All)
-        {
-            var state = PhoneticDependencyManifest.GetState(language.Code);
-            Check(
-                $"{language.Code} 词典状态与清单完整性一致",
-                state == PhoneticDictionaryState.Ready == PhoneticDependencyManifest.IsComplete(language.Code) &&
-                state is PhoneticDictionaryState.Ready or PhoneticDictionaryState.Missing or PhoneticDictionaryState.NeedsUpdate);
-        }
-
+        var state = ChinesePinyinData.GetState();
         Check(
-            "未装配语言返回 Unsupported",
-            PhoneticDependencyManifest.GetState("ko") == PhoneticDictionaryState.Unsupported &&
-            PhoneticDependencyManifest.GetState("") == PhoneticDictionaryState.Unsupported &&
-            PhoneticDependencyManifest.GetFiles("ko").Count == 0);
+            "中文拼音数据状态与哈希判定一致",
+            (state == PhoneticDataState.Ready) == ChinesePinyinData.IsComplete() &&
+            state is PhoneticDataState.Ready or PhoneticDataState.Missing or PhoneticDataState.NeedsUpdate);
         Check(
-            "三语都有下载清单，中文不再特例",
-            PhoneticLanguages.All.All(language => PhoneticDependencyManifest.GetFiles(language.Code).Count > 0) &&
-            PhoneticDependencyManifest.GetFiles(PhoneticDependencyManifest.ChineseCode)
-                .Select(file => file.RelativePath)
-                .SequenceEqual(["zh/zh_pinyin.txt.gz"]));
+            "三语各一条语言包入口：中文是唯一的数据文件，日英走原生包",
+            ChinesePinyinData.RelativePath == "zh/zh_pinyin.txt.gz" &&
+            ChinesePinyinData.DownloadUrl.EndsWith("/phonetics/zh/zh_pinyin.txt.gz?download=true", StringComparison.Ordinal) &&
+            NativePhoneticManifest.SupportedLanguages.SequenceEqual([PhoneticLanguages.JapaneseCode, PhoneticLanguages.EnglishCode]) &&
+            PhoneticLanguages.All.Count == 3);
     }
 
     /// <summary>
@@ -136,15 +122,13 @@ internal static partial class SelfTest
     /// </summary>
     private static void TestChinesePinyinExternalData()
     {
-        var dataFile = PhoneticDependencyPaths.ChinesePinyinDataFile;
+        var dataFile = PhoneticDataPaths.ChinesePinyinDataFile;
         var fileHash = File.Exists(dataFile)
             ? Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(dataFile)))
             : "<missing>";
         Check(
-            "中文拼音数据按 deps 清单登记（哈希即版本）",
-            PhoneticDependencyManifest.GetFiles(PhoneticDependencyManifest.ChineseCode) is
-                [{ RelativePath: "zh/zh_pinyin.txt.gz", Sha256: var registered }] &&
-            (fileHash == "<missing>" || fileHash == registered),
+            "中文拼音数据哈希与清单登记一致（哈希即版本）",
+            fileHash == "<missing>" || fileHash == ChinesePinyinData.Sha256,
             $"file={fileHash}");
 
         // 缺包口径：不存在的路径必须安全退化为纯文本，不能抛异常
@@ -256,7 +240,7 @@ internal static partial class SelfTest
         if (english is null || !english.IsAvailable)
         {
             // 注音词典是按需下载的可选依赖：没就绪时跳过，不报假失败（与金样本测试同一口径）。
-            Skip("en 词典未就绪（deps/phonetics/en），跳过后半段英语断言");
+            Skip("en 原生语言包未就绪（deps/phonetics/misaki/en），跳过后半段英语断言");
             return;
         }
 
@@ -355,129 +339,6 @@ internal static partial class SelfTest
             $"composed={composedComplex}");
     }
 
-    private static void TestEnglishPipeline()
-    {
-        Check(
-            "CMUdict ARPAbet 转 IPA（音节切分与重音归位）",
-            ArpabetIpaConverter.Convert("Y UW0 B IH1 K W IH0 T AH0 S") == "juː.ˈbɪk.wɪ.təs",
-            $"actual={ArpabetIpaConverter.Convert("Y UW0 B IH1 K W IH0 T AH0 S")}");
-
-        Check(
-            "CMUdict ARPAbet 转 IPA（重读 AH 记 ʌ）",
-            ArpabetIpaConverter.Convert("G AH1 V ER0 M AH0 N T") == "ˈɡʌv.ɜːr.mənt",
-            $"actual={ArpabetIpaConverter.Convert("G AH1 V ER0 M AH0 N T")}");
-
-        var studiesCandidates = EnglishLemmatizer.Candidates("studies");
-        Check(
-            "词形还原候选覆盖屈折",
-            studiesCandidates.Contains("study") &&
-            EnglishLemmatizer.Candidates("abandoned").Contains("abandon") &&
-            EnglishLemmatizer.Candidates("running").Contains("run"),
-            $"studies -> {string.Join(",", studiesCandidates)}");
-    }
-
-    /// <summary>
-    /// 词典式 IPA 规范化：词典里的历史 wire format（重音贴在元音前、无音节点、IY 不带 ː）
-    /// 必须归一成主人熟悉的词典形态；且对已规范化的条目幂等（将来换哈希的新词典读出来不许被动过）。
-    /// </summary>
-    private static void TestCmuDictionarySourceParser()
-    {
-        var entries = CmuDictionarySourceParser.Parse([
-            ";;; fixture",
-            "lead L EH1 D",
-            "lead(2) L IY1 D",
-            "record R EH1 K ER0 D",
-            "record(2) R IH0 K AO1 R D",
-            "# invalid"
-        ]).ToArray();
-
-        Check(
-            "CMUdict 空白分隔与行尾标签不混入发音",
-            CmuDictionarySourceParser.Parse([
-                "  # source comment",
-                "  ;;; legacy comment",
-                "  LEAD(2)\t L IY1 D # alternate pronunciation",
-                "lead(0) L EH1 D",
-                "lead(abc) L EH1 D",
-                "lead(3) # missing pronunciation"
-            ]).ToArray() is [{ Word: "lead", Variant: 2, Arpabet: "L IY1 D" }]);
-
-        Check(
-            "CMUdict 编号读音在解析层保留",
-            entries.Length == 4 &&
-            entries.Count(entry => entry.Word == "lead") == 2 &&
-            entries.Any(entry => entry.Word == "lead" && entry.Variant == 2) &&
-            entries.Count(entry => entry.IsDefault) == 2,
-            $"actual={string.Join(";", entries.Select(entry => $"{entry.Word}({entry.Variant})"))}");
-    }
-    private static void TestCmuDictionaryCandidateIndex()
-    {
-        var index = EnglishPronunciationIndex.FromCmuEntries(
-            CmuDictionarySourceParser.Parse([
-                "lead L EH1 D",
-                "lead(2) L IY1 D",
-                "record R EH1 K ER0 D",
-                "record(2) R IH0 K AO1 R D"
-            ]),
-            ArpabetIpaConverter.Convert);
-
-        var unordered = EnglishPronunciationIndex.FromCmuEntries(
-            CmuDictionarySourceParser.Parse(["lead(2) L IY1 D", "LEAD L EH1 D", "orphan(2) AO1 R F AH0 N"]),
-            ArpabetIpaConverter.Convert);
-        Check("CMUdict 候选按来源编号排序且查询不区分大小写",
-            unordered.LookupAll("LEAD").Select(c => c.Variant).SequenceEqual([1, 2]) &&
-            unordered.Lookup("LEAD") is { Variant: 1, Ipa: "ˈled" });
-        Check("CMUdict 缺少主项时不把备选伪装成默认",
-            unordered.LookupAll("orphan").Count == 1 && unordered.Lookup("orphan") is null &&
-            unordered.LookupAll("missing").Count == 0 && unordered.Lookup("missing") is null);
-
-        var lead = index.LookupAll("lead");
-        var record = index.LookupAll("record");
-        var defaultLead = index.Lookup("lead");
-        Check(
-            "CMUdict 候选索引保留全部编号读音并提供默认项",
-            lead.Count == 2 && record.Count == 2 &&
-            lead.Any(candidate => candidate.Variant == 2) &&
-            record.Any(candidate => candidate.Variant == 2) &&
-            defaultLead is { Variant: 1 } &&
-            defaultLead.Value.Ipa == lead[0].Ipa,
-            $"lead={string.Join(",", lead.Select(candidate => $"{candidate.Variant}:{candidate.Ipa}"))} record={record.Count}");
-    }
-    private static void TestIpaTranscription()
-    {
-        Check(
-            "treason 归一为主人预期的词典式 IPA",
-            IpaTranscription.Normalize("trˈizən") == "ˈtriː.zən",
-            $"actual={IpaTranscription.Normalize("trˈizən")}");
-
-        Check(
-            "government 重读 schwa 记 ʌ",
-            IpaTranscription.Normalize("ɡˈəvɜːrmənt") == "ˈɡʌv.ɜːr.mənt",
-            $"actual={IpaTranscription.Normalize("ɡˈəvɜːrmənt")}");
-
-        Check(
-            "photograph 次重音与三辅音起首",
-            IpaTranscription.Normalize("fˈoʊtəɡrˌæf") == "ˈfoʊ.tə.ˌɡræf",
-            $"actual={IpaTranscription.Normalize("fˈoʊtəɡrˌæf")}");
-
-        Check(
-            "banana 重读短元音后首辅音收尾（美音口径）",
-            IpaTranscription.Normalize("bənˈænə") == "bə.ˈnæn.ə",
-            $"actual={IpaTranscription.Normalize("bənˈænə")}");
-
-        Check(
-            "strength 单音节不插音节点",
-            IpaTranscription.Normalize("strˈeŋkθ") == "ˈstreŋkθ",
-            $"actual={IpaTranscription.Normalize("strˈeŋkθ")}");
-
-        Check(
-            "规范化幂等：已规范化的条目再走一遍不变",
-            IpaTranscription.Normalize(IpaTranscription.Normalize("trˈizən")) == "ˈtriː.zən" &&
-            IpaTranscription.Normalize("juː.ˈbɪk.wɪ.təs") == "juː.ˈbɪk.wɪ.təs" &&
-            IpaTranscription.Normalize("ˈfoʊ.tə.ˌɡræf") == "ˈfoʊ.tə.ˌɡræf",
-            $"actual={IpaTranscription.Normalize(IpaTranscription.Normalize("trˈizən"))}");
-    }
-
     private static void TestPinyinToneConversion()
     {
         Check("声调数字转符号", PinyinToneConverter.ConvertSyllable("ri4") == "rì", $"actual={PinyinToneConverter.ConvertSyllable("ri4")}");
@@ -547,7 +408,7 @@ internal static partial class SelfTest
         if (english is null || !english.IsAvailable)
         {
             // 注音词典是按需下载的可选依赖：没就绪时跳过，不报假失败（与金样本测试同一口径）。
-            Skip("en 词典未就绪（deps/phonetics/en），跳过英语路由金样本");
+            Skip("en 原生语言包未就绪（deps/phonetics/misaki/en），跳过英语路由金样本");
         }
         else
         {
@@ -700,7 +561,7 @@ internal static partial class SelfTest
         var annotator = new ChinesePinyinAnnotator();
         if (!annotator.IsAvailable)
         {
-            Skip("zh 词典未就绪（deps/phonetics/zh），跳过中文金样本");
+            Skip("zh 拼音数据未就绪（deps/phonetics/zh），跳过中文金样本");
             return;
         }
 
@@ -732,33 +593,6 @@ internal static partial class SelfTest
             "中文标注器严禁数字与英文字符混入底字区间",
             mixedChinese.All(s => "持有300股A股股票".AsSpan(s.Start, s.Length).ToArray().All(RubyTextParser.IsCjkKanji)),
             $"actual={AnnotatedTextFormatter.Compose("持有300股A股股票", mixedChinese)}");
-    }
-
-    /// <summary>
-    /// 旧 en/ipa_dict.db 的候选库断言（数据保留、不再被 provider 使用，随旧 provider 在 014 下线）：
-    /// 多读音词全部编号进库、默认查询取首项。英语注音生产路径已经是原生语言包，见 TestEnglishNativeAnnotation。
-    /// </summary>
-    private static void TestEnglishCandidateDatabase()
-    {
-        using var dictionary = EnglishIpaDictionary.TryOpen(PhoneticDependencyPaths.EnglishDictionaryFile);
-        if (dictionary is null)
-        {
-            Skip("en 词典未就绪（deps/phonetics/en），跳过英语候选库断言");
-            return;
-        }
-
-        var record = dictionary.LookupAll("record");
-        var lead = dictionary.LookupAll("lead");
-        var defaultRecord = dictionary.Lookup("record");
-        Check(
-            "英语候选库：多读音词全部编号进库且按 variant 升序（record≥3、lead=2）",
-            record.Count >= 3 && lead.Count == 2 && record[0].Variant == 1 && record[0].Variant < record[1].Variant,
-            $"record={record.Count} lead={lead.Count}");
-        Check(
-            "英语候选库：默认查询等于候选首项（variant=1）",
-            record.Count > 0 && defaultRecord == record[0].Ipa,
-            $"default={defaultRecord} first={(record.Count > 0 ? record[0].Ipa : "<none>")}");
-        Check("英语候选库：未登录词候选为空", dictionary.LookupAll("zzzznotaword").Count == 0);
     }
 
     /// <summary>黄金样例辅助：一次标注一次拼装（AnnotationContext 的去重是单篇状态，重复调用会清空结果）。</summary>

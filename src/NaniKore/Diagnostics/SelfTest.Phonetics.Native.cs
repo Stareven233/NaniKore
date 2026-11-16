@@ -27,7 +27,7 @@ internal static partial class SelfTest
     private static void TestNativePhoneticManifest()
     {
         Check(
-            "原生包清单：只装配 ja/en（中文走内嵌引擎）",
+            "原生包清单：只装配 ja/en（中文走拼音数据文件）",
             NativePhoneticManifest.SupportedLanguages.SequenceEqual(["ja", "en"]) &&
             NativePhoneticManifest.IsSupported("ja") &&
             NativePhoneticManifest.IsSupported("JA") &&

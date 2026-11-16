@@ -351,8 +351,8 @@ internal static partial class SelfTest
     }
 
     /// <summary>
-    /// 注音词典卡片：三语按钮与本地状态联动（文案即状态），
-    /// 无下载入口时禁用、有入口时启用；注音开关走配置读写闭环。
+    /// 注音语言包卡片（issue 014 收口后每个语言只有一条入口）：按钮文案跟本地状态走，
+    /// 未注入下载器时禁用；注音开关走配置读写闭环。
     /// </summary>
     private static void TestGeneralPagePhoneticsCards()
     {
@@ -365,53 +365,36 @@ internal static partial class SelfTest
             page.FindControl<Control>("PhoneticsRareOnlyToggle") is ToggleSwitch);
 
         page.RefreshDependenciesSync();
+        var states = GeneralPage.ReadPackStates();
+        Check("语言包状态快照覆盖三语", states.Keys.Order(StringComparer.Ordinal).SequenceEqual(["en", "ja", "zh"]));
         foreach (var language in PhoneticLanguages.All)
         {
-            var buttonName = $"PhoneticsDownload{char.ToUpperInvariant(language.Code[0])}{language.Code[1..]}";
-            var button = Find<Button>(page, buttonName);
-            Check(
-                $"{language.Code} dictionary card button exists",
-                button is not null);
-
+            var button = Find<Button>(page, $"PhoneticsPack{char.ToUpperInvariant(language.Code[0])}{language.Code[1..]}");
+            Check($"{language.Code} 语言包卡片存在", button is not null);
             if (button is null)
             {
                 continue;
             }
 
-            var state = PhoneticDependencyManifest.GetState(language.Code);
             Check(
-                $"{language.Code} dictionary card button mirrors the local manifest state and stays disabled without a downloader",
-                button.Content as string == GeneralPage.PhoneticButtonLabel(state) &&
+                $"{language.Code} 语言包卡片文案跟状态走，无下载器时禁用",
+                button.Content as string == GeneralPage.PackButtonLabel(states[language.Code]) &&
                 !button.IsEnabled);
         }
 
-        var withDownloader = new GeneralPage(downloadPhoneticDictionary: (_, _, _) => Task.CompletedTask);
-        var jaButton = Find<Button>(withDownloader, "PhoneticsDownloadJa");
         Check(
-            "dictionary card button enables once a downloader is injected",
-            jaButton?.IsEnabled == true);
-        Check(
-            "chinese dictionary card is a normal download entry like ja/en",
-            Find<Button>(withDownloader, "PhoneticsDownloadZh")?.IsEnabled == true &&
-            PhoneticDependencyManifest.GetFiles(PhoneticDependencyManifest.ChineseCode).Count == 1);
-        // 原生语言包卡片（issue 009）：按钮文案跟着状态机走，未注入下载器时只读。
-        foreach (var language in NativePhoneticManifest.SupportedLanguages)
-        {
-            var buttonName = language == NativePhoneticManifest.JapaneseCode ? "NativePackJa" : "NativePackEn";
-            var button = Find<Button>(page, buttonName);
-            var expected = NativePhoneticPackHostHolder.Default.GetState(language);
-            Check(
-                $"{language} native pack card mirrors the host state and stays disabled without a downloader",
-                button is not null &&
-                button.Content as string == GeneralPage.NativePackButtonLabel(expected) &&
-                !button.IsEnabled);
-        }
+            "旧 ipa_dict/IPAdic 下载卡片与第二组语言包入口已下线",
+            Find<Button>(page, "PhoneticsDownloadJa") is null &&
+            Find<Button>(page, "PhoneticsDownloadEn") is null &&
+            Find<Button>(page, "NativePackJa") is null &&
+            page.FindControl<Control>("NativePhoneticsGroup") is null);
 
-        var withNativeDownloader = new GeneralPage(downloadNativePhoneticPack: (_, _, _) => Task.CompletedTask);
+        var withDownloader = new GeneralPage(downloadPhoneticPack: (_, _, _) => Task.CompletedTask);
         Check(
-            "native pack card enables once a downloader is injected",
-            Find<Button>(withNativeDownloader, "NativePackJa")?.IsEnabled == true &&
-            Find<Button>(withNativeDownloader, "NativePackEn")?.IsEnabled == true);
+            "注入下载器后三语语言包卡片均可用（同一入口）",
+            Find<Button>(withDownloader, "PhoneticsPackJa")?.IsEnabled == true &&
+            Find<Button>(withDownloader, "PhoneticsPackEn")?.IsEnabled == true &&
+            Find<Button>(withDownloader, "PhoneticsPackZh")?.IsEnabled == true);
 
         var config = new AppConfig { Phonetics = new PhoneticsConfig { Enabled = false, RareOnly = false } };
         page.Load(config);

@@ -14,7 +14,7 @@
 - 支持 OpenAI、Claude、Gemini 协议的流式翻译配置，以及 `local_ocr`、`vision_oneshot` 两条输入管线。
 - 结果自动复制到剪贴板；设置、热键和 API Key 可在应用内管理。
 - 结果卡精讲与正文划词均可一键收藏进本地生词本：SQLite 持久化（`.data/collections.db`），支持类别/语言/关键词筛选与就地编辑。
-- 原文区本地注音：日语标振假名、英语标国际音标、简体中文标拼音，由本地引擎叠加（三语词典都按需下载）；面板「注音」按钮可随时对当前原文重新标注并查看读音，无需先点「翻译」。短原文（可注音单词不足 10 个）视为短语，全部单词都注音，不再按难词过滤。
+- 原文区本地注音：日语标振假名、英语标国际音标、简体中文标拼音，由本地引擎叠加（三语注音数据都按需下载）；面板「注音」按钮可随时对当前原文重新标注并查看读音，无需先点「翻译」。短原文（可注音单词不足 10 个）视为短语，全部单词都注音，不再按难词过滤。
 - API Key 仅使用当前 Windows 用户的 DPAPI 保存，不会写入仓库、配置模板或 `.data/config.yaml`。DPAPI 绑定当前 Windows 账户，换用户或换机器后密文无法解密；此时程序不会覆盖原密文，会提示手动处理。
 - 程序目录根只放交付物（精简 exe、随包原生 DLL、`config.template.yaml`、`NOTICE`、`LICENSE`）；配置、密钥与收藏库全部收拢在 `程序目录\.data\`，解压覆盖升级碰不到它们。
 
@@ -49,8 +49,8 @@
 | `./scripts/dev.ps1 run` | 启动本地 Debug 桌面应用（后台脱手运行，不占用终端）。 |
 | `./scripts/dev.ps1 run -Release` | 启动本地已构建的 Native AOT Release 桌面应用。 |
 | `./scripts/dev.ps1 test` | 运行无 UI 全量自动化自测。 |
-| `./scripts/dev.ps1 publish` | 编译 Native AOT 并发布免安装轻量 ZIP（~18 MB，根目录 8 项，解压即用）。 |
-| `./scripts/dev.ps1 publish -full` | 编译 Native AOT 并发布包含完整 `deps/` 离线模型与词典的 Windows x64 ZIP（~67 MB）。 |
+| `./scripts/dev.ps1 publish` | 编译 Native AOT 并发布免安装轻量 ZIP（~20 MB，根目录 8 项，解压即用）。 |
+| `./scripts/dev.ps1 publish -full` | 编译 Native AOT 并发布包含完整 `deps/` 离线模型与注音数据的 Windows x64 ZIP（~82 MB）。 |
 
 ## 发布包
 
@@ -62,7 +62,7 @@
 两种 ZIP 都将发布内容直接置于压缩包根目录。根目录严格遵守 8 文件契约，完整包额外携带与仓库一致的 `deps/`：
 
 ```text
-NaniKore.exe                 # Native AOT 精简可执行文件（~20.8 MB，零 .NET 运行时依赖）
+NaniKore.exe                 # Native AOT 精简可执行文件（~22 MB，零 .NET 运行时依赖）
 libSkiaSharp.dll             # 随包原生图形渲染底座
 libHarfBuzzSharp.dll         # 随包原生文字排版与整形底座
 av_libglesv2.dll             # 随包原生 OpenGL ES 渲染底座
@@ -80,6 +80,8 @@ deps/                        # （仅 -full 完整包携带，或设置页按需
 │  ├─ onnxruntime.dll
 │  └─ onnxruntime_providers_shared.dll
 └─ phonetics/                # 中/日/英三语注音数据（设置页按需下载，完整包含齐）
+   ├─ misaki/{ja,en}/       # 日英原生语言包（DLL + pack.json + licenses/）
+   └─ zh/zh_pinyin.txt.gz   # 中文拼音数据
 ```
 
 发布包不含 `.data/`：首次启动时程序把 `config.template.yaml` 按字节原样复制到 `程序目录\.data\config.yaml` 作为用户配置，密钥落在 `.data/keys.bin`（整块 DPAPI 密文），收藏库是 `.data/collections.db`。因此解压覆盖升级不会冲掉任何本机数据。备份整个软件只需复制 `.data/`；但其中 `keys.bin` 由当前 Windows 用户的 DPAPI 加密，复制到其它 Windows 用户或其它机器后无法解密，需在目标机重新填写 API Key（程序不会覆盖无法解密的原文件，会提示手动处理）。
@@ -142,5 +144,5 @@ artifacts/      发布产物（Git 忽略）
 ## 许可证与第三方声明
 
 仓库自身代码以 [GNU 通用公共许可证第 3 版或更高版本](LICENSE)（GPL-3.0-or-later）授权，完整文本见根目录 `LICENSE`。
-所引用的第三方组件、词典与模型权重的许可声明、归属与再分发口径见 [NOTICE](NOTICE)：LibNMeCab 在 Native AOT 静态链接下按 GPL-3.0 选用；OCR 权重为 PaddlePaddle PP-OCRv6-small（Apache-2.0）；日语词典为 IPAdic（NAIST 许可，全文随 NOTICE 附带）；简体中文拼音数据由 pypinyin（MIT）、CC-CEDICT（CC BY-SA 4.0）与 Unihan（Unicode License v3）合并派生，与日英一样放在 `deps/phonetics/` 按需下载。
+所引用的第三方组件、注音数据与模型权重的许可声明、归属与再分发口径见 [NOTICE](NOTICE)：日英注音语言包为 MisakiSharp（Apache-2.0）与 UniDic（BSD-3-Clause）；OCR 权重为 PaddlePaddle PP-OCRv6-small（Apache-2.0）；简体中文拼音数据由 pypinyin（MIT）、CC-CEDICT（CC BY-SA 4.0）与 Unihan（Unicode License v3）合并派生，与日英一样放在 `deps/phonetics/` 按需下载。
 分发本程序的二进制时，对应源码（Corresponding Source）可从 <https://github.com/Stareven233/NaniKore> 免费获取。

@@ -69,8 +69,6 @@
 
     <!-- 业务核心依赖 -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
-    <!-- 纯托管日语形态素引擎（LibNMeCab 为 GPL-2.0 / LGPL-2.1 双许可，NOTICE 已登记） -->
-    <PackageReference Include="LibNMeCab" Version="0.10.2" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.28.0" />
     <!-- 纯托管 3方YAML 配置库；18.1.0 = epic 002 穿刺 2 实测选定的静态上下文路线版本（issue 002 结论） -->
     <PackageReference Include="YamlDotNet" Version="18.1.0" />

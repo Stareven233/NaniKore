@@ -14,8 +14,8 @@
 #   python -m pip install modelscope_hub      # 上传 SDK（或 modelscope 包，两种都认）
 #   $env:MODELSCOPE_API_TOKEN = "<token>" # 令牌在 https://modelscope.cn/my/myaccesstoken 申请；
 #                                          # 也可 --token 传（会留在 shell 历史里，不推荐）
-# 上传走 HubApi.upload_folder 并指定 path_in_repo=<子目录名>，大文件自动走 LFS；
-# .ms_upload_cache、_source、_build 等上传缓存与中间产物已内建忽略，不会传到远端。
+# 上传只走白名单（SUBDIR_WHITELISTS）：目录里有旧词典、.staging-* 暂存或再生中间产物也不会被推上去；
+# .ms_upload_cache、_source、_build 等缓存与中间产物另外还有内建忽略。
 #
 # 同步：
 #   python scripts/sync-deps.py ocr-onnx onnxruntime phonetics   # 一次多个子目录，各自独立提交
@@ -23,8 +23,9 @@
 #   python scripts/sync-deps.py <新目录> --no-verify              # 无契约的新目录：跳过核对直接传
 #
 # 清单绑定（哈希契约的唯一定义处，脚本自动读取，无需手填；要换别的清单用 --verify <文件>，
-# 支持 C# 源码定义或每行「路径 哈希」的纯文本）：
-#   deps/phonetics/    → src/NaniKore/Phonetics/PhoneticDependencies.cs   路径口径：相对 phonetics/
+# 支持 C# 源码定义或每行「路径 哈希」的纯文本；条目路径按尾缀匹配，三种口径都能对）：
+#   deps/phonetics/    → src/NaniKore/Phonetics/ChinesePinyinData.cs       路径口径：相对 phonetics/
+#                      → src/NaniKore/Phonetics/Native/NativePhoneticManifest.cs  路径口径：包内（misaki/<lang>/）
 #   deps/ocr-onnx/     → src/NaniKore/Ocr/Models/OcrDependencies.cs       路径口径：相对 deps/
 #   deps/onnxruntime/  → src/NaniKore/Ocr/Models/OcrDependencies.cs
 # ─────────────────────────────────────────────────────────────────────────────
@@ -44,11 +45,26 @@ DEFAULT_LOCAL_DIR = REPO_ROOT / 'deps'
 DEFAULT_REPO_ID = 'Noetuu/nanikore-deps'
 
 # 子目录 → 哈希契约（C# 源码清单）绑定：脚本按同步目标自动读取核对，不用手填。
-# 同一份清单可覆盖多个子目录（OCR 权重与 native DLL 共用 OcrDependencyManifest）。
+# 同一份清单可覆盖多个子目录（OCR 权重与 native DLL 共用 OcrDependencyManifest），
+# 同一子目录也可绑定多份清单（phonetics 的中文拼音表与日英原生包各由一份清单管）。
 SUBDIR_MANIFESTS = {
-    'phonetics': 'src/NaniKore/Phonetics/PhoneticDependencies.cs',
-    'ocr-onnx': 'src/NaniKore/Ocr/Models/OcrDependencies.cs',
-    'onnxruntime': 'src/NaniKore/Ocr/Models/OcrDependencies.cs',
+    'phonetics': [
+        'src/NaniKore/Phonetics/ChinesePinyinData.cs',
+        'src/NaniKore/Phonetics/Native/NativePhoneticManifest.cs',
+    ],
+    'ocr-onnx': ['src/NaniKore/Ocr/Models/OcrDependencies.cs'],
+    'onnxruntime': ['src/NaniKore/Ocr/Models/OcrDependencies.cs'],
+}
+
+# 子目录 → 上传白名单（相对该子目录的 glob）。只上传这些文件，目录里的其他东西一律不传：
+# 旧词典、下载暂存（.staging-*）、再生中间产物都不应因为「目录里有」而被推到远端。
+SUBDIR_WHITELISTS = {
+    'phonetics': (
+        'misaki/*/pack.json',
+        'misaki/*/*.dll',
+        'misaki/*/licenses/*',
+        'zh/zh_pinyin.txt.gz',
+    ),
 }
 
 # 本地侧忽略规则：上传工具缓存、再生管线中间产物、下载临时文件等都不应出现在远端。
@@ -67,15 +83,20 @@ MANIFEST_TEXT_RE = re.compile(
 EXIT_OK, EXIT_VERIFY_FAILED, EXIT_USAGE, EXIT_UPLOAD_FAILED = 0, 1, 2, 3
 
 
-def iter_local_files(root: Path) -> list[Path]:
-    """枚举 root 下应参与同步的文件（跳过缓存与中间产物目录）。"""
+def iter_local_files(root: Path, whitelist: tuple[str, ...] = ()) -> list[Path]:
+    """枚举 root 下应参与同步的文件（跳过缓存与中间产物目录；有白名单时只取名单内的）。"""
     files: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(name for name in dirnames if name not in IGNORED_DIR_NAMES)
         for name in sorted(filenames):
             if any(fnmatch.fnmatch(name, pattern) for pattern in IGNORED_FILE_PATTERNS):
                 continue
-            files.append(Path(dirpath) / name)
+            path = Path(dirpath) / name
+            if whitelist and not any(
+                fnmatch.fnmatch(path.relative_to(root).as_posix(), pattern) for pattern in whitelist
+            ):
+                continue
+            files.append(path)
     return files
 
 
@@ -109,52 +130,64 @@ def parse_manifest(path: Path) -> dict[str, str]:
     return manifest
 
 
-def resolve_manifest_path(relative: str, local_root: Path, targets: list[Path]) -> Path | None:
-    """清单条目路径优先相对本地根目录（deps/），其次相对被同步的子目录解析。"""
-    candidates = [local_root / relative] + [target / relative for target in targets]
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    return None
-
-
 def verify_manifest(manifest: dict[str, str], local_root: Path, targets: list[Path]) -> list[str]:
-    """核对清单条目；返回错误信息列表（空 = 全部吻合）。"""
+    """核对清单条目；返回错误信息列表（空 = 全部吻合）。
+
+    索引只建在上传白名单内：清单管不着的东西（旧词典、暂存目录）不会影响核对结论，
+    也不会因为「目录里多了一个同名文件」而假报哈希不符。同一尾缀命中多份时全部都要对。
+    """
+    index: dict[str, set[Path]] = {}
+    for target in targets:
+        whitelist = SUBDIR_WHITELISTS.get(target.name, ())
+        for path in iter_local_files(target, whitelist):
+            parts = path.relative_to(target).as_posix().split('/')
+            for start in range(len(parts)):
+                index.setdefault('/'.join(parts[start:]), set()).add(path)
     errors: list[str] = []
     for relative, expected in sorted(manifest.items()):
-        local = resolve_manifest_path(relative, local_root, targets)
-        if local is None:
+        matches = sorted(index.get(relative, set()))
+        if not matches:
             errors.append(f'  缺失：{relative}（清单要求 SHA-256 {expected}）')
             continue
-        actual = sha256_of(local)
-        if actual != expected:
-            errors.append(f'  哈希不符：{relative}\n    清单 {expected}\n    实际 {actual}')
+        for path in matches:
+            actual = sha256_of(path)
+            if actual != expected:
+                errors.append(f'  哈希不符：{relative}\n    清单 {expected}\n    实际 {actual}（{path}）')
     return errors
 
 
 def print_plan(name: str, target: Path) -> int:
     """打印单个子目录的同步清单，返回文件数。"""
     print(f'{name}/  →  {name}/   （{target}）')
-    files = iter_local_files(target)
+    files = iter_local_files(target, SUBDIR_WHITELISTS.get(name, ()))
     for path in files:
         remote = f"{name}/{path.relative_to(target).as_posix()}"
         print(f'  {remote:<52} {human_size(path.stat().st_size):>10}')
     if not files:
-        print('  （空目录，无文件可同步）')
+        print('  （空目录或白名单外，无文件可同步）')
     return len(files)
 
 
 def print_hash_lines(targets: list[Path], local_dir: Path) -> None:
-    """打印各文件 SHA-256，按两种源码清单的路径口径各生成一份，可直接粘贴回填。"""
-    print('\n各文件 SHA-256（按目标源码选一份口径复制即可）：')
-    print('\n# PhoneticDependencyManifest 口径（路径相对被同步子目录）：')
+    """打印各文件 SHA-256，按各清单的路径口径生成可直接粘贴的行。"""
+    print('\n各文件 SHA-256（按下面小节的口径复制回对应清单）：')
     for target in targets:
-        for path in iter_local_files(target):
+        print(f'\n# {target.name}/ —— 路径相对被同步子目录（纯文本清单或 ChinesePinyinData 口径）：')
+        for path in iter_local_files(target, SUBDIR_WHITELISTS.get(target.name, ())):
             print(f'    ("{path.relative_to(target).as_posix()}", "{sha256_of(path)}"),')
-    print('\n# OcrDependencyManifest 口径（路径相对 deps/；需 Hugging Face 回源的条目自行补第三个 URL 参数）：')
-    for target in targets:
-        for path in iter_local_files(target):
-            print(f'    Create("{path.relative_to(local_dir).as_posix()}", "{sha256_of(path)}"),')
+
+        if target.name == 'phonetics':
+            # 原生语言包按「包内相对路径」登记（如 licenses/UniDic-BSD.txt），按包分组输出才能直接粘。
+            for pack in sorted(path for path in target.glob('misaki/*') if path.is_dir()):
+                print(f'\n# NativePhoneticManifest 口径（包内相对路径，{pack.name} 包）：')
+                for path in iter_local_files(pack):
+                    print(f'    new NativePhoneticPackFile("{path.relative_to(pack).as_posix()}", "{sha256_of(path)}"),')
+
+    if any(target.name in ('ocr-onnx', 'onnxruntime') for target in targets):
+        print('\n# OcrDependencyManifest 口径（路径相对 deps/；需 Hugging Face 回源的条目自行补第三个 URL 参数）：')
+        for target in targets:
+            for path in iter_local_files(target, SUBDIR_WHITELISTS.get(target.name, ())):
+                print(f'    Create("{path.relative_to(local_dir).as_posix()}", "{sha256_of(path)}"),')
 
 
 def create_hub_api(token: str):
@@ -176,7 +209,8 @@ def create_hub_api(token: str):
 
 
 def upload_folder_to_repo(api, repo_id: str, local_dir: Path, path_in_repo: str, commit_message: str) -> None:
-    """把 local_dir 内容上传到 repo_id 的 path_in_repo 前缀下（不影响远端其他前缀）。"""
+    """把 local_dir 里白名单命中的文件上传到 repo_id 的 path_in_repo 前缀下（不影响远端其他前缀）。"""
+    whitelist = SUBDIR_WHITELISTS.get(path_in_repo, ())
     parameters = set(inspect.signature(api.upload_folder).parameters)
     kwargs = {
         'repo_id': repo_id,
@@ -186,13 +220,13 @@ def upload_folder_to_repo(api, repo_id: str, local_dir: Path, path_in_repo: str,
         'commit_message': commit_message,
         'ignore_patterns': ['**/.ms_upload_cache/**', '_source', '_build', '*.download'],
     }
-    # 只传当前 SDK 支持的参数，避免 TypeError；仍不支持 path_in_repo 的老 SDK 退化为逐文件上传。
+    # 只传当前 SDK 支持的参数，避免 TypeError；仍不支持 path_in_repo 的老 SDK 退化为逐文件上传（仍受白名单约束）。
     supported = {name: value for name, value in kwargs.items() if name in parameters}
-    if 'path_in_repo' in parameters:
+    if 'path_in_repo' in parameters and not whitelist:
         api.upload_folder(**supported)
         return
     file_parameters = set(inspect.signature(api.upload_file).parameters)
-    for path in iter_local_files(local_dir):
+    for path in iter_local_files(local_dir, whitelist):
         remote = f"{path_in_repo}/{path.relative_to(local_dir).as_posix()}"
         file_kwargs = {
             'repo_id': repo_id,
@@ -267,9 +301,9 @@ def main() -> int:
         manifest_sources = [args.verify]
     elif not args.no_verify:
         for target in targets:
-            bound = SUBDIR_MANIFESTS.get(target.name)
-            if bound and (REPO_ROOT / bound) not in manifest_sources:
-                manifest_sources.append(REPO_ROOT / bound)
+            for bound in SUBDIR_MANIFESTS.get(target.name, []):
+                if (REPO_ROOT / bound) not in manifest_sources:
+                    manifest_sources.append(REPO_ROOT / bound)
     for source in manifest_sources:
         try:
             manifest.update(parse_manifest(source))
@@ -296,7 +330,6 @@ def main() -> int:
     if not manifest_sources and not args.no_verify:
         unbound = ' '.join(target.name for target in targets)
         print(f'\n以下子目录没有绑定的哈希契约，跳过核对：{unbound}')
-
     if manifest:
         errors = verify_manifest(manifest, args.local_dir, targets)
         if errors:

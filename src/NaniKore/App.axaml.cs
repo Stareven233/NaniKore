@@ -884,8 +884,7 @@ public partial class NaniKoreApp : Application
             TestConnectionAsync,
             SuspendHotkey,
             DownloadOcrDependenciesAsync,
-            DownloadPhoneticDictionaryAsync,
-            DownloadNativePhoneticPackAsync,
+            DownloadPhoneticPackAsync,
             _favoriteService,
             () => ConfigStore.ReadTemplateVersion(),
             tab);
@@ -1064,24 +1063,23 @@ public partial class NaniKoreApp : Application
         CancellationToken cancellationToken) =>
         await new OcrDependencyDownloader().DownloadAsync(progress, cancellationToken);
 
-    private static async Task DownloadPhoneticDictionaryAsync(
-        string languageCode,
-        IProgress<string> progress,
-        CancellationToken cancellationToken)
-    {
-        await new PhoneticDependencyDownloader().DownloadAsync(languageCode, progress, cancellationToken);
-        PhoneticAnnotatorRegistryHolder.ResetAvailability(languageCode);
-    }
-
     /// <summary>
-    /// 原生语言包下载（issue 009）：落暂存目录 → 校验哈希/清单 → 未加载则即时替换，已加载则重启生效。
-    /// 状态机在 <see cref="NativePhoneticPackHost"/> 里，设置页只负责触发与展示。
+    /// 注音语言包下载的唯一入口（三语同形）：中文是拼音数据文件，日英是原生语言包，
+    /// 卡片只交一个语言代码，由这里分派到各自的下载器与状态机。
     /// </summary>
-    private static async Task DownloadNativePhoneticPackAsync(
+    private static async Task DownloadPhoneticPackAsync(
         string languageCode,
         IProgress<string> progress,
         CancellationToken cancellationToken)
     {
+        if (string.Equals(languageCode, PhoneticLanguages.ChineseCode, StringComparison.OrdinalIgnoreCase))
+        {
+            await new ChinesePinyinDownloader().DownloadAsync(progress, cancellationToken);
+            PhoneticAnnotatorRegistryHolder.ResetAvailability(languageCode);
+            return;
+        }
+
+        // 原生语言包：落暂存目录 → 校验哈希/清单 → 未加载则即时替换，已加载则重启生效。
         await NativePhoneticPackHostHolder.Default.DownloadAsync(languageCode, progress, cancellationToken);
     }
 

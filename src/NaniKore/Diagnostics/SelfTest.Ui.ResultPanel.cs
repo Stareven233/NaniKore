@@ -1183,7 +1183,7 @@ internal static partial class SelfTest
         }
         else
         {
-            Skip("ja 词典未就绪（deps/phonetics/ja），跳过注音按钮的假名叠加断言");
+            Skip("ja 原生语言包未就绪（deps/phonetics/misaki/ja），跳过注音按钮的假名叠加断言");
         }
 
         // 空原文：温和提示

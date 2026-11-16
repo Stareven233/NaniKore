@@ -93,59 +93,33 @@
                     <ToggleSwitch x:Name="PhoneticsRareOnlyToggle" OnContent="" OffContent="" />
                 </controls:SettingsRow>
                 <Border Classes="divider-row" />
-                <controls:SettingsRow Header="日本語词典"
-                                      Description="IPAdic 形态素词典（编译态，约 53 MB）"
+                <controls:SettingsRow x:Name="PhoneticsPackJaRow"
+                                      Header="日本語语言包"
+                                      Description="Misaki + UniDic 3.1.0 原生包（约 21.8 MB），提供书面假名注音。"
                                       ContentWidth="96">
-                    <Button x:Name="PhoneticsDownloadJa"
+                    <Button x:Name="PhoneticsPackJa"
                             Tag="ja"
                             Width="96" />
                 </controls:SettingsRow>
                 <Border Classes="divider-row" />
-                <controls:SettingsRow Header="English 词典"
-                                      Description="CMUdict 转译 IPA 词典（约 4 MB）"
+                <controls:SettingsRow x:Name="PhoneticsPackEnRow"
+                                      Header="English 语言包"
+                                      Description="Misaki 原生包（约 8.9 MB），提供美音 IPA 注音与整词候选。"
                                       ContentWidth="96">
-                    <Button x:Name="PhoneticsDownloadEn"
+                    <Button x:Name="PhoneticsPackEn"
                             Tag="en"
                             Width="96" />
                 </controls:SettingsRow>
                 <Border Classes="divider-row" />
-                <controls:SettingsRow Header="中文（简体）拼音"
-                                      Description="pypinyin + CC-CEDICT + Unihan 合并表（约 1.5 MB）"
+                <controls:SettingsRow x:Name="PhoneticsPackZhRow"
+                                      Header="中文（简体）拼音"
+                                      Description="pypinyin + CC-CEDICT + Unihan 合并表（约 1.5 MB），提供逐字拼音与多音候选。"
                                       ContentWidth="96">
-                    <Button x:Name="PhoneticsDownloadZh"
+                    <Button x:Name="PhoneticsPackZh"
                             Tag="zh"
                             Width="96" />
                 </controls:SettingsRow>
                 <controls:InfoBar x:Name="PhoneticsStatus" Margin="14,0,14,12" />
-            </StackPanel>
-        </controls:SettingsGroup>
-
-        <!--
-            原生注音语言包（issue 009）：与上方旧词典卡片并存**只是过渡态**。
-            009 交付 ABI 客户端、状态机与生命周期；010/011 把 ja/en provider 切到原生包，
-            随后由 014 把上面那组旧词典卡片随旧 provider 一起下线，最终每个语言只保留一条语言包入口（中文拼音数据也是一条可下载入口，见 012）。
-            在此之前不能删 ja/en 两张旧卡片：它们仍在下程序当前真正使用的旧词典（IPAdic / CMUdict）。
-        -->
-        <controls:SettingsGroup x:Name="NativePhoneticsGroup" Header="注音语言包（本地原生）">
-            <StackPanel>
-                <controls:SettingsRow x:Name="NativePackJaRow"
-                                      Header="日本語语言包"
-                                      Description="Misaki + UniDic 3.1.0 原生包（21.8 MB），提供书面假名注音。"
-                                      ContentWidth="96">
-                    <Button x:Name="NativePackJa"
-                            Tag="ja"
-                            Width="96" />
-                </controls:SettingsRow>
-                <Border Classes="divider-row" />
-                <controls:SettingsRow x:Name="NativePackEnRow"
-                                      Header="English 语言包"
-                                      Description="Misaki 原生包（8.9 MB），提供美音 IPA 注音与整词候选。"
-                                      ContentWidth="96">
-                    <Button x:Name="NativePackEn"
-                            Tag="en"
-                            Width="96" />
-                </controls:SettingsRow>
-                <controls:InfoBar x:Name="NativePackStatus" Margin="14,0,14,12" />
             </StackPanel>
         </controls:SettingsGroup>
 

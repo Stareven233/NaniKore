@@ -1,7 +1,7 @@
 # 日英原生注音语言包：构建链与实测
 
 > 2026-11-15。对应 [Epic 003 / 008](../../epics/003-o-本地三语注音准确性与结构化交互升级/issues/008-o-原生语言包正式重打包与数据再生.md)。
-> 本文只记录正式构建链的产物与实测。**日语（010）与英语（011）provider 均已切换到原生包**（中文仍外部数据，012 内嵌），
+> 本文只记录正式构建链的产物与实测。**日语（010）与英语（011）provider 均已切换到原生包**，中文拼音数据同为外置按需下载，
 > 宿主接入从 009 开始。
 > 穿刺结论与旧口径失败证据见 [注音适配穿刺](misaki-annotation-spike.md)。
 > 速查：为什么日语词表要再生（体积代价）见「日语词表为什么来自 UniDic 再生」；
@@ -103,7 +103,7 @@ PE 普通导入表只有系统 DLL 与 UCRT：`KERNEL32/ADVAPI32`（英语另有
 
 ## 日语 provider 切换（010）
 
-- `TextAnnotatorRegistry.CreateDefault()` 的 `ja` 槽位直接取 `NativePhoneticPackHost` 的原生包标注器，不再新建旧 IPAdic 标注器；旧 `JapaneseFuriganaAnnotator`（LibNMeCab）已留档到 `.temp/010-日语/`，包引用与旧 ja 词典卡片、NOTICE 3.1 随旧 provider 在 014 清理。
+- `TextAnnotatorRegistry.CreateDefault()` 的 `ja` 槽位直接取 `NativePhoneticPackHost` 的原生包标注器，不再新建旧 IPAdic 标注器；旧 `JapaneseFuriganaAnnotator`（LibNMeCab）已留档到 `.temp/010-日语/`，LibNMeCab 包引用、旧 ja 词典卡片与 NOTICE 旧条目已在 014 清理。
 - 宿主侧切分 `src/NaniKore/Phonetics/JapaneseRuby.cs`：UniDic 给整词片假名，界面要只覆盖汉字的振假名——词首词尾送假名切回底字之外（`食べ`→`食[た]べ`、`凍り付く`→`凍り付[こおりつ]く`），内部送假名留在底字里（`買い出し`→`買い出[かいだ]し`），底字只允许汉字+假名且必须含汉字；片假名转平假名后输出。
 - 金样本（Debug 与 NativeAOT 均通过）：`東京→とうきょう`、`躊躇→ちゅうちょ`、`今日→きょう`、`凍り付く→こおりつ`；送假名 `食べた→食[た]べた`、`お祝い→お祝[いわ]い`、`買い出し→買い出[かいだ]し`、`行きます→行[い]きます`；未知词/数字/拉丁/纯假名不注音；emoji（代理项对）、换行与全角空白按原文 UTF-16 定位且区间不重叠。
 - 分词差异（记录、不追求与旧口径等价）：`日本語` → `日本 + 語`；`睡眠薬` → `睡眠 + 薬`；`行く` 等词面仍是整词，过滤与去重继续按整词词面裁决。
@@ -112,8 +112,8 @@ PE 普通导入表只有系统 DLL 与 UCRT：`KERNEL32/ADVAPI32`（英语另有
 
 ## 英语 provider 切换与整词候选（011）
 
-- `TextAnnotatorRegistry` 的 `en` 槽位改取 `NativePhoneticPackHost` 的原生包标注器（与日语同一套宿主、闲置释放与重启更新），旧 `EnglishIpaAnnotator`（CMUdict 逐词标注器）留档 `.temp/011-英语/`；旧 `deps/phonetics/en/ipa_dict.db` 仍作为数据保留到 014（provider 已不再读取它）。
-- 美音 IPA 直接采用引擎的 Kokoro 编码转换（`KokoroIpa` + `IpaTranscription`）：`water[ˈwɔːɾ.ər]`、`better[ˈbeɾ.ər]`、`city[ˈsɪɾ.iː]`；闪音 `ɾ` 与喉塞音 `ʔ` 原样保留，不猜回 /t/、/d/。
+- `TextAnnotatorRegistry` 的 `en` 槽位改取 `NativePhoneticPackHost` 的原生包标注器（与日语同一套宿主、闲置释放与重启更新），旧 `EnglishIpaAnnotator`（CMUdict 逐词标注器）留档 `.temp/011-英语/`；旧 `deps/phonetics/en/ipa_dict.db` 与旧英语构建链（`--build-phonetics` / `--build-en-data`）已在 014 下线并归档。
+- 美音 IPA 直接采用引擎的 Kokoro 编码转换（生成侧 `scripts/phonetics/native/KokoroIpa.cs`）：`water[ˈwɔːɾ.ər]`、`better[ˈbeɾ.ər]`、`city[ˈsɪɾ.iː]`；闪音 `ɾ` 与喉塞音 `ʔ` 原样保留，不猜回 /t/、/d/。
 - 整词候选：`AnnotationSpan.WholeWord`（`WholeWordReadings(Start, Length, Candidates)`）承载一条覆盖整词的读音组，与中文逐字 `Syllables` 互斥；宿主 `EnglishReadingCandidates.Collapse` 折叠精确重复与仅差 `ˈ/ˌ` 的句重音变体，`record` 这类词义重音差别保留。UI 在 `RubyInlineControl` 里用同一套 hover 模板逐条列出读音并对本句选中项高亮。
 - 包字节未变（仍是 008 产物）：`-Stage Verify` 413 项断言 0 失败；新口径符号审计 `converted=366,846 / rejected=0 / unknownSymbols={}`。
 - 实测：Debug 与 NativeAOT 宿主自测 1957 项通过；英语冷加载 0.65–1.36 s（随机器负载波动）、热态 20 次 2.6–35 ms、重建 0.63–1.09 s。详见 [issue 011](../epics/003-o-本地三语注音准确性与结构化交互升级/issues/011-o-英语标准IPA质量与整词候选接入.md)。
@@ -165,7 +165,6 @@ NativeAOT 产物不承诺二进制可复现，所以每轮都覆盖 `pack.json`�
 
 ## 未覆盖
 
-- 英语已是原生包（011），但旧 `ipa_dict.db`、旧 ja/en 词典下载卡片与 `scripts/dev.ps1` / `scripts/sync-deps.py` 的旧依赖清单仍在大；014 统一下线与重写。
-- 旧 ja 词典下载卡片仍与原生包卡片并存（契约内的过渡态），014 随旧 provider 一起下线。
-- 真实网络下载与断网重试未验证；**未上传 ModelScope**，`scripts/sync-deps.py` 与 `scripts/dev.ps1 publish -full` 的依赖清单仍是旧路径（014 处理）。
+- 旧 ja/en 词典文件、旧英语 SQLite 与旧 CMUdict 源件在 014 归档到 `.temp/014-旧词典/`（不删除、不上传）；本地 `deps/phonetics/` 只保留 `misaki/{ja,en}` 与 `zh/zh_pinyin.txt.gz`。
+- 真实网络下载与断网重试未验证；**未上传 ModelScope**，正式上传与分发验收仍属 014。
 - 未做干净系统 AOT 部署，也未在真实 UI 上练习重启替换与复制/选区/收藏回归。
