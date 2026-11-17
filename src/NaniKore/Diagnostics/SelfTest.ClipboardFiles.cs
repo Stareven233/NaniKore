@@ -66,6 +66,13 @@ internal static partial class SelfTest
             if (!NativeMethods.OpenClipboard(0)) throw new ExternalException("测试剪贴板无法读取。");
             try
             {
+                var formatIds = new List<uint>();
+                uint formatId = 0;
+                while ((formatId = NativeMethods.EnumClipboardFormats(formatId)) != 0)
+                {
+                    formatIds.Add(formatId);
+                }
+
                 var drop = NativeMethods.GetClipboardData(fileDropId);
                 var actual = new List<string>();
                 var count = drop == 0 ? 0 : QueryDroppedFile(drop, uint.MaxValue, null, 0);
@@ -75,7 +82,8 @@ internal static partial class SelfTest
                     var length = QueryDroppedFile(drop, index, buffer, (uint)buffer.Length);
                     actual.Add(new string(buffer, 0, (int)length));
                 }
-                Check(label + " exposes original paths via DragQueryFileW", actual.SequenceEqual(paths));
+                var detail = $"formats=[{string.Join(",", formatIds)}], paths=[{string.Join("|", actual)}]";
+                Check(label + " exposes original paths via DragQueryFileW", actual.SequenceEqual(paths), detail);
                 foreach (var (id, expected) in new[] { (effectId, BitConverter.GetBytes(effect)), (idListId, idList) })
                 {
                     var memory = NativeMethods.GetClipboardData(id);
@@ -86,7 +94,7 @@ internal static partial class SelfTest
                         try { Marshal.Copy(pointer, bytes, 0, bytes.Length); }
                         finally { NativeMethods.GlobalUnlock(memory); }
                     }
-                    Check(label + $" preserves Shell format {id}", pointer != 0 && bytes.SequenceEqual(expected));
+                    Check(label + $" preserves Shell format {id}", pointer != 0 && bytes.SequenceEqual(expected), detail);
                 }
             }
             finally { NativeMethods.CloseClipboard(); }
@@ -128,7 +136,10 @@ internal static partial class SelfTest
 
             gateway.SetText("旧文本");
             var files = PasteInputAcquirer.Acquire(Request(() => Seed(2)));
-            Check("new Ctrl+C files are left intact", files.Kind == PasteInputKind.Empty && files.Notice is not null);
+            Check(
+                "new Ctrl+C files are left intact",
+                files.Kind == PasteInputKind.Empty && files.Notice is not null,
+                $"kind={files.Kind}, notice={files.Notice ?? "<null>"}");
             CheckFiles("new file copy", 2);
         }
         finally

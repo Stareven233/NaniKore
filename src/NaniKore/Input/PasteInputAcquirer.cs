@@ -241,6 +241,16 @@ internal static class PasteInputAcquirer
                 return TranslateImage(selectionImage, request, response, notice: null, sequenceAtRead, programOwnCopy: true);
             }
 
+            // 已有非文本格式就是明确回应；不要再等轮询预算，让 Explorer 等剪贴板监听器有机会改写文件引用。
+            if (response is not null && response.FormatNames.Any(static format => !TextFormats.Contains(format)))
+            {
+                return new PasteInputOutcome
+                {
+                    Kind = PasteInputKind.Empty,
+                    Notice = "前台程序复制了无法翻译的内容（如文件引用），已原样保留你的剪贴板。",
+                };
+            }
+
             return null;
         }
 
