@@ -31,8 +31,8 @@
 
 | 包 | 文件 | 字节 | SHA-256 |
 | --- | --- | ---: | --- |
-| ja | `deps/phonetics/misaki/ja/NaniKore.Phonetics.Ja.dll` | 21,767,680（20.76 MiB） | 见同目录 `pack.json` |
-| en | `deps/phonetics/misaki/en/NaniKore.Phonetics.En.dll` | 8,868,864（8.46 MiB） | 见同目录 `pack.json` |
+| ja | `deps/phonetics/ja/NaniKore.Phonetics.Ja.dll` | 21,767,680（20.76 MiB） | 见同目录 `pack.json`；分发 `deps/phonetics/ja.zip` |
+| en | `deps/phonetics/en/NaniKore.Phonetics.En.dll` | 8,868,864（8.46 MiB） | 见同目录 `pack.json`；分发 `deps/phonetics/en.zip` |
 
 字节数在重复构建中稳定；**SHA-256 以 `pack.json` 为准**——NativeAOT 产物不承诺二进制可复现，每轮重跑只覆写清单与包文件。
 
@@ -95,7 +95,7 @@ PE 普通导入表只有系统 DLL 与 UCRT：`KERNEL32/ADVAPI32`（英语另有
 
 `src/NaniKore/Phonetics/Native/` 已落地 ABI v1 客户端、包身份清单、状态机、下载安装与闲置释放；日语 provider 在 010、英语 provider 在 011 已切到该链路。
 
-- 清单：`NativePhoneticManifest` 记录库字节、SHA-256、ABI、架构、四个导出与随包许可哈希；`deps/phonetics/misaki/<lang>/pack.json` 与之双向核对，任何一项不符即拒绝装载。
+- 清单：`NativePhoneticManifest` 记录整包 ZIP SHA-256，以及展开库字节、SHA-256、ABI、架构、四个导出与随包许可哈希；`deps/phonetics/<lang>/pack.json` 与之交叉核对，任何一项不符即拒绝装载。
 - 客户端：先校验文件与 PE（win-x64）再按绝对路径 `NativeLibrary.TryLoad`，绑定后比对 ABI 与导出；输出交回同 DLL 释放，模块永不卸载。
 - 生命周期：每语一个惰性资源，闲置回收只调 `nk_phonetics_release`；新版本落 `.staging-<lang>`，已加载则等重启提升。
 - 设置页新增「注音语言包（本地原生）」分组，状态覆盖缺失/需更新/下载中/失败/就绪/重启生效。
@@ -149,7 +149,7 @@ PE 普通导入表只有系统 DLL 与 UCRT：`KERNEL32/ADVAPI32`（英语另有
 - **裁剪 = 资源白名单 + 源码白名单**，都写在 `scripts/phonetics/misaki-packs.json`，不在代码里硬编码。ja 只留 `ja_lexicon / ja_char_unk / ja_matrix_compact`（不要 `ja_words`）；en 只留 `en_lexicon_us / en_tokenizer / en_tagger`（**不含 espeak 回退表**，未收录词宁可不读），`zh_*` 与 `es/fr/hi/it/pt_*` 一律不进包。
 - **Prepare**：NuGet 原件与包缓存只读；`git apply --check` 先验再打补丁；只导出白名单资源；日语词表换成再生版；跑 `tools audit-ipa` 全量审计（转不了的字符要能点名，不许静默丢）。下载只在缺失时发生（UniDic 压缩包 500 MiB 不会每次重拉）。
 - **Native**：每包一份独立源码目录，只编本包需要的上游文件（ja 只编 `JapaneseTagger.cs`），加我们固定的 `Exports.cs`（C ABI）与 `KokoroIpa.cs`，用 `NativeAOT + Shared` 出 DLL；`InvariantGlobalization=false`（词典表是 UTF-8）。
-- **产物落 `deps/phonetics/misaki/<lang>/`**：DLL + `pack.json` + `licenses/`；`.lib` 等副产品留在 `.temp/misaki-pack`，旧产物移入 `.temp/misaki-pack/previous`（不删）。
+- **运行产物落 `deps/phonetics/<lang>/`，分发 ZIP 落 `deps/phonetics/<lang>.zip`**：ZIP 含 DLL、`pack.json` 与 `licenses/`；`.lib` 等副产品留在 `.temp/misaki-pack`。
 - **Verify**：413 项断言（哈希/字节/架构/ABI/四个导出/UTF-16 对齐/候选/释放重建/并发）。
 
 ## 将来怎么升级
@@ -165,6 +165,6 @@ NativeAOT 产物不承诺二进制可复现，所以每轮都覆盖 `pack.json`�
 
 ## 未覆盖
 
-- 旧 ja/en 词典文件、旧英语 SQLite 与旧 CMUdict 源件在 014 归档到 `.temp/014-旧词典/`（不删除、不上传）；本地 `deps/phonetics/` 只保留 `misaki/{ja,en}` 与 `zh/zh_pinyin.txt.gz`。
+- 旧 ja/en 词典文件、旧英语 SQLite 与旧 CMUdict 源件在 014 归档到 `.temp/`（不删除、不上传）；运行时目录为 `{ja,en}/` 与根目录 `zh_pinyin.txt.gz`，ModelScope 白名单为 `ja.zip`、`en.zip`、`zh_pinyin.txt.gz`。
 - 真实网络下载与断网重试未验证；**未上传 ModelScope**，正式上传与分发验收仍属 014。
 - 未做干净系统 AOT 部署，也未在真实 UI 上练习重启替换与复制/选区/收藏回归。

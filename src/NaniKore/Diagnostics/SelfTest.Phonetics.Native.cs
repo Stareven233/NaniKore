@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.IO.Compression;
 using NaniKore.Phonetics;
 
 namespace NaniKore.Diagnostics;
@@ -57,10 +58,10 @@ internal static partial class SelfTest
         }
 
         Check(
-            "包目录与直链口径：deps/phonetics/misaki/<lang>/",
-            NativePhoneticManifest.GetPackDirectory("ja").EndsWith(Path.Combine("deps", "phonetics", "misaki", "ja"), StringComparison.OrdinalIgnoreCase) &&
-            NativePhoneticManifest.GetStagingDirectory("ja").EndsWith(Path.Combine("misaki", ".staging-ja"), StringComparison.OrdinalIgnoreCase) &&
-            NativePhoneticManifest.GetDownloadUrl("ja", "pack.json").Contains("phonetics/misaki/ja/pack.json", StringComparison.Ordinal));
+            "语言包目录与根目录整包直链：deps/phonetics/{ja,en} + ja.zip/en.zip",
+            NativePhoneticManifest.GetPackDirectory("ja").EndsWith(Path.Combine("deps", "phonetics", "ja"), StringComparison.OrdinalIgnoreCase) &&
+            NativePhoneticManifest.GetStagingDirectory("ja").EndsWith(Path.Combine("phonetics", ".staging-ja"), StringComparison.OrdinalIgnoreCase) &&
+            (PhoneticDataPaths.ModelScopeBaseUrl + NativePhoneticManifest.ArchiveFileName("ja") + "?download=true").EndsWith("/phonetics/ja.zip?download=true", StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -348,7 +349,7 @@ internal static partial class SelfTest
         NativePhoneticLibrary.ResetLoadedLanguagesForTests();
         try
         {
-            // 下载器直接把正式包里的文件复制过来：模拟一次成功的 HTTP 下载，不依赖网络。
+            // 下载器把正式包压成单个 ZIP：模拟整包 HTTP 下载，不依赖网络。
             var installer = new NativePhoneticPackInstaller(
                 Staging,
                 Target,
@@ -360,13 +361,12 @@ internal static partial class SelfTest
                         throw new HttpRequestException("模拟网络失败");
                     }
 
-                    const string marker = "/phonetics/misaki/";
+                    const string marker = "/phonetics/";
                     var tail = url[(url.IndexOf(marker, StringComparison.Ordinal) + marker.Length)..];
                     tail = tail[..tail.IndexOf('?')];
-                    var language = tail[..tail.IndexOf('/')];
-                    var relative = tail[(tail.IndexOf('/') + 1)..].Replace('/', Path.DirectorySeparatorChar);
+                    var language = Path.GetFileNameWithoutExtension(tail);
                     Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                    File.Copy(Path.Combine(sources[language], relative), destination, overwrite: true);
+                    ZipFile.CreateFromDirectory(sources[language], destination, CompressionLevel.Optimal, includeBaseDirectory: false);
                     return Task.CompletedTask;
                 });
 

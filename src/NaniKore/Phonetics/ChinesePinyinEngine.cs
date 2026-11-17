@@ -13,7 +13,7 @@ internal readonly record struct ChineseToken(int Start, int Length, IReadOnlyLis
 /// <summary>
 /// 进程内中文拼音引擎：pypinyin 词组/单字数据 + CC-CEDICT 覆盖 + 繁体 t2s 折叠，
 /// 以最长匹配产出词级单元。不依赖 NMeCab 或二进制词典，纯数据 + 逐字对齐。
-/// 数据由 <see cref="ChinesePinyinDataBuilder"/> 生成（TSV，gzip），放在 `deps/phonetics/zh/` 按需下载（issue 012）。
+/// 数据由 <see cref="ChinesePinyinDataBuilder"/> 生成（TSV，gzip），放在 `deps/phonetics/zh_pinyin.txt.gz` 按需下载（issue 012）。
 /// </summary>
 internal sealed class ChinesePinyinEngine
 {
@@ -38,7 +38,7 @@ internal sealed class ChinesePinyinEngine
     }
 
     /// <summary>
-    /// 从磁盘数据文件装载（`deps/phonetics/zh/zh_pinyin.txt.gz`）：读完即关，不常驻句柄。
+    /// 从磁盘数据文件装载（`deps/phonetics/zh_pinyin.txt.gz`）：读完即关，不常驻句柄。
     /// 文件缺失或数据损坏返回 null（标注链路软降级为纯文本，不回退内嵌数据）。
     /// </summary>
     public static ChinesePinyinEngine? TryLoad(string path)

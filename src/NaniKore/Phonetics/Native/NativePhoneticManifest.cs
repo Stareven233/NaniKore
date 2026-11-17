@@ -5,6 +5,7 @@ namespace NaniKore.Phonetics;
 /// 文件不符即判为「需要更新」，不做任何静默容错。
 /// </summary>
 internal sealed record NativePhoneticPackFile(string RelativePath, string Sha256);
+internal sealed record NativePhoneticArchive(string RelativePath, string Sha256);
 
 /// <summary>
 /// 一种语言的正式原生包身份（issue 008 产物 + issue 009 宿主清单）：
@@ -27,12 +28,17 @@ internal sealed record NativePhoneticPack(
 
 /// <summary>
 /// 原生注音语言包的宿主侧唯一身份来源（ABI v1）。
-/// 包目录跟随 EXE：<c>deps/phonetics/misaki/&lt;lang&gt;/</c>，与仓库 <c>deps/</c>、
-/// ModelScope 仓库 <c>Noetuu/nanikore-deps</c> 的 <c>phonetics/misaki/&lt;lang&gt;/</c> 三方严格镜像，
+/// 包目录跟随 EXE：<c>deps/phonetics/&lt;lang&gt;/</c>，分发压缩包与 ModelScope 子树一一对应，
 /// 没有版本号别名目录。构建链见 <c>scripts/phonetics/</c>，实测见 <c>codestable/notes/phonetics-packs.md</c>。
 /// </summary>
 internal static class NativePhoneticManifest
 {
+    public static IReadOnlyList<NativePhoneticArchive> Archives { get; } =
+    [
+        new("ja.zip", "505FD7813B848909FC8EFE5E059F0E85EB9D73253DB31F2CB4F9E1C47F0C053F"),
+        new("en.zip", "9CD13B089E3A90498786401B7FDDDD2EA47B68EAFFE245FA51F4C44B2CAF9596")
+    ];
+
     /// <summary>ABI 版本：布局或语义变化时递增，绑定的 DLL 必须报告同一版本。</summary>
     public const int AbiVersion = 1;
 
@@ -42,13 +48,16 @@ internal static class NativePhoneticManifest
     /// <summary>单次注音输入的字节上限（与包内实现一致，超限由调用方直接拒绝）。</summary>
     public const int MaximumInputBytes = 1_000_000;
 
-    /// <summary>包根目录名：deps/phonetics/misaki/。</summary>
-    public const string PackRootName = "misaki";
+    /// <summary>分发包文件名；每种语言只下载一个整体并校验。</summary>
+    public static string ArchiveFileName(string languageCode) => languageCode + ".zip";
+
+    public static string ArchiveSha256(string languageCode) =>
+        Archives.Single(archive => archive.RelativePath == ArchiveFileName(languageCode)).Sha256;
 
     /// <summary>包内身份清单文件名（由构建链写入，运行期只读）。</summary>
     public const string PackManifestFileName = "pack.json";
 
-    /// <summary>待重启生效的暂存目录前缀：deps/phonetics/misaki/.staging-&lt;lang&gt;/。</summary>
+    /// <summary>待重启生效的暂存目录前缀：deps/phonetics/.staging-&lt;lang&gt;/。</summary>
     public const string StagingDirectoryPrefix = ".staging-";
 
     public const string AbiVersionExport = "nk_phonetics_abi_version";
@@ -109,17 +118,13 @@ internal static class NativePhoneticManifest
 
     public static bool IsSupported(string? languageCode) => GetPack(languageCode) is not null;
 
-    /// <summary>包根目录：deps/phonetics/misaki/。</summary>
-    public static string PackRootDirectory =>
-        Path.Combine(PhoneticDataPaths.PhoneticsRootDirectory, PackRootName);
-
-    /// <summary>正式包目录：deps/phonetics/misaki/&lt;lang&gt;/。</summary>
+    /// <summary>正式包目录：deps/phonetics/&lt;lang&gt;/。</summary>
     public static string GetPackDirectory(string languageCode) =>
-        Path.Combine(PackRootDirectory, languageCode);
+        PhoneticDataPaths.CombineRelative(languageCode);
 
     /// <summary>暂存目录：新版本先落这里，宿主重启时才替换正式包，绝不覆盖正在使用的 DLL。</summary>
     public static string GetStagingDirectory(string languageCode) =>
-        Path.Combine(PackRootDirectory, StagingDirectoryPrefix + languageCode);
+        PhoneticDataPaths.CombineRelative(StagingDirectoryPrefix + languageCode);
 
     /// <summary>包内某文件的绝对路径（含路径穿越防护：只接受包内相对路径）。</summary>
     public static string GetFilePath(string packDirectory, string relativePath) =>
@@ -127,5 +132,5 @@ internal static class NativePhoneticManifest
 
     /// <summary>ModelScope 直链（与 008 上传口径一致）。</summary>
     public static string GetDownloadUrl(string languageCode, string relativePath) =>
-        PhoneticDataPaths.ModelScopeBaseUrl + PackRootName + "/" + languageCode + "/" + relativePath + "?download=true";
+        PhoneticDataPaths.ModelScopeBaseUrl + languageCode + "/" + relativePath + "?download=true";
 }

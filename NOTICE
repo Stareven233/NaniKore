@@ -5,8 +5,8 @@ NaniKore 自身代码依据 GNU 通用公共许可证第 3 版或（可选）更
 <https://github.com/Stareven233/NaniKore> 免费获取；若随包版本对应某发布标签，以该标签的源码为准。
 
 本文件登记随本程序分发或按需下载的第三方组件与数据。Native AOT 发布形态下托管组件已全部静态编译进
-`NaniKore.exe`，不存在独立托管程序集文件；原生组件以 DLL 旁置于发布包根目录；词典与模型权重按需下载至
-`deps/`。按语言下载的词典与模型权重的所有权归其许可方。若你认为此处遗漏或标注有误，请提 issue。
+`NaniKore.exe`，不存在独立托管程序集文件；原生组件以 DLL 旁置于发布包根目录；词典与模型权重位于
+`deps/`，完整包随包分发、精简包由用户按需下载。相关数据的所有权归其许可方。若你认为此处遗漏或标注有误，请提 issue。
 
 ## 1. 托管组件（Native AOT 静态编译进 NaniKore.exe）
 
@@ -88,13 +88,13 @@ NaniKore 自身代码依据 GNU 通用公共许可证第 3 版或（可选）更
   输出为全量排序的 TSV + gzip 合并表（`NaniKore.zh.pinyin.v1`）。
   不包含 CC-CEDICT 的英文义项。
 - 用途：简体中文拼音注音的词面/读音来源（逐字默认读音与多音候选）。
-- 分发口径：数据放在应用目录 `deps/phonetics/zh/zh_pinyin.txt.gz`，设置页按需下载（哈希即版本）；
+- 分发口径：数据放在应用目录 `deps/phonetics/zh_pinyin.txt.gz`，设置页按需下载并校验 SHA-256；
   本 NOTICE 随应用分发即该数据的随附许可声明。
 
 ### 3.2 日英原生语言包（MisakiSharp 2.2.0 + UniDic 3.1.0）
 
 - **MisakiSharp 2.2.0**（<https://github.com/Lyrcaxis/MisakiSharp>，提交 `beb91a9f06ebe5e25e595b5a3c990ee616ad75e5`）
-  - 许可：Apache License 2.0。全文与上游 NOTICE 随包附于 `deps/phonetics/misaki/*/licenses/`。
+  - 许可：Apache License 2.0。全文与上游 NOTICE 随日英 ZIP 分发，安装后位于 `deps/phonetics/{ja,en}/licenses/`。
   - 用途：日语分词与英语 G2P 引擎。以最小源码补丁编译进 NativeAOT 语言包，补丁原文在仓库
     `scripts/phonetics/patches/misakisharp-2.2.0.patch`，修改内容见随包 `licenses/DERIVED.md`。
   - 上游 NOTICE 中 misaki（Apache-2.0）、spaCy（MIT）、PaddleSpeech（Apache-2.0）、jieba（MIT）、
@@ -109,17 +109,16 @@ NaniKore 自身代码依据 GNU 通用公共许可证第 3 版或（可选）更
   - 英语包资源 `en_lexicon_us.tsv.gz`、`en_tokenizer.tsv.gz`、`en_tagger.bin.gz` 为上游原样裁剪。
   - 每包附带 `pack.json`，记录字节、SHA-256、ABI 版本、架构、导出列表、PE 普通导入表、资源哈希与上游版本。
 
-## 4. OCR / ONNX Runtime（按需下载至 `deps/`）
+## 4. OCR / ONNX Runtime（位于 `deps/`）
 
 - **PP-OCRv6-small 模型权重**（`det`/`rec` 的 inference.onnx 与 inference.yml）
   - 上游：Baidu PaddlePaddle / PaddleOCR 项目，许可 Apache-2.0（<https://github.com/PaddlePaddle/PaddleOCR>）。
   - 来源仓库：<https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx> 与
-    <https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx>。
-  - 分发口径：原样再分发、未做改动；下载时逐文件 SHA-256 校验；镜像于 ModelScope `Noetuu/nanikore-deps`。
+    <https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx>
 
 - **ONNX Runtime 1.28.0 原生 DLL**（onnxruntime.dll、onnxruntime_providers_shared.dll）
   - 许可：MIT License（Copyright (c) Microsoft Corporation）。
-  - 来源：`Microsoft.ML.OnnxRuntime` 1.28.0 原生资产；分发口径同上（哈希校验、镜像下载）。
+  - 来源：`Microsoft.ML.OnnxRuntime` 1.28.0 原生资产
 
 ## 5. 判据数据（随程序集内嵌于 `src/NaniKore/Phonetics/Data/`）
 

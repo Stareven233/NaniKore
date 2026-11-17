@@ -28,7 +28,7 @@ created: 2026-11-15
 
 | 文件 | 职责 |
 | --- | --- |
-| `NativePhoneticManifest.cs` | 包身份清单（库字节/SHA-256/ABI/架构/导出/许可哈希）、`deps/phonetics/misaki/<lang>/` 与 `.staging-<lang>/` 定位、ModelScope 直链 |
+| `NativePhoneticManifest.cs` | 包身份清单（库字节/SHA-256/ABI/架构/导出/许可哈希）、按语言目录与 `.staging-<lang>/` 定位、ModelScope 直链 |
 | `NativePhoneticLibrary.cs` | ABI v1 客户端：包校验（哈希/字节/PE win-x64/`pack.json` 双向核对）→ 绝对路径 `NativeLibrary.TryLoad` → 导出与 ABI 比对 → UTF-8 进/JSON 出 → 同 DLL `nk_phonetics_free`；进程内模块缓存，永不卸载 |
 | `NativeTextAnnotator.cs` | 单实例标注器：惰性加载、失败原因落地、词元→区间（原文切片校验）、日语只认含汉字词面、英语只认 ≥2 拉丁字母 |
 | `NativePhoneticPackHost.cs` | 每语槽位 + 状态机（缺失/需更新/下载中/失败/就绪/重启生效）、闲置策略、暂存包提升、应用级单例 |

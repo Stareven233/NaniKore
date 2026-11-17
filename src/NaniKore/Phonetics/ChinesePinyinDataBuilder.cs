@@ -79,7 +79,7 @@ internal static class PinyinToneConverter
 
 /// <summary>
 /// 中文拼音运行期数据的构建器：把 `resources/phonetics/` 下的公开源料合并为一张紧凑表
-/// （`deps/phonetics/zh/zh_pinyin.txt.gz`，设置页按需下载）。合并口径：pypinyin 词组 + 单字候选为基座，
+/// （`deps/phonetics/zh_pinyin.txt.gz`，设置页按需下载）。合并口径：pypinyin 词组 + 单字候选为基座，
 /// CC-CEDICT 补稀有字词与整词覆盖、并提供词级对齐的繁->简映射，Unihan kMandarin 兜底单字。
 /// 产物确定性（全量排序），供「哈希即版本」分发。
 /// </summary>

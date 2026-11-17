@@ -29,13 +29,15 @@
 前置条件：`DOTNET_ROOT` 指向 .NET 11 SDK、`NUGET_PACKAGES` 已还原 `MisakiSharp 2.2.0`、
 Windows x64 NativeAOT C++ 工具链、Python 3.14、`git`（用于打补丁）。
 首次 `Prepare` 需要网络：上游源码、UniDic 3.1.0（约 502 MiB）。所有下载、中间产物与日志都在
-`.temp/misaki-pack/`；产物落在 `deps/phonetics/misaki/{ja,en}/`。
+`.temp/misaki-pack/`；展开产物落在 `deps/phonetics/{ja,en}/`，分发 ZIP 位于 `deps/phonetics/{ja,en}.zip`。
 
 ## 产物
 
 ```text
-deps/phonetics/misaki/ja/  NaniKore.Phonetics.Ja.dll  pack.json  licenses/
-deps/phonetics/misaki/en/  NaniKore.Phonetics.En.dll  pack.json  licenses/
+deps/phonetics/ja/  NaniKore.Phonetics.Ja.dll  pack.json  licenses/
+deps/phonetics/en/  NaniKore.Phonetics.En.dll  pack.json  licenses/
+deps/phonetics/ja.zip  日语完整包
+deps/phonetics/en.zip  英语完整包
 ```
 
 `pack.json` 记录字节、SHA-256、ABI、架构、导出列表、PE 普通导入表、嵌入资源哈希、

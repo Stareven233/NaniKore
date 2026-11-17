@@ -25,7 +25,7 @@
 # 清单绑定（哈希契约的唯一定义处，脚本自动读取，无需手填；要换别的清单用 --verify <文件>，
 # 支持 C# 源码定义或每行「路径 哈希」的纯文本；条目路径按尾缀匹配，三种口径都能对）：
 #   deps/phonetics/    → src/NaniKore/Phonetics/ChinesePinyinData.cs       路径口径：相对 phonetics/
-#                      → src/NaniKore/Phonetics/Native/NativePhoneticManifest.cs  路径口径：包内（misaki/<lang>/）
+#                      → src/NaniKore/Phonetics/Native/NativePhoneticManifest.cs  路径口径：语言 ZIP 内
 #   deps/ocr-onnx/     → src/NaniKore/Ocr/Models/OcrDependencies.cs       路径口径：相对 deps/
 #   deps/onnxruntime/  → src/NaniKore/Ocr/Models/OcrDependencies.cs
 # ─────────────────────────────────────────────────────────────────────────────
@@ -60,10 +60,9 @@ SUBDIR_MANIFESTS = {
 # 旧词典、下载暂存（.staging-*）、再生中间产物都不应因为「目录里有」而被推到远端。
 SUBDIR_WHITELISTS = {
     'phonetics': (
-        'misaki/*/pack.json',
-        'misaki/*/*.dll',
-        'misaki/*/licenses/*',
-        'zh/zh_pinyin.txt.gz',
+        'ja.zip',
+        'en.zip',
+        'zh_pinyin.txt.gz',
     ),
 }
 
@@ -125,6 +124,10 @@ def parse_manifest(path: Path) -> dict[str, str]:
     content = path.read_text(encoding='utf-8')
     manifest = {m.group('path'): m.group('hash').upper() for m in MANIFEST_CS_RE.finditer(content)}
     manifest.update({m.group('path'): m.group('hash').upper() for m in MANIFEST_TEXT_RE.finditer(content)})
+    if path.name == 'NativePhoneticManifest.cs':
+        manifest = {name: digest for name, digest in manifest.items() if name.endswith('.zip')}
+    elif path.name == 'ChinesePinyinData.cs':
+        manifest = {name: digest for name, digest in manifest.items() if name == 'zh_pinyin.txt.gz'}
     if not manifest:
         raise ValueError(f'{path} 里没有解析到任何 "路径 + 64 位十六进制哈希" 条目')
     return manifest
@@ -177,11 +180,11 @@ def print_hash_lines(targets: list[Path], local_dir: Path) -> None:
             print(f'    ("{path.relative_to(target).as_posix()}", "{sha256_of(path)}"),')
 
         if target.name == 'phonetics':
-            # 原生语言包按「包内相对路径」登记（如 licenses/UniDic-BSD.txt），按包分组输出才能直接粘。
-            for pack in sorted(path for path in target.glob('misaki/*') if path.is_dir()):
-                print(f'\n# NativePhoneticManifest 口径（包内相对路径，{pack.name} 包）：')
-                for path in iter_local_files(pack):
-                    print(f'    new NativePhoneticPackFile("{path.relative_to(pack).as_posix()}", "{sha256_of(path)}"),')
+            for language in ('ja', 'en'):
+                archive = target / f'{language}.zip'
+                if archive.is_file():
+                    print(f'\n# NativePhoneticManifest 口径（{language} 整包）：')
+                    print(f'    new NativePhoneticArchive("{language}.zip", "{sha256_of(archive)}"),')
 
     if any(target.name in ('ocr-onnx', 'onnxruntime') for target in targets):
         print('\n# OcrDependencyManifest 口径（路径相对 deps/；需 Hugging Face 回源的条目自行补第三个 URL 参数）：')

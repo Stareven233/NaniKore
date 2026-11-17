@@ -18,8 +18,9 @@ deps/
 │  ├─ onnxruntime.dll
 │  └─ onnxruntime_providers_shared.dll
 └─ phonetics/
-   ├─ misaki/{ja,en}/   # 日英原生注音语言包（DLL + pack.json + licenses/）
-   └─ zh/               # 中文拼音数据（zh_pinyin.txt.gz）
+   ├─ ja.zip            # 日语语言包；安装后解压到 ja/
+   ├─ en.zip            # 英语语言包；安装后解压到 en/
+   └─ zh_pinyin.txt.gz  # 中文拼音数据
 ```
 
 `inference.json` 和模型目录中的说明文件是模型仓库附带的资料，C# OCR 运行时不读取它们。`.ms_upload_cache` 是 ModelScope 上传工具缓存，不属于运行时依赖。
@@ -32,16 +33,16 @@ deps/
 
 ## 注音数据（phonetics/）
 
-本地注音引擎使用的数据文件。目录结构与 ModelScope 仓库 Noetuu/nanikore-deps 的 phonetics/ 严格镜像。三语注音数据都**不随程序集分发**，在设置页按需下载；哈希即版本（不符则提示更新）。判据词表（停用/高频/常用字符表）仍是 KB 级内嵌策展资源，与数据哈希解耦。
+本地注音引擎使用的数据文件。分发文件位于 ModelScope 仓库 Noetuu/nanikore-deps 的 phonetics/ 根目录。三语注音数据都**不随程序集分发**，在设置页按需下载；SHA-256 用于校验完整性。判据词表仍是 KB 级内嵌策展资源。
 
 ```text
 deps/phonetics/
-├─ misaki/ja/   NaniKore.Phonetics.Ja.dll + pack.json + licenses/（约 20.8 MB）
-├─ misaki/en/   NaniKore.Phonetics.En.dll + pack.json + licenses/（约 8.5 MB）
-└─ zh/          zh_pinyin.txt.gz（pypinyin + CC-CEDICT + Unihan 合并表，约 1.5 MB）
+├─ ja.zip            日语完整包（解压后约 20.8 MB）
+├─ en.zip            英语完整包（解压后约 8.5 MB）
+└─ zh_pinyin.txt.gz  中文拼音合并表（约 1.5 MB）
 ```
 
-`misaki/` 由 `scripts/phonetics/Build-MisakiPacks.ps1` 生成，每包的 `pack.json` 记录字节、SHA-256、ABI 版本、
+日英 ZIP 由 `scripts/phonetics/Build-MisakiPacks.ps1` 生成，每包的 `pack.json` 记录字节、SHA-256、ABI 版本、
 win-x64 架构、导出列表、PE 普通导入表与资源哈希；`licenses/` 附上游许可、UniDic 许可与派生说明。
 构建与实测见 `codestable/notes/phonetics-packs.md`。
 
@@ -62,7 +63,7 @@ win-x64 架构、导出列表、PE 普通导入表与资源哈希；`licenses/` 
 
 ## 同步到 ModelScope
 
-`deps/` 与 ModelScope 仓库 `Noetuu/nanikore-deps` 严格镜像（`master` 分支）：OCR 权重、ONNX Runtime DLL 与注音数据分别位于仓库根的 `ocr-onnx/`、`onnxruntime/`、`phonetics/` 子树。上传用 `scripts/sync-deps.py`——一个子目录对应仓库里一个同名前缀，只写自己这份，不影响仓库已有的其他子目录；`phonetics/` 另有白名单，只传正式产物（`misaki/*` 与 `zh/zh_pinyin.txt.gz`），目录里的其他东西不会被推上去：
+`deps/` 与 ModelScope 仓库 `Noetuu/nanikore-deps` 严格镜像（`master` 分支）：OCR 权重、ONNX Runtime DLL 与注音数据分别位于 `ocr-onnx/`、`onnxruntime/`、`phonetics/`。上传用 `scripts/sync-deps.py`；`phonetics/` 白名单只传 `ja.zip`、`en.zip`、`zh_pinyin.txt.gz`：
 
 ```powershell
 python -m pip install modelscope                        # 一次性：安装 Python 上传 SDK

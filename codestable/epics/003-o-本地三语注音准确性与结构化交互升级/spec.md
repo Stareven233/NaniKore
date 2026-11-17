@@ -12,9 +12,9 @@ created: 2026-11-14
 
 ## 目标与当前事实
 
-中文保留自研 `ChinesePinyinEngine`，数据与日英一致放 `deps/phonetics/zh/` 按需下载（不内嵌）；日语采用 Misaki 分词与 UniDic 3.1.0 书面假名；英语直接采用 Misaki 的本句选音与词典候选，转换为可读的美音 IPA，允许闪音 `ɾ`、喉塞音 `ʔ` 等发音变体，不强求还原词典式 /t/、/d/。英文整词 hover 展示本句选中项和其他已收录读音；有限的误选与缺项记为已知限制，不要求全面解决时态/词义消歧，也不引入第二套 CMUdict 数据链。本轮保持本地离线，数字/货币不注音，缩写仅接受明确收录的读法。5 语移至 [独立探索](../../talks/005-其他五语本地注音探索.md)。
+中文保留自研 `ChinesePinyinEngine`，数据放 `deps/phonetics/zh_pinyin.txt.gz` 按需下载（不内嵌）；日语采用 Misaki 分词与 UniDic 3.1.0 书面假名；英语直接采用 Misaki 的本句选音与词典候选，转换为可读的美音 IPA，允许闪音 `ɾ`、喉塞音 `ʔ` 等发音变体，不强求还原词典式 /t/、/d/。英文整词 hover 展示本句选中项和其他已收录读音；有限的误选与缺项记为已知限制，不要求全面解决时态/词义消歧，也不引入第二套 CMUdict 数据链。本轮保持本地离线，数字/货币不注音，缩写仅接受明确收录的读法。5 语移至 [独立探索](../../talks/005-其他五语本地注音探索.md)。
 
-**生产代码切换完成，旧链已退出生产（012 后 + 014 清理）。** 日语已在 010、英语已在 011 切到原生包 provider（日语书面假名 + 送假名切分，旧 IPAdic 标注器下线；英语采用 Misaki 本句选音 + 可读美音 IPA + 整词候选，旧 CMUdict 标注器下线）；中文拼音数据已在 012 改为与日英同类的「放 `deps/phonetics/zh/`、设置页按需下载」形态（主人复核后推翻了原先的内嵌决定）。014 已把旧链彻底上收：`PhoneticDependencyManifest` 收敛为中文拼音单文件清单（`ChinesePinyinData`），旧 CMUdict 构建链（`CmuDictionarySourceParser` / `EnglishIpaDictionary` / `IpaTranscription` / `--build-phonetics` / `--build-en-data`）、未使用的 `LibNMeCab` 包引用与旧 ja/en 下载卡片全部下线（文件归档 `.temp/`，不删除）；设置页每个语言只剩一条语言包入口，`dev.ps1` 完整包清单与 `sync-deps.py` 白名单改按正式产物枚举。剩余未完成项仅为 014 的发布与干净目录验收（ZIP、干净目录离线、坏包路径、ModelScope 上传）。现有 `AnnotationSpan(Start, Length, Reading, Syllables, WholeWord)` 保留 UTF-16 区间；候选有两套互斥形状：中文逐字在 `AnnotationSyllable`，英语整词在 `WholeWordReadings`，UI 两种都能消费。
+**生产代码切换完成，旧链已退出生产（012 后 + 014 清理）。** 日语已在 010、英语已在 011 切到原生包 provider；中文数据按需下载。日英通过根目录 `ja.zip`、`en.zip` 整包分发，运行时展开到 `deps/phonetics/ja/`、`en/`；中文 gzip 表位于 `deps/phonetics/zh_pinyin.txt.gz`。旧 CMUdict 构建链、未使用的 `LibNMeCab` 包引用与旧下载卡片已退出生产；剩余未完成项为 014 的发布与干净目录验收。
 
 中文结构化区间、自研选音和逐字 hover 已验收；不因换 provider 重写这些逻辑。旧英语词典（`deps/phonetics/en/ipa_dict.db`）、旧 IPAdic 目录与旧 zh MeCab 产物已随 014 归档到 `.temp/014-旧词典/`，不再被读取、不再上传、不再进入完整包。
 
@@ -33,7 +33,7 @@ created: 2026-11-14
 ## 运行与分发契约
 
 - 正式包固定上游版本/提交、补丁、数据来源、资源白名单、SHA-256、win-x64 架构、ABI 和许可原文。Cecil 单独剥资源不足以满足新契约，允许最小源码修改。
-- 中/日/英三语注音数据全部不随程序集分发，放应用目录 `deps/phonetics/`（原生包在 `deps/phonetics/misaki/`，中文拼音表在 `deps/phonetics/zh/`）由设置页按需下载；中文选音、繁简、逐字候选逻辑不变，缺包时纯文本降级、不回退旧引擎。日英不保留旧引擎兼容/回退链。设置页最终每个语言只有一条语言包入口：009 交付期间新原生包卡片与旧词典卡片**并存是过渡态**，010/011 切换 provider 后旧 ja/en 词典下载卡片随旧 provider 在 014 下线，中文同样保留一条可下载入口。
+- 中/日/英三语注音数据全部不随程序集分发；设置页按需下载。日英从根目录 ZIP 安装到 `{ja,en}/`，中文 gzip 数据位于根目录；缺包时纯文本降级、不回退旧引擎。设置页每种语言只有一条下载/更新入口。
 - ABI 用带字节长度的 UTF-8 输入和原文 UTF-16 输出偏移；定义版本、错误码、输出长度、同 DLL 的释放函数，异常不跨 unmanaged 边界。主程序按受控绝对路径加载，先校验哈希/架构/清单，绑定后在读音引擎初始化前验证 ABI 版本及必需导出。
 - 解析、释放和重建共用每语锁；冷加载/重建、词数计算和注音在后台进行。取消后不回写旧结果，也不在调用进行中释放资源。
 - NativeAOT DLL 不支持卸载；只释放内部数据。生产只解除引用，不强制 GC 或裁工作集。首次安装未加载包可即时使用；已加载包下载新版本后暂存，显示重启生效。
@@ -52,7 +52,7 @@ created: 2026-11-14
 | [009 宿主接入骨架](issues/009-o-原生ABI下载与资源生命周期接入.md) | 骨架已落地：ABI v1 客户端、包身份清单与状态机、闲置释放、首次安装/重启更新；真实 Debug 与 NativeAOT 宿主自测均 1911 项通过，待 010/011 切换 provider | ABI 客户端、状态机、闲置释放、首次安装/重启更新；真实 Debug/AOT 宿主通过 |
 | [010 日语接入](issues/010-o-日语书面振假名接入.md) | 已交付：provider 已切到原生包，Debug/NativeAOT 自测 1922 项通过 | 书面假名、送假名/内部假名、未知词、过滤与原文区间，复制/选区/收藏通过 |
 | [011 Misaki 英语与整词候选](issues/011-o-英语标准IPA质量与整词候选接入.md) | 已交付：provider 已切到原生包，Debug/NativeAOT 自测 1957 项通过，包验收 413 项通过 | 美音 IPA、provider、已收录整词候选与 hover、原文对齐；记录已知选音/缺项限制，按 G2/G5 验收 |
-| [012 中文外置与下载](issues/012-o-中文拼音数据外置与按需下载.md) | 已交付：拼音数据与日英同类放 `deps/phonetics/zh/`、设置页按需下载，Debug/NativeAOT 自测 1964 项通过 | 缺包时纯文本降级、放回即用，现有哈希/金样本一致，候选与闲置释放保留 |
+| [012 中文外置与下载](issues/012-o-中文拼音数据外置与按需下载.md) | 已交付：拼音数据放 `deps/phonetics/zh_pinyin.txt.gz`、设置页按需下载 | 缺包时纯文本降级，选音与候选保持 |
 | [014 分发与收尾](issues/014-o-分发构建与验收收尾.md) | 依赖 008–012 与 G2/G5；代码侧清尾已落地（旧链与旧卡片下线、依赖清单与同步白名单重写），待发布与干净目录验收 | 精简/完整 ZIP、干净目录离线、下载校验、真实宿主 AOT、许可和文档通过 |
 
 013 保留为独立 5 语探索编号，不列入本 Epic 的必做任务；[探索记录](../../talks/005-其他五语本地注音探索.md) 尚不承诺交付形式或日期。
@@ -79,4 +79,4 @@ created: 2026-11-14
 - [日英原生注音语言包（构建链与实测）](../../notes/phonetics-packs.md)
 - [可复跑探针](../../tools/misaki-annotation-probe/README.md)
 - [当前生效的旧再生管线](../../notes/phonetics-pipeline.md)
-- 生产实现：`src/NaniKore/Phonetics/`；正式日英包构建链与验收客户端在 `scripts/phonetics/`（产物 `deps/phonetics/misaki/`，尚未接入主程序）。
+- 生产实现：`src/NaniKore/Phonetics/`；日英包构建链与验收客户端在 `scripts/phonetics/`，整包 ZIP 位于 `deps/phonetics/{ja,en}.zip`。

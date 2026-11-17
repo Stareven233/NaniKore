@@ -313,13 +313,13 @@ function New-NaniKoreReleaseArchive {
             'ocr-onnx\pp-ocr-v6-small\rec\inference.yml',
             'onnxruntime\onnxruntime.dll',
             'onnxruntime\onnxruntime_providers_shared.dll',
-            'phonetics\misaki\ja\NaniKore.Phonetics.Ja.dll',
-            'phonetics\misaki\ja\pack.json',
-            'phonetics\misaki\ja\licenses\UniDic-BSD.txt',
-            'phonetics\misaki\en\NaniKore.Phonetics.En.dll',
-            'phonetics\misaki\en\pack.json',
-            'phonetics\misaki\en\licenses\MisakiSharp-LICENSE.txt',
-            'phonetics\zh\zh_pinyin.txt.gz'
+            'phonetics\ja\NaniKore.Phonetics.Ja.dll',
+            'phonetics\ja\pack.json',
+            'phonetics\ja\licenses\UniDic-BSD.txt',
+            'phonetics\en\NaniKore.Phonetics.En.dll',
+            'phonetics\en\pack.json',
+            'phonetics\en\licenses\MisakiSharp-LICENSE.txt',
+            'phonetics\zh_pinyin.txt.gz'
         )
         $missingDependencies = @(
             $requiredDependencies |
@@ -349,21 +349,17 @@ function New-NaniKoreReleaseArchive {
         if ($IncludeFullDependencies) {
             Copy-Item -LiteralPath $DependenciesDirectory -Destination $stagingDirectory -Recurse -Force
 
-            # 注音数据只带正式产物：misaki/<lang>/（DLL + pack.json + licenses）与 zh/zh_pinyin.txt.gz。
+            # 完整包带解压后的语言运行文件；单包 ZIP 只用于下载与同步，不重复放进发布包。
             # 白名单而不是黑名单：旧 ja/en 词典、旧 MeCab 中文产物、_source/_build 与下载暂存目录
             # 即使还留在 deps/，也进不了交付物（issue 014）。
             $phoneticsStaging = Join-Path $stagingDirectory 'deps\phonetics'
             if (Test-Path -LiteralPath $phoneticsStaging) {
-                Get-ChildItem -LiteralPath $phoneticsStaging -Force |
-                    Where-Object { $_.Name -notin @('misaki', 'zh') } |
+                Get-ChildItem -LiteralPath $phoneticsStaging -File |
+                    Where-Object { $_.Extension -eq '.zip' } |
+                    Remove-Item -Force
+                Get-ChildItem -LiteralPath $phoneticsStaging -Directory -Force |
+                    Where-Object { $_.Name -notin @('ja', 'en') } |
                     Remove-Item -Recurse -Force
-
-                $chineseStaging = Join-Path $phoneticsStaging 'zh'
-                if (Test-Path -LiteralPath $chineseStaging) {
-                    Get-ChildItem -LiteralPath $chineseStaging -Force |
-                        Where-Object { $_.Name -ne 'zh_pinyin.txt.gz' } |
-                        Remove-Item -Recurse -Force
-                }
             }
         }
 

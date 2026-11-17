@@ -20,14 +20,14 @@ internal enum PhoneticDataState
 internal sealed record PhoneticDataFile(string RelativePath, string Sha256);
 
 /// <summary>
-/// 中文拼音数据的清单与状态：数据不随程序集分发，放 deps/phonetics/zh/zh_pinyin.txt.gz，
+/// 中文拼音数据的清单与状态：数据不随程序集分发，放 deps/phonetics/zh_pinyin.txt.gz，
 /// 由设置页按需下载。哈希即版本——SHA-256 不符即判为「需要更新」，不另设版本号。
 /// </summary>
 internal static class ChinesePinyinData
 {
     /// <summary>数据清单（路径相对 deps/phonetics/）：同步脚本按这一行核对上传字节。</summary>
     private static readonly PhoneticDataFile DataFile =
-        new("zh/zh_pinyin.txt.gz", "2B5C68679BD393624D17B77BCA5734F9A608EB758FFA2F98D69D1DE0E520A981");
+        new("zh_pinyin.txt.gz", "2B5C68679BD393624D17B77BCA5734F9A608EB758FFA2F98D69D1DE0E520A981");
 
     /// <summary>相对 phonetics/ 的路径，同时就是 ModelScope 上的远端路径。</summary>
     public static string RelativePath => DataFile.RelativePath;

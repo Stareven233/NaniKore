@@ -6,14 +6,17 @@
 ## 1. 目录契约
 
 ```text
-deps/phonetics/            # 仓库内唯一真实源；ModelScope 仓库 Noetuu/nanikore-deps 的 phonetics/ 严格镜像
-├─ misaki/{ja,en}/        # 日英原生语言包（scripts/phonetics/Build-MisakiPacks.ps1 产物）
-└─ zh/                    # 中文拼音数据 zh_pinyin.txt.gz（--build-zh-data 产物）
+deps/phonetics/            # 运行目录含展开的 ja/en 与中文数据；远端分发单元在此目录根
+├─ ja/                     # 日语包展开目录（DLL + pack.json + licenses/）
+├─ en/                     # 英语包展开目录（DLL + pack.json + licenses/）
+├─ ja.zip                  # 日语整包分发文件
+├─ en.zip                  # 英语整包分发文件
+└─ zh_pinyin.txt.gz        # 中文拼音数据
 ```
 
-三方严格镜像：仓库 `deps/` ↔ ModelScope `phonetics/` ↔ 应用目录 `deps/phonetics/`。没有版本号别名目录，哈希即版本。
-每条数据的哈希登记在宿主侧清单里：日英原生包 → `Native/NativePhoneticManifest.cs`（与包内 `pack.json` 双向核对），
-中文拼音表 → `ChinesePinyinData.cs`。
+运行目录：应用 `deps/phonetics/{ja,en}/` 解压语言包，中文数据位于 `deps/phonetics/zh_pinyin.txt.gz`。
+分发目录：ModelScope `phonetics/` 根含 `ja.zip`、`en.zip` 与 `zh_pinyin.txt.gz`。日英 ZIP 哈希由
+`Native/NativePhoneticManifest.cs` 固定，展开文件再由包清单核对；中文哈希由 `ChinesePinyinData.cs` 固定。
 
 ## 2. 数据源与许可
 
@@ -29,7 +32,7 @@ deps/phonetics/            # 仓库内唯一真实源；ModelScope 仓库 Noetuu
 表内 `#` 注释行只承载来源/许可/口径元信息，`EmbeddedData` 装载时按行跳过——切勿把例字写进注释行
 （曾因此把「龃龉」误收进判据集合）。
 
-## 3. 日英原生语言包（misaki/）
+## 3. 日英原生语言包
 
 构建链在 `scripts/phonetics/`：`Build-MisakiPacks.ps1` 固定上游 nupkg 与提交、套 `patches/misakisharp-2.2.0.patch`、
 按资源白名单编译 NativeAOT DLL，`MakePackManifest.py` 写 `pack.json`，`Verify` 段核对包字节/哈希/金样本。
@@ -38,7 +41,7 @@ deps/phonetics/            # 仓库内唯一真实源；ModelScope 仓库 Noetuu
 
 ## 4. 简体中文（zh）：pypinyin + CC-CEDICT + Unihan → 单份合并表
 
-`ChinesePinyinEngine` 在进程内做词组最长匹配，数据放 `deps/phonetics/zh/` 按需下载。源料统一放 `resources/phonetics/`
+`ChinesePinyinEngine` 在进程内做词组最长匹配，数据放 `deps/phonetics/zh_pinyin.txt.gz` 按需下载。源料统一放 `resources/phonetics/`
 （`pypinyin/`、`cc-cedict/`、`unihan/`），单独重建：
 
 ```powershell
@@ -52,7 +55,7 @@ dotnet run --project src/NaniKore -- --build-zh-data
    CC 词条**只补 pypinyin 未覆盖的词面**（pypinyin 优先），并收单字读音作兜底；
 3. 词级等长对齐构建 繁→简 单字映射（查音前归一，展示仍用原文）；
 4. `unihan/Unihan_Readings.txt` 的 `kMandarin` 兜底 pypinyin/CC 都没覆盖的 BMP 单字；
-5. 写 `deps/phonetics/zh/zh_pinyin.txt.gz`（TSV+gzip，全量排序保证确定性）：
+5. 写 `deps/phonetics/zh_pinyin.txt.gz`（TSV+gzip，全量排序保证确定性）：
    `S 码位 候选1,候选2` / `C 码位 兜底读音` / `P 词面 字1音 字2音 …` / `T 繁 简`，首行 `NaniKore.zh.pinyin.v1`。
    生成结束会打印字节数与 SHA-256，回填到 `ChinesePinyinData.Sha256`（自测与下载器都按它校验）。
 
@@ -71,7 +74,7 @@ python scripts/sync-deps.py phonetics                  # 核对通过后上传
 ```
 
 `phonetics` 绑定 `ChinesePinyinData.cs` 与 `Native/NativePhoneticManifest.cs`，同步前自动核对，无需手填 `--verify`；
-上传只走白名单（`misaki/*` 与 `zh/zh_pinyin.txt.gz`），令牌与其余用法见 `deps/README.md`「同步到 ModelScope」。
+上传只走白名单（`ja.zip`、`en.zip` 与 `zh_pinyin.txt.gz`），令牌与其余用法见 `deps/README.md`「同步到 ModelScope」。
 
 未匹配哈希时：设置页显示「缺失/待更新」，`ITextAnnotator.IsAvailable` 为 false，标注链路整体软降级为纯文本，
 翻译主链路不受影响（见 `SelfTest.Phonetics.cs` 金样本）。

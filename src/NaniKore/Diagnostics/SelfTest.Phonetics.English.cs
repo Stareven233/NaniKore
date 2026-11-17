@@ -18,7 +18,7 @@ internal static partial class SelfTest
         var annotator = registry.GetAnnotator("en");
         if (annotator is null || !annotator.IsAvailable)
         {
-            Skip("en 原生语言包未就绪（deps/phonetics/misaki/en），跳过英语原生注音金样本");
+            Skip("en 原生语言包未就绪（deps/phonetics/en），跳过英语原生注音金样本");
             return;
         }
 
@@ -151,7 +151,7 @@ internal static partial class SelfTest
         var annotator = registry.GetAnnotator("en");
         if (annotator is null || !annotator.IsAvailable)
         {
-            Skip("en 原生语言包未就绪（deps/phonetics/misaki/en），跳过英语整词候选断言");
+            Skip("en 原生语言包未就绪（deps/phonetics/en），跳过英语整词候选断言");
             return;
         }
 

@@ -5,7 +5,7 @@
 .DESCRIPTION
     唯一入口。固定版本、哈希、资源白名单与包定义全部读自 misaki-packs.json；
     对不上就停，不做兜底。所有下载与中间产物在 .temp/misaki-pack，
-    产物落在 deps/phonetics/misaki/{ja,en}/。
+    产物展开到 deps/phonetics/{ja,en}/，并生成根目录 {ja,en}.zip。
 
 .PARAMETER Stage
     All（默认）| Prepare | Native | Verify。Prepare 完成后才能 Native，Native 完成后才能 Verify。
@@ -24,7 +24,7 @@ Set-NaniKoreNuGetCache
 $pinPath = Join-Path $PSScriptRoot 'misaki-packs.json'
 $pin = Get-Content -LiteralPath $pinPath -Raw | ConvertFrom-Json
 $work = Join-Path $workspace '.temp/misaki-pack'
-$packsRoot = Join-Path $workspace 'deps/phonetics/misaki'
+$packsRoot = Join-Path $workspace 'deps/phonetics'
 New-Item -ItemType Directory -Path $work -Force | Out-Null
 $env:DOTNET_CLI_HOME = Join-Path $workspace '.temp/dotnet-home'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
@@ -192,6 +192,13 @@ try {
             if ($name -eq 'ja') { $manifestArguments += @('--kana-report', (Join-Path $work 'kana-report.json')) }
             & python @manifestArguments
             if ($LASTEXITCODE -ne 0) { throw "$name 包清单生成失败。" }
+
+            $archive = Join-Path $work "$name-pack.zip"
+            & python (Join-Path $PSScriptRoot 'MakePackArchive.py') --source $packDirectory --output $archive
+            if ($LASTEXITCODE -ne 0) { throw "$name ZIP 生成失败。" }
+            $archiveTarget = Join-Path $packsRoot "$name.zip"
+            Copy-Item -LiteralPath $archive -Destination $archiveTarget -Force
+            Write-Host "$name.zip: $((Get-Item $archiveTarget).Length) bytes / $(Get-Sha256 $archiveTarget)"
         }
         Write-Host "Native 完成：$packsRoot"
     }

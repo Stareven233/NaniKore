@@ -49,7 +49,7 @@ internal static partial class SelfTest
         var english = registry.GetAnnotator("en");
         if (english is null || !english.IsAvailable)
         {
-            Skip("en 原生语言包未就绪（deps/phonetics/misaki/en），跳过英语词数与短语边界金样本");
+            Skip("en 原生语言包未就绪（deps/phonetics/en），跳过英语词数与短语边界金样本");
         }
         else
         {
@@ -72,7 +72,7 @@ internal static partial class SelfTest
         var japanese = registry.GetAnnotator("ja");
         if (japanese is null || !japanese.IsAvailable)
         {
-            Skip("ja 原生语言包未就绪（deps/phonetics/misaki/ja），跳过日语词数金样本");
+            Skip("ja 原生语言包未就绪（deps/phonetics/ja），跳过日语词数金样本");
         }
         else
         {
@@ -88,7 +88,7 @@ internal static partial class SelfTest
         var chinese = registry.GetAnnotator("zh");
         if (chinese is null || !chinese.IsAvailable)
         {
-            Skip("zh 拼音数据未就绪（deps/phonetics/zh），跳过中文词数金样本");
+            Skip("zh 拼音数据未就绪（deps/phonetics/zh_pinyin.txt.gz），跳过中文词数金样本");
         }
         else
         {
@@ -109,14 +109,14 @@ internal static partial class SelfTest
             state is PhoneticDataState.Ready or PhoneticDataState.Missing or PhoneticDataState.NeedsUpdate);
         Check(
             "三语各一条语言包入口：中文是唯一的数据文件，日英走原生包",
-            ChinesePinyinData.RelativePath == "zh/zh_pinyin.txt.gz" &&
-            ChinesePinyinData.DownloadUrl.EndsWith("/phonetics/zh/zh_pinyin.txt.gz?download=true", StringComparison.Ordinal) &&
+            ChinesePinyinData.RelativePath == "zh_pinyin.txt.gz" &&
+            ChinesePinyinData.DownloadUrl.EndsWith("/phonetics/zh_pinyin.txt.gz?download=true", StringComparison.Ordinal) &&
             NativePhoneticManifest.SupportedLanguages.SequenceEqual([PhoneticLanguages.JapaneseCode, PhoneticLanguages.EnglishCode]) &&
             PhoneticLanguages.All.Count == 3);
     }
 
     /// <summary>
-    /// 中文拼音数据外置与按需下载（issue 012）：数据只在 `deps/phonetics/zh/zh_pinyin.txt.gz`，
+    /// 中文拼音数据外置与按需下载（issue 012）：数据只在 `deps/phonetics/zh_pinyin.txt.gz`，
     /// 缺失时纯文本降级（引擎为 null、区间为空、不抛异常），文件就绪时行为与内嵌版逐字一致；
     /// 闲置释放后重新读盘重建。
     /// </summary>
@@ -145,7 +145,7 @@ internal static partial class SelfTest
                 "缺包：标注器不可用、注音为空、词数为 0",
                 annotator.Annotate("不行就去银行", new AnnotationContext(AnnotationProfile.Load("zh"))).Count == 0 &&
                 annotator.CountWords("不行就去银行") == 0);
-            Skip("zh 拼音数据未就绪（deps/phonetics/zh），跳过中文金样本与冷/热基线");
+            Skip("zh 拼音数据未就绪（deps/phonetics/zh_pinyin.txt.gz），跳过中文金样本与冷/热基线");
             return;
         }
 
@@ -240,7 +240,7 @@ internal static partial class SelfTest
         if (english is null || !english.IsAvailable)
         {
             // 注音词典是按需下载的可选依赖：没就绪时跳过，不报假失败（与金样本测试同一口径）。
-            Skip("en 原生语言包未就绪（deps/phonetics/misaki/en），跳过后半段英语断言");
+            Skip("en 原生语言包未就绪（deps/phonetics/en），跳过后半段英语断言");
             return;
         }
 
@@ -408,7 +408,7 @@ internal static partial class SelfTest
         if (english is null || !english.IsAvailable)
         {
             // 注音词典是按需下载的可选依赖：没就绪时跳过，不报假失败（与金样本测试同一口径）。
-            Skip("en 原生语言包未就绪（deps/phonetics/misaki/en），跳过英语路由金样本");
+            Skip("en 原生语言包未就绪（deps/phonetics/en），跳过英语路由金样本");
         }
         else
         {
@@ -433,7 +433,7 @@ internal static partial class SelfTest
         var annotator = registry.GetAnnotator("ja");
         if (annotator is null || !annotator.IsAvailable)
         {
-            Skip("ja 原生语言包未就绪（deps/phonetics/misaki/ja），跳过日语书面假名金样本");
+            Skip("ja 原生语言包未就绪（deps/phonetics/ja），跳过日语书面假名金样本");
             return;
         }
 
@@ -561,7 +561,7 @@ internal static partial class SelfTest
         var annotator = new ChinesePinyinAnnotator();
         if (!annotator.IsAvailable)
         {
-            Skip("zh 拼音数据未就绪（deps/phonetics/zh），跳过中文金样本");
+            Skip("zh 拼音数据未就绪（deps/phonetics/zh_pinyin.txt.gz），跳过中文金样本");
             return;
         }
 

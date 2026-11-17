@@ -1,11 +1,13 @@
+using System.IO.Compression;
+
 namespace NaniKore.Phonetics;
 
 /// <summary>安装结果：<see cref="RequiresRestart"/> 为 true 表示新版本已暂存，等宿主重启替换。</summary>
 internal readonly record struct NativePhoneticInstallOutcome(bool RequiresRestart);
 
 /// <summary>
-/// 原生语言包的下载与安装：文件一律先落暂存目录 <c>deps/phonetics/misaki/.staging-&lt;lang&gt;/</c>，
-/// 逐文件校验 SHA-256 与 pack.json 身份后才提升为正式包。
+/// 原生语言包以单个 ZIP 下载并校验，解压到 <c>deps/phonetics/.staging-&lt;lang&gt;/</c> 后
+/// 再逐文件校验 SHA-256 与 pack.json 身份，整个包通过后才提升为正式包。
 /// 正在使用中的 DLL 绝不被覆盖——那种情况下保留暂存目录，由 <see cref="PromoteStaged"/> 在下次启动时替换。
 /// 目录与下载动作都可注入：自测据此在临时目录里完整跑一遍「缺失 → 下载 → 校验 → 替换 → 重启生效」，不联网。
 /// </summary>
@@ -54,54 +56,34 @@ internal sealed class NativePhoneticPackInstaller
     {
         ArgumentNullException.ThrowIfNull(pack);
         var staging = _stagingDirectory(pack.Language);
-        Directory.CreateDirectory(staging);
-
-        // 随包许可先下，库文件最后：中途取消不会留下「有库没许可」的可用假象。
-        var order = new List<NativePhoneticPackFile>();
-        foreach (var license in pack.LicenseFiles)
+        var archive = staging + ".download.zip";
+        if (Directory.Exists(staging) && NativePhoneticPackVerifier.Verify(pack, staging, out _) == NativePhoneticPackageFailure.None)
         {
-            order.Add(license);
+            progress?.Report($"已存在：{NativePhoneticManifest.ArchiveFileName(pack.Language)}");
         }
-
-        order.Add(new NativePhoneticPackFile(pack.LibraryFileName, pack.LibrarySha256));
-
-        foreach (var file in order)
+        else
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var destination = NativePhoneticManifest.GetFilePath(staging, file.RelativePath);
-            if (File.Exists(destination) &&
-                string.Equals(NativePhoneticPackVerifier.HashFile(destination), file.Sha256, StringComparison.OrdinalIgnoreCase))
+            progress?.Report($"正在下载：{NativePhoneticManifest.ArchiveFileName(pack.Language)}");
+            await _download(
+                PhoneticDataPaths.ModelScopeBaseUrl + NativePhoneticManifest.ArchiveFileName(pack.Language) + "?download=true",
+                archive,
+                NativePhoneticManifest.ArchiveSha256(pack.Language),
+                cancellationToken).ConfigureAwait(true);
+
+            try
             {
-                progress?.Report($"已存在：{file.RelativePath}");
-                continue;
+                if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+                ExtractArchive(archive, staging);
             }
-
-            progress?.Report($"正在下载：{file.RelativePath}");
-            await _download(
-                NativePhoneticManifest.GetDownloadUrl(pack.Language, file.RelativePath),
-                destination,
-                file.Sha256,
-                cancellationToken).ConfigureAwait(true);
-        }
-
-        var manifestPath = NativePhoneticManifest.GetFilePath(staging, NativePhoneticManifest.PackManifestFileName);
-        if (!File.Exists(manifestPath))
-        {
-            progress?.Report($"正在下载：{NativePhoneticManifest.PackManifestFileName}");
-            // pack.json 没有独立哈希：下载后由 VerifyStaged 的结构化核对把关（字节/哈希/ABI/架构/导出）。
-            await _download(
-                NativePhoneticManifest.GetDownloadUrl(pack.Language, NativePhoneticManifest.PackManifestFileName),
-                manifestPath,
-                null,
-                cancellationToken).ConfigureAwait(true);
+            finally
+            {
+                if (File.Exists(archive)) File.Delete(archive);
+            }
         }
 
         var failure = NativePhoneticPackVerifier.Verify(pack, staging, out var detail);
         if (failure != NativePhoneticPackageFailure.None)
-        {
-            throw new InvalidDataException(
-                NativePhoneticPackageFailureText.Describe(failure, pack, detail) + " 已保留其他文件，请重试下载。");
-        }
+            throw new InvalidDataException(NativePhoneticPackageFailureText.Describe(failure, pack, detail) + " 请重试下载。");
 
         if (NativePhoneticLibrary.IsLanguageLoaded(pack.Language))
         {
@@ -157,6 +139,29 @@ internal sealed class NativePhoneticPackInstaller
     }
 
     private static readonly HttpClient HttpClient = CreateHttpClient();
+
+    private static void ExtractArchive(string archivePath, string destination)
+    {
+        Directory.CreateDirectory(destination);
+        using var zip = System.IO.Compression.ZipFile.OpenRead(archivePath);
+        var root = Path.GetFullPath(destination) + Path.DirectorySeparatorChar;
+        foreach (var entry in zip.Entries)
+        {
+            var target = Path.GetFullPath(Path.Combine(destination, entry.FullName));
+            if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("语言包 ZIP 含有越界路径。");
+            if (string.IsNullOrEmpty(entry.Name))
+            {
+                Directory.CreateDirectory(target);
+                continue;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            using var input = entry.Open();
+            using var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            input.CopyTo(output);
+        }
+    }
 
     /// <summary>默认下载实现：ModelScope 直链 + 临时文件 + 哈希校验 + 失败清理。</summary>
     private static async Task DownloadFileAsync(
