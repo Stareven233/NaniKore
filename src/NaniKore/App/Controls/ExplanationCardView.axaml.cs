@@ -386,7 +386,7 @@ public partial class ExplanationCardView : UserControl
             {
                 if (!await _favoriteService.AddFavoriteAsync(createItem()))
                 {
-                    FavoriteFailed?.Invoke(this, $"收藏失败：收藏库未保存「{content}」，请稍后重试。");
+                    FavoriteFailed?.Invoke(this, $"收藏失败：收藏库未保存「{content}」，请稍后重试");
                     return;
                 }
             }

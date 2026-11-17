@@ -57,6 +57,6 @@ var orphan = EnglishPronunciationIndex.FromCmuEntries(CmuDictionarySourceParser.
 Check("缺失默认项不提升备选", orphan.LookupAll("orphan").Count == 1 && orphan.Lookup("orphan") is null);
 Console.WriteLine($"lines={lines.Length} eligible={eligible} entries={entries.Length} words={groups.Length} numbered={entries.Count(e => !e.IsDefault)} multiWords={groups.Count(g => g.Count() > 1)}");
 Console.WriteLine($"parse-and-index-ms={watch.Elapsed.TotalMilliseconds:F3} managed-bytes={GC.GetTotalMemory(false)} working-set={Environment.WorkingSet}");
-Console.WriteLine("LIMIT: 单字母词沿用既有过滤；编号仅表示源顺序，没有词义/词性/口音标签。默认项不根据句子变化。正式SQLite、屈折回退、UI、分发与宿主AOT未覆盖。");
+Console.WriteLine("LIMIT: 单字母词沿用既有过滤；编号仅表示源顺序，没有词义/词性/口音标签。默认项不根据句子变化。正式SQLite、屈折回退、UI、分发与宿主AOT未覆盖");
 Console.WriteLine($"SUMMARY checks={checks} failures={failures}");
 return failures == 0 ? 0 : 1;

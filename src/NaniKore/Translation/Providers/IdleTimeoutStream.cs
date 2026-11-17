@@ -45,8 +45,8 @@ internal sealed class IdleTimeoutStream : Stream
         {
             // 调用方没取消却读到取消，只能是空闲计时触发：连接仍在但服务端长时间不发送数据。
             throw new ProviderTimeoutException(
-                $"翻译服务已连接，但超过 {_idleTimeout.TotalSeconds:0.#} 秒未收到任何数据，已中止本次等待。" +
-                "若上游模型或网络较慢，可在设置中调大该配置档的 timeout_seconds。");
+                $"翻译服务已连接，但超过 {_idleTimeout.TotalSeconds:0.#} 秒未收到任何数据，已中止本次等待" +
+                "若上游模型或网络较慢，可在设置中调大该配置档的 timeout_seconds");
         }
     }
 

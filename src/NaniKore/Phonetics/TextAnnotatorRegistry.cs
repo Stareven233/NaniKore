@@ -42,9 +42,9 @@ internal sealed class TextAnnotatorRegistry : IDisposable
     {
         ArgumentNullException.ThrowIfNull(nativeHost);
         var japanese = nativeHost.GetAnnotator(PhoneticLanguages.JapaneseCode)
-            ?? throw new InvalidOperationException("原生日语语言包未装配。");
+            ?? throw new InvalidOperationException("原生日语语言包未装配");
         var english = nativeHost.GetAnnotator(PhoneticLanguages.EnglishCode)
-            ?? throw new InvalidOperationException("原生英语语言包未装配。");
+            ?? throw new InvalidOperationException("原生英语语言包未装配");
         var chinese = new CachedTextAnnotator<ChinesePinyinAnnotator>(PhoneticLanguages.ChineseCode, static () => new());
         return new TextAnnotatorRegistry([japanese, english, chinese], [chinese]);
     }

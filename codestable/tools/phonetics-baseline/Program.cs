@@ -19,7 +19,7 @@ void Check(string status, string name, string detail)
 }
 Log($"UTC={DateTime.UtcNow:O} runtime={Environment.Version} OS={Environment.OSVersion} offsets=UTF-16");
 Log($"resources={PhoneticDependencyPaths.PhoneticsRootDirectory}");
-Log("固定期望见Samples.cs；KNOWN_FAIL是规范/契约偏差，不计作PASS。未覆盖/未核对不计作PASS。");
+Log("固定期望见Samples.cs；KNOWN_FAIL是规范/契约偏差，不计作PASS。未覆盖/未核对不计作PASS");
 // 固定selftest区间的最小挂载反例，与词典分词变化无关；不得把字符串相等当挂载正确。
 var mountingText = "不行就去银行";
 var mountingSpans = new[] { new AnnotationSpan(0, 2, "bù xíng"), new AnnotationSpan(4, 2, "yín háng") };

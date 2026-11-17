@@ -90,7 +90,7 @@ internal static partial class SelfTest
         WithTempDatabasePath(path =>
         {
             var service = new SqliteFavoriteService(path);
-            var added = service.AddFavoriteAsync(MakeFavorite("通る", "单词", "とおる\n通过、走过。")).Result;
+            var added = service.AddFavoriteAsync(MakeFavorite("通る", "单词", "とおる\n通过、走过")).Result;
 
             Check("SqliteFavorites.Add.ReturnsTrue", added);
             Check("SqliteFavorites.Add.FileCreated", File.Exists(path));
@@ -99,7 +99,7 @@ internal static partial class SelfTest
             Check("SqliteFavorites.Add.Count", all.Count == 1);
             Check("SqliteFavorites.Add.Content", all[0].Content == "通る");
             Check("SqliteFavorites.Add.Category", all[0].Category == "单词");
-            Check("SqliteFavorites.Add.NoteLayered", all[0].Note == "とおる\n通过、走过。");
+            Check("SqliteFavorites.Add.NoteLayered", all[0].Note == "とおる\n通过、走过");
             Check("SqliteFavorites.Add.CreatedAtRecent", Math.Abs((DateTimeOffset.Now - all[0].CreatedAt).TotalMinutes) < 5);
             Check("SqliteFavorites.Add.IdAssigned", all[0].Id > 0);
             Check("SqliteFavorites.Add.IsFavorited", service.IsFavorited("通る", "单词"));
@@ -177,7 +177,7 @@ internal static partial class SelfTest
         {
             var service = new SqliteFavoriteService(path);
             service.AddFavoriteAsync(MakeFavorite("通る", "单词", "とおる")).Wait();
-            service.AddFavoriteAsync(MakeFavorite(" 通る ", "单词", "とおる\n通る (动词原形)\n通过、走过。")).Wait();
+            service.AddFavoriteAsync(MakeFavorite(" 通る ", "单词", "とおる\n通る (动词原形)\n通过、走过")).Wait();
 
             var all = service.GetAllFavorites();
             Check("SqliteFavorites.Upsert.SingleRow", all.Count == 1);

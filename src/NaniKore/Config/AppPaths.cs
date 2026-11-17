@@ -56,7 +56,7 @@ internal static class AppPaths
 /// 数据目录不可创建或不可写；宿主据此拒绝启动（GUI 弹错、CLI 走 Console.Error，退出码均为 1）。
 /// </summary>
 internal sealed class DataDirectoryUnavailableException(string directory, Exception innerException)
-    : Exception($"数据目录不可用（无法创建或无法写入）：{directory}。请确认程序目录可写后重试。", innerException)
+    : Exception($"数据目录不可用（无法创建或无法写入）：{directory}。请确认程序目录可写后重试", innerException)
 {
     public string Directory { get; } = directory;
 }

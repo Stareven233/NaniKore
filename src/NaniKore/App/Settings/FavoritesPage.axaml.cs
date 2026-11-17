@@ -53,11 +53,11 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
 
         DatabasePathText.Text = _favoriteService is SqliteFavoriteService sqlite
             ? sqlite.DatabasePath
-            : "收藏服务不可用。";
+            : "收藏服务不可用";
 
         if (_favoriteService is null)
         {
-            EmptyHint.Text = "收藏服务不可用，请在应用中重新打开设置。";
+            EmptyHint.Text = "收藏服务不可用，请在应用中重新打开设置";
         }
 
         FavoriteList.ItemsSource = _entries;
@@ -137,7 +137,7 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
     {
         if (Refresh())
         {
-            Status.Show("已刷新收藏列表。", InfoSeverity.Neutral);
+            Status.Show("已刷新收藏列表", InfoSeverity.Neutral);
         }
     }
 
@@ -146,13 +146,13 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
         var path = _favoriteService is SqliteFavoriteService sqlite
             ? sqlite.DatabasePath
             : DatabasePathText.Text;
-        if (string.IsNullOrWhiteSpace(path) || path == "收藏服务不可用。")
+        if (string.IsNullOrWhiteSpace(path) || path == "收藏服务不可用")
         {
-            Status.Show("数据库路径不可用。", InfoSeverity.Warning);
+            Status.Show("数据库路径不可用", InfoSeverity.Warning);
             return;
         }
 
-        CopyTextToClipboard(path, "已复制数据库路径。");
+        CopyTextToClipboard(path, "已复制数据库路径");
     }
 
     /// <summary>
@@ -215,7 +215,7 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
         var entries = _entries.OfType<FavoriteDisplayViewModel>().ToList();
         if (entries.Count == 0)
         {
-            Status.Show("当前没有可复制的收藏。", InfoSeverity.Warning);
+            Status.Show("当前没有可复制的收藏", InfoSeverity.Warning);
             return;
         }
 
@@ -253,11 +253,11 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
 
         if (removed)
         {
-            Status.Show($"已删除「{vm.Item.Content}」。", InfoSeverity.Success);
+            Status.Show($"已删除「{vm.Item.Content}」", InfoSeverity.Success);
         }
         else
         {
-            Status.Show("删除失败：条目可能已被移除。", InfoSeverity.Warning);
+            Status.Show("删除失败：条目可能已被移除", InfoSeverity.Warning);
         }
 
         Refresh();
@@ -501,14 +501,14 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
     {
         if (_favoriteService is null)
         {
-            Status.Show("收藏服务不可用，无法保存。", InfoSeverity.Error);
+            Status.Show("收藏服务不可用，无法保存", InfoSeverity.Error);
             return false;
         }
 
         var trimmed = content?.Trim() ?? string.Empty;
         if (trimmed.Length == 0)
         {
-            Status.Show("内容不能为空，已保留编辑状态。", InfoSeverity.Warning);
+            Status.Show("内容不能为空，已保留编辑状态", InfoSeverity.Warning);
             return false;
         }
 
@@ -516,7 +516,7 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
 
         if (_items.Any(x => x.Id != item.Id && FavoriteContentNormalizer.Equals(x.Content, normalized)))
         {
-            Status.Show($"已存在相同内容的收藏（{normalized}），保存被拒绝。", InfoSeverity.Warning);
+            Status.Show($"已存在相同内容的收藏（{normalized}），保存被拒绝", InfoSeverity.Warning);
             return false;
         }
 
@@ -543,11 +543,11 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
         if (!saved)
         {
             (item.Category, item.Content, item.Note, item.Language) = snapshot;
-            Status.Show("保存失败：条目可能已被移除，或与另一条收藏内容重复。", InfoSeverity.Warning);
+            Status.Show("保存失败：条目可能已被移除，或与另一条收藏内容重复", InfoSeverity.Warning);
             return false;
         }
 
-        Status.Show($"已保存「{item.Content}」。", InfoSeverity.Success);
+        Status.Show($"已保存「{item.Content}」", InfoSeverity.Success);
         Refresh();
         return true;
     }
@@ -566,7 +566,7 @@ internal sealed partial class FavoritesPage : UserControl, ISettingsPage
     }
 
     private void CopyToClipboard(string text, int count) =>
-        CopyTextToClipboard(text, count == 1 ? "已复制该条收藏。" : $"已复制 {count} 条收藏。");
+        CopyTextToClipboard(text, count == 1 ? "已复制该条收藏" : $"已复制 {count} 条收藏");
 
     private async void CopyTextToClipboard(string text, string successMessage)
     {

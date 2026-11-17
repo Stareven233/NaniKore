@@ -50,13 +50,13 @@ internal static class NativePhoneticPackStateText
     /// <summary>行内说明文案。</summary>
     public static string Description(NativePhoneticPackState state) => state switch
     {
-        NativePhoneticPackState.Ready => "语言包已就绪，注音即时可用。",
-        NativePhoneticPackState.Missing => "尚未安装，点击下载后即可使用。",
-        NativePhoneticPackState.NeedsUpdate => "本地文件版本不符，点击更新后即可使用。",
-        NativePhoneticPackState.Downloading => "正在下载，请稍候。",
-        NativePhoneticPackState.Failed => "加载失败，当前只显示纯文本。",
-        NativePhoneticPackState.RestartPending => "新版本已下载，重启程序后生效（不会覆盖使用中的 DLL）。",
-        _ => "该语言没有可用的原生注音包。",
+        NativePhoneticPackState.Ready => "语言包已就绪，注音即时可用",
+        NativePhoneticPackState.Missing => "尚未安装，点击下载后即可使用",
+        NativePhoneticPackState.NeedsUpdate => "本地文件版本不符，点击更新后即可使用",
+        NativePhoneticPackState.Downloading => "正在下载，请稍候",
+        NativePhoneticPackState.Failed => "加载失败，当前只显示纯文本",
+        NativePhoneticPackState.RestartPending => "新版本已下载，重启程序后生效（不会覆盖使用中的 DLL）",
+        _ => "该语言没有可用的原生注音包",
     };
 }
 
@@ -394,7 +394,7 @@ internal sealed class NativePhoneticPackHost : IDisposable
         // 已经是最新：不重复下载，也不改变现有实例。
         if (_installer.IsUpToDate(pack))
         {
-            progress?.Report($"{pack.DisplayName}语言包已是最新版本。");
+            progress?.Report($"{pack.DisplayName}语言包已是最新版本");
             slot.InvalidateState();
             return true;
         }
@@ -406,19 +406,19 @@ internal sealed class NativePhoneticPackHost : IDisposable
             if (outcome.RequiresRestart)
             {
                 slot.MarkRestartPending(NativePhoneticPackStateText.Description(NativePhoneticPackState.RestartPending));
-                progress?.Report($"{pack.DisplayName}语言包新版本已下载，重启程序后生效。");
+                progress?.Report($"{pack.DisplayName}语言包新版本已下载，重启程序后生效");
             }
             else
             {
                 slot.ResetAvailability();
-                progress?.Report($"{pack.DisplayName}语言包已就绪，即时生效。");
+                progress?.Report($"{pack.DisplayName}语言包已就绪，即时生效");
             }
 
             return true;
         }
         catch (OperationCanceledException)
         {
-            slot.MarkDownloadFailed("下载已取消。");
+            slot.MarkDownloadFailed("下载已取消");
             throw;
         }
         catch (Exception exception)

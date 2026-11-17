@@ -5,5 +5,5 @@ namespace NaniKore.Ocr.Models;
 internal static class OcrDependencyPaths
 {
     public static string ApplicationDependenciesDirectory =>
-        throw new InvalidOperationException("仅支持仓库内运行；未找到 codestable/deps 标记。");
+        throw new InvalidOperationException("仅支持仓库内运行；未找到 codestable/deps 标记");
 }

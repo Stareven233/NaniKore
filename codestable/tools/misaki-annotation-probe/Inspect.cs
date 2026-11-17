@@ -45,7 +45,7 @@ if (args[0] == "prepare")
     return;
 }
 
-var jaSamples = new[] { "躊躇した。東京へ行く。今日はいい天気。", "食べた　食べた。お祝い。凍り付く。", "😀東京 東京\t躊躇\r\n東京" };
+var jaSamples = new[] { "躊躇した。東京へ行く。今日はいい天気", "食べた　食べた。お祝い。凍り付く", "😀東京 東京\t躊躇\r\n東京" };
 var japanese = jaSamples.Select(text => new { text, tokens = JapaneseTagger.Parse(text).Select(t => new { surface = t.Surface, reading = t.Reading, unknown = t.IsUnk }).ToArray() }).ToArray();
 var en = new EnglishG2P(flapsToT: false);
 var enSamples = new[]

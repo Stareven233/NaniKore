@@ -92,7 +92,7 @@ internal sealed class ChinesePinyinDownloader
 
             if (!ChinesePinyinData.MatchesSha256(temporary))
             {
-                throw new InvalidDataException($"SHA-256 校验失败（期望 {ChinesePinyinData.Sha256}）。请重试下载。");
+                throw new InvalidDataException($"SHA-256 校验失败（期望 {ChinesePinyinData.Sha256}）。请重试下载");
             }
 
             File.Move(temporary, destination, overwrite: true);

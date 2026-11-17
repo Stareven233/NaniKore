@@ -336,7 +336,7 @@ public partial class SelectionBubblePopup : UserControl
 
             if (_favoriteService is not null && !await _favoriteService.AddFavoriteAsync(item))
             {
-                FavoriteFailed?.Invoke(this, $"收藏失败：收藏库未保存「{content}」，请稍后重试。");
+                FavoriteFailed?.Invoke(this, $"收藏失败：收藏库未保存「{content}」，请稍后重试");
                 return;
             }
 

@@ -98,12 +98,12 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         SaveFields();
         if (TargetLanguageBox.SelectedItem is not LanguageChoice)
         {
-            return "请选择翻译目标语言。";
+            return "请选择翻译目标语言";
         }
 
         if (_config is null || _config.Profiles.Count == 0)
         {
-            return "至少需要保留一个翻译配置档。";
+            return "至少需要保留一个翻译配置档";
         }
 
         var duplicateName = _config.Profiles.GroupBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase).FirstOrDefault(group => group.Count() > 1);
@@ -117,7 +117,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
             if (string.IsNullOrWhiteSpace(profile.Name) ||
                 !Uri.TryCreate(profile.BaseUrl, UriKind.Absolute, out _) || string.IsNullOrWhiteSpace(profile.Model))
             {
-                return "配置档必须包含名称、有效的 Base URL 和模型名。";
+                return "配置档必须包含名称、有效的 Base URL 和模型名";
             }
         }
 
@@ -208,10 +208,10 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         // 密钥文件无法解密时不显示成「未配置」（R09）：明确提示原密文未动、保存会被拒绝。
         TestStatus.Show(
             Secrets.ReadFailed
-                ? "密钥文件无法解密（可能来自其它用户/机器或已损坏），原始密文未改动；保存新密钥将被拒绝，请改名或删除 .data\\keys.bin 后重启。"
+                ? "密钥文件无法解密（可能来自其它用户/机器或已损坏），原始密文未改动；保存新密钥将被拒绝，请改名或删除 .data\\keys.bin 后重启"
                 : _pendingKeys.ContainsKey(profile.Name) || Secrets.Exists(profile.Name)
-                    ? "该配置档已保存 API Key。"
-                    : "该配置档尚未保存 API Key。",
+                    ? "该配置档已保存 API Key"
+                    : "该配置档尚未保存 API Key",
             Secrets.ReadFailed ? InfoSeverity.Error : InfoSeverity.Neutral);
         _loading = false;
         UpdateKindControls();
@@ -350,7 +350,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         if (!MessageDialog.Confirm(
                 TopLevel.GetTopLevel(this) as Window,
                 $"删除配置档「{selected.Name}」？",
-                "该配置档已保存的 API Key 会在保存设置时一并删除。",
+                "该配置档已保存的 API Key 会在保存设置时一并删除",
                 "删除",
                 InfoSeverity.Warning))
         {
@@ -381,7 +381,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         }
         catch (Exception exception)
         {
-            MessageDialog.Show(TopLevel.GetTopLevel(this) as Window, "打开数据目录失败。", exception.Message, InfoSeverity.Error);
+            MessageDialog.Show(TopLevel.GetTopLevel(this) as Window, "打开数据目录失败", exception.Message, InfoSeverity.Error);
         }
     }
 
@@ -395,7 +395,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         if (!MessageDialog.Confirm(
                 TopLevel.GetTopLevel(this) as Window,
                 $"清除配置档「{profile.Name}」的 API Key？",
-                "保存设置后从 .data\\keys.bin 中移除该密钥，之后需要重新粘贴。",
+                "保存设置后从 .data\\keys.bin 中移除该密钥，之后需要重新粘贴",
                 "清除",
                 InfoSeverity.Warning))
         {
@@ -405,7 +405,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         _deletedProfileKeys.Add(profile.Name);
         _pendingKeys.Remove(profile.Name);
         SetApiKey(string.Empty);
-        TestStatus.Show("已标记清除该配置档的 API Key，保存设置后生效。", InfoSeverity.Neutral);
+        TestStatus.Show("已标记清除该配置档的 API Key，保存设置后生效", InfoSeverity.Neutral);
     }
 
     private async Task TestConnectionAsync()

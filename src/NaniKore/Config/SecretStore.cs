@@ -131,7 +131,7 @@ internal sealed class SecretStore
                 // 未知方案版本：原文件可能是其它版本的密文，安全降级为空并要求用户手动处理，绝不静默覆盖。
                 if (scheme != SchemeDpapi || version != SchemeVersion1)
                 {
-                    SetReadFailure("keys.bin 的方案版本无法识别，原始密文可能属于其它版本。");
+                    SetReadFailure("keys.bin 的方案版本无法识别，原始密文可能属于其它版本");
                     return NewMap();
                 }
 
@@ -157,18 +157,18 @@ internal sealed class SecretStore
                 return NewMap(map);
             }
 
-            SetReadFailure("keys.bin 解密后的内容无法解析。");
+            SetReadFailure("keys.bin 解密后的内容无法解析");
             return NewMap();
         }
         catch (CryptographicException)
         {
             // DPAPI 绑定当前 Windows 用户：换用户/换机器或密文损坏都会落到这里。
-            SetReadFailure("keys.bin 无法解密（可能由其它 Windows 用户或机器生成，或密文已损坏）。");
+            SetReadFailure("keys.bin 无法解密（可能由其它 Windows 用户或机器生成，或密文已损坏）");
             return NewMap();
         }
         catch (JsonException)
         {
-            SetReadFailure("keys.bin 解密后的内容已损坏，无法解析。");
+            SetReadFailure("keys.bin 解密后的内容已损坏，无法解析");
             return NewMap();
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -187,7 +187,7 @@ internal sealed class SecretStore
     private void SetReadFailure(string reason)
     {
         _readFailed = true;
-        _loadWarning = $"{reason}为避免覆盖原始密文，保存新密钥将被拒绝；请将 {_keysPath} 改名或删除后重启。";
+        _loadWarning = $"{reason}为避免覆盖原始密文，保存新密钥将被拒绝；请将 {_keysPath} 改名或删除后重启";
     }
 
     /// <summary>
@@ -199,7 +199,7 @@ internal sealed class SecretStore
         // 读取失败时拒绝覆盖（R09）：旧密文可能仍可人工恢复，不能因保存一个新 Key 就整份抹掉。
         if (_readFailed)
         {
-            throw new SecretStoreWriteRefusedException(_loadWarning ?? "keys.bin 读取失败，已拒绝写入。");
+            throw new SecretStoreWriteRefusedException(_loadWarning ?? "keys.bin 读取失败，已拒绝写入");
         }
 
         var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(

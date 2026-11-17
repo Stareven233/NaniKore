@@ -126,7 +126,7 @@ internal sealed class OpenAiProvider : TranslationProviderBase
                 : detection.HasEnglish ? "英语"
                 : detection.HasSimplifiedChinese ? "中文"
                 : "日语";
-            system = $"请将以下{sourceLang}文本翻译为{request.TargetLanguage}，直接输出翻译结果，不要进行任何解释。";
+            system = $"请将以下{sourceLang}文本翻译为{request.TargetLanguage}，直接输出翻译结果，不要进行任何解释";
         }
 
         var messages = new JsonArray();

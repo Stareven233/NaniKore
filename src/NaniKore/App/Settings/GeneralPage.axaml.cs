@@ -103,14 +103,14 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     {
         if (!ResourceIdleDuration.TryParse(LocalResourceIdleTimeoutBox.Text, out _))
         {
-            return "本地资源闲置回收时长必须为非负整数秒，或整数加 s / m / h（如 30s、10m、24h）；0 表示永不回收，时长超出支持范围时无法保存。";
+            return "本地资源闲置回收时长必须为非负整数秒，或整数加 s / m / h（如 30s、10m、24h）；0 表示永不回收，时长超出支持范围时无法保存";
         }
 
         if (BackgroundBlurBox.Value is not (>= 0 and <= 100) ||
             BackgroundOpacityBox.Value is not (>= 0 and <= 100) ||
             PanelBackgroundOpacityBox.Value is not (>= 0 and <= 100))
         {
-            return "图片模糊、图片不透明度和面板底色不透明度必须在 0–100 之间。";
+            return "图片模糊、图片不透明度和面板底色不透明度必须在 0–100 之间";
         }
 
         if (!string.IsNullOrWhiteSpace(BackgroundImageBox.Text))
@@ -268,7 +268,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
             !MessageDialog.Confirm(
                 TopLevel.GetTopLevel(this) as Window,
                 "下载本地 OCR 依赖？",
-                "将从 ModelScope 下载 OCR 模型权重和 ONNX Runtime DLL，并保存到当前程序目录的 deps 文件夹。",
+                "将从 ModelScope 下载 OCR 模型权重和 ONNX Runtime DLL，并保存到当前程序目录的 deps 文件夹",
                 "下载",
                 InfoSeverity.Warning))
         {
@@ -389,7 +389,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
                 TopLevel.GetTopLevel(this) as Window,
                 $"下载{PhoneticLanguages.DisplayName(languageCode) ?? languageCode}注音语言包？",
                 "将从 ModelScope 下载该语言的注音数据到程序目录的 deps/phonetics 下，校验哈希后即时生效；" +
-                "若原生包当前正在使用，新版本会暂存并提示重启生效。",
+                "若原生包当前正在使用，新版本会暂存并提示重启生效",
                 "下载",
                 InfoSeverity.Warning))
         {

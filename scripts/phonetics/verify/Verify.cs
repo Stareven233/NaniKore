@@ -68,11 +68,11 @@ foreach (var directory in args)
     string[] samples = ja
         ?
         [
-            "躊躇した。東京へ行く。今日はいい天気。",
+            "躊躇した。東京へ行く。今日はいい天気",
             "😀東京 東京\t躊躇\r\n東京",
-            "食べた　食べた。お祝い。凍り付く。",
-            "2026年の未知語ヌャムャ。",
-            "日本語を勉強する。"
+            "食べた　食べた。お祝い。凍り付く",
+            "2026年の未知語ヌャムャ",
+            "日本語を勉強する"
         ]
         :
         [
@@ -139,7 +139,7 @@ foreach (var directory in args)
         // 片假名片元没有汉字，词典读法可能是 ハ/ワ；包只给数据，注不注音由界面策略决定，这里只要求不崩。
         Check("ja:kana-token-slice", tokens.Any(t => t.GetProperty("surface").GetString() == "は"));
         // 逗号、句点在词典里没有 kana，必须返回 null 而不是拿发音猜写。
-        Check("ja:punctuation-null-reading", tokens.Where(t => t.GetProperty("surface").GetString() is "。" or "、").All(t => t.GetProperty("reading").ValueKind == JsonValueKind.Null));
+        Check("ja:punctuation-null-reading", tokens.Where(t => t.GetProperty("surface").GetString() is "" or "、").All(t => t.GetProperty("reading").ValueKind == JsonValueKind.Null));
     }
     else
     {

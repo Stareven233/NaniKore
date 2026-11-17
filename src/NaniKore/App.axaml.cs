@@ -116,7 +116,7 @@ public partial class NaniKoreApp : Application
         // 密钥文件无法解密（换用户/换机器/损坏）时不再静默当作未配置（R09）。
         if (_secretStore.CheckReadable())
         {
-            _trayIcon.ShowWarning(_secretStore.LoadWarning ?? "密钥文件无法读取，已拒绝覆盖原始密文。");
+            _trayIcon.ShowWarning(_secretStore.LoadWarning ?? "密钥文件无法读取，已拒绝覆盖原始密文");
         }
 
         // 读取失败时已在上面给出显著警示；不再叠加版本差提示，避免默认回退后的噪音。
@@ -261,13 +261,13 @@ public partial class NaniKoreApp : Application
             }
             catch (Exception exception)
             {
-                ShowFailure("本地 OCR 识别失败。", exception);
+                ShowFailure("本地 OCR 识别失败", exception);
                 return;
             }
 
             if (result.Lines.Count == 0)
             {
-                MessageDialog.Show(_resultPanel, "没有检测到可识别文本。", "可尝试放大选区或换用 vision_oneshot 流程。", InfoSeverity.Neutral);
+                MessageDialog.Show(_resultPanel, "没有检测到可识别文本", "可尝试放大选区或换用 vision_oneshot 流程", InfoSeverity.Neutral);
                 return;
             }
 
@@ -287,15 +287,15 @@ public partial class NaniKoreApp : Application
         }
         catch (Win32Exception exception)
         {
-            ShowFailure("Windows 截图失败。", exception);
+            ShowFailure("Windows 截图失败", exception);
         }
         catch (ExternalException exception)
         {
-            ShowFailure("图像或剪贴板操作失败。", exception);
+            ShowFailure("图像或剪贴板操作失败", exception);
         }
         catch (Exception exception)
         {
-            ShowFailure("选区或本地 OCR 失败。", exception);
+            ShowFailure("选区或本地 OCR 失败", exception);
         }
         finally
         {
@@ -325,7 +325,7 @@ public partial class NaniKoreApp : Application
 
             if (outcome.Kind == PasteInputKind.Empty)
             {
-                _trayIcon?.ShowWarning(outcome.Notice ?? "没有读取到选区文本或可用的剪贴板内容。");
+                _trayIcon?.ShowWarning(outcome.Notice ?? "没有读取到选区文本或可用的剪贴板内容");
                 return;
             }
 
@@ -354,9 +354,9 @@ public partial class NaniKoreApp : Application
             var status = outcome.Kind switch
             {
                 PasteInputKind.ClipboardImage or PasteInputKind.SelectionImage => $"OCR 完成：{outcome.OcrLineCount} 行 · {outcome.OcrElapsed.TotalMilliseconds:N0} ms",
-                PasteInputKind.SelectionText => "已读取选区文本。",
-                PasteInputKind.ClipboardText => "已读取剪贴板文本。",
-                _ => "已读取剪贴板文本。",
+                PasteInputKind.SelectionText => "已读取选区文本",
+                PasteInputKind.ClipboardText => "已读取剪贴板文本",
+                _ => "已读取剪贴板文本",
             };
 
             var autoTranslate = config.General.PasteAutoTranslate;
@@ -373,15 +373,15 @@ public partial class NaniKoreApp : Application
         }
         catch (Win32Exception exception)
         {
-            ShowFailure("读取选区或剪贴板失败。", exception);
+            ShowFailure("读取选区或剪贴板失败", exception);
         }
         catch (ExternalException exception)
         {
-            ShowFailure("图像或剪贴板操作失败。", exception);
+            ShowFailure("图像或剪贴板操作失败", exception);
         }
         catch (Exception exception)
         {
-            ShowFailure("读取选区或剪贴板失败。", exception);
+            ShowFailure("读取选区或剪贴板失败", exception);
         }
         finally
         {
@@ -392,8 +392,8 @@ public partial class NaniKoreApp : Application
     private void ShowVisionUnsupportedReminder(string? extraNotice = null)
     {
         var profile = _configStore.GetActiveProfile();
-        var body = $"配置档「{profile.Name}」未开启 supports_vision，无法把图像直接交给 {profile.Model}。" +
-            "请切换到支持视觉的配置档，或在 设置-翻译 把输入管线改为 local_ocr（改用本地 OCR 识别图像）。";
+        var body = $"配置档「{profile.Name}」未开启 supports_vision，无法把图像直接交给 {profile.Model}" +
+            "请切换到支持视觉的配置档，或在 设置-翻译 把输入管线改为 local_ocr（改用本地 OCR 识别图像）";
         if (extraNotice is { Length: > 0 } notice)
         {
             body += $"{Environment.NewLine}{Environment.NewLine}{notice}";
@@ -452,7 +452,7 @@ public partial class NaniKoreApp : Application
             request = request with { Session = session };
             _currentSession = session;
 
-            var provider = (_providerFactory ?? throw new InvalidOperationException("翻译服务尚未初始化。")).GetProvider(config.Pipeline.ActiveProfile, request);
+            var provider = (_providerFactory ?? throw new InvalidOperationException("翻译服务尚未初始化")).GetProvider(config.Pipeline.ActiveProfile, request);
             await foreach (var delta in provider.StreamAsync(request, cancellation.Token))
             {
                 if (cancellation.IsCancellationRequested || Volatile.Read(ref _translationGeneration) != generation)
@@ -503,7 +503,7 @@ public partial class NaniKoreApp : Application
                         return;
                     }
                     panel.SetStatus(
-                        receivedOutput ? "翻译完成。" : "翻译服务返回空内容。",
+                        receivedOutput ? "翻译完成" : "翻译服务返回空内容",
                         isError: !receivedOutput);
 
                     if (receivedOutput)
@@ -602,7 +602,7 @@ public partial class NaniKoreApp : Application
                 config.General.TargetLanguage,
                 session);
 
-            var provider = (_providerFactory ?? throw new InvalidOperationException("翻译服务尚未初始化。"))
+            var provider = (_providerFactory ?? throw new InvalidOperationException("翻译服务尚未初始化"))
                 .GetProvider(config.Pipeline.ActiveProfile, request);
 
             var fullExplanation = new System.Text.StringBuilder();
@@ -1050,7 +1050,7 @@ public partial class NaniKoreApp : Application
             var apiKey = string.IsNullOrWhiteSpace(pendingApiKey) ? _secretStore.Load(profile.Name) : pendingApiKey;
             using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(profile.TimeoutSeconds));
             await ProviderFactory.TestConnectionAsync(profile, apiKey ?? string.Empty, cancellation.Token);
-            return "连接成功：服务已返回流式内容。";
+            return "连接成功：服务已返回流式内容";
         }
         catch (Exception exception)
         {
@@ -1091,7 +1091,7 @@ public partial class NaniKoreApp : Application
         // ConfigStore 已校验配置；零时长保留资源，其他值按资源各自最后使用结束时间回收。
         if (!ResourceIdleDuration.TryParse(config.General.LocalResourceIdleTimeout, out var timeout))
         {
-            throw new InvalidOperationException("本地资源空闲时长尚未通过配置校验。");
+            throw new InvalidOperationException("本地资源空闲时长尚未通过配置校验");
         }
         _ocrEngine.Configure(timeout);
         PhoneticAnnotatorRegistryHolder.Default.ConfigureIdleTimeout(timeout);

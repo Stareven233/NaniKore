@@ -82,7 +82,7 @@ internal static partial class SelfTest
                 japanese.CountWords("日本語を勉強する") == 3 &&
                 japanese.CountWords("躊躇した") == 1 &&
                 japanese.CountWords("これはiPhoneです") == 0 &&
-                japanese.CountWords("薬の過剰摂取で亡くなった被害者。その原因は致死量を超える6錠の睡眠薬。") >= AnnotationProfile.ShortTextWordThreshold);
+                japanese.CountWords("薬の過剰摂取で亡くなった被害者。その原因は致死量を超える6錠の睡眠薬") >= AnnotationProfile.ShortTextWordThreshold);
         }
 
         var chinese = registry.GetAnnotator("zh");
@@ -442,8 +442,8 @@ internal static partial class SelfTest
 
         Check(
             "书面假名金样本：東京 → とうきょう（不从长音符猜 とーきょう）",
-            Annotated(annotator, "東京へ行く。", new AnnotationContext(shortText)) == "東京[とうきょう]へ行[い]く。",
-            $"actual={Annotated(annotator, "東京へ行く。", new AnnotationContext(shortText))}");
+            Annotated(annotator, "東京へ行く", new AnnotationContext(shortText)) == "東京[とうきょう]へ行[い]く",
+            $"actual={Annotated(annotator, "東京へ行く", new AnnotationContext(shortText))}");
 
         Check(
             "书面假名金样本：躊躇 → ちゅうちょ",
@@ -452,8 +452,8 @@ internal static partial class SelfTest
 
         Check(
             "书面假名金样本：今日 → きょう",
-            Annotated(annotator, "今日はいい天気です。", new AnnotationContext(shortText)) == "今日[きょう]はいい天気[てんき]です。",
-            $"actual={Annotated(annotator, "今日はいい天気です。", new AnnotationContext(shortText))}");
+            Annotated(annotator, "今日はいい天気です", new AnnotationContext(shortText)) == "今日[きょう]はいい天気[てんき]です",
+            $"actual={Annotated(annotator, "今日はいい天気です", new AnnotationContext(shortText))}");
 
         // 凍り付く：后接送假名 く 不在底字里，读音取书面假名 こおりつ（全音便的 こーりつ 不被接受）。
         var frozen = annotator.Annotate("凍り付く", new AnnotationContext(shortText));
@@ -490,7 +490,7 @@ internal static partial class SelfTest
         var mochikaeri = Annotated(annotator, "持ち帰り", new AnnotationContext(shortText));
         Check("内部送假名：持ち帰り → 持ち帰[もちかえ]り", mochikaeri == "持ち帰[もちかえ]り", $"actual={mochikaeri}");
 
-        const string userSentence = "薬の過剰摂取で亡くなった被害者。その原因は致死量を超える6錠の睡眠薬。";
+        const string userSentence = "薬の過剰摂取で亡くなった被害者。その原因は致死量を超える6錠の睡眠薬";
         var userAnnotated = Annotated(annotator, userSentence, new AnnotationContext(AnnotationProfile.Load("ja")));
         Check(
             "小1-2年级240字基准下难词正常注音",
@@ -508,11 +508,11 @@ internal static partial class SelfTest
             repeated == "日本[にっぽん]語[ご]を勉強[べんきょう]する日本[にほん]語",
             $"actual={repeated}");
 
-        var duplicate = annotator.Annotate("躊躇した。また躊躇した。", new AnnotationContext(shortText));
+        var duplicate = annotator.Annotate("躊躇した。また躊躇した", new AnnotationContext(shortText));
         Check(
             "同篇重复词形同读音只注首现",
             duplicate.Count == 1,
-            $"actual={AnnotatedTextFormatter.Compose("躊躇した。また躊躇した。", duplicate)}");
+            $"actual={AnnotatedTextFormatter.Compose("躊躇した。また躊躇した", duplicate)}");
 
         // 未知词、数字、拉丁与纯假名：只有合法汉字底字才产生注音。
         var mixedLatin = annotator.Annotate("これはiPhoneです", new AnnotationContext(shortText));

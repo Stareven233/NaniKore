@@ -59,7 +59,7 @@ internal sealed class ConfigStore
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         return Current.Profiles.FirstOrDefault(profile =>
                    string.Equals(profile.Name, name, StringComparison.OrdinalIgnoreCase))
-               ?? throw new InvalidOperationException($"找不到配置档“{name}”。");
+               ?? throw new InvalidOperationException($"找不到配置档“{name}”");
     }
 
     /// <summary>临时文件写完后再替换，避免崩溃留下半份 YAML。</summary>
@@ -69,7 +69,7 @@ internal sealed class ConfigStore
         // 读取失败时拒绝覆盖原文件（R09）：宁可不保存，也不把无法解析的用户配置静默抹成默认值。
         if (_readFailed)
         {
-            throw new ConfigWriteRefusedException(LoadWarning ?? "config.yaml 读取失败，已拒绝写入。");
+            throw new ConfigWriteRefusedException(LoadWarning ?? "config.yaml 读取失败，已拒绝写入");
         }
 
         Normalize(config, reportWarnings: false);
@@ -156,7 +156,7 @@ internal sealed class ConfigStore
             _ => $"config.yaml 读取失败：{exception.Message}",
         };
 
-        return $"{reason}。为避免覆盖原文件，本次不会写入 config.yaml；请修正或删除 {_configPath} 后重启。";
+        return $"{reason}。为避免覆盖原文件，本次不会写入 config.yaml；请修正或删除 {_configPath} 后重启";
     }
 
     /// <summary>从 YamlException 的标记位置读出出错行原文，拼进说明里点名「有问题的一项」。</summary>
@@ -397,7 +397,7 @@ internal sealed class ConfigStore
 
         if (reportWarnings && normalized)
         {
-            LoadWarning ??= "config.yaml 中的非法配置已回落到默认值。";
+            LoadWarning ??= "config.yaml 中的非法配置已回落到默认值";
         }
     }
 }

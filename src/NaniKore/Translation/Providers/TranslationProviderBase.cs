@@ -66,7 +66,7 @@ internal abstract class TranslationProviderBase : ITranslationProvider
                     if (redirectsRemaining == 0)
                     {
                         response.Dispose();
-                        throw new ProviderTransportPolicyException("翻译服务重定向次数过多，已中止本次请求。");
+                        throw new ProviderTransportPolicyException("翻译服务重定向次数过多，已中止本次请求");
                     }
 
                     if (!TryResolveRedirectTarget(request.RequestUri, response, out var target, out var dropBody, out var policyError))
@@ -122,7 +122,7 @@ internal abstract class TranslationProviderBase : ITranslationProvider
         }
         catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new TaskCanceledException($"请求超过 {Profile.TimeoutSeconds} 秒超时。", innerException: null, cancellationToken);
+            throw new TaskCanceledException($"请求超过 {Profile.TimeoutSeconds} 秒超时", innerException: null, cancellationToken);
         }
     }
 
@@ -151,7 +151,7 @@ internal abstract class TranslationProviderBase : ITranslationProvider
         var location = response.Headers.Location;
         if (location is null)
         {
-            error = "翻译服务返回重定向响应但缺少 Location 头，无法继续。";
+            error = "翻译服务返回重定向响应但缺少 Location 头，无法继续";
             return false;
         }
 
@@ -160,8 +160,8 @@ internal abstract class TranslationProviderBase : ITranslationProvider
         if (!string.Equals(current.Scheme, target.Scheme, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(current.Authority, target.Authority, StringComparison.OrdinalIgnoreCase))
         {
-            error = $"翻译服务要求重定向到其它位置（{current.Scheme}://{current.Authority} → {target.Scheme}://{target.Authority}）。" +
-                    "为避免 API Key 与请求内容被转发到不可信主机，已中止本次请求；请检查 Base URL 或改用直连端点。";
+            error = $"翻译服务要求重定向到其它位置（{current.Scheme}://{current.Authority} → {target.Scheme}://{target.Authority}）" +
+                    "为避免 API Key 与请求内容被转发到不可信主机，已中止本次请求；请检查 Base URL 或改用直连端点";
             return false;
         }
 
@@ -183,7 +183,7 @@ internal abstract class TranslationProviderBase : ITranslationProvider
         {
             throw new ProviderTransportPolicyException(
                 $"远程翻译端点必须使用 HTTPS（当前为 {endpoint.Scheme}://{endpoint.Authority}）；" +
-                "仅本地回环地址（localhost、127.0.0.1、::1）允许明文 HTTP。请改用 HTTPS 端点。");
+                "仅本地回环地址（localhost、127.0.0.1、::1）允许明文 HTTP。请改用 HTTPS 端点");
         }
     }
 

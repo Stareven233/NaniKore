@@ -83,12 +83,12 @@ internal sealed class NativePhoneticPackInstaller
 
         var failure = NativePhoneticPackVerifier.Verify(pack, staging, out var detail);
         if (failure != NativePhoneticPackageFailure.None)
-            throw new InvalidDataException(NativePhoneticPackageFailureText.Describe(failure, pack, detail) + " 请重试下载。");
+            throw new InvalidDataException(NativePhoneticPackageFailureText.Describe(failure, pack, detail) + " 请重试下载");
 
         if (NativePhoneticLibrary.IsLanguageLoaded(pack.Language))
         {
             // 正在使用的 DLL 不能被覆盖：暂存目录留着，重启时由 ApplyStagedPacks 提升。
-            progress?.Report($"{pack.DisplayName}语言包已下载到暂存目录，重启后生效。");
+            progress?.Report($"{pack.DisplayName}语言包已下载到暂存目录，重启后生效");
             return new NativePhoneticInstallOutcome(RequiresRestart: true);
         }
 
@@ -149,7 +149,7 @@ internal sealed class NativePhoneticPackInstaller
         {
             var target = Path.GetFullPath(Path.Combine(destination, entry.FullName));
             if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("语言包 ZIP 含有越界路径。");
+                throw new InvalidDataException("语言包 ZIP 含有越界路径");
             if (string.IsNullOrEmpty(entry.Name))
             {
                 Directory.CreateDirectory(target);
@@ -188,7 +188,7 @@ internal sealed class NativePhoneticPackInstaller
                 var actual = NativePhoneticPackVerifier.HashFile(temporary);
                 if (!string.Equals(actual, expectedSha256, StringComparison.OrdinalIgnoreCase))
                 {
-                    throw new InvalidDataException($"SHA-256 校验失败（期望 {expectedSha256}，实际 {actual}）。请重试下载。");
+                    throw new InvalidDataException($"SHA-256 校验失败（期望 {expectedSha256}，实际 {actual}）。请重试下载");
                 }
             }
 

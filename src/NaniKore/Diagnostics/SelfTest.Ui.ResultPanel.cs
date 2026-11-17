@@ -262,7 +262,7 @@ internal static partial class SelfTest
             mb.Color.A == tb.Color.A);
 
         // 布局回归：外层 SelectableTextBlock 固定 LineHeight=36 时，注音控件不得继承行高被撑到整行而溢出原文区
-        const string wrapText = "不行就去银行，银行里的人很多，长大以后再说。";
+        const string wrapText = "不行就去银行，银行里的人很多，长大以后再说";
         var wrapSpans = new List<AnnotationSpan>();
         foreach (var word in new[] { "不行", "银行", "人", "多", "长大", "再说" })
         {
@@ -658,7 +658,7 @@ internal static partial class SelfTest
             languageBox is { Items.Count: 4 });
 
         panel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = true, RareOnly = true });
-        const string source = "彼は躊躇なく答えた。";
+        const string source = "彼は躊躇なく答えた";
         panel.Reset(source, "test", autoTranslate: false);
         WaitForAnnotation(panel);
         Check(
@@ -802,23 +802,23 @@ internal static partial class SelfTest
 
         panel.Append(new UnderstandDelta(DeltaChannel.SourceText, "私[わたし]は"));
         panel.Append(new UnderstandDelta(DeltaChannel.SourceText, " 学生[がくせい]"));
-        panel.Append(new UnderstandDelta(DeltaChannel.SourceText, "です。"));
-        panel.Append(new UnderstandDelta(DeltaChannel.Translation, "我是学生。"));
+        panel.Append(new UnderstandDelta(DeltaChannel.SourceText, "です"));
+        panel.Append(new UnderstandDelta(DeltaChannel.Translation, "我是学生"));
         panel.SetTranslationInProgress(false);
         Check(
             "streaming source text delta updates flow document and plain text in real time, and finishes with translate button",
             viewerBorder?.IsVisible == true &&
-            panel.SourceText == "私は 学生です。" &&
-            sourceBox?.Text == "私は 学生です。" &&
+            panel.SourceText == "私は 学生です" &&
+            sourceBox?.Text == "私は 学生です" &&
             translateButton?.Content as string == "翻译" &&
-            translationBox?.Text == "我是学生。" &&
+            translationBox?.Text == "我是学生" &&
             !(translationBox.Text?.Contains("思考中") ?? false));
 
         // 7. 产出有效译文后，再次实质修改或规范化激活「重译」；点击时编辑内容立即提交为事实源
         panel.EnterEditMode();
         if (sourceBox is not null)
         {
-            sourceBox.Text = "私[わたし]は 先生[せんせい]です。";
+            sourceBox.Text = "私[わたし]は 先生[せんせい]です";
             sourceBox.RaiseEvent(new RoutedEventArgs(InputElement.LostFocusEvent));
         }
         Check(
@@ -834,14 +834,14 @@ internal static partial class SelfTest
         Check(
             "clicking 重译 raises TranslateRequested with modified text intact",
             translateRequestedRaised &&
-            panel.SourceText == "私[わたし]は 先生[せんせい]です。" &&
+            panel.SourceText == "私[わたし]は 先生[せんせい]です" &&
             viewerBorder?.IsVisible == true &&
             sourceBox?.IsVisible == false);
 
         panel.BeginTranslation();
         Check(
             "begin translation preserves modified source instead of reverting to initial source",
-            panel.SourceText == "私[わたし]は 先生[せんせい]です。");
+            panel.SourceText == "私[わたし]は 先生[せんせい]です");
     }
 
     /// <summary>旧请求仍在取消时，新输入必须立即恢复操作状态，允许手动开始下一次翻译。</summary>
@@ -913,7 +913,7 @@ internal static partial class SelfTest
         var panel = new ResultPanelWindow();
         panel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = false, RareOnly = true });
         panel.Reset("こ こ は  通[とお]れないよ", "OCR 完成", autoTranslate: true);
-        panel.Append(new UnderstandDelta(DeltaChannel.Translation, "这里过不去哦。"));
+        panel.Append(new UnderstandDelta(DeltaChannel.Translation, "这里过不去哦"));
         panel.SetMetrics(new TranslationMetrics(320, 45, 680, 1750, 42.1));
 
         var scroller = Find<ScrollViewer>(panel, "ContentScrollViewer");
@@ -985,7 +985,7 @@ internal static partial class SelfTest
             $"tall={tallHeight:F0} short={shortHeight:F0}");
 
         // 长精讲也必须保持窗口分配的高度，超出的正文留在内部滚动。
-        explanationView.SetText("## 语境\n" + string.Join("\n\n", Enumerable.Repeat("这是一段用于验证精讲内部滚动的长文本。", 100)));
+        explanationView.SetText("## 语境\n" + string.Join("\n\n", Enumerable.Repeat("这是一段用于验证精讲内部滚动的长文本", 100)));
         var longContentHeight = MeasureExplanationHeight(panel, page, explanationView, 900, 1000);
         Check(
             "long explanation stays within the allocated region",
@@ -1101,7 +1101,7 @@ internal static partial class SelfTest
         EnsureThemedApplication();
         var panel = new ResultPanelWindow();
         panel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = true });
-        const string source = "彼は躊躇なく答えた。";
+        const string source = "彼は躊躇なく答えた";
         panel.Reset(source, "test", autoAnnotate: false);
         panel.AnnotateSourceAsync().GetAwaiter().GetResult();
         Check("translation completion cannot bypass disabled automatic annotation",
@@ -1140,7 +1140,7 @@ internal static partial class SelfTest
 
         var panel = new ResultPanelWindow();
         panel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = true, RareOnly = true });
-        panel.Reset("彼は躊躇なく答えた。", "OCR 完成", autoTranslate: false);
+        panel.Reset("彼は躊躇なく答えた", "OCR 完成", autoTranslate: false);
 
         var annotateButton = Find<Button>(panel, "AnnotateSourceButton");
         var normalizeButton = Find<Button>(panel, "NormalizeSourceButton");
@@ -1172,14 +1172,14 @@ internal static partial class SelfTest
             "clicking annotate switches plain edit mode into ruby reading view without translating",
             viewerBorder?.IsVisible == true &&
             !translateRequested &&
-            string.Equals(panel.SourceText, "彼は躊躇なく答えた。", StringComparison.Ordinal));
+            string.Equals(panel.SourceText, "彼は躊躇なく答えた", StringComparison.Ordinal));
 
         if (PhoneticAnnotatorRegistryHolder.Default.GetAnnotator("ja")?.IsAvailable == true)
         {
             Check(
                 "clicking annotate overlays furigana while the plain source stays the single source of truth",
                 panel.AnnotatedSourceText.Contains('[') &&
-                string.Equals(RubyTextParser.ToPlainText(panel.AnnotatedSourceText), "彼は躊躇なく答えた。", StringComparison.Ordinal));
+                string.Equals(RubyTextParser.ToPlainText(panel.AnnotatedSourceText), "彼は躊躇なく答えた", StringComparison.Ordinal));
         }
         else
         {
@@ -1195,10 +1195,10 @@ internal static partial class SelfTest
 
         Check(
             "annotate with empty source shows a gentle hint instead of failing",
-            statusBar?.Text == "没有可注音的原文。");
+            statusBar?.Text == "没有可注音的原文");
 
         // 总开关关闭：软降级并提示
-        panel.Reset("彼は躊躇なく答えた。", "OCR 完成", autoTranslate: false);
+        panel.Reset("彼は躊躇なく答えた", "OCR 完成", autoTranslate: false);
         panel.SetPhoneticsOptions(new PhoneticsConfig { Enabled = false, RareOnly = true });
         if (annotateButton is not null)
         {
@@ -1208,7 +1208,7 @@ internal static partial class SelfTest
         Check(
             "annotate with phonetics disabled degrades gracefully with a settings hint",
             statusBar?.Text?.Contains("设置-通用") == true &&
-            string.Equals(panel.SourceText, "彼は躊躇なく答えた。", StringComparison.Ordinal));
+            string.Equals(panel.SourceText, "彼は躊躇なく答えた", StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -1235,7 +1235,7 @@ internal static partial class SelfTest
             panel.AnnotatedSourceText == "日本[にっぽん]語[ご]を勉強[べんきょう]する",
             $"actual={panel.AnnotatedSourceText}");
 
-        const string longSource = "先生は日本語で問題を説明して、生徒たちは静かに聞いていた。その後みんなで復习を始めた。";
+        const string longSource = "先生は日本語で問題を説明して、生徒たちは静かに聞いていた。その後みんなで復习を始めた";
         panel.Reset(longSource, "OCR 完成", autoTranslate: false);
         WaitForAnnotation(panel);
         Check(
@@ -1326,8 +1326,8 @@ internal static partial class SelfTest
         }
         Check("expanding explanation expander raises ExplanationRequested event", explanationRequested);
 
-        panel.Append(new UnderstandDelta(DeltaChannel.Translation, "这里过不去哦。"));
-        Check("translation text is established before explanation", translationBox?.Text == "这里过不去哦。");
+        panel.Append(new UnderstandDelta(DeltaChannel.Translation, "这里过不去哦"));
+        Check("translation text is established before explanation", translationBox?.Text == "这里过不去哦");
 
         panel.BeginExplanation();
         Check(
@@ -1344,7 +1344,7 @@ internal static partial class SelfTest
         panel.Append(new UnderstandDelta(DeltaChannel.Explanation, "### [词汇/短语]\n- **通る** | とおる"));
         Check(
             "explanation delta arriving seamlessly restores saved translation in TranslationTextBox",
-            translationBox?.Text == "这里过不去哦。" &&
+            translationBox?.Text == "这里过不去哦" &&
             !(translationBox.Text?.Contains("思考中") ?? false));
 
         panel.Append(new UnderstandDelta(DeltaChannel.Explanation, " | 动词原形 | 通过\n\n### [语法/句型]\n- **～ない** | 否定表达"));
@@ -1358,7 +1358,7 @@ internal static partial class SelfTest
 
         panel.CompleteExplanation(true);
         Check("CompleteExplanation restores title to normal header", expander?.Header as string == "📖 精讲与语法解析");
-        Check("CompleteExplanation retains restored translation text", translationBox?.Text == "这里过不去哦。");
+        Check("CompleteExplanation retains restored translation text", translationBox?.Text == "这里过不去哦");
 
         // 异常结束兜底恢复
         panel.BeginExplanation();
@@ -1367,7 +1367,7 @@ internal static partial class SelfTest
         panel.CompleteExplanation(false);
         Check(
             "CompleteExplanation on failure restores saved translation text",
-            translationBox?.Text == "这里过不去哦。" &&
+            translationBox?.Text == "这里过不去哦" &&
             !(translationBox.Text?.Contains("思考中") ?? false));
 
         panel.BeginTranslation();
@@ -1427,7 +1427,7 @@ internal static partial class SelfTest
             cardView.VocabularyItems[0].FavoriteIcon == "★" &&
             cardView.VocabularyItems[1].FavoriteIcon == "☆");
 
-        cardView.SetText("这是一段非结构化的纯文本精讲，没有按格式分块。");
+        cardView.SetText("这是一段非结构化的纯文本精讲，没有按格式分块");
         Check(
             "ExplanationCardView degrades to fallback textbox when format unrecognized",
             cardView.IsDegraded);

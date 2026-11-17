@@ -158,7 +158,7 @@ internal sealed partial class ResultPanelWindow : Window
         {
             if (isDegraded)
             {
-                SetStatus("未能完全识别为微结构化卡片，已展示原始排版精讲。");
+                SetStatus("未能完全识别为微结构化卡片，已展示原始排版精讲");
             }
         };
 
@@ -611,7 +611,7 @@ internal sealed partial class ResultPanelWindow : Window
         {
             if (manual)
             {
-                ShowStatusSafe("原文注音已在设置-通用中关闭。");
+                ShowStatusSafe("原文注音已在设置-通用中关闭");
             }
             return;
         }
@@ -640,7 +640,7 @@ internal sealed partial class ResultPanelWindow : Window
         {
             if (manual)
             {
-                ShowStatusSafe($"暂不支持{displayName}注音。");
+                ShowStatusSafe($"暂不支持{displayName}注音");
             }
             return;
         }
@@ -669,7 +669,7 @@ internal sealed partial class ResultPanelWindow : Window
             {
                 if (manual && !cancellation.IsCancellationRequested)
                 {
-                    ShowStatusSafe($"未安装{displayName}词典，请前往设置-通用-原文注音下载；当前以纯文本展示原文。");
+                    ShowStatusSafe($"未安装{displayName}词典，请前往设置-通用-原文注音下载；当前以纯文本展示原文");
                 }
                 return;
             }
@@ -752,8 +752,8 @@ internal sealed partial class ResultPanelWindow : Window
         if (manual)
         {
             SetStatus(spans.Count == 0
-                ? $"已按{displayName}重新注音：没有可标注的单词。"
-                : $"已按{displayName}重新注音（{spans.Count} 词）。");
+                ? $"已按{displayName}重新注音：没有可标注的单词"
+                : $"已按{displayName}重新注音（{spans.Count} 词）");
         }
     }
 
@@ -1002,7 +1002,7 @@ internal sealed partial class ResultPanelWindow : Window
         var normalized = SourceTextNormalizer.Normalize(original);
         if (string.Equals(original, normalized, StringComparison.Ordinal))
         {
-            SetStatus(string.IsNullOrWhiteSpace(original) ? "没有可规范化的原文。" : "原文已经是规范格式。");
+            SetStatus(string.IsNullOrWhiteSpace(original) ? "没有可规范化的原文" : "原文已经是规范格式");
             return;
         }
 
@@ -1014,12 +1014,12 @@ internal sealed partial class ResultPanelWindow : Window
 
         if (_translationHasContent)
         {
-            SetStatus("原文已规范化，请点击“重译”使用新文本。");
+            SetStatus("原文已规范化，请点击“重译”使用新文本");
             TranslateButton.Content = "重译";
         }
         else
         {
-            SetStatus("原文已规范化。");
+            SetStatus("原文已规范化");
             TranslateButton.Content = "翻译";
         }
     }
@@ -1032,7 +1032,7 @@ internal sealed partial class ResultPanelWindow : Window
         if (!string.IsNullOrEmpty(text))
         {
             await RubyInlineControl.SetClipboardTextAsync(TopLevel.GetTopLevel(this)?.Clipboard, text);
-            SetStatus(hasSelection ? "已复制选中原文到剪贴板。" : "已复制纯原文到剪贴板。");
+            SetStatus(hasSelection ? "已复制选中原文到剪贴板" : "已复制纯原文到剪贴板");
         }
     }
 
@@ -1044,7 +1044,7 @@ internal sealed partial class ResultPanelWindow : Window
         if (!string.IsNullOrEmpty(text))
         {
             await RubyInlineControl.SetClipboardTextAsync(TopLevel.GetTopLevel(this)?.Clipboard, text);
-            SetStatus(hasSelection ? "已复制选中带注音文本到剪贴板。" : "已复制带注音文本到剪贴板。");
+            SetStatus(hasSelection ? "已复制选中带注音文本到剪贴板" : "已复制带注音文本到剪贴板");
         }
     }
 
@@ -1057,7 +1057,7 @@ internal sealed partial class ResultPanelWindow : Window
         {
             await RubyInlineControl.SetClipboardTextAsync(TopLevel.GetTopLevel(this)?.Clipboard, text);
             var reading = RubyReadingTerms.Reading(_sourceReadingKind);
-            SetStatus(hasSelection ? $"已复制选中纯{reading}到剪贴板。" : $"已复制纯{reading}到剪贴板。");
+            SetStatus(hasSelection ? $"已复制选中纯{reading}到剪贴板" : $"已复制纯{reading}到剪贴板");
         }
     }
 
@@ -1147,7 +1147,7 @@ internal sealed partial class ResultPanelWindow : Window
             if (_translationHasContent)
             {
                 TranslateButton.Content = "重译";
-                SetStatus("原文已修改，请点击“重译”。");
+                SetStatus("原文已修改，请点击“重译”");
             }
             else
             {
@@ -1204,13 +1204,13 @@ internal sealed partial class ResultPanelWindow : Window
         CommitEditingSourceIfActive();
         if (string.IsNullOrWhiteSpace(SourceText))
         {
-            SetStatus("没有可注音的原文。");
+            SetStatus("没有可注音的原文");
             return;
         }
 
         if (!_phonetics.Enabled)
         {
-            SetStatus("原文注音已在设置-通用中关闭。");
+            SetStatus("原文注音已在设置-通用中关闭");
             return;
         }
 
@@ -1218,7 +1218,7 @@ internal sealed partial class ResultPanelWindow : Window
         {
             _isRubyVisible = !_isRubyVisible;
             UpdateSourceViewerDisplay();
-            SetStatus(_isRubyVisible ? "已开启原文注音显示。" : "已切换为纯文本显示。");
+            SetStatus(_isRubyVisible ? "已开启原文注音显示" : "已切换为纯文本显示");
         }
         else
         {

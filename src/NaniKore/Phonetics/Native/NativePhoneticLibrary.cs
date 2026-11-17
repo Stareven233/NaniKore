@@ -61,7 +61,7 @@ internal static class NativePhoneticPackageFailureText
             _ => $"{name}注音语言包不可用" + Suffix(detail),
         };
 
-        static string Suffix(string? detail) => string.IsNullOrWhiteSpace(detail) ? "。" : $"：{detail}";
+        static string Suffix(string? detail) => string.IsNullOrWhiteSpace(detail) ? "" : $"：{detail}";
     }
 }
 

@@ -126,7 +126,7 @@ internal static partial class SelfTest
         using (library)
         {
             Check("ja ABI 版本为 1", library!.AbiVersion == NativePhoneticManifest.AbiVersion);
-            const string text = "東京へ行く。";
+            const string text = "東京へ行く";
             // 冷加载发生在第一次真正触碰引擎的调用上（词表解析），实测值记入 issue 009 报告。
             var coldWatch = System.Diagnostics.Stopwatch.StartNew();
             var result = library.Annotate(text);

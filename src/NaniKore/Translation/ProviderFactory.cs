@@ -30,7 +30,7 @@ internal sealed class ProviderFactory : IDisposable
         // 档名是配置档唯一身份（issue 017）：查找、缓存与密钥索引全部用它。
         var profile = _config.Profiles.FirstOrDefault(item =>
             string.Equals(item.Name, profileName, StringComparison.OrdinalIgnoreCase))
-            ?? throw new ProviderConfigurationException($"找不到配置档“{profileName}”。");
+            ?? throw new ProviderConfigurationException($"找不到配置档“{profileName}”");
 
         var capabilities = GetCapabilities(profile);
         ValidateCapabilities(request, capabilities);
@@ -39,7 +39,7 @@ internal sealed class ProviderFactory : IDisposable
             var apiKey = _secrets.Load(profile.Name);
             if (string.IsNullOrWhiteSpace(apiKey))
             {
-                throw new ProviderConfigurationException($"配置档“{profile.Name}”尚未设置可用的 API Key，请先打开设置保存密钥。");
+                throw new ProviderConfigurationException($"配置档“{profile.Name}”尚未设置可用的 API Key，请先打开设置保存密钥");
             }
 
             provider = CreateProvider(profile, apiKey, _config.Prompts);
@@ -55,7 +55,7 @@ internal sealed class ProviderFactory : IDisposable
     {
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            throw new ProviderConfigurationException("请先输入 API Key 再测试连接。");
+            throw new ProviderConfigurationException("请先输入 API Key 再测试连接");
         }
 
         using var provider = CreateProvider(profile, apiKey, new PromptConfig());
@@ -63,7 +63,7 @@ internal sealed class ProviderFactory : IDisposable
         await using var enumerator = provider.StreamAsync(request, cancellationToken).GetAsyncEnumerator(cancellationToken);
         if (!await enumerator.MoveNextAsync().ConfigureAwait(false))
         {
-            throw new InvalidOperationException("服务已连接，但没有返回任何文本。");
+            throw new InvalidOperationException("服务已连接，但没有返回任何文本");
         }
     }
 
@@ -75,17 +75,17 @@ internal sealed class ProviderFactory : IDisposable
     {
         if (!string.IsNullOrWhiteSpace(request.SourceText) && !capabilities.HasFlag(ProviderCapabilities.Text))
         {
-            throw new ProviderCapabilityException("该配置档未声明文本输入能力。");
+            throw new ProviderCapabilityException("该配置档未声明文本输入能力");
         }
 
         if (request.ImagePng is { Length: > 0 } && !capabilities.HasFlag(ProviderCapabilities.Vision))
         {
-            throw new ProviderCapabilityException("该配置档未声明图像输入能力，请改用 local_ocr 模式或在设置里勾选此模型支持图像。");
+            throw new ProviderCapabilityException("该配置档未声明图像输入能力，请改用 local_ocr 模式或在设置里勾选此模型支持图像");
         }
 
         if (string.IsNullOrWhiteSpace(request.SourceText) && request.ImagePng is null)
         {
-            throw new ProviderCapabilityException("翻译请求必须包含文本或图像。");
+            throw new ProviderCapabilityException("翻译请求必须包含文本或图像");
         }
     }
 
@@ -196,6 +196,6 @@ internal sealed class ProviderFactory : IDisposable
             "openai" => new OpenAiProvider(profile, apiKey, prompts),
             "claude" => new ClaudeProvider(profile, apiKey, prompts),
             "gemini" => new GeminiProvider(profile, apiKey, prompts),
-            _ => throw new ProviderConfigurationException($"不支持的 provider 类型“{profile.Kind}”。"),
+            _ => throw new ProviderConfigurationException($"不支持的 provider 类型“{profile.Kind}”"),
         };
 }

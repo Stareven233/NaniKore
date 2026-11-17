@@ -150,7 +150,7 @@ internal static partial class SelfTest
                 Check($"invalid YAML idle duration {invalid} warns and resets only that field",
                     loaded.Current.General.LocalResourceIdleTimeout == "0" &&
                     loaded.Current.General.TargetLanguage == "English" &&
-                    loaded.LoadWarning == "config.yaml 中的非法配置已回落到默认值。");
+                    loaded.LoadWarning == "config.yaml 中的非法配置已回落到默认值");
             }
 
             foreach (var value in new string?[] { "0", "30s", "10m", "24h", null, "", "invalid" })
@@ -290,7 +290,7 @@ internal static partial class SelfTest
                     loaded.Current.Windows.BackgroundBlur == 0 &&
                     loaded.Current.Windows.BackgroundOpacity == 1 &&
                     loaded.Current.Windows.PanelBackgroundOpacity == 1 &&
-                    loaded.LoadWarning == "config.yaml 中的非法配置已回落到默认值。");
+                    loaded.LoadWarning == "config.yaml 中的非法配置已回落到默认值");
 
                 loaded.Current.Windows.BackgroundImage = null!;
                 loaded.Current.Windows.BackgroundBlur = blur;

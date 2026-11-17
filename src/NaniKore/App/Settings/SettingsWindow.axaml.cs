@@ -197,7 +197,7 @@ internal sealed partial class SettingsWindow : Window
         if (string.Equals(_working.Pipeline.Mode, "vision_oneshot", StringComparison.OrdinalIgnoreCase) && !active.SupportsVision)
         {
             SelectTab(SettingsTab.Translation);
-            FooterStatus.Show("vision_oneshot 需要当前配置档声明支持图像输入。", InfoSeverity.Warning);
+            FooterStatus.Show("vision_oneshot 需要当前配置档声明支持图像输入", InfoSeverity.Warning);
             return;
         }
 
@@ -220,7 +220,7 @@ internal sealed partial class SettingsWindow : Window
     /// <summary>保存成功提示只短暂显示，避免长期占用页脚状态区域。</summary>
     private void ShowSavedStatus()
     {
-        FooterStatus.Show("设置已保存。", InfoSeverity.Success);
+        FooterStatus.Show("设置已保存", InfoSeverity.Success);
         _successStatusTimer.Stop();
         _successStatusTimer.Start();
     }
@@ -229,7 +229,7 @@ internal sealed partial class SettingsWindow : Window
     {
         _successStatusTimer.Stop();
         // 只有当前仍是本次保存产生的成功提示时才清除，避免覆盖后续的校验或错误信息。
-        if (FooterStatus.Severity == InfoSeverity.Success && FooterStatus.Message == "设置已保存。")
+        if (FooterStatus.Severity == InfoSeverity.Success && FooterStatus.Message == "设置已保存")
         {
             FooterStatus.Clear();
         }

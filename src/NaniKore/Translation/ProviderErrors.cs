@@ -61,21 +61,21 @@ internal static class ProviderErrorMapper
             var detail = http.ServerMessage ?? string.Empty;
             return http.StatusCode switch
             {
-                HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => "API Key 无效或没有访问权限，请在设置中检查该配置档的密钥。",
-                HttpStatusCode.NotFound => $"找不到服务或模型。请检查配置档“{profileName ?? "当前"}”的模型“{model ?? ""}”与 Base URL“{baseUrl ?? ""}”。",
-                (HttpStatusCode)429 => "请求受到限流，请稍后重试或切换配置档。",
+                HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => "API Key 无效或没有访问权限，请在设置中检查该配置档的密钥",
+                HttpStatusCode.NotFound => $"找不到服务或模型。请检查配置档“{profileName ?? "当前"}”的模型“{model ?? ""}”与 Base URL“{baseUrl ?? ""}”",
+                (HttpStatusCode)429 => "请求受到限流，请稍后重试或切换配置档",
                 HttpStatusCode.BadRequest or HttpStatusCode.InternalServerError when ContainsVisionHint(detail) =>
-                    "当前路由的模型未启用图像输入（多模态）。请在上游启用 multimodal processing，或切换支持视觉的模型。",
-                HttpStatusCode.BadRequest => string.IsNullOrWhiteSpace(detail) ? "请求参数被服务端拒绝。" : detail,
-                _ => string.IsNullOrWhiteSpace(detail) ? $"服务端返回 HTTP {(int)http.StatusCode}。" : detail,
+                    "当前路由的模型未启用图像输入（多模态）。请在上游启用 multimodal processing，或切换支持视觉的模型",
+                HttpStatusCode.BadRequest => string.IsNullOrWhiteSpace(detail) ? "请求参数被服务端拒绝" : detail,
+                _ => string.IsNullOrWhiteSpace(detail) ? $"服务端返回 HTTP {(int)http.StatusCode}" : detail,
             };
         }
 
         return exception switch
         {
-            TaskCanceledException => "请求已超时；若网络正常，请在设置中调大 timeout_seconds。",
-            HttpRequestException => "无法连接到翻译服务，请检查网络和 Base URL。",
-            IOException => "翻译输出在传输中中断，已保留收到的部分内容。",
+            TaskCanceledException => "请求已超时；若网络正常，请在设置中调大 timeout_seconds",
+            HttpRequestException => "无法连接到翻译服务，请检查网络和 Base URL",
+            IOException => "翻译输出在传输中中断，已保留收到的部分内容",
             _ => $"翻译失败：{exception.Message}",
         };
     }

@@ -116,7 +116,7 @@ internal sealed class OcrDependencyDownloader
         }
 
         throw new InvalidOperationException(
-            $"无法下载依赖文件 {file.RelativePath}。" + Environment.NewLine + string.Join(Environment.NewLine, errors));
+            $"无法下载依赖文件 {file.RelativePath}" + Environment.NewLine + string.Join(Environment.NewLine, errors));
     }
 
     private static async Task DownloadAndVerifyAsync(

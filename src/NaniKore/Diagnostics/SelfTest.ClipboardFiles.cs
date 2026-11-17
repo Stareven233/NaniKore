@@ -32,28 +32,28 @@ internal static partial class SelfTest
         void WriteBlock(uint id, byte[] bytes)
         {
             var memory = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, (nuint)bytes.Length);
-            if (memory == 0) throw new ExternalException("测试数据分配失败。");
+            if (memory == 0) throw new ExternalException("测试数据分配失败");
             var pointer = NativeMethods.GlobalLock(memory);
             if (pointer == 0)
             {
                 NativeMethods.GlobalFree(memory);
-                throw new ExternalException("测试数据锁定失败。");
+                throw new ExternalException("测试数据锁定失败");
             }
             Marshal.Copy(bytes, 0, pointer, bytes.Length);
             NativeMethods.GlobalUnlock(memory);
             if (NativeMethods.SetClipboardData(id, memory) == 0)
             {
                 NativeMethods.GlobalFree(memory);
-                throw new ExternalException("测试剪贴板写入失败。");
+                throw new ExternalException("测试剪贴板写入失败");
             }
         }
 
         void Seed(uint effect)
         {
-            if (!NativeMethods.OpenClipboard(0)) throw new ExternalException("测试剪贴板无法打开。");
+            if (!NativeMethods.OpenClipboard(0)) throw new ExternalException("测试剪贴板无法打开");
             try
             {
-                if (!NativeMethods.EmptyClipboard()) throw new ExternalException("测试剪贴板无法清空。");
+                if (!NativeMethods.EmptyClipboard()) throw new ExternalException("测试剪贴板无法清空");
                 WriteBlock(fileDropId, dropBytes);
                 WriteBlock(effectId, BitConverter.GetBytes(effect));
                 WriteBlock(idListId, idList);
@@ -63,7 +63,7 @@ internal static partial class SelfTest
 
         void CheckFiles(string label, uint effect)
         {
-            if (!NativeMethods.OpenClipboard(0)) throw new ExternalException("测试剪贴板无法读取。");
+            if (!NativeMethods.OpenClipboard(0)) throw new ExternalException("测试剪贴板无法读取");
             try
             {
                 var formatIds = new List<uint>();
@@ -105,7 +105,7 @@ internal static partial class SelfTest
             var timer = System.Diagnostics.Stopwatch.StartNew();
             return new PasteInputRequest(
                 ClipboardImageRoute.DirectFeed,
-                _ => throw new InvalidOperationException("文件引用不应调用 OCR。"),
+                _ => throw new InvalidOperationException("文件引用不应调用 OCR"),
                 gateway, copy, _ =>
                 {
                     if (timer.Elapsed >= PasteInputAcquirer.PollTimeout) return false;

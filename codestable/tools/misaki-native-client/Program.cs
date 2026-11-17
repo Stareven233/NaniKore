@@ -42,7 +42,7 @@ static class Program
 
         Console.WriteLine($"[client] ping = {ping()}");
         Console.WriteLine($"[client] zh  = {Call(zh, "你好，世界！")}");
-        Console.WriteLine($"[client] ja  = {Call(ja, "睡眠薬を過剰摂取すると致死量になる。")}");
+        Console.WriteLine($"[client] ja  = {Call(ja, "睡眠薬を過剰摂取すると致死量になる")}");
         Console.WriteLine($"[client] en  = {Call(en, "They will record a new record tomorrow.")}");
         Console.WriteLine("[client] 完成（若以上有值，说明 66MB 词典可外置为原生 DLL、主程序可很小）");
     }

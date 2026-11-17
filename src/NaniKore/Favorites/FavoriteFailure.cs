@@ -26,6 +26,6 @@ public static class FavoriteFailure
             _ => ("收藏数据读写失败", "请稍后重试"),
         };
 
-        return $"{action}失败：{reason}（{hint}）。";
+        return $"{action}失败：{reason}（{hint}）";
     }
 }

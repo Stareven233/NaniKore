@@ -17,7 +17,7 @@ foreach (var path in args)
     var ja = Path.GetFileName(path).Contains("Ja", StringComparison.Ordinal);
     var patched = Path.GetFileName(path).Contains("Patched", StringComparison.Ordinal);
     string[] samples = ja
-        ? ["躊躇した。東京へ行く。今日はいい天気。", "😀東京 東京\t躊躇\r\n東京", "食べた　食べた。お祝い。凍り付く。", "日本語を勉強する。", "2026年の未知語ヌャムャ。"]
+        ? ["躊躇した。東京へ行く。今日はいい天気", "😀東京 東京\t躊躇\r\n東京", "食べた　食べた。お祝い。凍り付く", "日本語を勉強する", "2026年の未知語ヌャムャ"]
         : ["They will record a new record tomorrow.", "I read a book yesterday, but please read it again.", "The 2026 price is $50 for Dr. Smith.", "😀 read read.\tNASA U.S. ZZQX. Bob's studies abandoned.", "  [record](/zzz/) record\r\nread", "The doctor has an apple and a book.", "Blorptastic qzxwvbnm.",
             "I read every day.", "They read it yesterday.", "He can lead the way with a lead pipe.", "The water is better in the city."];
     var runs = new List<(string Text, JsonElement Result, double Milliseconds)>();

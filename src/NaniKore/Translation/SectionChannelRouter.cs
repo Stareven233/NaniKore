@@ -335,6 +335,12 @@ internal sealed class SectionChannelRouter
 
     private static readonly string[] ExplanationSectionPrefixes =
     [
+        "\r\n### [词汇/短语]",
+        "\n### [词汇/短语]",
+        "\r\n### [词汇/",
+        "\n### [词汇/",
+        "\r\n### 词汇/",
+        "\n### 词汇/",
         "\r\n### [词汇",
         "\n### [词汇",
         "\r\n### 重点词汇",
@@ -458,6 +464,8 @@ internal sealed class SectionChannelRouter
         {
             text = text.Replace(noise, string.Empty, StringComparison.OrdinalIgnoreCase);
         }
+
+        text = text.TrimEnd('\r', '\n', ' ');
 
         return text.Trim();
     }

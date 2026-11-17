@@ -369,7 +369,7 @@ internal static partial class SelfTest
         var selectionUnsupported = new FakeClipboardGateway { Current = ClipboardSnapshot.FromText("旧文本") };
         selectionUnsupported.CopyReplacesClipboardWithImage();
         var selectionUnsupportedOutcome = PasteInputAcquirer.Acquire(Request(selectionUnsupported, ClipboardImageRoute.UnsupportedVision, _ =>
-            throw new InvalidOperationException("能力不符时绝不应启动 OCR。")));
+            throw new InvalidOperationException("能力不符时绝不应启动 OCR")));
         Check(
             "a selection image with no vision support reports back for a user-facing reminder",
             selectionUnsupportedOutcome.Kind == PasteInputKind.VisionUnsupported &&
@@ -418,7 +418,7 @@ internal static partial class SelfTest
                 new SKBitmap(8, 6, SKColorType.Bgra8888, SKAlphaType.Premul))
         };
         var mixedOutcome = PasteInputAcquirer.Acquire(Request(mixed, ClipboardImageRoute.LocalOcr, _ =>
-            throw new InvalidOperationException("文本优先时绝不应启动 OCR。")));
+            throw new InvalidOperationException("文本优先时绝不应启动 OCR")));
         Check(
             "clipboard text wins over a coexisting image without ever starting ocr",
             mixedOutcome.Kind == PasteInputKind.ClipboardText &&
@@ -429,7 +429,7 @@ internal static partial class SelfTest
         // 4d) vision_oneshot 但配置档不支持视觉：回报宿主弹提醒；剪贴板原样还原。
         var unsupported = new FakeClipboardGateway { Current = ClipboardSnapshot.FromImage(rawImg) };
         var unsupportedOutcome = PasteInputAcquirer.Acquire(Request(unsupported, ClipboardImageRoute.UnsupportedVision, _ =>
-            throw new InvalidOperationException("能力不符时绝不应启动 OCR。")));
+            throw new InvalidOperationException("能力不符时绝不应启动 OCR")));
         Check(
             "an image with no vision support reports back for a user-facing reminder",
             unsupportedOutcome.Kind == PasteInputKind.VisionUnsupported &&
@@ -871,6 +871,6 @@ internal static partial class SelfTest
     private sealed class FailingRestoreClipboardGateway : FakeClipboardGateway
     {
         public override void Restore(ClipboardSnapshot snapshot) =>
-            throw new ExternalException("剪贴板正被其他程序占用。");
+            throw new ExternalException("剪贴板正被其他程序占用");
     }
 }

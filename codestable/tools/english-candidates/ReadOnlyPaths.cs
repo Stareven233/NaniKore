@@ -4,5 +4,5 @@ namespace NaniKore.Ocr.Models;
 internal static class OcrDependencyPaths
 {
     public static string ApplicationDependenciesDirectory =>
-        throw new InvalidOperationException("隔离探针仅支持仓库资源定位。");
+        throw new InvalidOperationException("隔离探针仅支持仓库资源定位");
 }

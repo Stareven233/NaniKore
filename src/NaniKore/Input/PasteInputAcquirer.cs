@@ -247,7 +247,7 @@ internal static class PasteInputAcquirer
                 return new PasteInputOutcome
                 {
                     Kind = PasteInputKind.Empty,
-                    Notice = "前台程序复制了无法翻译的内容（如文件引用），已原样保留你的剪贴板。",
+                    Notice = "前台程序复制了无法翻译的内容（如文件引用），已原样保留你的剪贴板",
                 };
             }
 
@@ -280,7 +280,7 @@ internal static class PasteInputAcquirer
             return new PasteInputOutcome
             {
                 Kind = PasteInputKind.Empty,
-                Notice = "前台程序复制了无法翻译的内容（如文件引用），已原样保留你的剪贴板。",
+                Notice = "前台程序复制了无法翻译的内容（如文件引用），已原样保留你的剪贴板",
             };
         }
 
@@ -351,7 +351,7 @@ internal static class PasteInputAcquirer
                 return new PasteInputOutcome
                 {
                     Kind = PasteInputKind.Empty,
-                    Notice = notice ?? "图像中没有识别到文本。",
+                    Notice = notice ?? "图像中没有识别到文本",
                 };
             }
 
@@ -402,7 +402,7 @@ internal static class PasteInputAcquirer
         }
         catch (ExternalException exception)
         {
-            return $"剪贴板还原失败（{exception.Message}）；你的原剪贴板可能已被修改。";
+            return $"剪贴板还原失败（{exception.Message}）；你的原剪贴板可能已被修改";
         }
     }
 }
@@ -529,7 +529,7 @@ internal sealed class Win32ClipboardGateway : IClipboardGateway
 
         if (!TryOpenClipboard())
         {
-            throw new ExternalException("无法打开系统剪贴板进行还原。");
+            throw new ExternalException("无法打开系统剪贴板进行还原");
         }
 
         try
@@ -616,7 +616,7 @@ internal sealed class Win32ClipboardGateway : IClipboardGateway
 
         if (!TryOpenClipboard())
         {
-            throw new ExternalException("无法打开系统剪贴板写入文本。");
+            throw new ExternalException("无法打开系统剪贴板写入文本");
         }
 
         try
@@ -628,14 +628,14 @@ internal sealed class Win32ClipboardGateway : IClipboardGateway
             var hMem = NativeMethods.GlobalAlloc(NativeMethods.GMEM_MOVEABLE, bytesNeeded);
             if (hMem == 0)
             {
-                throw new ExternalException("分配全局内存失败。");
+                throw new ExternalException("分配全局内存失败");
             }
 
             var ptr = NativeMethods.GlobalLock(hMem);
             if (ptr == 0)
             {
                 NativeMethods.GlobalFree(hMem);
-                throw new ExternalException("锁定全局内存失败。");
+                throw new ExternalException("锁定全局内存失败");
             }
 
             Marshal.Copy(chars, 0, ptr, chars.Length);
@@ -644,7 +644,7 @@ internal sealed class Win32ClipboardGateway : IClipboardGateway
             if (NativeMethods.SetClipboardData(NativeMethods.CF_UNICODETEXT, hMem) == 0)
             {
                 NativeMethods.GlobalFree(hMem);
-                throw new ExternalException("设置剪贴板数据失败。");
+                throw new ExternalException("设置剪贴板数据失败");
             }
         }
         finally
@@ -832,7 +832,7 @@ internal sealed class SendInputCopySimulator
     {
         if (Marshal.SizeOf<NativeInput>() != 40 || Marshal.OffsetOf<NativeInput>(nameof(NativeInput.Keyboard)).ToInt64() != 8)
         {
-            throw new NotSupportedException("当前架构不受支持：INPUT 结构布局与 x64 假设不符。");
+            throw new NotSupportedException("当前架构不受支持：INPUT 结构布局与 x64 假设不符");
         }
     }
 

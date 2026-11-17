@@ -125,8 +125,8 @@ internal sealed class HotkeyRecorderBox : TemplatedControl
 
         RecordingChanged?.Invoke(this, true);
         StatusChanged?.Invoke(this, AllowUnbind
-            ? "正在录制：按下新组合，或按 Esc 解除绑定。"
-            : "正在录制：按下新组合，F1–F11 可单独绑定，Esc 取消。");
+            ? "正在录制：按下新组合，或按 Esc 解除绑定"
+            : "正在录制：按下新组合，F1–F11 可单独绑定，Esc 取消");
     }
 
     /// <summary>取消录制并恢复进入录制前的组合，绝不留下空热键。</summary>
@@ -138,7 +138,7 @@ internal sealed class HotkeyRecorderBox : TemplatedControl
         }
 
         EndRecording(_gestureBeforeRecording);
-        StatusChanged?.Invoke(this, "已取消录制，保留原有热键。");
+        StatusChanged?.Invoke(this, "已取消录制，保留原有热键");
     }
 
     /// <summary>解释录制中的一次按键；修饰键状态由调用方提供，便于自测确定性地驱动录制。</summary>
@@ -157,7 +157,7 @@ internal sealed class HotkeyRecorderBox : TemplatedControl
             if (AllowUnbind)
             {
                 EndRecording(string.Empty);
-                StatusChanged?.Invoke(this, "已解除绑定：保存后该热键关闭。");
+                StatusChanged?.Invoke(this, "已解除绑定：保存后该热键关闭");
                 return;
             }
 
@@ -173,7 +173,7 @@ internal sealed class HotkeyRecorderBox : TemplatedControl
         }
 
         EndRecording(gesture);
-        StatusChanged?.Invoke(this, $"已录制：{gesture}。保存时会尝试向系统注册。");
+        StatusChanged?.Invoke(this, $"已录制：{gesture}。保存时会尝试向系统注册");
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)

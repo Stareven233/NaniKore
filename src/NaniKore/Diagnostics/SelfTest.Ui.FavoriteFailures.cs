@@ -20,7 +20,7 @@ using NaniKore.Favorites;
 internal static partial class SelfTest
 {
     private const string CorruptDatabaseContent =
-        "这不是 SQLite 数据库：文件头被破坏后 sqlite 会报 file is not a database。";
+        "这不是 SQLite 数据库：文件头被破坏后 sqlite 会报 file is not a database";
 
     private static void RunFavoriteFailureUiTests()
     {

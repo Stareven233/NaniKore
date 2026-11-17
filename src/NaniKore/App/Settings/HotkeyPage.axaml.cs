@@ -48,12 +48,12 @@ internal sealed partial class HotkeyPage : UserControl, ISettingsPage
     {
         if (CaptureRecorder.IsRecording)
         {
-            return "截图热键仍在录制中：请按下组合键或按 Esc 取消。";
+            return "截图热键仍在录制中：请按下组合键或按 Esc 取消";
         }
 
         if (PasteRecorder.IsRecording)
         {
-            return "选取热键仍在录制中：请按下组合键，或按 Esc 解除绑定。";
+            return "选取热键仍在录制中：请按下组合键，或按 Esc 解除绑定";
         }
 
         if (ValidateGesture("截图翻译热键", CaptureRecorder.Gesture, allowEmpty: false) is { } captureError)
@@ -70,7 +70,7 @@ internal sealed partial class HotkeyPage : UserControl, ISettingsPage
         if (HotkeyGesture.IsEnabled(PasteRecorder.Gesture) &&
             HotkeyGesture.Parse(CaptureRecorder.Gesture) == HotkeyGesture.Parse(PasteRecorder.Gesture))
         {
-            return "截图翻译和选取翻译不能使用相同的热键。";
+            return "截图翻译和选取翻译不能使用相同的热键";
         }
 
         return null;

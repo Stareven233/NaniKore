@@ -51,7 +51,7 @@ internal static class HotkeyGesture
     {
         if (string.IsNullOrWhiteSpace(gesture))
         {
-            throw new ArgumentException("热键不能为空。", nameof(gesture));
+            throw new ArgumentException("热键不能为空", nameof(gesture));
         }
 
         uint modifiers = 0;
@@ -69,7 +69,7 @@ internal static class HotkeyGesture
                 default:
                     if (key is not null || !TryParseKey(part, out var parsed))
                     {
-                        throw new ArgumentException("热键格式应类似 Ctrl+Shift+A、Alt+F9 或 F5。", nameof(gesture));
+                        throw new ArgumentException("热键格式应类似 Ctrl+Shift+A、Alt+F9 或 F5", nameof(gesture));
                     }
 
                     key = parsed;
@@ -79,18 +79,18 @@ internal static class HotkeyGesture
 
         if (key is null)
         {
-            throw new ArgumentException("热键必须包含一个普通按键，格式应类似 Ctrl+Shift+A、Alt+F9 或 F5。", nameof(gesture));
+            throw new ArgumentException("热键必须包含一个普通按键，格式应类似 Ctrl+Shift+A、Alt+F9 或 F5", nameof(gesture));
         }
 
         if (key == 0x7B)
         {
-            throw new ArgumentException("F12 由 Windows 保留给调试器，不能注册为全局热键。", nameof(gesture));
+            throw new ArgumentException("F12 由 Windows 保留给调试器，不能注册为全局热键", nameof(gesture));
         }
 
         // F1–F11 允许零修饰键绑定；F12 是系统保留键，其余按键要求修饰键。
         if (modifiers == 0 && !IsBareFunctionKey(key.Value))
         {
-            throw new ArgumentException("除 F1–F11 可单独绑定外，热键必须包含至少一个修饰键。", nameof(gesture));
+            throw new ArgumentException("除 F1–F11 可单独绑定外，热键必须包含至少一个修饰键", nameof(gesture));
         }
 
         return (modifiers, key.Value);
@@ -140,13 +140,13 @@ internal static class HotkeyGesture
         gesture = string.Empty;
         if (IsModifierKey(keyCode))
         {
-            message = "请在按住修饰键的同时按下一个普通键。";
+            message = "请在按住修饰键的同时按下一个普通键";
             return false;
         }
 
         if (!TryMapKeyCode(keyCode, out var virtualKey))
         {
-            message = "不支持此按键；可使用字母、数字、功能键、标点、导航键、小键盘或多媒体键。";
+            message = "不支持此按键；可使用字母、数字、功能键、标点、导航键、小键盘或多媒体键";
             return false;
         }
 

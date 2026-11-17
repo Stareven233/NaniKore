@@ -409,7 +409,7 @@ internal static partial class SelfTest
 
         // 2. 汉字假名混排
         var mixedJapanese = LanguageDetector.Detect("ここは通れないよ");
-        var kanjiKana = LanguageDetector.Detect("学生です。");
+        var kanjiKana = LanguageDetector.Detect("学生です");
         Check(
             "detector flags kanji-kana mixed sentences as Japanese with ruby requirement",
             mixedJapanese.HasJapanese && mixedJapanese.NeedsJapaneseRuby &&
@@ -559,10 +559,10 @@ internal static partial class SelfTest
     private static void TestSentinelRouter()
     {
         // ── 两段式：视觉链路协议 ────────────────────────────────
-        var (legacySource, legacyTranslation) = RouteChunks(StreamChannelMode.Segmenter, "私[わたし]は\n---\n学生[がくせい]です。");
+        var (legacySource, legacyTranslation) = RouteChunks(StreamChannelMode.Segmenter, "私[わたし]は\n---\n学生[がくせい]です");
         Check(
             "section router no longer recognizes the legacy bare markdown rule as a separator",
-            legacySource == "私[わたし]は\n---\n学生[がくせい]です。" && legacyTranslation.Length == 0);
+            legacySource == "私[わたし]は\n---\n学生[がくせい]です" && legacyTranslation.Length == 0);
 
         var (crlfSource, crlfTranslation) = RouteChunks(StreamChannelMode.Segmenter, "原文\r\n---TRANS", "LATION---\r\n译文");
         Check(
@@ -598,12 +598,12 @@ internal static partial class SelfTest
             </transcribed_text>
             ---TRANSLATION---
             <translation>
-            我是学生。
+            我是学生
             </translation>
             """);
         Check(
             "section router splits the exact two-part shape declared by the default vision prompt",
-            protocolSource == "ここは通れないよ" && protocolTranslation == "我是学生。");
+            protocolSource == "ここは通れないよ" && protocolTranslation == "我是学生");
 
         var immediateStreamRouter = new SectionChannelRouter(StreamChannelMode.Segmenter);
         _ = immediateStreamRouter.Push("原文\n---TRANSLATION---\n").ToList();
@@ -627,22 +627,22 @@ internal static partial class SelfTest
             "section router holds trailing sentinel prefix in sliding window without leaking to source channel",
             splitSentinelDeltas.Count == 0);
 
-        var continuationDeltas = sourceStreamRouter.Push("LATION---\n我是学生。").Concat(sourceStreamRouter.Complete()).ToList();
+        var continuationDeltas = sourceStreamRouter.Push("LATION---\n我是学生").Concat(sourceStreamRouter.Complete()).ToList();
         Check(
             "section router completes sentinel match and streams translation seamlessly",
-            string.Concat(continuationDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "我是学生。");
+            string.Concat(continuationDeltas.Where(delta => delta.Channel == DeltaChannel.Translation).Select(delta => delta.Text)) == "我是学生");
 
         var (leakSource, leakTranslation) = RouteChunks(
             StreamChannelMode.Segmenter,
-            "<transcribed_text>\r\nここは通れないよ。",
+            "<transcribed_text>\r\nここは通れないよ",
             "\r\n</transcribed_text>\r\n",
-            "---TRANSLATION---\r\n<translation>\r\n我是学生。\r\n</translation>");
+            "---TRANSLATION---\r\n<translation>\r\n我是学生\r\n</translation>");
         Check(
             "section router strictly prevents any pseudo XML closing tags from leaking into source channel",
             !leakSource.Contains("</transcribed_text>") &&
             !leakSource.Contains("<transcribed_text>") &&
-            leakSource == "ここは通れないよ。" &&
-            leakTranslation == "我是学生。");
+            leakSource == "ここは通れないよ" &&
+            leakTranslation == "我是学生");
 
         var (bracketSource, bracketTranslation) = RouteChunks(
             StreamChannelMode.Segmenter,
@@ -665,24 +665,24 @@ internal static partial class SelfTest
             !rogueTranslation.Contains("新歓") &&
             rogueTranslation == "在迎新活动中变得胆大妄为的故事");
 
-        var (longSource, longTranslation) = RouteChunks(StreamChannelMode.Segmenter, "这是一段非常长的纯译文，完全没有包含任何原文分段标记，长度肯定超过了三十二个字符的安全窗口预算。");
+        var (longSource, longTranslation) = RouteChunks(StreamChannelMode.Segmenter, "这是一段非常长的纯译文，完全没有包含任何原文分段标记，长度肯定超过了三十二个字符的安全窗口预算");
         Check(
             "section router preserves long pure translation without sentinel as translation channel without premature source flush",
             longSource.Length == 0 &&
-            longTranslation == "这是一段非常长的纯译文，完全没有包含任何原文分段标记，长度肯定超过了三十二个字符的安全窗口预算。");
+            longTranslation == "这是一段非常长的纯译文，完全没有包含任何原文分段标记，长度肯定超过了三十二个字符的安全窗口预算");
 
-        var (pureBracketSource, pureBracketTranslation) = RouteChunks(StreamChannelMode.Segmenter, "这是【限量版】[原创]周边商品，制作非常方便。");
+        var (pureBracketSource, pureBracketTranslation) = RouteChunks(StreamChannelMode.Segmenter, "这是【限量版】[原创]周边商品，制作非常方便");
         Check(
             "section router does not confuse bracketed words in pure translation with ruby annotations",
             pureBracketSource.Length == 0 &&
-            pureBracketTranslation == "这是【限量版】[原创]周边商品，制作非常方便。");
+            pureBracketTranslation == "这是【限量版】[原创]周边商品，制作非常方便");
 
         // ── 直通：文本路径只回译文，哨兵也只是译文里的字面量 ────
-        var (passthroughSource, passthroughTranslation) = RouteChunks(StreamChannelMode.Passthrough, "私[わたし]は\n---TRANSLATION---\n我是学生。");
+        var (passthroughSource, passthroughTranslation) = RouteChunks(StreamChannelMode.Passthrough, "私[わたし]は\n---TRANSLATION---\n我是学生");
         Check(
             "passthrough router keeps the sentinel as literal translation text without opening a source channel",
             passthroughSource.Length == 0 &&
-            passthroughTranslation == "私[わたし]は\n---TRANSLATION---\n我是学生。");
+            passthroughTranslation == "私[わたし]は\n---TRANSLATION---\n我是学生");
 
         // 直通路径的实时性：译文增量立即流出，不做任何原文特征的挂起等待
         var passthroughStreamRouter = new SectionChannelRouter(StreamChannelMode.Passthrough);
@@ -694,10 +694,10 @@ internal static partial class SelfTest
             string.Concat(passthroughChunks.Select(delta => delta.Text)) == "这是一段译文");
 
         // 直通路径仍守住两道守门：思考链越界截断 + 噪声标签剥离
-        var (guardSource, guardTranslation) = RouteChunks(StreamChannelMode.Passthrough, "【译文】\n这里过不去哦。\n\n### [词汇/短语]\n- 通れない：不能通过");
+        var (guardSource, guardTranslation) = RouteChunks(StreamChannelMode.Passthrough, "【译文】\n这里过不去哦\n\n### [词汇/短语]\n- 通れない：不能通过");
         Check(
             "passthrough router strips translation noise labels and truncates rogue explanation sections",
-            guardSource.Length == 0 && guardTranslation == "这里过不去哦。");
+            guardSource.Length == 0 && guardTranslation == "这里过不去哦");
 
     }
 
@@ -1037,10 +1037,10 @@ internal static partial class SelfTest
     private static void TestThinkingStreamSanitizer()
     {
         // 1. 基础隔离：单 chunk 内包含完整 <think> 思考链
-        var (inlineClean, inlineThinking) = SanitizeChunks("<think>思考词性与语法</think>私[わたし]は 学生[がくせい]です。");
+        var (inlineClean, inlineThinking) = SanitizeChunks("<think>思考词性与语法</think>私[わたし]は 学生[がくせい]です");
         Check(
             "ThinkingStreamSanitizer separates full inline <think> tags into thinking and clean text",
-            inlineClean == "私[わたし]は 学生[がくせい]です。" &&
+            inlineClean == "私[わたし]は 学生[がくせい]です" &&
             inlineThinking == "思考词性与语法");
 
         // 2. 跨 chunk 标签拆分（<thi + nk> 与 </thi + nk>）
@@ -1089,13 +1089,13 @@ internal static partial class SelfTest
         var router = new SectionChannelRouter(StreamChannelMode.Passthrough);
         var testSanitizer = new ThinkingStreamSanitizer();
         var d1 = TranslationProviderBase.Route(router, testSanitizer, "</think>", UnderstandKind.Translate);
-        var d2 = TranslationProviderBase.Route(router, testSanitizer, "\n\n这是纯译文结果。", UnderstandKind.Translate);
+        var d2 = TranslationProviderBase.Route(router, testSanitizer, "\n\n这是纯译文结果", UnderstandKind.Translate);
         var dEnd = TranslationProviderBase.CompleteStream(router, testSanitizer, UnderstandKind.Translate);
         var allDeltas = d1.Concat(d2).Concat(dEnd).ToList();
         Check(
             "Isolated close tag with plain translation successfully fallbacks to Translation channel without leaking to SourceText",
             allDeltas.All(d => d.Channel == DeltaChannel.Translation) &&
-            string.Concat(allDeltas.Select(d => d.Text)) == "这是纯译文结果。");
+            string.Concat(allDeltas.Select(d => d.Text)) == "这是纯译文结果");
     }
 
     /// <summary>
@@ -1190,7 +1190,7 @@ internal static partial class SelfTest
             },
             "key",
             new PromptConfig());
-        var homuraRequest = new UnderstandRequest(UnderstandKind.Translate, "オリジナルグッズが簡単につくれるサービスです。", null, "中文（简体）");
+        var homuraRequest = new UnderstandRequest(UnderstandKind.Translate, "オリジナルグッズが簡単につくれるサービスです", null, "中文（简体）");
         using var homuraMsg = homuraProvider.CreateCompletionsRequest(homuraRequest);
         using var homuraDoc = JsonDocument.Parse(homuraMsg.Content!.ReadAsStringAsync().Result);
         var homuraSystemContent = homuraDoc.RootElement.GetProperty("messages")[0].GetProperty("content").GetString();

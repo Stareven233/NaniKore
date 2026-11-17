@@ -63,7 +63,7 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
             // 同一窗口的重复 ID 可能保留多个原生注册，必须在调用 Win32 前拒绝。
             if (_callbacks.ContainsKey(id))
             {
-                throw new InvalidOperationException($"热键 ID {id} 已注册。");
+                throw new InvalidOperationException($"热键 ID {id} 已注册");
             }
 
             // MOD_NOREPEAT (0x4000) 避免长按热键震荡连发
@@ -71,7 +71,7 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
             if (!success)
             {
                 var error = Marshal.GetLastPInvokeError();
-                throw new Win32Exception(error, $"无法注册热键 (id={id}, vk=0x{vk:X}, mod=0x{modifiers:X})。错误码 {error}，可能正被其他程序占用。");
+                throw new Win32Exception(error, $"无法注册热键 (id={id}, vk=0x{vk:X}, mod=0x{modifiers:X})。错误码 {error}，可能正被其他程序占用");
             }
 
             _callbacks[id] = callback;
@@ -341,7 +341,7 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
             // 无法唤醒线程时报告失败，不能继续等待一个可能永远不会发生的退出。
             if (_postError is not null)
             {
-                throw new InvalidOperationException("无法唤醒热键窗口线程以完成关闭。", _postError);
+                throw new InvalidOperationException("无法唤醒热键窗口线程以完成关闭", _postError);
             }
         }
 

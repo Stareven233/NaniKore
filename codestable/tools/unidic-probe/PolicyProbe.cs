@@ -14,7 +14,7 @@ internal static partial class UniDicProbe
         // 9/10 词边界使用相同词面，既验证阈值，也验证短文本豁免不绕过去重。
         foreach (var count in new[] { 9, 10 })
         {
-            var text = string.Join("。", Enumerable.Repeat("食べた", count));
+            var text = string.Join("", Enumerable.Repeat("食べた", count));
             Add($"threshold-{count}", text, true, true, false,
                 value => value.WordCount == count && value.AnnotateAll == (count < 10)
                     && value.Annotated.Count(ch => ch == '[') == (count < 10 ? 1 : 0));
@@ -31,7 +31,7 @@ internal static partial class UniDicProbe
                 && !value.Annotated.Contains("日本語[") && value.Annotated.Contains("躊躇[ちゅうちょ]"));
         Add("stopwords-only", "先生は日本語で問題を説明している。出来る。躊躇した", true, false, true,
             value => !value.AnnotateAll && !value.Annotated.Contains("出来["));
-        Add("production-long-sample", "薬の過剰摂取で亡くなった被害者。その原因は致死量を超える6錠の睡眠薬。", true, true, false,
+        Add("production-long-sample", "薬の過剰摂取で亡くなった被害者。その原因は致死量を超える6錠の睡眠薬", true, true, false,
             value => value.WordCount >= 10 && !value.AnnotateAll && value.Annotated.Contains('['));
         var boundaryText = "先生は日本語で問題を説明している。出来る。躊躇した。食べた。食べた。食べた";
         var uniBoundary = Observe(uniDic, boundaryText, false, true, true, false);

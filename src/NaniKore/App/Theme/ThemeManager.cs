@@ -37,7 +37,7 @@ internal static class ThemeManager
 
         // 复用 Avalonia 的系统主题通知，避免 SystemEvents 的反向布尔委托进入 AOT 产物。
         var settings = application.PlatformSettings
-            ?? throw new InvalidOperationException("主题初始化必须在 Avalonia 平台初始化之后执行。");
+            ?? throw new InvalidOperationException("主题初始化必须在 Avalonia 平台初始化之后执行");
         _application = application;
         _platformSettings = settings;
         IsDark = settings.GetColorValues().ThemeVariant == PlatformThemeVariant.Dark;

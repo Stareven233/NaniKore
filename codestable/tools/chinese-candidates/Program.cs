@@ -25,13 +25,13 @@ internal static class Program
                 throw new ArgumentException("用法：ChineseCandidates <仓库根目录> <新报告目录> [中文词典目录]");
             var root = Path.GetFullPath(args[0]);
             var output = Path.GetFullPath(args[1]);
-            if (Directory.Exists(output)) throw new IOException("报告目录已存在，请指定新目录，避免覆盖证据。");
+            if (Directory.Exists(output)) throw new IOException("报告目录已存在，请指定新目录，避免覆盖证据");
             Directory.CreateDirectory(output);
             using var writer = new StreamWriter(Path.Combine(output, "report.txt"), false, new UTF8Encoding(false)) { AutoFlush = true };
             report = writer;
             Log($"UTC={DateTime.UtcNow:O} runtime={Environment.Version} aot={!System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported} os={Environment.OSVersion} offsets=UTF-16");
             Log("SNAPSHOT production=build-input-hashes; historical-20261114-093xxx=PRE-P1; reruns-capture-current-production");
-            Log("期望来自固定Samples.cs；仅目标区间计准确性；整句/扩展字读音未核对。冷启动指进程首次初始化，不是清空磁盘缓存。");
+            Log("期望来自固定Samples.cs；仅目标区间计准确性；整句/扩展字读音未核对。冷启动指进程首次初始化，不是清空磁盘缓存");
             PhoneticDependencyPaths.ChineseDictionaryDirectory = args.Length == 3 ? Path.GetFullPath(args[2]) : Path.Combine(root, "deps/phonetics/zh");
             VerifyInputs(root);
             foreach (var file in PhoneticDependencyPaths.ChineseDictionaryFiles) Fingerprint("PRODUCTION_RESOURCE", file);
@@ -44,7 +44,7 @@ internal static class Program
             Memory("before-init");
             using var production = new ChinesePinyinAnnotator();
             var timer = Stopwatch.StartNew();
-            if (!production.IsAvailable) throw new IOException("生产中文标注器不可用。");
+            if (!production.IsAvailable) throw new IOException("生产中文标注器不可用");
             Log($"INIT production ms={timer.Elapsed.TotalMilliseconds:F4}");
             Memory("after-production-init");
             timer.Restart();
@@ -67,7 +67,7 @@ internal static class Program
             // 生产真实Dispose+Reset；候选无Dispose接口，只能重新构造，不声称已回收旧字典。
             production.ResetAvailability();
             timer.Restart();
-            if (!production.IsAvailable) throw new IOException("生产重载失败。");
+            if (!production.IsAvailable) throw new IOException("生产重载失败");
             Log($"RELOAD production ms={timer.Elapsed.TotalMilliseconds:F4}");
             candidate = null!;
             timer.Restart();
@@ -80,8 +80,8 @@ internal static class Program
             Log($"TARGETS total={targets} production-pass={productionPass} production-fail={targets - productionPass} candidate-pass={candidatePass} candidate-fail={targets - candidatePass} improved={improved} regressed={regressed}");
             Log($"SUMMARY PASS={pass} FAIL={fail} UNCOVERED={unknown}");
             Log($"COMPARISON fixed-target-net={(fixedCandidatePass > fixedProductionPass ? "candidate-better-on-this-set" : fixedCandidatePass < fixedProductionPass ? "candidate-worse-on-this-set" : "same-pass-count")} adoption=insufficient-evidence");
-            Log("VERDICT 以上只支撑固定目标对照；任何目标失败或边界丢失均不满足直接采用条件。候选集合存在不代表语境消歧成功。P1可保留UTF16明确区间/未知项/候选集合，不能据此宣布候选已达到生产验收。");
-            Log("LIMIT 内存为同进程累计快照；未测独立引擎峰值、真实闲置计时器、宿主UI、分发下载、权威词典逐项核验。无全长句准确率。");
+            Log("VERDICT 以上只支撑固定目标对照；任何目标失败或边界丢失均不满足直接采用条件。候选集合存在不代表语境消歧成功。P1可保留UTF16明确区间/未知项/候选集合，不能据此宣布候选已达到生产验收");
+            Log("LIMIT 内存为同进程累计快照；未测独立引擎峰值、真实闲置计时器、宿主UI、分发下载、权威词典逐项核验。无全长句准确率");
             return fail > 0 ? 1 : 0;
         }
         catch (Exception error)
@@ -211,7 +211,7 @@ internal static class Program
             var loneCr = text.Count(c => c == '\r') - crlf;
             Log($"RESOURCE_NEWLINES name={name} CRLF={crlf} LF={loneLf} CR={loneCr}");
             if (Environment.NewLine == "\r\n" && loneLf > 0)
-                throw new IOException($"候选资源{name}包含LF行尾，上游Environment.NewLine在Windows要求CRLF。请按README规范化数据后重新构建；本次不计准确性。");
+                throw new IOException($"候选资源{name}包含LF行尾，上游Environment.NewLine在Windows要求CRLF。请按README规范化数据后重新构建；本次不计准确性");
         }
     }
 
@@ -221,19 +221,19 @@ internal static class Program
         var valid = bank.Count == 2 && bank[0].hanzi == "银" && bank[1].hanzi == "行"
             && bank.All(r => !r.error) && bank.ToStr() == "yín háng";
         Log($"INIT_SENTINEL candidate-bank valid={valid} reading={Escape(bank.ToStr())}");
-        if (!valid) throw new IOException("候选银行初始化哨兵失败：词典缺失或解析异常；本次不计准确性，请检查资源行尾与Environment.NewLine。");
+        if (!valid) throw new IOException("候选银行初始化哨兵失败：词典缺失或解析异常；本次不计准确性，请检查资源行尾与Environment.NewLine");
     }
 
     private static void VerifyInputs(string root)
     {
         var clone = Path.Combine(root, "artifacts/chinese-candidates/csharp-pinyin");
-        if (Git(clone, "rev-parse", "HEAD").Trim() != Commit) throw new IOException("候选HEAD不匹配固定commit。");
+        if (Git(clone, "rev-parse", "HEAD").Trim() != Commit) throw new IOException("候选HEAD不匹配固定commit");
         // 检查固定commit与工作树差异，不能只核对HEAD而漏掉本地源码/资源修改。
         Git(clone, "diff", "--exit-code", Commit, "--", "Pinyin", "LICENSE", ":(exclude)**/_todo*");
         if (Git(clone, "ls-files", "--others", "--exclude-standard", "--", "Pinyin").Length != 0)
-            throw new IOException("候选Pinyin目录有未跟踪输入。");
+            throw new IOException("候选Pinyin目录有未跟踪输入");
         Log($"SOURCE commit={Commit} clean=true");
-        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("Comparison.Inputs") ?? throw new IOException("缺少构建输入锁。");
+        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("Comparison.Inputs") ?? throw new IOException("缺少构建输入锁");
         using var reader = new StreamReader(stream);
         while (reader.ReadLine() is { } line)
         {
@@ -253,7 +253,7 @@ internal static class Program
     {
         var start = new ProcessStartInfo("git") { WorkingDirectory = directory, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         foreach (var arg in args) start.ArgumentList.Add(arg);
-        using var process = Process.Start(start) ?? throw new IOException("无法启动git。");
+        using var process = Process.Start(start) ?? throw new IOException("无法启动git");
         var stdout = process.StandardOutput.ReadToEnd();
         var stderr = process.StandardError.ReadToEnd();
         process.WaitForExit();

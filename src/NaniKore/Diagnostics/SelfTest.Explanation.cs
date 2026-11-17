@@ -104,7 +104,7 @@ internal static partial class SelfTest
             "### [词汇/短语]\n- **春",
             "** | はる | 名词 | 春天\n\n### [",
             "语法/句型]\n- **～そうだ** | 好像、似乎",
-            "\n\n### [语境与地道表达]\n表达对季节的期待。"
+            "\n\n### [语境与地道表达]\n表达对季节的期待"
         };
 
         var accumulated = new System.Text.StringBuilder();
