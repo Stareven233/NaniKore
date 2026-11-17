@@ -385,7 +385,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         if (_downloadPhoneticPack is null ||
             sender is not Button { Tag: string languageCode } button ||
             string.IsNullOrEmpty(languageCode) ||
-            !MessageDialog.Confirm(
+            !await MessageDialog.ConfirmAsync(
                 TopLevel.GetTopLevel(this) as Window,
                 $"下载{PhoneticLanguages.DisplayName(languageCode) ?? languageCode}注音语言包？",
                 "将从 ModelScope 下载该语言的注音数据到程序目录的 deps/phonetics 下，校验哈希后即时生效；" +
