@@ -1,6 +1,6 @@
-# 正式原生语言包构建链
+# 三语注音语言包构建链
 
-日英注音语言包（MisakiSharp 2.2.0 + UniDic 3.1.0）与中文 gzip 资源的统一打包入口。日英输入全部在
+中、日、英注音资源的统一构建入口。日英原生语言包（MisakiSharp 2.2.0 + UniDic 3.1.0）输入全部在
 [`misaki-packs.json`](misaki-packs.json) 里固定：上游提交、源文件 SHA-256、补丁哈希、UniDic 原件哈希、
 资源白名单与包定义；任何一项对不上就停，不做兜底。
 
@@ -8,7 +8,8 @@
 
 | 文件 | 作用 |
 | --- | --- |
-| `Build-MisakiPacks.ps1` | 唯一入口，分 `Prepare / Native / Verify / All` 四段 |
+| `Build-LanguagePacks.ps1` | 统一入口，分 `Prepare / Chinese / Native / Verify / All` 五段 |
+| `chinese/` | 独立中文拼音表构建器，不进入桌面应用程序集 |
 | `misaki-packs.json` | 固定版本、哈希、白名单、ABI 与导出列表 |
 | `patches/misakisharp-2.2.0.patch` | 最小源码补丁（书面假名、原文处理、候选、释放接口） |
 | `RegenerateKana.py` | 从同版 `sys.dic` 再生带书面 `kana` 列的日语词表 |
@@ -20,14 +21,15 @@
 ## 运行
 
 ```powershell
-./scripts/phonetics/Build-MisakiPacks.ps1 -Stage All
-./scripts/phonetics/Build-MisakiPacks.ps1 -Stage Prepare   # 下载/校验/打补丁/再生/裁剪资源
-./scripts/phonetics/Build-MisakiPacks.ps1 -Stage Native    # 编原生包并写 pack.json
-./scripts/phonetics/Build-MisakiPacks.ps1 -Stage Verify    # 验收已生成的包
+./scripts/phonetics/Build-LanguagePacks.ps1 -Stage All
+./scripts/phonetics/Build-LanguagePacks.ps1 -Stage Prepare  # 下载/校验/打补丁/再生/裁剪日英资源
+./scripts/phonetics/Build-LanguagePacks.ps1 -Stage Chinese  # 构建中文明文拼音表
+./scripts/phonetics/Build-LanguagePacks.ps1 -Stage Native   # 编日英原生包并打包三语资源
+./scripts/phonetics/Build-LanguagePacks.ps1 -Stage Verify   # 验收日英原生包
 ```
 
-`Native` 阶段会把 `deps/phonetics/ja/`、`en/`、`zh/` 统一打包为远端平铺资源；中文明文先由
-`dotnet run --project src/NaniKore -- --build-zh-data` 生成到 `zh/zh_pinyin.txt`。
+`All` 会先构建中文明文 `deps/phonetics/zh/zh_pinyin.txt`，再构建日英原生包，最后统一生成 ModelScope 使用的平铺资源。
+`Native` 阶段只打包已有中文明文；要单独重建中文数据可运行 `-Stage Chinese`。
 
 前置条件：`DOTNET_ROOT` 指向 .NET 11 SDK、`NUGET_PACKAGES` 已还原 `MisakiSharp 2.2.0`、
 Windows x64 NativeAOT C++ 工具链、Python 3.14、`git`（用于打补丁）。

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    构建并验收日英注音语言包（MisakiSharp + UniDic）。
+    构建并验收中、日、英注音语言包资源。
 
 .DESCRIPTION
     唯一入口。固定版本、哈希、资源白名单与包定义全部读自 misaki-packs.json；
@@ -8,10 +8,10 @@
     产物展开到 deps/phonetics/{ja,en}/，并将三语本地目录打包为 ModelScope 根目录资源。
 
 .PARAMETER Stage
-    All（默认）| Prepare | Native | Verify。Prepare 完成后才能 Native，Native 完成后才能 Verify。
+    All（默认）| Prepare | Chinese | Native | Verify。
 #>
 param(
-    [ValidateSet('All', 'Prepare', 'Native', 'Verify')][string]$Stage = 'All'
+    [ValidateSet('All', 'Prepare', 'Chinese', 'Native', 'Verify')][string]$Stage = 'All'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -152,6 +152,20 @@ try {
         Write-Host 'Prepare 完成：上游/数据校验、补丁、词表再生、资源裁剪、IPA 审计就绪。'
     }
 
+    if ($Stage -in @('Chinese', 'All')) {
+        $builderProject = Join-Path $PSScriptRoot 'chinese/ChinesePinyinDataBuilder.csproj'
+        $builderOutput = Join-Path $work 'bin/chinese-data'
+        Invoke-Dotnet @('build', $builderProject, '-c', 'Release',
+            "-p:BaseIntermediateOutputPath=$work/obj/chinese-data/", "-p:OutputPath=$builderOutput/",
+            '-p:NuGetAudit=false') "$work/chinese-data-build.log"
+        $builder = Join-Path $builderOutput 'ChinesePinyinDataBuilder.dll'
+        & $dotnet $builder $workspace *> "$work/chinese-data.log"
+        if ($LASTEXITCODE -ne 0) {
+            Get-Content -LiteralPath "$work/chinese-data.log" -Tail 40
+            throw '中文拼音数据构建失败。'
+        }
+    }
+
     if ($Stage -in @('Native', 'All')) {
         foreach ($name in $packNames) {
             $definition = $pin.packs.$name
@@ -203,7 +217,7 @@ try {
         # 三语远端资源统一由此阶段打包；本地中文只维护 zh/ 下的明文 TSV。
         $zhSource = Join-Path $packsRoot 'zh/zh_pinyin.txt'
         if (-not (Test-Path -LiteralPath $zhSource -PathType Leaf)) {
-            throw "中文拼音数据不存在：$zhSource（先运行 --build-zh-data 生成）"
+            throw "中文拼音数据不存在：$zhSource（先运行 Build-LanguagePacks.ps1 -Stage Chinese 生成）"
         }
         $zhArchive = Join-Path $work 'zh_pinyin.txt.gz'
         $sourceStream = [IO.File]::OpenRead($zhSource)

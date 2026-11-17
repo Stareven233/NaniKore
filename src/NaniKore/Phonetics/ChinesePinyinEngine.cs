@@ -12,7 +12,7 @@ internal readonly record struct ChineseToken(int Start, int Length, IReadOnlyLis
 /// <summary>
 /// 进程内中文拼音引擎：pypinyin 词组/单字数据 + CC-CEDICT 覆盖 + 繁体 t2s 折叠，
 /// 以最长匹配产出词级单元。不依赖 NMeCab 或二进制词典，纯数据 + 逐字对齐。
-/// 数据由 <see cref="ChinesePinyinDataBuilder"/> 生成 TSV，打包脚本压成 gzip 分发，下载后解压到 `deps/phonetics/zh/zh_pinyin.txt`。
+/// 数据由 scripts/phonetics/chinese/ 离线构建器生成 TSV，打包脚本压成 gzip 分发。
 /// </summary>
 internal sealed class ChinesePinyinEngine
 {
@@ -70,7 +70,7 @@ internal sealed class ChinesePinyinEngine
 
             using var reader = new StreamReader(source, Encoding.UTF8);
             // 首行版本标记，格式不认时直接视为不可用
-            if (reader.ReadLine() != ChinesePinyinDataBuilder.FormatVersion)
+            if (reader.ReadLine() != ChinesePinyinDataFormat.FormatVersion)
             {
                 return null;
             }

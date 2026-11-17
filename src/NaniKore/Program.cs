@@ -18,7 +18,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        // 诊断 CLI（自测/探查/词典生成）统一用 UTF-8 控制台，中文与 IPA 输出都可读
+        // 诊断 CLI 统一用 UTF-8 控制台，中文与 IPA 输出都可读
         if (args.Length > 0)
         {
             // 作为 WinExe，CLI 交互执行时需主动附加控制台，并重置 Console.Out 保证输出可见
@@ -49,11 +49,6 @@ internal static class Program
         if (args.Contains("--inspect-models", StringComparer.OrdinalIgnoreCase))
         {
             return InspectModels();
-        }
-
-        if (args.Contains("--build-zh-data", StringComparer.OrdinalIgnoreCase))
-        {
-            return BuildZhPinyinData();
         }
 
         if (args.Contains("--phonetics-probe", StringComparer.OrdinalIgnoreCase))
@@ -140,52 +135,6 @@ internal static class Program
             Console.Error.WriteLine(exception);
             return 1;
         }
-    }
-
-    /// <summary>
-    /// 开发期拼音数据生成：pypinyin + CC-CEDICT + Unihan → deps/phonetics/zh/zh_pinyin.txt。
-    /// 用法：dotnet run --project src/NaniKore -- --build-zh-data
-    /// 详见 codestable/notes/phonetics-pipeline.md；控制台打印本地明文的字节数与 SHA-256。
-    /// </summary>
-    private static int BuildZhPinyinData()
-    {
-        try
-        {
-            var repoRoot = LocateResourceRoot();
-            if (repoRoot is null)
-            {
-                Console.Error.WriteLine("未找到仓库根目录（需存在 resources/phonetics/pypinyin）");
-                return 1;
-            }
-
-            NaniKore.Phonetics.ChinesePinyinDataBuilder.Build(repoRoot);
-            return 0;
-        }
-        catch (Exception exception)
-        {
-            Console.Error.WriteLine($"中文拼音数据构建失败：{exception.Message}");
-            return 1;
-        }
-    }
-
-    /// <summary>从输出目录或当前目录向上找含 resources/phonetics/pypinyin 的仓库根。</summary>
-    private static string? LocateResourceRoot()
-    {
-        foreach (var start in new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() })
-        {
-            var directory = new DirectoryInfo(start);
-            while (directory is not null)
-            {
-                if (Directory.Exists(Path.Combine(directory.FullName, "resources", "phonetics", "pypinyin")))
-                {
-                    return directory.FullName;
-                }
-
-                directory = directory.Parent;
-            }
-        }
-
-        return null;
     }
 
     /// <summary>把标准输出切成 UTF-8：诊断输出含中文与 IPA，默认 OEM 代码页会花屏。</summary>

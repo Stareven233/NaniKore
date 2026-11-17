@@ -5,88 +5,14 @@ using System.Text.RegularExpressions;
 
 namespace NaniKore.Phonetics;
 
-/// <summary>CC-CEDICT 声调数字 → 拼音声调符号（ri4 → rì，lü3 → lǚ，轻声去掉数字）。</summary>
-internal static class PinyinToneConverter
-{
-    private static readonly Dictionary<char, string[]> ToneMarks = new()
-    {
-        ['a'] = ["ā", "á", "ǎ", "à"],
-        ['e'] = ["ē", "é", "ě", "è"],
-        ['i'] = ["ī", "í", "ǐ", "ì"],
-        ['o'] = ["ō", "ó", "ǒ", "ò"],
-        ['u'] = ["ū", "ú", "ǔ", "ù"],
-        ['ü'] = ["ǖ", "ǘ", "ǚ", "ǜ"]
-    };
-
-    /// <summary>把 "Ri4 Ben3" 形式的音节转成 "rì běn"。</summary>
-    public static string ConvertSyllable(string syllable)
-    {
-        var match = Regex.Match(syllable, @"^([A-Za-züv]+)([0-5])$");
-        if (!match.Success)
-        {
-            return NormalizeLetters(syllable);
-        }
-
-        var letters = NormalizeLetters(match.Groups[1].Value);
-        var tone = match.Groups[2].Value[0] - '0';
-        if (tone is 0 or 5)
-        {
-            return letters;
-        }
-
-        var vowelIndex = ChooseVowelIndex(letters);
-        return vowelIndex < 0
-            ? letters
-            : letters[..vowelIndex] + ToneMarks[letters[vowelIndex]][tone - 1] + letters[(vowelIndex + 1)..];
-    }
-
-    /// <summary>把整串拼音（可能多音节空格分隔）统一转成声调符号形态。</summary>
-    public static string ConvertPhrase(string pinyin) =>
-        string.Join(' ', pinyin.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(ConvertSyllable));
-
-    private static string NormalizeLetters(string syllable) =>
-        syllable.ToLowerInvariant().Replace('v', 'ü');
-
-    /// <summary>标调位选择：有 a/e 优先，其次 ou 标 o，否则标最后一个元音。</summary>
-    private static int ChooseVowelIndex(string letters)
-    {
-        for (var i = 0; i < letters.Length; i++)
-        {
-            if (letters[i] is 'a' or 'e')
-            {
-                return i;
-            }
-        }
-
-        var ou = letters.IndexOf("ou", StringComparison.Ordinal);
-        if (ou >= 0)
-        {
-            return ou;
-        }
-
-        for (var i = letters.Length - 1; i >= 0; i--)
-        {
-            if (ToneMarks.ContainsKey(letters[i]))
-            {
-                return i;
-            }
-        }
-
-        return -1;
-    }
-}
-
 /// <summary>
-/// 中文拼音运行期数据的构建器：把 `resources/phonetics/` 下的公开源料合并为一张紧凑表
+/// 中文拼音离线构建器：把 `resources/phonetics/` 下的公开源料合并为一张紧凑表
 /// （`deps/phonetics/zh/zh_pinyin.txt`，设置页按需下载）。合并口径：pypinyin 词组 + 单字候选为基座，
 /// CC-CEDICT 补稀有字词与整词覆盖、并提供词级对齐的繁->简映射，Unihan kMandarin 兜底单字。
 /// 产物确定性（全量排序）；本地明文由统一打包脚本压缩后上传。
 /// </summary>
 internal static class ChinesePinyinDataBuilder
 {
-    /// <summary>数据格式版本；运行期装载不认则视为不可用，避免旧产物误用。</summary>
-    public const string FormatVersion = "NaniKore.zh.pinyin.v1";
-
     private static readonly Regex CedictLine = new(@"^(\S+)\s+(\S+)\s+\[([^\]]+)\]\s+/", RegexOptions.Compiled);
 
     /// <summary>由仓库根读取源料并写出运行期数据文件；返回写出路径。</summary>
@@ -126,7 +52,7 @@ internal static class ChinesePinyinDataBuilder
             unihanAdded = LoadUnihanFallback(unihan, single, fallback);
         }
 
-        var target = PhoneticDataPaths.ChinesePinyinDataFile;
+        var target = Path.Combine(repoRoot, "deps", "phonetics", "zh", "zh_pinyin.txt");
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         WriteDataFile(target, single, fallback, phrase, t2s);
 
@@ -228,7 +154,7 @@ internal static class ChinesePinyinDataBuilder
                 {
                     var t = traditional[i];
                     var s = simplified[i];
-                    if (t != s && Translation.RubyTextParser.IsCjkKanji(t) && Translation.RubyTextParser.IsCjkKanji(s))
+                    if (t != s && IsCjkKanji(t) && IsCjkKanji(s))
                     {
                         t2s.TryAdd(t, s);
                     }
@@ -285,7 +211,7 @@ internal static class ChinesePinyinDataBuilder
             }
 
             var ch = (char)codepoint;
-            if (!Translation.RubyTextParser.IsCjkKanji(ch) || single.ContainsKey(codepoint) || fallback.ContainsKey(codepoint))
+            if (!IsCjkKanji(ch) || single.ContainsKey(codepoint) || fallback.ContainsKey(codepoint))
             {
                 continue;
             }
@@ -312,7 +238,7 @@ internal static class ChinesePinyinDataBuilder
     {
         using var file = File.Create(target);
         using var writer = new StreamWriter(file, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-        writer.Write(FormatVersion);
+        writer.Write(ChinesePinyinDataFormat.FormatVersion);
         writer.Write('\n');
 
         foreach (var codepoint in single.Keys.Order())
@@ -369,7 +295,7 @@ internal static class ChinesePinyinDataBuilder
 
         foreach (var ch in text)
         {
-            if (!Translation.RubyTextParser.IsCjkKanji(ch))
+            if (!IsCjkKanji(ch))
             {
                 return false;
             }
@@ -377,6 +303,13 @@ internal static class ChinesePinyinDataBuilder
 
         return true;
     }
+
+    // 与运行时使用同一汉字范围，保证源数据筛选口径不依赖桌面应用程序集。
+    private static bool IsCjkKanji(char c) =>
+        (c >= '\u4e00' && c <= '\u9fff') ||
+        (c >= '\u3400' && c <= '\u4dbf') ||
+        (c >= '\uf900' && c <= '\ufaff') ||
+        c is '\u3005' or '\u3006' or '\u303b';
 
     private static void Guard(bool condition, string message)
     {
