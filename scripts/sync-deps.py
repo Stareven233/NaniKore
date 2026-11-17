@@ -19,6 +19,7 @@
 #
 # 同步：
 #   python scripts/sync-deps.py ocr-onnx onnxruntime phonetics   # 一次多个子目录，各自独立提交
+#   python scripts/sync-deps.py README.md                         # 同步 deps/README.md
 #   python scripts/sync-deps.py phonetics --dry-run              # 预检：列文件 + 核对，不联网
 #   python scripts/sync-deps.py <新目录> --no-verify              # 无契约的新目录：跳过核对直接传
 #
@@ -160,8 +161,13 @@ def verify_manifest(manifest: dict[str, str], local_root: Path, targets: list[Pa
 
 
 def print_plan(name: str, target: Path) -> int:
-    """打印单个子目录的同步清单，返回文件数。"""
-    print(f'{name}/  →  {name}/   （{target}）')
+    """打印单个同步目标的清单，返回文件数。"""
+    is_file = target.is_file()
+    remote_prefix = name if is_file else f'{name}/'
+    print(f'{name}  →  {remote_prefix}   （{target}）')
+    if is_file:
+        print(f'  {name:<52} {human_size(target.stat().st_size):>10}')
+        return 1
     files = iter_local_files(target, SUBDIR_WHITELISTS.get(name, ()))
     for path in files:
         remote = f"{name}/{path.relative_to(target).as_posix()}"
@@ -243,10 +249,10 @@ def upload_folder_to_repo(api, repo_id: str, local_dir: Path, path_in_repo: str,
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description='把 deps/ 的子目录同步到 ModelScope 仓库的同名前缀下（默认全量子目录）。'
+        description='把 deps/ 下的子目录或单个文件同步到 ModelScope 仓库。'
     )
-    parser.add_argument('subdirs', nargs='*',
-                        help='要同步的子目录名（相对 deps/）；不填则同步 deps/ 下所有子目录。')
+    parser.add_argument('sub_items', nargs='*',
+                        help='要同步的目录名或文件名（相对 deps/）；不填则同步 deps/ 下所有子目录。')
     parser.add_argument('--local-dir', type=Path, default=DEFAULT_LOCAL_DIR,
                         help=f'本地源目录（默认 {DEFAULT_LOCAL_DIR.relative_to(REPO_ROOT).as_posix()}）。')
     parser.add_argument('--repo-id', default=DEFAULT_REPO_ID,
@@ -266,16 +272,16 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def resolve_targets(local_dir: Path, subdirs: list[str]) -> list[Path]:
-    """把命令行传来的子目录名解析为本地目录列表；未指定时取全部子目录。"""
+def resolve_targets(local_dir: Path, sub_items: list[str]) -> list[Path]:
+    """解析本地目录或文件目标；未指定时取 deps/ 下全部一级子目录。"""
     if not local_dir.is_dir():
         raise FileNotFoundError(f'找不到本地源目录：{local_dir}')
-    if subdirs:
+    if sub_items:
         targets = []
-        for name in subdirs:
+        for name in sub_items:
             target = local_dir / name
-            if not target.is_dir():
-                raise FileNotFoundError(f'找不到子目录：{target}')
+            if not target.is_dir() and not target.is_file():
+                raise FileNotFoundError(f'找不到目录或文件：{target}')
             targets.append(target)
         return targets
     # 未指定子目录：同步本地源目录下的一级子目录（README 等普通文件不属于同步面）。
@@ -292,7 +298,7 @@ def main() -> int:
             stream.reconfigure(encoding='utf-8')
     args = parse_args()
     try:
-        targets = resolve_targets(args.local_dir, args.subdirs)
+        targets = resolve_targets(args.local_dir, args.sub_items)
     except FileNotFoundError as error:
         print(f'参数错误：{error}', file=sys.stderr)
         return EXIT_USAGE
@@ -324,7 +330,7 @@ def main() -> int:
         print('没有可同步的文件。', file=sys.stderr)
         return EXIT_USAGE
     names = ' '.join(target.name for target in targets)
-    print(f'\n共 {total} 个文件，涉及子目录：{names}')
+    print(f'\n共 {total} 个文件，涉及目标：{names}')
 
     if args.print_hashes:
         print_hash_lines(targets, args.local_dir)
@@ -362,7 +368,18 @@ def main() -> int:
         for target in targets:
             message = args.commit_message or f"update {target.name} ({counts[target.name]} files)"
             print(f'上传 {target.name}/ …')
-            upload_folder_to_repo(api, args.repo_id, target, target.name, message)
+            if target.is_file():
+                file_parameters = set(inspect.signature(api.upload_file).parameters)
+                file_kwargs = {
+                    'repo_id': args.repo_id,
+                    'repo_type': 'model',
+                    'path_or_fileobj': str(target),
+                    'path_in_repo': target.name,
+                    'commit_message': message,
+                }
+                api.upload_file(**{name: value for name, value in file_kwargs.items() if name in file_parameters})
+            else:
+                upload_folder_to_repo(api, args.repo_id, target, target.name, message)
     except SystemExit:
         raise
     except Exception as error:  # noqa: BLE001 —— SDK 异常类型杂，统一收敛为提示后以非零码退出
