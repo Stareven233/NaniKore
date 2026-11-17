@@ -1,4 +1,3 @@
-using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -79,9 +78,9 @@ internal static class PinyinToneConverter
 
 /// <summary>
 /// 中文拼音运行期数据的构建器：把 `resources/phonetics/` 下的公开源料合并为一张紧凑表
-/// （`deps/phonetics/zh_pinyin.txt.gz`，设置页按需下载）。合并口径：pypinyin 词组 + 单字候选为基座，
+/// （`deps/phonetics/zh/zh_pinyin.txt`，设置页按需下载）。合并口径：pypinyin 词组 + 单字候选为基座，
 /// CC-CEDICT 补稀有字词与整词覆盖、并提供词级对齐的繁->简映射，Unihan kMandarin 兜底单字。
-/// 产物确定性（全量排序），供「哈希即版本」分发。
+/// 产物确定性（全量排序）；本地明文由统一打包脚本压缩后上传。
 /// </summary>
 internal static class ChinesePinyinDataBuilder
 {
@@ -131,7 +130,7 @@ internal static class ChinesePinyinDataBuilder
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         WriteDataFile(target, single, fallback, phrase, t2s);
 
-        // 哈希即版本：把输出的 SHA-256 回填到 ChinesePinyinData.Sha256（自测与下载器都按它校验）
+        // 本地保存明文；统一打包脚本再生成 ModelScope 使用的 gzip 文件。
         var hash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(target)));
         Console.WriteLine($"[zh] 单字 {single.Count}（兜底 {fallback.Count}，Unihan 新增 {unihanAdded}），"
             + $"词组 {phrase.Count}（CC 新增 {ccAdded}），繁简映射 {t2s.Count} → {target}");
@@ -312,8 +311,7 @@ internal static class ChinesePinyinDataBuilder
         Dictionary<char, char> t2s)
     {
         using var file = File.Create(target);
-        using var gzip = new GZipStream(file, CompressionLevel.Optimal);
-        using var writer = new StreamWriter(gzip, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        using var writer = new StreamWriter(file, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
         writer.Write(FormatVersion);
         writer.Write('\n');
 

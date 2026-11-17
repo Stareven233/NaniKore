@@ -319,7 +319,7 @@ function New-NaniKoreReleaseArchive {
             'phonetics\en\NaniKore.Phonetics.En.dll',
             'phonetics\en\pack.json',
             'phonetics\en\licenses\MisakiSharp-LICENSE.txt',
-            'phonetics\zh_pinyin.txt.gz'
+            'phonetics\zh\zh_pinyin.txt'
         )
         $missingDependencies = @(
             $requiredDependencies |
@@ -355,10 +355,10 @@ function New-NaniKoreReleaseArchive {
             $phoneticsStaging = Join-Path $stagingDirectory 'deps\phonetics'
             if (Test-Path -LiteralPath $phoneticsStaging) {
                 Get-ChildItem -LiteralPath $phoneticsStaging -File |
-                    Where-Object { $_.Extension -eq '.zip' } |
+                    Where-Object { $_.Extension -in @('.zip', '.gz') } |
                     Remove-Item -Force
                 Get-ChildItem -LiteralPath $phoneticsStaging -Directory -Force |
-                    Where-Object { $_.Name -notin @('ja', 'en') } |
+                    Where-Object { $_.Name -notin @('ja', 'en', 'zh') } |
                     Remove-Item -Recurse -Force
             }
         }

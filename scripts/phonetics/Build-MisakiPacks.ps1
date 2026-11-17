@@ -5,7 +5,7 @@
 .DESCRIPTION
     唯一入口。固定版本、哈希、资源白名单与包定义全部读自 misaki-packs.json；
     对不上就停，不做兜底。所有下载与中间产物在 .temp/misaki-pack，
-    产物展开到 deps/phonetics/{ja,en}/，并生成根目录 {ja,en}.zip。
+    产物展开到 deps/phonetics/{ja,en}/，并将三语本地目录打包为 ModelScope 根目录资源。
 
 .PARAMETER Stage
     All（默认）| Prepare | Native | Verify。Prepare 完成后才能 Native，Native 完成后才能 Verify。
@@ -200,6 +200,25 @@ try {
             Copy-Item -LiteralPath $archive -Destination $archiveTarget -Force
             Write-Host "$name.zip: $((Get-Item $archiveTarget).Length) bytes / $(Get-Sha256 $archiveTarget)"
         }
+        # 三语远端资源统一由此阶段打包；本地中文只维护 zh/ 下的明文 TSV。
+        $zhSource = Join-Path $packsRoot 'zh/zh_pinyin.txt'
+        if (-not (Test-Path -LiteralPath $zhSource -PathType Leaf)) {
+            throw "中文拼音数据不存在：$zhSource（先运行 --build-zh-data 生成）"
+        }
+        $zhArchive = Join-Path $work 'zh_pinyin.txt.gz'
+        $sourceStream = [IO.File]::OpenRead($zhSource)
+        try {
+            $targetStream = [IO.File]::Create($zhArchive)
+            try {
+                $gzip = [IO.Compression.GZipStream]::new($targetStream, [IO.Compression.CompressionLevel]::Optimal)
+                try { $sourceStream.CopyTo($gzip) } finally { $gzip.Dispose() }
+            }
+            finally { $targetStream.Dispose() }
+        }
+        finally { $sourceStream.Dispose() }
+        $zhTarget = Join-Path $packsRoot 'zh_pinyin.txt.gz'
+        Copy-Item -LiteralPath $zhArchive -Destination $zhTarget -Force
+        Write-Host "zh_pinyin.txt.gz: $((Get-Item $zhTarget).Length) bytes / $(Get-Sha256 $zhTarget)"
         Write-Host "Native 完成：$packsRoot"
     }
 

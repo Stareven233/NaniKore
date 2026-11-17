@@ -20,8 +20,8 @@ internal enum PhoneticDataState
 internal sealed record PhoneticDataFile(string RelativePath, string Sha256);
 
 /// <summary>
-/// 中文拼音数据的清单与状态：数据不随程序集分发，放 deps/phonetics/zh_pinyin.txt.gz，
-/// 由设置页按需下载。哈希即版本——SHA-256 不符即判为「需要更新」，不另设版本号。
+/// 中文拼音数据远端以 gzip 分发，本地解压到 deps/phonetics/zh/zh_pinyin.txt，避免长期保留两份。
+/// 本地明文与远端压缩包分别校验 SHA-256。
 /// </summary>
 internal static class ChinesePinyinData
 {
@@ -29,11 +29,15 @@ internal static class ChinesePinyinData
     private static readonly PhoneticDataFile DataFile =
         new("zh_pinyin.txt.gz", "2B5C68679BD393624D17B77BCA5734F9A608EB758FFA2F98D69D1DE0E520A981");
 
-    /// <summary>相对 phonetics/ 的路径，同时就是 ModelScope 上的远端路径。</summary>
+    public const string LocalRelativePath = "zh/zh_pinyin.txt";
+    public const string LocalSha256 = "81607688986AEF6D9A9C1EE089FAD10ECA0E694345DBBB4989550159DC4E8F6B";
+
+    /// <summary>ModelScope 平铺的压缩源文件路径。</summary>
     public static string RelativePath => DataFile.RelativePath;
 
-    /// <summary>哈希即版本：产物重跑后按 --build-zh-data 打印的值回填。</summary>
-    public static string Sha256 => DataFile.Sha256;
+    /// <summary>本地明文数据的哈希。</summary>
+    public static string Sha256 => LocalSha256;
+    public static string ArchiveSha256 => DataFile.Sha256;
 
     public static string DownloadUrl => PhoneticDataPaths.ModelScopeBaseUrl + RelativePath + "?download=true";
 
@@ -52,11 +56,11 @@ internal static class ChinesePinyinData
     /// <summary>数据是否就绪；未就绪时注音链路纯文本降级，不回退任何内置数据。</summary>
     public static bool IsComplete() => GetState() == PhoneticDataState.Ready;
 
-    /// <summary>文件哈希是否与本清单一致（大写十六进制，与下载校验、清单回填同一口径）。</summary>
+    /// <summary>本地明文文件哈希是否与清单一致。</summary>
     internal static bool MatchesSha256(string path)
     {
         using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        return string.Equals(Convert.ToHexString(SHA256.HashData(stream)), Sha256, StringComparison.OrdinalIgnoreCase);
+        return string.Equals(Convert.ToHexString(SHA256.HashData(stream)), LocalSha256, StringComparison.OrdinalIgnoreCase);
     }
 }
 
@@ -73,11 +77,12 @@ internal sealed class ChinesePinyinDownloader
         var destination = PhoneticDataPaths.ChinesePinyinDataFile;
         if (File.Exists(destination) && ChinesePinyinData.MatchesSha256(destination))
         {
-            progress?.Report($"已存在：{ChinesePinyinData.RelativePath}");
+            progress?.Report($"已存在：{ChinesePinyinData.LocalRelativePath}");
             return;
         }
 
         progress?.Report($"正在下载：{ChinesePinyinData.RelativePath}");
+        var archive = destination + $".{Guid.NewGuid():N}.download.gz";
         var temporary = destination + $".{Guid.NewGuid():N}.download";
         try
         {
@@ -85,25 +90,41 @@ internal sealed class ChinesePinyinDownloader
             using var response = await HttpClient.GetAsync(ChinesePinyinData.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(true);
             response.EnsureSuccessStatusCode();
             await using (var source = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(true))
-            await using (var target = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 128 * 1024, useAsync: true))
+            await using (var target = new FileStream(archive, FileMode.CreateNew, FileAccess.Write, FileShare.None, 128 * 1024, useAsync: true))
             {
                 await source.CopyToAsync(target, cancellationToken).ConfigureAwait(true);
             }
 
-            if (!ChinesePinyinData.MatchesSha256(temporary))
+            if (!string.Equals(HashFile(archive), ChinesePinyinData.ArchiveSha256, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidDataException($"SHA-256 校验失败（期望 {ChinesePinyinData.Sha256}）。请重试下载");
+                throw new InvalidDataException($"压缩包 SHA-256 校验失败（期望 {ChinesePinyinData.ArchiveSha256}）。请重试下载");
             }
 
+            // 先校验远端压缩包，再解压到同目录临时文件；明文校验通过后才替换正式数据。
+            await using (var input = File.OpenRead(archive))
+            await using (var gzip = new System.IO.Compression.GZipStream(input, System.IO.Compression.CompressionMode.Decompress))
+            await using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 128 * 1024, useAsync: true))
+            {
+                await gzip.CopyToAsync(output, cancellationToken).ConfigureAwait(true);
+            }
+            if (!ChinesePinyinData.MatchesSha256(temporary))
+                throw new InvalidDataException($"解压后 SHA-256 校验失败（期望 {ChinesePinyinData.Sha256}）。请重试下载");
             File.Move(temporary, destination, overwrite: true);
         }
         finally
         {
+            if (File.Exists(archive)) File.Delete(archive);
             if (File.Exists(temporary))
             {
                 File.Delete(temporary);
             }
         }
+    }
+
+    private static string HashFile(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream));
     }
 
     private static HttpClient CreateHttpClient()

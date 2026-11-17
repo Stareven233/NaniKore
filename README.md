@@ -80,8 +80,8 @@ deps/                        # （仅 -full 完整包携带，或设置页按需
 │  ├─ onnxruntime.dll
 │  └─ onnxruntime_providers_shared.dll
 └─ phonetics/                # 中/日/英三语注音数据（设置页按需下载，完整包含齐）
-   ├─ misaki/{ja,en}/       # 日英原生语言包（DLL + pack.json + licenses/）
-   └─ zh/zh_pinyin.txt.gz   # 中文拼音数据
+   ├─ ja/、en/              # 日英原生语言包（DLL + pack.json + licenses/）
+   └─ zh/zh_pinyin.txt      # 中文拼音数据（远端 gzip 下载后解压）
 ```
 
 发布包不含 `.data/`：首次启动时程序把 `config.template.yaml` 按字节原样复制到 `程序目录\.data\config.yaml` 作为用户配置，密钥落在 `.data/keys.bin`（整块 DPAPI 密文），收藏库是 `.data/collections.db`。因此解压覆盖升级不会冲掉任何本机数据。备份整个软件只需复制 `.data/`；但其中 `keys.bin` 由当前 Windows 用户的 DPAPI 加密，复制到其它 Windows 用户或其它机器后无法解密，需在目标机重新填写 API Key（程序不会覆盖无法解密的原文件，会提示手动处理）。

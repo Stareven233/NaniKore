@@ -143,9 +143,9 @@ internal static class Program
     }
 
     /// <summary>
-    /// 开发期拼音数据生成：pypinyin + CC-CEDICT + Unihan → deps/phonetics/zh_pinyin.txt.gz。
+    /// 开发期拼音数据生成：pypinyin + CC-CEDICT + Unihan → deps/phonetics/zh/zh_pinyin.txt。
     /// 用法：dotnet run --project src/NaniKore -- --build-zh-data
-    /// 详见 codestable/notes/phonetics-pipeline.md；控制台打印字节数与 SHA-256 供回填 ChinesePinyinData.Sha256。
+    /// 详见 codestable/notes/phonetics-pipeline.md；控制台打印本地明文的字节数与 SHA-256。
     /// </summary>
     private static int BuildZhPinyinData()
     {

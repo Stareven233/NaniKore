@@ -70,20 +70,16 @@ internal sealed class NativePhoneticPackInstaller
                 NativePhoneticManifest.ArchiveSha256(pack.Language),
                 cancellationToken).ConfigureAwait(true);
 
-            try
-            {
-                if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
-                ExtractArchive(archive, staging);
-            }
-            finally
-            {
-                if (File.Exists(archive)) File.Delete(archive);
-            }
+            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+            ExtractArchive(archive, staging);
         }
 
         var failure = NativePhoneticPackVerifier.Verify(pack, staging, out var detail);
         if (failure != NativePhoneticPackageFailure.None)
             throw new InvalidDataException(NativePhoneticPackageFailureText.Describe(failure, pack, detail) + " 请重试下载");
+
+        var downloadedArchive = staging + ".download.zip";
+        if (File.Exists(downloadedArchive)) File.Delete(downloadedArchive);
 
         if (NativePhoneticLibrary.IsLanguageLoaded(pack.Language))
         {

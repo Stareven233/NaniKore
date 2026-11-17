@@ -88,7 +88,7 @@ internal static partial class SelfTest
         var chinese = registry.GetAnnotator("zh");
         if (chinese is null || !chinese.IsAvailable)
         {
-            Skip("zh 拼音数据未就绪（deps/phonetics/zh_pinyin.txt.gz），跳过中文词数金样本");
+            Skip("zh 拼音数据未就绪（deps/phonetics/zh/zh_pinyin.txt），跳过中文词数金样本");
         }
         else
         {
@@ -110,14 +110,28 @@ internal static partial class SelfTest
         Check(
             "三语各一条语言包入口：中文是唯一的数据文件，日英走原生包",
             ChinesePinyinData.RelativePath == "zh_pinyin.txt.gz" &&
+            ChinesePinyinData.LocalRelativePath.Replace('/', Path.DirectorySeparatorChar) == Path.Combine("zh", "zh_pinyin.txt") &&
             ChinesePinyinData.DownloadUrl.EndsWith("/phonetics/zh_pinyin.txt.gz?download=true", StringComparison.Ordinal) &&
             NativePhoneticManifest.SupportedLanguages.SequenceEqual([PhoneticLanguages.JapaneseCode, PhoneticLanguages.EnglishCode]) &&
             PhoneticLanguages.All.Count == 3);
+
+        var archivePath = PhoneticDataPaths.CombineRelative(ChinesePinyinData.RelativePath);
+        if (File.Exists(archivePath))
+        {
+            using var archive = File.OpenRead(archivePath);
+            using var gzip = new System.IO.Compression.GZipStream(archive, System.IO.Compression.CompressionMode.Decompress);
+            var unpackedHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(gzip));
+            Check(
+                "中文远端 gzip 与本地明文哈希契约一致",
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(archivePath))) == ChinesePinyinData.ArchiveSha256 &&
+                unpackedHash == ChinesePinyinData.Sha256,
+                $"archive={ChinesePinyinData.ArchiveSha256} unpacked={unpackedHash}");
+        }
     }
 
     /// <summary>
-    /// 中文拼音数据外置与按需下载（issue 012）：数据只在 `deps/phonetics/zh_pinyin.txt.gz`，
-    /// 缺失时纯文本降级（引擎为 null、区间为空、不抛异常），文件就绪时行为与内嵌版逐字一致；
+    /// 中文拼音数据按需下载（issue 012）：远端 gzip 解压到 `deps/phonetics/zh/zh_pinyin.txt`，
+    /// 缺失时纯文本降级（引擎为 null、区间为空、不抛异常），文件就绪时行为符合金样本；
     /// 闲置释放后重新读盘重建。
     /// </summary>
     private static void TestChinesePinyinExternalData()
@@ -132,7 +146,7 @@ internal static partial class SelfTest
             $"file={fileHash}");
 
         // 缺包口径：不存在的路径必须安全退化为纯文本，不能抛异常
-        var missingPath = Path.Combine(Path.GetTempPath(), "nani-kore-zh-missing", "zh_pinyin.txt.gz");
+        var missingPath = Path.Combine(Directory.GetCurrentDirectory(), ".temp", "nani-kore-zh-missing", "zh_pinyin.txt");
         Check(
             "缺包：引擎对不存在的文件返回 null、不抛异常",
             ChinesePinyinEngine.TryLoad(missingPath) is null &&
@@ -145,7 +159,7 @@ internal static partial class SelfTest
                 "缺包：标注器不可用、注音为空、词数为 0",
                 annotator.Annotate("不行就去银行", new AnnotationContext(AnnotationProfile.Load("zh"))).Count == 0 &&
                 annotator.CountWords("不行就去银行") == 0);
-            Skip("zh 拼音数据未就绪（deps/phonetics/zh_pinyin.txt.gz），跳过中文金样本与冷/热基线");
+            Skip("zh 拼音数据未就绪（deps/phonetics/zh/zh_pinyin.txt），跳过中文金样本与冷/热基线");
             return;
         }
 
@@ -561,7 +575,7 @@ internal static partial class SelfTest
         var annotator = new ChinesePinyinAnnotator();
         if (!annotator.IsAvailable)
         {
-            Skip("zh 拼音数据未就绪（deps/phonetics/zh_pinyin.txt.gz），跳过中文金样本");
+            Skip("zh 拼音数据未就绪（deps/phonetics/zh/zh_pinyin.txt），跳过中文金样本");
             return;
         }
 

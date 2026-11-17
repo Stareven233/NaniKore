@@ -1,6 +1,6 @@
 # 正式原生语言包构建链
 
-日英注音语言包（MisakiSharp 2.2.0 + UniDic 3.1.0）的唯一构建入口。输入全部在
+日英注音语言包（MisakiSharp 2.2.0 + UniDic 3.1.0）与中文 gzip 资源的统一打包入口。日英输入全部在
 [`misaki-packs.json`](misaki-packs.json) 里固定：上游提交、源文件 SHA-256、补丁哈希、UniDic 原件哈希、
 资源白名单与包定义；任何一项对不上就停，不做兜底。
 
@@ -26,18 +26,24 @@
 ./scripts/phonetics/Build-MisakiPacks.ps1 -Stage Verify    # 验收已生成的包
 ```
 
+`Native` 阶段会把 `deps/phonetics/ja/`、`en/`、`zh/` 统一打包为远端平铺资源；中文明文先由
+`dotnet run --project src/NaniKore -- --build-zh-data` 生成到 `zh/zh_pinyin.txt`。
+
 前置条件：`DOTNET_ROOT` 指向 .NET 11 SDK、`NUGET_PACKAGES` 已还原 `MisakiSharp 2.2.0`、
 Windows x64 NativeAOT C++ 工具链、Python 3.14、`git`（用于打补丁）。
 首次 `Prepare` 需要网络：上游源码、UniDic 3.1.0（约 502 MiB）。所有下载、中间产物与日志都在
-`.temp/misaki-pack/`；展开产物落在 `deps/phonetics/{ja,en}/`，分发 ZIP 位于 `deps/phonetics/{ja,en}.zip`。
+`.temp/misaki-pack/`；本地数据落在 `deps/phonetics/{ja,en,zh}/`，分发压缩件位于
+`deps/phonetics/{ja,en}.zip` 与根目录 `zh_pinyin.txt.gz`。
 
 ## 产物
 
 ```text
 deps/phonetics/ja/  NaniKore.Phonetics.Ja.dll  pack.json  licenses/
 deps/phonetics/en/  NaniKore.Phonetics.En.dll  pack.json  licenses/
+deps/phonetics/zh/  zh_pinyin.txt（明文 TSV）
 deps/phonetics/ja.zip  日语完整包
 deps/phonetics/en.zip  英语完整包
+deps/phonetics/zh_pinyin.txt.gz  中文拼音数据
 ```
 
 `pack.json` 记录字节、SHA-256、ABI、架构、导出列表、PE 普通导入表、嵌入资源哈希、

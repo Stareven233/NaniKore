@@ -385,7 +385,8 @@ internal static partial class SelfTest
                 "失败后重试可安装成功（首次安装即时生效）",
                 host.DownloadAsync("ja", null, CancellationToken.None).GetAwaiter().GetResult() &&
                 host.GetState("ja") == NativePhoneticPackState.Ready &&
-                !Directory.Exists(Staging("ja")),
+                !Directory.Exists(Staging("ja")) &&
+                !File.Exists(Staging("ja") + ".download.zip"),
                 $"state={host.GetState("ja")}");
 
             var annotator = host.GetAnnotator("ja")!;

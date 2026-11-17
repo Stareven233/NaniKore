@@ -1,4 +1,3 @@
-using System.IO.Compression;
 using System.Text;
 using NaniKore.Translation;
 
@@ -13,7 +12,7 @@ internal readonly record struct ChineseToken(int Start, int Length, IReadOnlyLis
 /// <summary>
 /// 进程内中文拼音引擎：pypinyin 词组/单字数据 + CC-CEDICT 覆盖 + 繁体 t2s 折叠，
 /// 以最长匹配产出词级单元。不依赖 NMeCab 或二进制词典，纯数据 + 逐字对齐。
-/// 数据由 <see cref="ChinesePinyinDataBuilder"/> 生成（TSV，gzip），放在 `deps/phonetics/zh_pinyin.txt.gz` 按需下载（issue 012）。
+/// 数据由 <see cref="ChinesePinyinDataBuilder"/> 生成 TSV，打包脚本压成 gzip 分发，下载后解压到 `deps/phonetics/zh/zh_pinyin.txt`。
 /// </summary>
 internal sealed class ChinesePinyinEngine
 {
@@ -38,7 +37,7 @@ internal sealed class ChinesePinyinEngine
     }
 
     /// <summary>
-    /// 从磁盘数据文件装载（`deps/phonetics/zh_pinyin.txt.gz`）：读完即关，不常驻句柄。
+    /// 从磁盘 TSV 装载：读完即关，不常驻句柄。
     /// 文件缺失或数据损坏返回 null（标注链路软降级为纯文本，不回退内嵌数据）。
     /// </summary>
     public static ChinesePinyinEngine? TryLoad(string path)
@@ -59,7 +58,7 @@ internal sealed class ChinesePinyinEngine
         }
     }
 
-    private static ChinesePinyinEngine? TryLoad(Stream compressed)
+    private static ChinesePinyinEngine? TryLoad(Stream source)
     {
         try
         {
@@ -69,8 +68,7 @@ internal sealed class ChinesePinyinEngine
             var t2s = new Dictionary<char, char>();
             var maxLen = 1;
 
-            using var gzip = new GZipStream(compressed, CompressionMode.Decompress);
-            using var reader = new StreamReader(gzip, Encoding.UTF8);
+            using var reader = new StreamReader(source, Encoding.UTF8);
             // 首行版本标记，格式不认时直接视为不可用
             if (reader.ReadLine() != ChinesePinyinDataBuilder.FormatVersion)
             {

@@ -4,7 +4,7 @@ namespace NaniKore.Phonetics;
 
 /// <summary>
 /// 简体中文拼音标注器：进程内 <see cref="ChinesePinyinEngine"/> 做词组最长匹配与单字兜底，
-/// 数据来自 pypinyin + CC-CEDICT + Unihan 合并表，放 `deps/phonetics/zh_pinyin.txt.gz` 按需下载（见 <see cref="ChinesePinyinDataBuilder"/>）。
+/// 数据来自 pypinyin + CC-CEDICT + Unihan 合并表，放 `deps/phonetics/zh/zh_pinyin.txt` 按需下载（见 <see cref="ChinesePinyinDataBuilder"/>）。
 /// 逐字音节带候选集合；展示/复制/收藏/选区一律用原文 code point 与 UTF-16 区间。
 /// </summary>
 internal sealed class ChinesePinyinAnnotator : ITextAnnotator, IDisposable

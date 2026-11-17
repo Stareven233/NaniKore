@@ -19,7 +19,7 @@ internal static class PhoneticDataPaths
     public static string PhoneticsRootDirectory { get; } = ResolvePhoneticsRoot();
 
     /// <summary>中文拼音运行期数据（pypinyin + CC-CEDICT + Unihan 合并表，见 <see cref="ChinesePinyinDataBuilder"/>）。</summary>
-    public static string ChinesePinyinDataFile => CombineRelative(ChinesePinyinData.RelativePath);
+    public static string ChinesePinyinDataFile => CombineRelative(ChinesePinyinData.LocalRelativePath);
 
     /// <summary>把相对 phonetics/ 的路径拼成本地绝对路径。</summary>
     public static string CombineRelative(string relativePath) =>

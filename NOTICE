@@ -88,7 +88,7 @@ NaniKore 自身代码依据 GNU 通用公共许可证第 3 版或（可选）更
   输出为全量排序的 TSV + gzip 合并表（`NaniKore.zh.pinyin.v1`）。
   不包含 CC-CEDICT 的英文义项。
 - 用途：简体中文拼音注音的词面/读音来源（逐字默认读音与多音候选）。
-- 分发口径：数据放在应用目录 `deps/phonetics/zh_pinyin.txt.gz`，设置页按需下载并校验 SHA-256；
+- 分发口径：ModelScope 提供平铺的 `zh_pinyin.txt.gz`，应用下载校验后解压到 `deps/phonetics/zh/zh_pinyin.txt`；
   本 NOTICE 随应用分发即该数据的随附许可声明。
 
 ### 3.2 日英原生语言包（MisakiSharp 2.2.0 + UniDic 3.1.0）
