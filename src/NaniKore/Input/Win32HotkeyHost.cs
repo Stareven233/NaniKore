@@ -26,6 +26,7 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
     private readonly Thread _thread;
     private readonly TaskCompletionSource<bool> _readySource = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ConcurrentDictionary<int, Action> _callbacks = new();
+    private readonly ConcurrentDictionary<int, (uint Modifiers, uint Button)> _mouseCallbacks = new();
     private readonly object _requestLock = new();
     private readonly Queue<(Action Execute, Action<Exception> Fail)> _actionQueue = new();
 
@@ -33,6 +34,8 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
     private nint _hInstance;
     private bool _disposed;
     private Exception? _postError;
+    private nint _mouseHook;
+    private static readonly NativeMethods.HookProc MouseHookProc = StaticMouseHookProc;
 
     public Win32HotkeyHost()
     {
@@ -78,6 +81,22 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
         });
     }
 
+    public void RegisterMouseHotKey(int id, uint modifiers, uint button, Action callback)
+    {
+        InvokeOnWindowThread(() =>
+        {
+            if (_callbacks.ContainsKey(id) || _mouseCallbacks.ContainsKey(id)) throw new InvalidOperationException($"热键 ID {id} 已注册");
+            if (_mouseCallbacks.Values.Any(value => value.Modifiers == modifiers && value.Button == button)) throw new Win32Exception(1409, "鼠标热键已被本程序占用");
+            if (_mouseHook == 0)
+            {
+                _mouseHook = NativeMethods.SetWindowsHookExW(NativeMethods.WH_MOUSE_LL, MouseHookProc, NativeMethods.GetModuleHandle(null), 0);
+                if (_mouseHook == 0) throw new Win32Exception(Marshal.GetLastPInvokeError(), "无法安装全局鼠标热键钩子");
+            }
+            _mouseCallbacks[id] = (modifiers, button);
+            _callbacks[id] = callback;
+        });
+    }
+
     /// <summary>
     /// 注销热键（录制期间临时注销，或退出时注销）。
     /// </summary>
@@ -88,6 +107,12 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
             return InvokeOnWindowThread(() =>
             {
                 _callbacks.TryRemove(id, out _);
+                _mouseCallbacks.TryRemove(id, out _);
+                if (_mouseCallbacks.IsEmpty && _mouseHook != 0)
+                {
+                    NativeMethods.UnhookWindowsHookEx(_mouseHook);
+                    _mouseHook = 0;
+                }
                 return NativeMethods.UnregisterHotKey(_hWnd, id);
             });
         }
@@ -95,6 +120,28 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
         {
             return false;
         }
+    }
+
+    private static nint StaticMouseHookProc(int code, nint wParam, nint lParam)
+    {
+        if (code >= 0 && LazyShared.IsValueCreated)
+        {
+            var host = LazyShared.Value;
+            var button = unchecked((uint)wParam.ToInt64()) switch
+            {
+                NativeMethods.WM_MBUTTONDOWN => 2u,
+                NativeMethods.WM_XBUTTONDOWN => (uint)(((NativeMethods.MSLLHOOKSTRUCT*)lParam)->mouseData >> 16) == 1 ? 3u : 4u,
+                _ => 0u
+            };
+            if (button != 0)
+            {
+                var modifiers = HotkeyGesture.GetPressedModifiers();
+                foreach (var entry in host._mouseCallbacks)
+                    if (entry.Value.Button == button && entry.Value.Modifiers == modifiers && host._callbacks.TryGetValue(entry.Key, out var callback))
+                        ThreadPool.QueueUserWorkItem(_ => callback());
+            }
+        }
+        return NativeMethods.CallNextHookEx(0, code, wParam, lParam);
     }
 
     private void InvokeOnWindowThread(Action action) => InvokeOnWindowThread(() =>
@@ -232,6 +279,9 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
 
             if (_hWnd != 0)
             {
+                if (_mouseHook != 0) NativeMethods.UnhookWindowsHookEx(_mouseHook);
+                _mouseHook = 0;
+                _mouseCallbacks.Clear();
                 foreach (var id in _callbacks.Keys)
                 {
                     NativeMethods.UnregisterHotKey(_hWnd, id);

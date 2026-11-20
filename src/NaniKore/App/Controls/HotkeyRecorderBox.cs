@@ -179,6 +179,19 @@ internal sealed class HotkeyRecorderBox : TemplatedControl
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
+        if (IsRecording)
+        {
+            var properties = e.GetCurrentPoint(this).Properties;
+            var button = properties.IsMiddleButtonPressed ? 2u : properties.IsXButton1Pressed ? 3u : properties.IsXButton2Pressed ? 4u : 0u;
+            if (button != 0)
+            {
+                HotkeyGesture.TryCaptureMouse(HotkeyGesture.GetPressedModifiers(), button, out var gesture, out _);
+                EndRecording(gesture);
+                StatusChanged?.Invoke(this, $"已录制：{gesture}。保存时会尝试向系统注册");
+            }
+            e.Handled = true;
+            return;
+        }
         BeginRecording();
         e.Handled = true;
     }

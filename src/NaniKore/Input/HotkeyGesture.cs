@@ -19,6 +19,9 @@ internal static class HotkeyGesture
     private const int VirtualKeyLeftWindows = 0x5B;
     private const int VirtualKeyRightWindows = 0x5C;
     private const uint VirtualKeyF1 = 0x70;
+    private const uint MouseMiddle = 0x10001;
+    private const uint MouseX1 = 0x10002;
+    private const uint MouseX2 = 0x10003;
 
     /// <summary>允许零修饰键单独绑定的功能键上限（F1–F11）；F13–F24 与字母数字一样必须搭配修饰键。</summary>
     private const uint BareFunctionKeyLimit = VirtualKeyF1 + 10;
@@ -66,6 +69,9 @@ internal static class HotkeyGesture
                 case "SHIFT": modifiers |= ModShift; break;
                 case "ALT": modifiers |= ModAlt; break;
                 case "WIN" or "WINDOWS": modifiers |= ModWin; break;
+                case "MIDDLEMOUSE" or "MOUSEMIDDLE" or "中键": key = MouseMiddle; break;
+                case "MOUSE4" or "XBUTTON1" or "MOUSEX1" or "鼠标侧键1": key = MouseX1; break;
+                case "MOUSE5" or "XBUTTON2" or "MOUSEX2" or "鼠标侧键2": key = MouseX2; break;
                 default:
                     if (key is not null || !TryParseKey(part, out var parsed))
                     {
@@ -88,7 +94,7 @@ internal static class HotkeyGesture
         }
 
         // F1–F11 允许零修饰键绑定；F12 是系统保留键，其余按键要求修饰键。
-        if (modifiers == 0 && !IsBareFunctionKey(key.Value))
+        if (modifiers == 0 && !IsBareFunctionKey(key.Value) && !IsMouseButton(key.Value))
         {
             throw new ArgumentException("除 F1–F11 可单独绑定外，热键必须包含至少一个修饰键", nameof(gesture));
         }
@@ -163,6 +169,23 @@ internal static class HotkeyGesture
             return false;
         }
     }
+
+    internal static bool TryCaptureMouse(uint modifiers, uint button, out string gesture, out string message)
+    {
+        uint key = button switch { 2 => MouseMiddle, 3 => MouseX1, 4 => MouseX2, _ => 0u };
+        if (key == 0)
+        {
+            gesture = string.Empty;
+            message = "仅支持中键和鼠标侧键";
+            return false;
+        }
+
+        gesture = Format(modifiers, key);
+        message = string.Empty;
+        return true;
+    }
+
+    internal static bool IsMouseButton(uint key) => key is MouseMiddle or MouseX1 or MouseX2;
 
     /// <summary>录制过程中的实时回显：只有修饰键时显示 `Ctrl+Shift+…` 提示还差一个普通键。</summary>
     internal static string FormatPreview(uint modifiers)
@@ -312,6 +335,9 @@ internal static class HotkeyGesture
 
     private static string FormatKey(uint key) => key switch
     {
+        MouseMiddle => "MiddleMouse",
+        MouseX1 => "Mouse4",
+        MouseX2 => "Mouse5",
         >= VirtualKeyF1 and <= VirtualKeyF1 + 23 => $"F{key - VirtualKeyF1 + 1}",
         >= 0x60 and <= 0x69 => $"NumPad{key - 0x60}",
         _ when NamedKeys.TryGetValue(key, out var name) => name,
