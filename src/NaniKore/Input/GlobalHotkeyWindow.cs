@@ -27,14 +27,7 @@ internal sealed class GlobalHotkeyWindow : IDisposable
         var (modifiers, key) = HotkeyGesture.Parse(gesture);
 
         // 底层已处理 MOD_NOREPEAT 与冲突检测（冲突抛出 Win32Exception(1409, ...)）
-        if (HotkeyGesture.IsMouseButton(key))
-        {
-            _host.RegisterMouseHotKey(_hotkeyId, modifiers, key, onPressed);
-        }
-        else
-        {
-            _host.RegisterHotKey(_hotkeyId, modifiers, key, onPressed);
-        }
+        _host.RegisterHotKey(_hotkeyId, modifiers, key, onPressed);
         _registered = true;
     }
 

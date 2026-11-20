@@ -31,9 +31,6 @@ internal static unsafe partial class NativeMethods
     internal static partial short GetKeyState(int virtualKey);
 
     [LibraryImport("user32.dll")]
-    internal static partial short GetAsyncKeyState(int virtualKey);
-
-    [LibraryImport("user32.dll")]
     public static partial nint GetForegroundWindow();
 
     [LibraryImport("user32.dll")]
@@ -157,20 +154,7 @@ internal static unsafe partial class NativeMethods
     public const int WM_DESTROY = 0x0002;
     public const int WM_CLOSE = 0x0010;
     public const int WM_HOTKEY = 0x0312;
-    internal const uint WM_MBUTTONDOWN = 0x0207;
-    internal const uint WM_XBUTTONDOWN = 0x020B;
-    internal const int WH_MOUSE_LL = 14;
 
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct MSLLHOOKSTRUCT { public POINT pt; public uint mouseData; public uint flags; public uint time; public nint dwExtraInfo; }
-    internal delegate nint HookProc(int code, nint wParam, nint lParam);
-    [LibraryImport("user32.dll", EntryPoint = "SetWindowsHookExW", SetLastError = true)]
-    internal static partial nint SetWindowsHookExW(int idHook, HookProc callback, nint module, uint threadId);
-    [LibraryImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    internal static partial bool UnhookWindowsHookEx(nint hook);
-    [LibraryImport("user32.dll")]
-    internal static partial nint CallNextHookEx(nint hook, int code, nint wParam, nint lParam);
     public const uint MOD_ALT = 0x0001;
     public const uint MOD_CONTROL = 0x0002;
     public const uint MOD_SHIFT = 0x0004;

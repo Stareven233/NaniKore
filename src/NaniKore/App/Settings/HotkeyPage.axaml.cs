@@ -1,7 +1,5 @@
 using System;
 using Avalonia.Controls;
-using Avalonia.Threading;
-using NaniKore.App.Controls;
 using NaniKore.Config;
 using NaniKore.Input;
 
@@ -24,8 +22,10 @@ internal sealed partial class HotkeyPage : UserControl, ISettingsPage
             PasteRecorderStatus.IsVisible = true;
         };
 
-        CaptureRecorder.RecordingChanged += (_, recording) => OnRecordingChanged(CaptureRecorder, recording, HotkeySlot.Capture);
-        PasteRecorder.RecordingChanged += (_, recording) => OnRecordingChanged(PasteRecorder, recording, HotkeySlot.Paste);
+        CaptureRecorder.RecordingChanged += (_, recording) =>
+            RecordingChanged?.Invoke(this, new HotkeyRecordingState(recording, HotkeySlot.Capture));
+        PasteRecorder.RecordingChanged += (_, recording) =>
+            RecordingChanged?.Invoke(this, new HotkeyRecordingState(recording, HotkeySlot.Paste));
     }
 
     public string Title => "热键";
@@ -37,30 +37,11 @@ internal sealed partial class HotkeyPage : UserControl, ISettingsPage
     /// <summary>录制开始/结束时通知宿主临时注销、恢复全部全局热键。</summary>
     public event EventHandler<HotkeyRecordingState>? RecordingChanged;
 
-    private void OnRecordingChanged(HotkeyRecorderBox recorder, bool recording, HotkeySlot slot)
-    {
-        if (recording)
-        {
-            var otherRecorder = slot == HotkeySlot.Capture ? PasteRecorder : CaptureRecorder;
-            otherRecorder.CancelRecording();
-        }
-        Win32HotkeyHost.Shared.SetMouseRecordingCallback(recording
-            ? (button, modifiers) => Dispatcher.UIThread.Post(() => recorder.ProcessRecordingMouse(button, modifiers))
-            : null);
-        RecordingChanged?.Invoke(this, new HotkeyRecordingState(recording, slot));
-    }
     public void Load(AppConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
         CaptureRecorder.Gesture = TryNormalize(config.Hotkeys.Capture);
         PasteRecorder.Gesture = TryNormalize(config.Hotkeys.Paste);
-    }
-
-    public void StopRecording()
-    {
-        CaptureRecorder.CancelRecording();
-        PasteRecorder.CancelRecording();
-        Win32HotkeyHost.Shared.SetMouseRecordingCallback(null);
     }
 
     public string? Validate()

@@ -26,8 +26,6 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
     private readonly Thread _thread;
     private readonly TaskCompletionSource<bool> _readySource = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ConcurrentDictionary<int, Action> _callbacks = new();
-    private readonly ConcurrentDictionary<int, (uint Modifiers, uint Button)> _mouseCallbacks = new();
-    private Action<uint, uint>? _mouseRecordingCallback;
     private readonly object _requestLock = new();
     private readonly Queue<(Action Execute, Action<Exception> Fail)> _actionQueue = new();
 
@@ -35,8 +33,6 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
     private nint _hInstance;
     private bool _disposed;
     private Exception? _postError;
-    private nint _mouseHook;
-    private static readonly NativeMethods.HookProc MouseHookProc = StaticMouseHookProc;
 
     public Win32HotkeyHost()
     {
@@ -82,49 +78,6 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
         });
     }
 
-    public void RegisterMouseHotKey(int id, uint modifiers, uint button, Action callback)
-    {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("鼠标全局热键目前仅支持 Windows");
-        InvokeOnWindowThread(() =>
-        {
-            if (_callbacks.ContainsKey(id) || _mouseCallbacks.ContainsKey(id)) throw new InvalidOperationException($"热键 ID {id} 已注册");
-            if (_mouseCallbacks.Values.Any(value => value.Modifiers == modifiers && value.Button == button)) throw new Win32Exception(1409, "鼠标热键已被本程序占用");
-            EnsureMouseHook();
-            _mouseCallbacks[id] = (modifiers, button);
-            _callbacks[id] = callback;
-        });
-    }
-
-    public void SetMouseRecordingCallback(Action<uint, uint>? callback)
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            if (callback is not null) throw new PlatformNotSupportedException("鼠标热键录制目前仅支持 Windows");
-            return;
-        }
-        InvokeOnWindowThread(() =>
-        {
-            _mouseRecordingCallback = callback;
-            if (callback is not null)
-            {
-                EnsureMouseHook();
-            }
-            // 录制回调与注册热键共用钩子；仍有注册项时不能因录制结束而卸载。
-            else if (callback is null && _mouseHook != 0 && _mouseCallbacks.IsEmpty)
-            {
-                NativeMethods.UnhookWindowsHookEx(_mouseHook);
-                _mouseHook = 0;
-            }
-        });
-    }
-
-    private void EnsureMouseHook()
-    {
-        if (_mouseHook != 0) return;
-        _mouseHook = NativeMethods.SetWindowsHookExW(NativeMethods.WH_MOUSE_LL, MouseHookProc, NativeMethods.GetModuleHandle(null), 0);
-        if (_mouseHook == 0) throw new Win32Exception(Marshal.GetLastPInvokeError(), "无法安装全局鼠标钩子");
-    }
-
     /// <summary>
     /// 注销热键（录制期间临时注销，或退出时注销）。
     /// </summary>
@@ -135,13 +88,6 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
             return InvokeOnWindowThread(() =>
             {
                 _callbacks.TryRemove(id, out _);
-                _mouseCallbacks.TryRemove(id, out _);
-                // 注销热键期间若正在录制，保留钩子接收全局鼠标输入。
-                if (_mouseCallbacks.IsEmpty && _mouseRecordingCallback is null && _mouseHook != 0)
-                {
-                    NativeMethods.UnhookWindowsHookEx(_mouseHook);
-                    _mouseHook = 0;
-                }
                 return NativeMethods.UnregisterHotKey(_hWnd, id);
             });
         }
@@ -149,48 +95,6 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
         {
             return false;
         }
-    }
-
-    private static nint StaticMouseHookProc(int code, nint wParam, nint lParam)
-    {
-        if (code >= 0 && LazyShared.IsValueCreated)
-        {
-            var host = LazyShared.Value;
-            var message = unchecked((uint)wParam.ToInt64());
-            var mouseData = message == NativeMethods.WM_XBUTTONDOWN
-                ? (uint)(((NativeMethods.MSLLHOOKSTRUCT*)lParam)->mouseData >> 16)
-                : 0u;
-            if (TryGetMouseHookButton(message, mouseData, out var button))
-            {
-                var modifiers = HotkeyGesture.GetAsyncPressedModifiers();
-                var recordingCallback = host._mouseRecordingCallback;
-                if (recordingCallback is not null)
-                {
-                    ThreadPool.QueueUserWorkItem(_ => recordingCallback(button, modifiers));
-                    return NativeMethods.CallNextHookEx(0, code, wParam, lParam);
-                }
-                host.DispatchMouseButton(button, modifiers);
-            }
-        }
-        return NativeMethods.CallNextHookEx(0, code, wParam, lParam);
-    }
-
-    internal void DispatchMouseButton(uint button, uint modifiers)
-    {
-        foreach (var entry in _mouseCallbacks)
-            if (entry.Value.Button == button && entry.Value.Modifiers == modifiers && _callbacks.TryGetValue(entry.Key, out var callback))
-                ThreadPool.QueueUserWorkItem(_ => callback());
-    }
-
-    internal static bool TryGetMouseHookButton(uint message, uint mouseData, out uint button)
-    {
-        button = message switch
-        {
-            NativeMethods.WM_MBUTTONDOWN => 2u,
-            NativeMethods.WM_XBUTTONDOWN => mouseData == 1 ? 3u : mouseData == 2 ? 4u : 0u,
-            _ => 0u
-        };
-        return button != 0;
     }
 
     private void InvokeOnWindowThread(Action action) => InvokeOnWindowThread(() =>
@@ -328,9 +232,6 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
 
             if (_hWnd != 0)
             {
-                if (_mouseHook != 0) NativeMethods.UnhookWindowsHookEx(_mouseHook);
-                _mouseHook = 0;
-                _mouseCallbacks.Clear();
                 foreach (var id in _callbacks.Keys)
                 {
                     NativeMethods.UnregisterHotKey(_hWnd, id);

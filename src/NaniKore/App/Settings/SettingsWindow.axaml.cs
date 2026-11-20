@@ -113,10 +113,6 @@ internal sealed partial class SettingsWindow : Window
         Closed += (_, _) =>
         {
             _successStatusTimer.Stop();
-            if (_navItems.FirstOrDefault(item => item.Title == "热键") is { IsCreated: true } hotkeyItem && hotkeyItem.GetOrCreatePage(_working) is HotkeyPage hotkeyPage)
-            {
-                hotkeyPage.StopRecording();
-            }
             SaveWindowSize();
         };
     }
