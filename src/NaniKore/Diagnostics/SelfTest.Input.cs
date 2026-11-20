@@ -55,13 +55,11 @@ internal static partial class SelfTest
                 captured == $"Ctrl+{name}" && HotkeyGesture.Normalize(captured) == captured);
         }
 
-        Check("raw mouse middle-button down uses the down flag",
-            Win32HotkeyHost.TryGetRawMouseButton(NativeMethods.RI_MOUSE_MIDDLE_BUTTON_DOWN, out var middle) && middle == 2);
-        Check("raw mouse middle-button up is not treated as a press",
-            !Win32HotkeyHost.TryGetRawMouseButton(0x0020, out _));
-        Check("raw mouse side-button down flags map to their buttons",
-            Win32HotkeyHost.TryGetRawMouseButton(NativeMethods.RI_MOUSE_BUTTON_4_DOWN, out var side1) && side1 == 3 &&
-            Win32HotkeyHost.TryGetRawMouseButton(NativeMethods.RI_MOUSE_BUTTON_5_DOWN, out var side2) && side2 == 4);
+        Check("low-level mouse messages map middle and side buttons",
+            Win32HotkeyHost.TryGetMouseHookButton(NativeMethods.WM_MBUTTONDOWN, 0, out var middle) && middle == 2 &&
+            Win32HotkeyHost.TryGetMouseHookButton(NativeMethods.WM_XBUTTONDOWN, 1, out var side1) && side1 == 3 &&
+            Win32HotkeyHost.TryGetMouseHookButton(NativeMethods.WM_XBUTTONDOWN, 2, out var side2) && side2 == 4 &&
+            !Win32HotkeyHost.TryGetMouseHookButton(0x0208, 0, out _));
     }
 
     /// <summary>热键手势规范化：修饰键别名与大小写归一，拒绝空串 / 纯修饰键 / 不支持的按键。</summary>
@@ -737,6 +735,13 @@ internal static partial class SelfTest
                 Complete(() => unregistered = host.TryUnregisterHotKey(testId + 4));
                 Check($"expanded gesture {gesture} registers and unregisters with Win32", unregistered);
             }
+
+        var mouseCallback = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Complete(() => host.RegisterMouseHotKey(testId + 5, 0, 2, () => mouseCallback.TrySetResult(true)));
+        host.DispatchMouseButton(2, 0);
+        Check("registered mouse hotkey dispatches its callback",
+            mouseCallback.Task.WaitAsync(HotkeyTestTimeout).GetAwaiter().GetResult());
+        Complete(() => host.TryUnregisterHotKey(testId + 5));
 
             // 同时释放请求与两个关闭者，覆盖已入队请求排空和停止后拒绝请求两条路径。
             var start = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
