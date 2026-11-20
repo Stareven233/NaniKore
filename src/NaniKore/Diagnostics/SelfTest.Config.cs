@@ -61,6 +61,7 @@ internal static partial class SelfTest
         TestSharedBackgroundConfigNormalization();
         TestEmptyPromptKeysSurviveRewrite();
         TestPasteHotkeyNormalization();
+        TestHotkeyConfigRoundTrip();
         TestLegacyVisionOneshotKeyIsIgnored();
         TestPhoneticsConfigDefaultsAndRoundTrip();
         TestProfileDocumentOmitsDefaults();
@@ -484,6 +485,24 @@ internal static partial class SelfTest
                 "an empty paste gesture never reaches hotkey registration",
                 !HotkeyGesture.IsEnabled(reloaded.Current.Hotkeys.Paste) &&
                 HotkeyGesture.IsEnabled(reloaded.Current.Hotkeys.Capture));
+        });
+    }
+
+    private static void TestHotkeyConfigRoundTrip()
+    {
+        WithTempConfigDirectory((dataDirectory, templateDirectory) =>
+        {
+            var store = new ConfigStore(dataDirectory, templateDirectory);
+            var next = AppConfigCloner.Clone(store.Current);
+            next.Hotkeys.Capture = "Ctrl+Shift+F8";
+            next.Hotkeys.Paste = "Alt+F9";
+
+            store.AtomicWrite(next);
+            var reloaded = new ConfigStore(dataDirectory, templateDirectory);
+            Check(
+                "capture and paste hotkeys survive settings save and config reload",
+                reloaded.Current.Hotkeys.Capture == "Ctrl+Shift+F8" &&
+                reloaded.Current.Hotkeys.Paste == "Alt+F9");
         });
     }
 

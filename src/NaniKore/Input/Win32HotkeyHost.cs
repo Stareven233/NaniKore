@@ -27,6 +27,7 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
     private readonly TaskCompletionSource<bool> _readySource = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ConcurrentDictionary<int, Action> _callbacks = new();
     private readonly ConcurrentDictionary<int, (uint Modifiers, uint Button)> _mouseCallbacks = new();
+    private Action<uint, uint>? _mouseRecordingCallback;
     private readonly object _requestLock = new();
     private readonly Queue<(Action Execute, Action<Exception> Fail)> _actionQueue = new();
 
@@ -36,6 +37,7 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
     private Exception? _postError;
     private nint _mouseHook;
     private static readonly NativeMethods.HookProc MouseHookProc = StaticMouseHookProc;
+    private bool _rawMouseRegistered;
 
     public Win32HotkeyHost()
     {
@@ -83,18 +85,67 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
 
     public void RegisterMouseHotKey(int id, uint modifiers, uint button, Action callback)
     {
+        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("鼠标全局热键目前仅支持 Windows");
         InvokeOnWindowThread(() =>
         {
             if (_callbacks.ContainsKey(id) || _mouseCallbacks.ContainsKey(id)) throw new InvalidOperationException($"热键 ID {id} 已注册");
             if (_mouseCallbacks.Values.Any(value => value.Modifiers == modifiers && value.Button == button)) throw new Win32Exception(1409, "鼠标热键已被本程序占用");
-            if (_mouseHook == 0)
-            {
-                _mouseHook = NativeMethods.SetWindowsHookExW(NativeMethods.WH_MOUSE_LL, MouseHookProc, NativeMethods.GetModuleHandle(null), 0);
-                if (_mouseHook == 0) throw new Win32Exception(Marshal.GetLastPInvokeError(), "无法安装全局鼠标热键钩子");
-            }
+            EnsureRawMouseRegistered();
             _mouseCallbacks[id] = (modifiers, button);
             _callbacks[id] = callback;
         });
+    }
+
+    public void SetMouseRecordingCallback(Action<uint, uint>? callback)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            if (callback is not null) throw new PlatformNotSupportedException("鼠标热键录制目前仅支持 Windows");
+            return;
+        }
+        InvokeOnWindowThread(() =>
+        {
+            _mouseRecordingCallback = callback;
+            if (callback is not null && _mouseHook == 0)
+            {
+                _mouseHook = NativeMethods.SetWindowsHookExW(NativeMethods.WH_MOUSE_LL, MouseHookProc, NativeMethods.GetModuleHandle(null), 0);
+                if (_mouseHook == 0) throw new Win32Exception(Marshal.GetLastPInvokeError(), "无法安装全局鼠标录制钩子");
+                EnsureRawMouseRegistered();
+            }
+            // 录制回调与注册热键共用钩子；仍有注册项时不能因录制结束而卸载。
+            else if (callback is null && _mouseHook != 0 && _mouseCallbacks.IsEmpty)
+            {
+                NativeMethods.UnhookWindowsHookEx(_mouseHook);
+                _mouseHook = 0;
+            }
+        });
+    }
+
+    private void EnsureRawMouseRegistered()
+    {
+        if (_rawMouseRegistered) return;
+        var device = new NativeMethods.RAWINPUTDEVICE
+        {
+            usUsagePage = NativeMethods.HID_USAGE_PAGE_GENERIC,
+            usUsage = NativeMethods.HID_USAGE_GENERIC_MOUSE,
+            dwFlags = NativeMethods.RIDEV_INPUTSINK,
+            hwndTarget = _hWnd
+        };
+        if (!NativeMethods.RegisterRawInputDevices(&device, 1, (uint)sizeof(NativeMethods.RAWINPUTDEVICE)))
+            throw new Win32Exception(Marshal.GetLastPInvokeError(), "无法注册鼠标热键输入");
+        _rawMouseRegistered = true;
+    }
+
+    private void UnregisterRawMouse()
+    {
+        var device = new NativeMethods.RAWINPUTDEVICE
+        {
+            usUsagePage = NativeMethods.HID_USAGE_PAGE_GENERIC,
+            usUsage = NativeMethods.HID_USAGE_GENERIC_MOUSE,
+            dwFlags = NativeMethods.RIDEV_REMOVE,
+            hwndTarget = 0
+        };
+        NativeMethods.RegisterRawInputDevices(&device, 1, (uint)sizeof(NativeMethods.RAWINPUTDEVICE));
     }
 
     /// <summary>
@@ -108,10 +159,16 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
             {
                 _callbacks.TryRemove(id, out _);
                 _mouseCallbacks.TryRemove(id, out _);
-                if (_mouseCallbacks.IsEmpty && _mouseHook != 0)
+                // 注销热键期间若正在录制，保留钩子接收全局鼠标输入。
+                if (_mouseCallbacks.IsEmpty && _mouseRecordingCallback is null && _mouseHook != 0)
                 {
                     NativeMethods.UnhookWindowsHookEx(_mouseHook);
                     _mouseHook = 0;
+                }
+                if (_mouseCallbacks.IsEmpty && _mouseRecordingCallback is null && _rawMouseRegistered)
+                {
+                    UnregisterRawMouse();
+                    _rawMouseRegistered = false;
                 }
                 return NativeMethods.UnregisterHotKey(_hWnd, id);
             });
@@ -135,13 +192,28 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
             };
             if (button != 0)
             {
-                var modifiers = HotkeyGesture.GetPressedModifiers();
+                var modifiers = HotkeyGesture.GetAsyncPressedModifiers();
+                var recordingCallback = host._mouseRecordingCallback;
+                if (recordingCallback is not null)
+                {
+                    ThreadPool.QueueUserWorkItem(_ => recordingCallback(button, modifiers));
+                    return NativeMethods.CallNextHookEx(0, code, wParam, lParam);
+                }
                 foreach (var entry in host._mouseCallbacks)
                     if (entry.Value.Button == button && entry.Value.Modifiers == modifiers && host._callbacks.TryGetValue(entry.Key, out var callback))
                         ThreadPool.QueueUserWorkItem(_ => callback());
             }
         }
         return NativeMethods.CallNextHookEx(0, code, wParam, lParam);
+    }
+
+    internal static bool TryGetRawMouseButton(ushort flags, out uint button)
+    {
+        button = (flags & NativeMethods.RI_MOUSE_MIDDLE_BUTTON_DOWN) != 0 ? 2u
+            : (flags & NativeMethods.RI_MOUSE_BUTTON_4_DOWN) != 0 ? 3u
+            : (flags & NativeMethods.RI_MOUSE_BUTTON_5_DOWN) != 0 ? 4u
+            : 0u;
+        return button != 0;
     }
 
     private void InvokeOnWindowThread(Action action) => InvokeOnWindowThread(() =>
@@ -282,6 +354,8 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
                 if (_mouseHook != 0) NativeMethods.UnhookWindowsHookEx(_mouseHook);
                 _mouseHook = 0;
                 _mouseCallbacks.Clear();
+                if (_rawMouseRegistered) UnregisterRawMouse();
+                _rawMouseRegistered = false;
                 foreach (var id in _callbacks.Keys)
                 {
                     NativeMethods.UnregisterHotKey(_hWnd, id);
@@ -352,6 +426,28 @@ internal sealed unsafe class Win32HotkeyHost : IDisposable
                             Console.Error.WriteLine($"[Win32HotkeyHost] 全局热键回调执行异常 (id={id}): {ex}");
                         }
                     });
+                }
+                return 0;
+
+            case NativeMethods.WM_INPUT:
+                var inputSize = 0u;
+                NativeMethods.GetRawInputData(lParam, NativeMethods.RID_INPUT, null, ref inputSize, (uint)sizeof(NativeMethods.RAWINPUTHEADER));
+                byte* inputBuffer = stackalloc byte[checked((int)inputSize)];
+                if (NativeMethods.GetRawInputData(lParam, NativeMethods.RID_INPUT, inputBuffer, ref inputSize, (uint)sizeof(NativeMethods.RAWINPUTHEADER)) == inputSize)
+                {
+                    var header = (NativeMethods.RAWINPUTHEADER*)inputBuffer;
+                    if (header->dwType == NativeMethods.RIM_TYPEMOUSE)
+                    {
+                        var mouse = (NativeMethods.RAWMOUSE*)(inputBuffer + sizeof(NativeMethods.RAWINPUTHEADER));
+                        var flags = (ushort)mouse->ulButtons;
+                        if (TryGetRawMouseButton(flags, out var button))
+                        {
+                            var modifiers = HotkeyGesture.GetAsyncPressedModifiers();
+                            foreach (var entry in _mouseCallbacks)
+                                if (entry.Value.Button == button && entry.Value.Modifiers == modifiers && _callbacks.TryGetValue(entry.Key, out var mouseCallback))
+                                    ThreadPool.QueueUserWorkItem(_ => mouseCallback());
+                        }
+                    }
                 }
                 return 0;
 

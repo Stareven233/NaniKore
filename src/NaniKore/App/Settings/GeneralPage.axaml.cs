@@ -21,6 +21,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
 {
     private readonly Func<IProgress<string>, CancellationToken, Task>? _downloadDependencies;
     private readonly Func<string, IProgress<string>, CancellationToken, Task>? _downloadPhoneticPack;
+    private string _loadedBackgroundImagePath = string.Empty;
 
     /// <summary>语言代码 → 该语言的语言包卡片（按钮 + 行内说明，集中装配）。</summary>
     private readonly Dictionary<string, PhoneticPackCard> _packCards;
@@ -81,6 +82,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
         ArgumentNullException.ThrowIfNull(config);
         LocalResourceIdleTimeoutBox.Text = config.General.LocalResourceIdleTimeout;
         BackgroundImageBox.Text = config.Windows.BackgroundImage;
+        _loadedBackgroundImagePath = config.Windows.BackgroundImage?.Trim() ?? string.Empty;
         BackgroundBlurBox.Value = (decimal)config.Windows.BackgroundBlur;
         BackgroundOpacityBox.Value = (decimal)(config.Windows.BackgroundOpacity * 100);
         PanelBackgroundOpacityBox.Value = (decimal)(config.Windows.PanelBackgroundOpacity * 100);
@@ -113,12 +115,14 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
             return "图片模糊、图片不透明度和面板底色不透明度必须在 0–100 之间";
         }
 
-        if (!string.IsNullOrWhiteSpace(BackgroundImageBox.Text))
+        var backgroundImagePath = BackgroundImageBox.Text?.Trim() ?? string.Empty;
+        if (backgroundImagePath.Length > 0 &&
+            !string.Equals(backgroundImagePath, _loadedBackgroundImagePath, StringComparison.OrdinalIgnoreCase))
         {
             try
             {
                 // 保存前真实解码，避免把不存在的路径或非图片文件静默保存为有效背景。
-                using var image = WindowBackgroundResources.LoadImage(BackgroundImageBox.Text);
+                using var image = WindowBackgroundResources.LoadImage(backgroundImagePath);
             }
             catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
             {

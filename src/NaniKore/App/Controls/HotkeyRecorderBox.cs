@@ -104,7 +104,7 @@ internal sealed class HotkeyRecorderBox : TemplatedControl
     public HotkeyRecorderBox()
     {
         DisplayText = ResolveDisplayText();
-        LostFocus += (_, _) => CancelRecording();
+        // 全局钩子负责录制；焦点移动不应取消当前捕获。
     }
 
     /// <summary>进入录制状态；点击显示框或聚焦后按 Enter/空格都走这里。</summary>
@@ -176,6 +176,19 @@ internal sealed class HotkeyRecorderBox : TemplatedControl
         StatusChanged?.Invoke(this, $"已录制：{gesture}。保存时会尝试向系统注册");
     }
 
+    public void ProcessRecordingMouse(uint button, uint modifiers)
+    {
+        if (!IsRecording) return;
+        if (!HotkeyGesture.TryCaptureMouse(modifiers, button, out var gesture, out var message))
+        {
+            StatusChanged?.Invoke(this, message);
+            return;
+        }
+
+        EndRecording(gesture);
+        StatusChanged?.Invoke(this, $"已录制：{gesture}。保存时会尝试向系统注册");
+    }
+
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
         base.OnPointerPressed(e);
@@ -185,9 +198,7 @@ internal sealed class HotkeyRecorderBox : TemplatedControl
             var button = properties.IsMiddleButtonPressed ? 2u : properties.IsXButton1Pressed ? 3u : properties.IsXButton2Pressed ? 4u : 0u;
             if (button != 0)
             {
-                HotkeyGesture.TryCaptureMouse(HotkeyGesture.GetPressedModifiers(), button, out var gesture, out _);
-                EndRecording(gesture);
-                StatusChanged?.Invoke(this, $"已录制：{gesture}。保存时会尝试向系统注册");
+                ProcessRecordingMouse(button, HotkeyGesture.GetPressedModifiers());
             }
             e.Handled = true;
             return;
@@ -248,8 +259,9 @@ internal sealed class HotkeyRecorderBox : TemplatedControl
 
     private void EndRecording(string gesture)
     {
-        IsRecording = false;
+        // 写入新值后再结束录制，避免失焦事件抢先恢复旧手势
         Gesture = gesture;
+        IsRecording = false;
         DisplayText = ResolveDisplayText();
         RecordingChanged?.Invoke(this, false);
     }

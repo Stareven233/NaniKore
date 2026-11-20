@@ -31,6 +31,9 @@ internal static unsafe partial class NativeMethods
     internal static partial short GetKeyState(int virtualKey);
 
     [LibraryImport("user32.dll")]
+    internal static partial short GetAsyncKeyState(int virtualKey);
+
+    [LibraryImport("user32.dll")]
     public static partial nint GetForegroundWindow();
 
     [LibraryImport("user32.dll")]
@@ -157,6 +160,23 @@ internal static unsafe partial class NativeMethods
     internal const uint WM_MBUTTONDOWN = 0x0207;
     internal const uint WM_XBUTTONDOWN = 0x020B;
     internal const int WH_MOUSE_LL = 14;
+    internal const uint WM_INPUT = 0x00FF;
+    internal const uint RIDEV_INPUTSINK = 0x00000100;
+    internal const uint RIDEV_REMOVE = 0x00000001;
+    internal const uint RID_INPUT = 0x10000003;
+    internal const uint RIM_TYPEMOUSE = 0;
+    internal const ushort RI_MOUSE_MIDDLE_BUTTON_DOWN = 0x0010;
+    internal const ushort RI_MOUSE_BUTTON_4_DOWN = 0x0040;
+    internal const ushort RI_MOUSE_BUTTON_5_DOWN = 0x0100;
+    internal const ushort HID_USAGE_PAGE_GENERIC = 0x01;
+    internal const ushort HID_USAGE_GENERIC_MOUSE = 0x02;
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct RAWINPUTDEVICE { public ushort usUsagePage; public ushort usUsage; public uint dwFlags; public nint hwndTarget; }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct RAWINPUTHEADER { public uint dwType; public uint dwSize; public nint hDevice; public nint wParam; }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct RAWMOUSE { public ushort usFlags; public uint ulButtons; public uint ulRawButtons; public int lLastX; public int lLastY; public uint ulExtraInformation; }
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct MSLLHOOKSTRUCT { public POINT pt; public uint mouseData; public uint flags; public uint time; public nint dwExtraInfo; }
@@ -168,6 +188,11 @@ internal static unsafe partial class NativeMethods
     internal static partial bool UnhookWindowsHookEx(nint hook);
     [LibraryImport("user32.dll")]
     internal static partial nint CallNextHookEx(nint hook, int code, nint wParam, nint lParam);
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool RegisterRawInputDevices(RAWINPUTDEVICE* devices, uint count, uint size);
+    [LibraryImport("user32.dll", SetLastError = true)]
+    internal static partial uint GetRawInputData(nint input, uint command, void* data, ref uint size, uint headerSize);
 
     public const uint MOD_ALT = 0x0001;
     public const uint MOD_CONTROL = 0x0002;

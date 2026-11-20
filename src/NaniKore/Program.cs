@@ -202,6 +202,8 @@ internal static class Program
             var config = store.Current;
             Console.WriteLine($"Config version: {config.Version}");
             Console.WriteLine($"Config source: {store.ConfigPath}");
+            Console.WriteLine($"Capture hotkey: {config.Hotkeys.Capture}");
+            Console.WriteLine($"Paste hotkey: {config.Hotkeys.Paste}");
             Console.WriteLine($"Active profile: {config.Pipeline.ActiveProfile}");
             Console.WriteLine($"Pipeline mode: {config.Pipeline.Mode}");
             Console.WriteLine($"Auto translate: {config.General.AutoTranslate}");

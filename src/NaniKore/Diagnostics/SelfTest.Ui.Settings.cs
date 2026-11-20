@@ -19,6 +19,7 @@ using NaniKore.App.Settings;
 using NaniKore.App.Theme;
 using NaniKore.Config;
 using NaniKore.Favorites;
+using NaniKore.Input;
 using NaniKore.Ocr.Models;
 using NaniKore.Overlay;
 using NaniKore.Phonetics;
@@ -45,6 +46,7 @@ internal static partial class SelfTest
         TestAboutPageRepositoryEntry();
         TestSettingsCloseSizeMemory();
         TestSettingsSaveSnapshots();
+        TestSettingsHotkeySaveRoundTrip();
         TestSettingsCloseSizeWriteBackKeepsExternalUpdates();
         TestFavoritesSettingsPageFilteringAndEvents();
         TestFontsConfiguration();
@@ -205,6 +207,15 @@ internal static partial class SelfTest
             hotkeys.Validate() is { } duplicateError && duplicateError.Contains("相同", StringComparison.Ordinal));
         hotkeys.Load(new AppConfig { Hotkeys = new HotkeyConfig { Capture = "Ctrl+OemPlus", Paste = "Ctrl+Add" } });
         Check("hotkey page keeps main-keyboard and numpad plus bindings independent", hotkeys.Validate() is null);
+        var captureRecorder = Find<HotkeyRecorderBox>(hotkeys, "CaptureRecorder")!;
+        captureRecorder.BeginRecording();
+        captureRecorder.ProcessRecordingKey(HotkeyRecorderBox.ToVirtualKey(Key.F8), HotkeyGesture.ModControl | HotkeyGesture.ModShift);
+        var applied = new AppConfig();
+        hotkeys.Apply(applied);
+        Check(
+            "recorder keyboard input applies the new gesture",
+            !captureRecorder.IsRecording && captureRecorder.Gesture == "Ctrl+Shift+F8" &&
+            applied.Hotkeys.Capture == "Ctrl+Shift+F8");
     }
 
     /// <summary>回收设置始终可见；自定义输入先报错再保存，绝不以默认值吞掉非法输入。</summary>
@@ -448,6 +459,8 @@ internal static partial class SelfTest
                 "general page loads background settings and both opacity percentages",
                 pathBox.Text == relativePath && blurBox.Value == 24.5m &&
                 opacityBox.Value == 35m && panelOpacityBox.Value == 45m);
+            Check("unchanged missing background path does not block unrelated settings saves",
+                page.Validate() is null);
             // 临时目录与程序可能分属不同盘符；解码校验使用绝对路径，路径基准单独断言。
             pathBox.Text = imagePath;
             Check("general page accepts a decodable background image", page.Validate() is null);
@@ -1012,6 +1025,59 @@ internal static partial class SelfTest
         {
             settings.Close();
         }
+    }
+
+    /// <summary>热键必须经过设置窗口保存回调写盘，并由新 ConfigStore 实例读回。</summary>
+    private static void TestSettingsHotkeySaveRoundTrip()
+    {
+        var root = Path.Combine(Environment.CurrentDirectory, ".temp", "hotkey-settings-save-regression");
+        var dataDirectory = Path.Combine(root, "data");
+        var templateDirectory = Path.Combine(root, "template");
+        Directory.CreateDirectory(templateDirectory);
+
+        var store = new ConfigStore(dataDirectory, templateDirectory);
+        var initial = AppConfigCloner.Clone(store.Current);
+        var missingBackgroundPath = Path.Combine(root, "missing-background.png");
+        initial.Windows.BackgroundImage = missingBackgroundPath;
+        store.AtomicWrite(initial);
+        var settings = new SettingsWindow(
+            () => store.Current,
+            store.AtomicWrite,
+            (_, _) => Task.FromResult("ok"));
+        try
+        {
+            settings.SelectTab(SettingsTab.Hotkeys);
+            var page = (HotkeyPage)Find<ContentControl>(settings, "PageHost")!.Content!;
+            var capture = Find<HotkeyRecorderBox>(page, "CaptureRecorder")!;
+            capture.BeginRecording();
+            capture.ProcessRecordingKey(0x77, HotkeyGesture.ModControl | HotkeyGesture.ModShift);
+
+            Find<Button>(settings, "SaveButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+            Check("settings-window save callback persists the newly recorded capture hotkey",
+                store.Current.Hotkeys.Capture == "Ctrl+Shift+F8" &&
+                store.Current.Windows.BackgroundImage == missingBackgroundPath);
+
+            settings.SelectTab(SettingsTab.General);
+            var generalPage = (GeneralPage)Find<ContentControl>(settings, "PageHost")!.Content!;
+            Find<TextBox>(generalPage, "BackgroundImageBox")!.Text = Path.Combine(root, "new-missing-background.png");
+            settings.SelectTab(SettingsTab.Hotkeys);
+            Find<Button>(settings, "SaveButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+            var footer = Find<InfoBar>(settings, "FooterStatus")!;
+            Check("validation redirect preserves the actionable error in the footer",
+                Find<TextBlock>(settings, "PageTitle")!.Text == "通用" &&
+                footer.IsVisible && footer.Message.Contains("无法读取背景图片", StringComparison.Ordinal));
+        }
+        finally
+        {
+            settings.Close();
+        }
+
+        var reloaded = new ConfigStore(dataDirectory, templateDirectory);
+        Check("reopening settings from disk keeps the newly recorded capture hotkey",
+            reloaded.Current.Hotkeys.Capture == "Ctrl+Shift+F8" &&
+            reloaded.Current.Windows.BackgroundImage == missingBackgroundPath);
     }
 
     /// <summary>真实关闭事件仅回写尺寸，始终保留最新提交及外部更新，不夹带被拒绝的编辑。</summary>

@@ -53,6 +53,7 @@ internal sealed partial class SettingsWindow : Window
     private readonly List<NavigationItem> _navItems;
     private readonly NavigationItem _translationNav;
     private readonly DispatcherTimer _successStatusTimer;
+    private ISettingsPage? _validationErrorPage;
 
     /// <summary>尺寸比较容差：吸收不同 DPI 下 Bounds 的取整漂移，偏差小于该值视为未变化。</summary>
     private const double SizeEpsilon = 1.0;
@@ -112,6 +113,10 @@ internal sealed partial class SettingsWindow : Window
         Closed += (_, _) =>
         {
             _successStatusTimer.Stop();
+            if (_navItems.FirstOrDefault(item => item.Title == "热键") is { IsCreated: true } hotkeyItem && hotkeyItem.GetOrCreatePage(_working) is HotkeyPage hotkeyPage)
+            {
+                hotkeyPage.StopRecording();
+            }
             SaveWindowSize();
         };
     }
@@ -152,6 +157,8 @@ internal sealed partial class SettingsWindow : Window
         }
 
         var page = navItem.GetOrCreatePage(_working);
+        var isValidationErrorPage = ReferenceEquals(page, _validationErrorPage);
+        _validationErrorPage = null;
         // 页面延迟创建；返回通用页时同步尚未保存的流程选择，不重载其它编辑项。
         if (page is GeneralPage general && _translationNav.IsCreated)
         {
@@ -161,7 +168,10 @@ internal sealed partial class SettingsWindow : Window
 
         PageTitle.Text = navItem.Title;
         PageHost.Content = page.View;
-        FooterStatus.Clear();
+        if (!isValidationErrorPage)
+        {
+            FooterStatus.Clear();
+        }
     }
 
     private void Save()
@@ -180,6 +190,7 @@ internal sealed partial class SettingsWindow : Window
             }
 
             // 校验失败时切到出错的页面并就地提示，用户不必猜是哪一页的字段有问题。
+            _validationErrorPage = page;
             SelectPage(page);
             FooterStatus.Show(error, InfoSeverity.Warning);
             return;

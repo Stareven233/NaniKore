@@ -70,8 +70,8 @@ internal static class HotkeyGesture
                 case "ALT": modifiers |= ModAlt; break;
                 case "WIN" or "WINDOWS": modifiers |= ModWin; break;
                 case "MIDDLEMOUSE" or "MOUSEMIDDLE" or "中键": key = MouseMiddle; break;
-                case "MOUSE4" or "XBUTTON1" or "MOUSEX1" or "鼠标侧键1": key = MouseX1; break;
-                case "MOUSE5" or "XBUTTON2" or "MOUSEX2" or "鼠标侧键2": key = MouseX2; break;
+                case "MOUSE4" or "XBUTTON1" or "MOUSEX1" or "鼠标侧键1" or "侧键1": key = MouseX1; break;
+                case "MOUSE5" or "XBUTTON2" or "MOUSEX2" or "鼠标侧键2" or "侧键2": key = MouseX2; break;
                 default:
                     if (key is not null || !TryParseKey(part, out var parsed))
                     {
@@ -253,12 +253,25 @@ internal static class HotkeyGesture
     /// 空串＝关闭该热键：注册路径据此整体跳过，绝不把空手势喂给 RegisterHotKey。
     /// 截图热键另有归一化兜底（恒有值），这里对两个槽位一视同仁。
     /// </summary>
+    /// <summary>低级全局钩子运行在后台线程，修饰键状态必须读取系统异步状态。</summary>
+    internal static uint GetAsyncPressedModifiers()
+    {
+        uint modifiers = 0;
+        if (IsAsyncKeyDown(VirtualKeyControl)) modifiers |= ModControl;
+        if (IsAsyncKeyDown(VirtualKeyShift)) modifiers |= ModShift;
+        if (IsAsyncKeyDown(VirtualKeyMenu)) modifiers |= ModAlt;
+        if (IsAsyncKeyDown(VirtualKeyLeftWindows) || IsAsyncKeyDown(0x5C)) modifiers |= ModWin;
+        return modifiers;
+    }
+
     internal static bool IsEnabled(string? gesture) => !string.IsNullOrWhiteSpace(gesture);
 
     /// <summary>F1–F11 才允许裸键绑定；F13–F24 与字母数字一样必须带修饰键。</summary>
     private static bool IsBareFunctionKey(uint key) => key is >= VirtualKeyF1 and <= BareFunctionKeyLimit;
 
     private static bool IsKeyDown(int virtualKey) => (Interop.NativeMethods.GetKeyState(virtualKey) & 0x8000) != 0;
+
+    private static bool IsAsyncKeyDown(int virtualKey) => (Interop.NativeMethods.GetAsyncKeyState(virtualKey) & 0x8000) != 0;
 
     internal static bool IsModifierKey(uint keyCode) => keyCode
         is (uint)VirtualKeyShift or (uint)VirtualKeyControl or (uint)VirtualKeyMenu
@@ -335,9 +348,9 @@ internal static class HotkeyGesture
 
     private static string FormatKey(uint key) => key switch
     {
-        MouseMiddle => "MiddleMouse",
-        MouseX1 => "Mouse4",
-        MouseX2 => "Mouse5",
+        MouseMiddle => "中键",
+        MouseX1 => "侧键1",
+        MouseX2 => "侧键2",
         >= VirtualKeyF1 and <= VirtualKeyF1 + 23 => $"F{key - VirtualKeyF1 + 1}",
         >= 0x60 and <= 0x69 => $"NumPad{key - 0x60}",
         _ when NamedKeys.TryGetValue(key, out var name) => name,

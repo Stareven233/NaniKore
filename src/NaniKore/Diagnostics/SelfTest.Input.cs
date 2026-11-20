@@ -30,6 +30,7 @@ internal static partial class SelfTest
     private static void RunInputTests()
     {
         TestHotkeyGestureNormalization();
+        TestMouseHotkeyGestures();
         TestHotkeyGestureSingleFunctionKeys();
         TestHotkeyExpandedKeys();
         TestHotkeyRecorderMapping();
@@ -43,6 +44,24 @@ internal static partial class SelfTest
         TestDesktopCapturerAndGeometry();
         TestWin32HotkeyHostLifecycle();
         TestApplicationIconAndComponents();
+    }
+
+    private static void TestMouseHotkeyGestures()
+    {
+        foreach (var (button, name) in new (uint, string)[] { (2, "中键"), (3, "侧键1"), (4, "侧键2") })
+        {
+            Check($"mouse hotkey {name} captures and normalizes",
+                HotkeyGesture.TryCaptureMouse(HotkeyGesture.ModControl, button, out var captured, out _) &&
+                captured == $"Ctrl+{name}" && HotkeyGesture.Normalize(captured) == captured);
+        }
+
+        Check("raw mouse middle-button down uses the down flag",
+            Win32HotkeyHost.TryGetRawMouseButton(NativeMethods.RI_MOUSE_MIDDLE_BUTTON_DOWN, out var middle) && middle == 2);
+        Check("raw mouse middle-button up is not treated as a press",
+            !Win32HotkeyHost.TryGetRawMouseButton(0x0020, out _));
+        Check("raw mouse side-button down flags map to their buttons",
+            Win32HotkeyHost.TryGetRawMouseButton(NativeMethods.RI_MOUSE_BUTTON_4_DOWN, out var side1) && side1 == 3 &&
+            Win32HotkeyHost.TryGetRawMouseButton(NativeMethods.RI_MOUSE_BUTTON_5_DOWN, out var side2) && side2 == 4);
     }
 
     /// <summary>热键手势规范化：修饰键别名与大小写归一，拒绝空串 / 纯修饰键 / 不支持的按键。</summary>
