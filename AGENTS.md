@@ -22,5 +22,5 @@
   - `args: build (-Release)`: 默认快速构建 Debug 版本（递增项目产品版本号）；加 `-Release` 编译发布版
   - `args: run (-Release)`: 启动桌面应用（默认 Debug，加 `-Release` 启动发布版）
   - `args: test`: 运行无 UI 自测
-  - `args: publish (-full)`: 编译 Native AOT 并发布不含固定 OCR 权重的（或包含完整 `deps/`的）免安装 Windows x64 ZIP
+  - `args: publish (-full/-patch)`: 编译 Native AOT 并发布轻量、完整离线或已有安装更新用的 Windows x64 ZIP
 - 本地环境有bun 1.4.4, python 3.14

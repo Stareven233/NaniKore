@@ -6,6 +6,8 @@ param(
 
     [switch]$Full,
 
+    [switch]$Patch,
+
     [switch]$ForceBump,
 
     [Alias('v', 'Verbose')]
@@ -13,6 +15,15 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($Full -and $Patch) {
+    throw 'The -Full and -Patch switches cannot be used together.'
+}
+
+if (($Full -or $Patch) -and $Command -ne 'publish') {
+    throw 'The -Full and -Patch switches are only valid with the publish command.'
+}
+
 $root = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'toolchain.ps1')
 
@@ -298,11 +309,34 @@ function New-NaniKoreReleaseArchive {
         [Parameter(Mandatory)]
         [string]$ProductVersion,
 
-        [switch]$IncludeFullDependencies
+        [switch]$IncludeFullDependencies,
+
+        [switch]$IncludePatch
     )
 
     if (-not (Test-Path -LiteralPath $PublishOutput -PathType Container)) {
         throw "Publish output was not found: $PublishOutput"
+    }
+
+    if ($IncludeFullDependencies -and $IncludePatch) {
+        throw 'A release archive cannot include both full dependencies and patch contents.'
+    }
+
+    $patchFiles = @(
+        'NaniKore.exe',
+        'config.template.yaml',
+        'NOTICE',
+        'LICENSE'
+    )
+
+    if ($IncludePatch) {
+        $missingPatchFiles = @(
+            $patchFiles |
+                Where-Object { -not (Test-Path -LiteralPath (Join-Path $PublishOutput $_) -PathType Leaf) }
+        )
+        if ($missingPatchFiles.Count -gt 0) {
+            throw "Required patch-package files were not found in ${PublishOutput}: $($missingPatchFiles -join ', ')."
+        }
     }
 
     if ($IncludeFullDependencies) {
@@ -332,21 +366,29 @@ function New-NaniKoreReleaseArchive {
         }
     }
 
-    $archiveSuffix = if ($IncludeFullDependencies) { '-full' } else { '' }
+    $archiveSuffix = if ($IncludeFullDependencies) { '-full' } elseif ($IncludePatch) { '-patch' } else { '' }
     $archivePath = Join-Path $ArtifactsDirectory "NaniKore-v$ProductVersion-win_amd64$archiveSuffix.zip"
     $stagingDirectory = Join-Path $ArtifactsDirectory ".package-staging-$([guid]::NewGuid().ToString('N'))"
 
     try {
         New-Item -ItemType Directory -Path $stagingDirectory | Out-Null
 
-        # 发布目录内容直接置于 ZIP 根目录；完整包额外携带 deps/，解压后即可使用本地 OCR。
+        # 发布目录内容直接置于 ZIP 根目录；完整包额外携带 deps/，补丁包只携带可覆盖的程序文件。
         # .data 是本机运行期数据（配置、密钥密文、收藏库）：从 artifacts\win-x64 跑过一次应用就会生成它，
         # 一个排除项全挡住，杜绝把用户数据打进发布包（issue 017）。.data.backup-* 是挂接联接点时为
         # 既有运行期数据留的备份，同样一件都不能进交付物。nanikore.db 是 .data 之前的旧收藏库名，
         # dotnet publish 不清输出目录，旧版运行留下的残留同样不能进交付物。
-        Get-ChildItem -LiteralPath $PublishOutput -Force |
-            Where-Object { $_.Name -ne '.data' -and $_.Name -ne 'nanikore.db' -and $_.Name -notlike '.data.backup-*' } |
-            Copy-Item -Destination $stagingDirectory -Recurse -Force
+        if ($IncludePatch) {
+            # 补丁包依赖目标目录已有运行时 DLL；不重复打包它们，也不带入本机运行期数据。
+            Get-ChildItem -LiteralPath $PublishOutput -Force |
+                Where-Object { $_.Name -in $patchFiles } |
+                Copy-Item -Destination $stagingDirectory -Recurse -Force
+        }
+        else {
+            Get-ChildItem -LiteralPath $PublishOutput -Force |
+                Where-Object { $_.Name -ne '.data' -and $_.Name -ne 'nanikore.db' -and $_.Name -notlike '.data.backup-*' } |
+                Copy-Item -Destination $stagingDirectory -Recurse -Force
+        }
 
         if ($IncludeFullDependencies) {
             Copy-Item -LiteralPath $DependenciesDirectory -Destination $stagingDirectory -Recurse -Force
@@ -523,7 +565,8 @@ try {
                 -ArtifactsDirectory $artifactsDirectory `
                 -DependenciesDirectory $dependenciesDirectory `
                 -ProductVersion $productVersion `
-                -IncludeFullDependencies:$Full
+                -IncludeFullDependencies:$Full `
+                -IncludePatch:$Patch
 
             # 打包结束才挂本机链接：发布目录与仓库根 .data 共用同一份配置与密钥，调试版同样指向那里；
             # 交付 zip 不含 .data，解压出去的副本完全独立，用户数据不会随发布包外流。

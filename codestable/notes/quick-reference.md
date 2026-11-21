@@ -9,9 +9,10 @@
 ./scripts/dev.ps1 run
 ./scripts/dev.ps1 publish
 ./scripts/dev.ps1 publish -full
+./scripts/dev.ps1 publish -patch
 ```
 
-本地 OCR 依赖可从设置页下载，也可随完整发布包提供。依赖目录结构见 `deps/README.md`。
+本地 OCR 依赖可从设置页下载，也可随完整发布包提供。已有安装目录更新可使用 `publish -patch`，补丁包不含运行时 DLL，解压到空目录无法启动。依赖目录结构见 `deps/README.md`。
 
 ## 诊断入口
 

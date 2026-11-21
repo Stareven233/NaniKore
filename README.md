@@ -51,6 +51,7 @@
 | `./scripts/dev.ps1 test` | 运行无 UI 全量自动化自测。 |
 | `./scripts/dev.ps1 publish` | 编译 Native AOT 并发布免安装轻量 ZIP（~20 MB，根目录 8 项，解压即用）。 |
 | `./scripts/dev.ps1 publish -full` | 编译 Native AOT 并发布包含完整 `deps/` 离线模型与注音数据的 Windows x64 ZIP（~82 MB）。 |
+| `./scripts/dev.ps1 publish -patch` | 编译 Native AOT 并发布已有安装目录覆盖更新用的补丁 ZIP（不含运行时 DLL，约 ~11 MB）。 |
 
 ## 发布包
 
@@ -58,8 +59,9 @@
 
 - `./scripts/dev.ps1 publish`：`NaniKore-v{版本号}-win_amd64.zip`
 - `./scripts/dev.ps1 publish -full`：`NaniKore-v{版本号}-win_amd64-full.zip`
+- `./scripts/dev.ps1 publish -patch`：`NaniKore-v{版本号}-win_amd64-patch.zip`
 
-两种 ZIP 都将发布内容直接置于压缩包根目录。根目录严格遵守 8 文件契约，完整包额外携带与仓库一致的 `deps/`：
+普通包与补丁包都将发布内容直接置于压缩包根目录。普通包根目录严格遵守 8 文件契约，完整包额外携带与仓库一致的 `deps/`；补丁包只包含程序文件、配置模板与许可声明，依赖目标目录中已有的运行时 DLL：
 
 ```text
 NaniKore.exe                 # Native AOT 精简可执行文件（~22 MB，零 .NET 运行时依赖）
@@ -83,6 +85,17 @@ deps/                        # （仅 -full 完整包携带，或设置页按需
    ├─ ja/、en/              # 日英原生语言包（DLL + pack.json + licenses/）
    └─ zh/zh_pinyin.txt      # 中文拼音数据（远端 gzip 下载后解压）
 ```
+
+补丁包根目录只有以下文件：
+
+```text
+NaniKore.exe
+config.template.yaml
+NOTICE
+LICENSE
+```
+
+补丁包不是独立安装包，解压到空目录无法启动；应覆盖到已有的轻量包或完整包目录中。补丁包同样不包含 `.data/`，不会覆盖用户配置、密钥或收藏库。
 
 发布包不含 `.data/`：首次启动时程序把 `config.template.yaml` 按字节原样复制到 `程序目录\.data\config.yaml` 作为用户配置，密钥落在 `.data/keys.bin`（整块 DPAPI 密文），收藏库是 `.data/collections.db`。因此解压覆盖升级不会冲掉任何本机数据。备份整个软件只需复制 `.data/`；但其中 `keys.bin` 由当前 Windows 用户的 DPAPI 加密，复制到其它 Windows 用户或其它机器后无法解密，需在目标机重新填写 API Key（程序不会覆盖无法解密的原文件，会提示手动处理）。
 
