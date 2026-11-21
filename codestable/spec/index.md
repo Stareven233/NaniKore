@@ -33,6 +33,7 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 ### 翻译、结果与配置
 
 - 已有 OpenAI（completions/responses）、Claude、Gemini 的流式 provider 契约，支持 `local_ocr` 与 `vision_oneshot` 两条输入路径。
+- `general.paste_auto_translate` 默认 `false`：选取/剪贴板输入默认先呈现原文，由用户显式点击翻译；视觉直喂不受该开关约束，仍一次完成识别与翻译。
 - 翻译请求传输边界：生产 HttpClient 关闭自动重定向，仅自动跟随同源（协议 + 主机 + 端口一致）重定向并保留密钥头与 POST 正文，303 转 GET 丢正文，跨源或 https→http 降级抛出 `ProviderTransportPolicyException` 中文错误；远程端点强制 HTTPS，仅 localhost/127.0.0.1/::1 允许明文 HTTP；连接测试与真实翻译共用同一传输入口，策略一致。
 - 流式超时与热应用：`timeout_seconds`（默认 30）为空闲超时而非总时长——连接与等待响应头不超过该时长，响应头到达后正文读取若任意两次数据之间连续该时长无新字节即抛 `ProviderTimeoutException`，持续有输出不会被累计时长截断；设置热应用/关闭改过尺寸的设置窗口重建 `ProviderFactory` 时按流租约延迟释放旧 provider，不中断进行中的请求，新请求改用新工厂。
 - 提示词为模块化组装（`PromptTemplates`）：设置页对应 `base` / `vision_base` / `explain` 三个 Base 键与 `japanese_plugin` / `english_plugin` / `chinese_plugin` 三个语言插件键，留空即回落到内置常量。Base 与插件支持 `{{target_language}}`；视觉一条龙由视觉 Base + 语言插件恒定同拼，与输入无关，前缀缓存 100% 命中。语言插件经「探测结果纳入 + 目标语言互斥剔除」双重门控：某语言本身就是目标语言时对应插件整条不注入（日译英不标 IPA、外译中不标拼音等）。

@@ -52,11 +52,11 @@ internal sealed class GeneralConfig
     public bool AutoTranslate { get; set; }
 
     /// <summary>
-    /// 选取/剪贴板翻译（<see cref="HotkeyConfig.Paste"/>）读到内容后是否立即启动翻译；默认开启——
-    /// 该热键本身就是「立即翻译」的意图。关闭时面板只呈现原文（含注音），由「翻译」按钮显式触发；
+    /// 选取/剪贴板翻译（<see cref="HotkeyConfig.Paste"/>）读到内容后是否立即启动翻译；默认关闭，
+    /// 面板只呈现原文（含注音），由「翻译」按钮显式触发；
     /// 视觉直喂（vision_oneshot）不受此开关约束，仍一次完成识别与翻译（与 <see cref="AutoTranslate"/> 同口径）。
     /// </summary>
-    public bool PasteAutoTranslate { get; set; } = true;
+    public bool PasteAutoTranslate { get; set; }
 
     /// <summary>阶段 1 翻译完成后是否自动开始并展开语法深度精讲。</summary>
     public bool AutoExplain { get; set; }

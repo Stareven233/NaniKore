@@ -803,6 +803,8 @@ internal static partial class SelfTest
             Check(
                 "a malformed config still starts on defaults so the app can run",
                 store.Current.Profiles.Count == 3);
+            Check("a malformed config falls back to manual paste translation",
+                !store.Current.General.PasteAutoTranslate);
             Check(
                 "saving over a malformed config is refused instead of silently rewriting defaults",
                 ThrowsConfigWriteRefused(() => store.AtomicWrite(AppConfigCloner.Clone(store.Current))) &&
@@ -1006,6 +1008,8 @@ internal static partial class SelfTest
             // 档名唯一化：重名追加 " (2)"，活动档按 name 匹配
             File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
                 version: 1
+                general:
+                  paste_auto_translate: true
                 pipeline:
                   active_profile: 工作
                 profiles:
@@ -1019,6 +1023,7 @@ internal static partial class SelfTest
                     model: personal-model
                 """);
             var named = new ConfigStore(dataDirectory, templateDirectory);
+            Check("explicit paste auto-translate remains enabled", named.Current.General.PasteAutoTranslate);
             Check(
                 "duplicate profile names normalize with a numeric suffix while the active profile stays by name",
                 named.Current.Pipeline.ActiveProfile == "工作" &&
@@ -1027,6 +1032,8 @@ internal static partial class SelfTest
             // 活动档不中任何档名：回落第一个档
             File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
                 version: 1
+                general:
+                  auto_translate: true
                 pipeline:
                   active_profile: 旧 id 索引
                 profiles:
@@ -1035,6 +1042,8 @@ internal static partial class SelfTest
                   model: first-model
                 """);
             var missingActive = new ConfigStore(dataDirectory, templateDirectory);
+            Check("omitted paste auto-translate defaults to manual translation",
+                missingActive.Current.General.AutoTranslate && !missingActive.Current.General.PasteAutoTranslate);
             Check(
                 "an unmatched active profile falls back to the first profile by name",
                 missingActive.Current.Pipeline.ActiveProfile == "第一个");
@@ -1055,7 +1064,7 @@ internal static partial class SelfTest
                 unsupported.Current.Pipeline.ActiveProfile == "OpenAI 默认" &&
                 unsupported.Current.Profiles.Count == 3 &&
                 !unsupported.Current.General.AutoTranslate &&
-                unsupported.Current.General.PasteAutoTranslate &&
+                !unsupported.Current.General.PasteAutoTranslate &&
                 unsupported.Current.General.TargetLanguage == "中文（简体）" &&
                 File.ReadAllText(Path.Combine(dataDirectory, "config.yaml")).Contains("translation:", StringComparison.Ordinal));
         });
