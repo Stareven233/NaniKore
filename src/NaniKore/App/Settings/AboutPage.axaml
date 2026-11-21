@@ -36,8 +36,6 @@
                            Margin="0,14,0,0"
                            TextWrapping="Wrap" />
 
-                <!-- 版本差提示：仅提示，没有按钮、没有自动动作 -->
-                <controls:InfoBar x:Name="VersionMismatchBar" Margin="0,10,0,0" />
             </StackPanel>
         </controls:SettingsGroup>
 

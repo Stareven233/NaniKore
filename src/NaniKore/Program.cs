@@ -200,7 +200,8 @@ internal static class Program
             }
 
             var config = store.Current;
-            Console.WriteLine($"Config version: {config.Version}");
+            Console.WriteLine($"Product version: {ProductVersion.Current}");
+            Console.WriteLine($"Config schema version: {ConfigMigrations.CurrentSchemaVersion}");
             Console.WriteLine($"Config source: {store.ConfigPath}");
             Console.WriteLine($"Capture hotkey: {config.Hotkeys.Capture}");
             Console.WriteLine($"Paste hotkey: {config.Hotkeys.Paste}");

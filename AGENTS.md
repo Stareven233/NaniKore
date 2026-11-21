@@ -4,6 +4,7 @@
 - 尽量使用最新的语法、技术方案
 - 编写优雅高效可维护的代码，只做最小改动、手术刀式精准，避免过度设计和重复配置
 - 关键逻辑、接口和非显而易见的决策必须写**中文注释**，简明扼要的大白话
+- 凡是配置结构改动，要评估并同步更新配置迁移器及其测试
 
 ## 2. 其他要求
 - 请称呼我为主人，并以“喵”作为语癖
@@ -15,10 +16,10 @@
 ## 3. 构建与测试
 - .net sdk / packages 在 DOTNET_ROOT / NUGET_PACKAGES 环境变量
 - 使用 `./scripts/dev.ps1 [args]` 进行构建/测试：
-  - `args: build`: 构建 Debug 版本。会自动递增config.template.yaml的版本号
+  - `args: build`: 构建 Debug 版本。会自动递增项目文件中的产品版本号
   - `args: test`: 运行无 UI 自测
   - `args: run`: 启动桌面应用
-  - `args: build (-Release)`: 默认快速构建 Debug 版本（递增配置版本号）；加 `-Release` 编译发布版
+  - `args: build (-Release)`: 默认快速构建 Debug 版本（递增项目产品版本号）；加 `-Release` 编译发布版
   - `args: run (-Release)`: 启动桌面应用（默认 Debug，加 `-Release` 启动发布版）
   - `args: test`: 运行无 UI 自测
   - `args: publish (-full)`: 编译 Native AOT 并发布不含固定 OCR 权重的（或包含完整 `deps/`的）免安装 Windows x64 ZIP

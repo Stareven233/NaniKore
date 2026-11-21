@@ -44,7 +44,7 @@
 
 | 命令 | 说明 |
 | --- | --- |
-| `./scripts/dev.ps1 build` | 快速构建 Debug 版本（递增配置版本号，供断点调试）。 |
+| `./scripts/dev.ps1 build` | 快速构建 Debug 版本（递增项目产品版本号，供断点调试）。 |
 | `./scripts/dev.ps1 build -Release` | 编译 Native AOT Release 版本（生成至 `artifacts/win-x64`，不打包）。 |
 | `./scripts/dev.ps1 run` | 启动本地 Debug 桌面应用（后台脱手运行，不占用终端）。 |
 | `./scripts/dev.ps1 run -Release` | 启动本地已构建的 Native AOT Release 桌面应用。 |
@@ -54,7 +54,7 @@
 
 ## 发布包
 
-发布文件保存在 `artifacts/`。版本号读取自根目录 `config.template.yaml` 的 `version` 字段：
+发布文件保存在 `artifacts/`。产品版本统一维护在 `src/NaniKore/NaniKore.csproj` 的 `<Version>` 元数据中，About 页、诊断输出和 ZIP 文件名都使用同一版本：
 
 - `./scripts/dev.ps1 publish`：`NaniKore-v{版本号}-win_amd64.zip`
 - `./scripts/dev.ps1 publish -full`：`NaniKore-v{版本号}-win_amd64-full.zip`
@@ -98,7 +98,7 @@ deps/                        # （仅 -full 完整包携带，或设置页按需
 
 「热键」页分别录制两把全局快捷键：`hotkeys.capture`（截图 OCR，默认 `Ctrl+Shift+A`）与 `hotkeys.paste`（选取/剪贴板翻译，默认 `Ctrl+Shift+S`）。任一把留空即不注册该热键；录制框按 Esc 可解除绑定。选取翻译的输入优先级是「选区文本（模拟 Ctrl+C）→ 剪贴板文本 → 剪贴板图像」。选取/剪贴板取得的文本（含本地 OCR 结果）默认只呈现原文，由面板「翻译」按钮手动触发；可在「设置 → 翻译」开启「选取后自动翻译」。`vision_oneshot` 下，支持视觉的配置档仍会直接识别并翻译图像，不受该开关约束；不支持视觉时会提示切换配置档或改用本地 OCR。程序只在「前台程序响应了 Ctrl+C」与「本地 OCR 识别成功」两种情况下改写剪贴板，其余情况（含前台程序按 Ctrl+C 写空串）都会在轮询超时后把快照原样还原；还原失败时结果面板状态栏会给出说明。
 
-「关于」页版本号形如 `v{A}({B})`：A 是模板版本（最新），B 是当前配置版本；两者 major/minor 不一致时启动后托盘会提示一次，关于页给一行常驻说明（仅提示，没有自动动作）。
+「关于」页显示当前程序产品版本。`config.yaml` 使用独立的 `schema_version` 标记配置结构；程序启动时自动迁移受支持的旧结构，产品版本变化本身不会改写配置。
 
 ## 收藏与生词本
 

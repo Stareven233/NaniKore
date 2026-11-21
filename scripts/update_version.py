@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
-# 更新 config.template.yaml 根级 version 字段；只替换版本值，保持其余配置与格式不变。
+# 更新项目文件中的产品版本；只替换 Version 节点，保持其余 XML 格式不变。
 from __future__ import annotations
 
 import argparse
 import re
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
-# 只匹配行首且无缩进的 version 字段，确保只更新根级字段。
-VERSION_LINE_RE = re.compile(
-    r'^(version:\s*)(?P<quote>["\']?)(?P<value>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:\+(?:0|[1-9]\d*))?)(?P<rest>\s*(?:#.*)?$)',
-    re.MULTILINE,
-)
+VERSION_TAG_RE = re.compile(r'(<Version>)([^<]+)(</Version>)')
 VERSION_VALUE_RE = re.compile(
     r'^(?:(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:\+(?:0|[1-9]\d*))?)$'
 )
@@ -55,26 +52,34 @@ def validate_new_version(new_version: str) -> None:
         raise ValueError('Build part must be omitted when zero; use major.minor.patch instead of +0')
 
 
-def update_config(config_path: Path, new_version: str) -> str:
+def read_project_version(project_path: Path) -> str:
+    root = ET.parse(project_path).getroot()
+    for group in root.findall('PropertyGroup'):
+        version = group.findtext('Version')
+        if version:
+            return version.strip()
+    raise FileNotFoundError(f'No Version property was found in {project_path}')
+
+
+def update_project(project_path: Path, new_version: str) -> str:
     validate_new_version(new_version)
 
-    content = config_path.read_text(encoding='utf-8')
-    match = VERSION_LINE_RE.search(content)
+    content = project_path.read_text(encoding='utf-8')
+    match = VERSION_TAG_RE.search(content)
     if not match:
-        raise FileNotFoundError(f'No root-level version field was found in {config_path}')
+        raise FileNotFoundError(f'No Version property was found in {project_path}')
 
-    old_value = match.group('value')
-    updated_content = VERSION_LINE_RE.sub(
-        lambda m: f"{m.group(1)}{m.group('quote')}{new_version}{m.group('rest')}",
+    old_value = match.group(2)
+    updated_content = VERSION_TAG_RE.sub(
+        lambda m: f'{m.group(1)}{new_version}{m.group(3)}',
         content,
         count=1,
     )
 
-    # 使用临时文件 + 原子重命名，降低写入失败时配置被截断的概率。
-    temp_path = config_path.with_suffix(config_path.suffix + '.tmp')
+    temp_path = project_path.with_suffix(project_path.suffix + '.tmp')
     try:
         temp_path.write_text(updated_content, encoding='utf-8')
-        temp_path.replace(config_path)
+        temp_path.replace(project_path)
     finally:
         if temp_path.exists():
             temp_path.unlink()
@@ -83,7 +88,7 @@ def update_config(config_path: Path, new_version: str) -> str:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description='Update the root version field in the config template.')
+    parser = argparse.ArgumentParser(description='Update the project product version.')
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         '--bump',
@@ -95,21 +100,19 @@ def parse_args() -> argparse.Namespace:
         help='Overwrite the entire version; build=0 must be omitted.',
     )
     parser.add_argument(
-        '--config',
+        '--project',
         type=Path,
-        default=Path(__file__).resolve().parents[1] / 'config.template.yaml',
-        help='Path to the config template (default: repository root config.template.yaml).',
+        default=Path(__file__).resolve().parents[1] / 'src' / 'NaniKore' / 'NaniKore.csproj',
+        help='Path to the project file (default: src/NaniKore/NaniKore.csproj).',
     )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    new_version = args.version if args.version else bump_version(
-        next(VERSION_LINE_RE.search(args.config.read_text(encoding='utf-8')).group('value') for _ in [0]),
-        args.bump,
-    )
-    old_value = update_config(args.config, new_version)
+    project_path = args.project
+    new_version = args.version if args.version else bump_version(read_project_version(project_path), args.bump)
+    old_value = update_project(project_path, new_version)
     print(f'Updated version: {old_value} -> {new_version}')
     return 0
 

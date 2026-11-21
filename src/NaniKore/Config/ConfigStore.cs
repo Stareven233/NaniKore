@@ -1,4 +1,5 @@
 using System.Text;
+using System.Security.Cryptography;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -81,28 +82,6 @@ internal sealed class ConfigStore
         Current = config;
     }
 
-    /// <summary>
-    /// 单独读模板版本号（「关于」页的 A 段 = 最新版本）；模板缺失或不可解析返回 null，调用方按「不判定」处理。
-    /// </summary>
-    public static string? ReadTemplateVersion(string? templateDirectory = null)
-    {
-        var templatePath = Path.Combine(templateDirectory ?? AppContext.BaseDirectory, AppPaths.TemplateFileName);
-        try
-        {
-            if (!File.Exists(templatePath))
-            {
-                return null;
-            }
-
-            return Deserializer.Deserialize<AppConfigDocument>(File.ReadAllText(templatePath))?.Version;
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or YamlDotNet.Core.YamlException)
-        {
-            // 模板不可读只影响版本差提示这类展示性功能，绝不阻断启动。
-            return null;
-        }
-    }
-
     private AppConfig Load()
     {
         if (File.Exists(_configPath))
@@ -126,14 +105,26 @@ internal sealed class ConfigStore
     {
         try
         {
-            var yaml = File.ReadAllText(_configPath);
-            var document = Deserializer.Deserialize<AppConfigDocument>(yaml) ?? new AppConfigDocument();
+            var originalBytes = File.ReadAllBytes(_configPath);
+            using var source = new MemoryStream(originalBytes, writable: false);
+            using var reader = new StreamReader(
+                source,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true),
+                detectEncodingFromByteOrderMarks: true);
+            var yaml = reader.ReadToEnd();
+            var migratedYaml = ConfigMigrations.Migrate(yaml, out var migrated, out var sourceSchemaVersion);
+            var document = Deserializer.Deserialize<AppConfigDocument>(migratedYaml) ?? new AppConfigDocument();
             var config = document.ToRuntime();
             Normalize(config, reportWarnings: true);
+            if (migrated)
+            {
+                WriteMigratedConfig(originalBytes, migratedYaml, sourceSchemaVersion);
+            }
             _readFailed = false;
             return config;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or YamlDotNet.Core.YamlException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+                                          DecoderFallbackException or YamlDotNet.Core.YamlException or ConfigMigrationException)
         {
             // 读取失败不等于首次使用（R09）：内存退回默认值让程序仍能启动，但记录失败并锁定写盘，
             // 避免后续保存把无法解析的原文件覆盖成默认配置。
@@ -141,6 +132,34 @@ internal sealed class ConfigStore
             LoadWarning = DescribeReadFailure(exception);
             return new AppConfig();
         }
+    }
+
+    private void WriteMigratedConfig(byte[] originalBytes, string yaml, int sourceSchemaVersion)
+    {
+        if (!File.ReadAllBytes(_configPath).AsSpan().SequenceEqual(originalBytes))
+        {
+            throw new ConfigMigrationException("config.yaml 在迁移期间被其他程序修改；原文件未覆盖，请重启后重试");
+        }
+
+        var digest = Convert.ToHexString(SHA256.HashData(originalBytes))[..12].ToLowerInvariant();
+        var backupPath = $"{_configPath}.schema-{sourceSchemaVersion}-{digest}.bak";
+        if (File.Exists(backupPath))
+        {
+            if (!File.ReadAllBytes(backupPath).AsSpan().SequenceEqual(originalBytes))
+            {
+                throw new ConfigMigrationException($"迁移备份校验失败，已拒绝覆盖：{backupPath}");
+            }
+        }
+        else
+        {
+            using var backup = new FileStream(backupPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            backup.Write(originalBytes);
+            backup.Flush(flushToDisk: true);
+        }
+
+        var temporaryPath = $"{_configPath}.migration-{Guid.NewGuid():N}.tmp";
+        File.WriteAllText(temporaryPath, yaml, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        File.Move(temporaryPath, _configPath, overwrite: true);
     }
 
     /// <summary>
@@ -207,12 +226,6 @@ internal sealed class ConfigStore
     private void Normalize(AppConfig config, bool reportWarnings)
     {
         var normalized = false;
-        if (string.IsNullOrWhiteSpace(config.Version))
-        {
-            config.Version = AppConfig.CurrentProductVersion;
-            normalized = true;
-        }
-
         config.General ??= new GeneralConfig();
         config.Pipeline ??= new PipelineConfig();
         config.Hotkeys ??= new HotkeyConfig();

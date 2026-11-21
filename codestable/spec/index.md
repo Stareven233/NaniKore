@@ -72,7 +72,8 @@ NaniKore 是一个轻量的 Windows 截图 OCR 翻译工具。用户按全局快
 - 发布通道：
   - `scripts/dev.ps1 publish`：使用 `-p:PublishAot=true -r win-x64` 构建，自动摘除根目录 `onnxruntime.dll`（防止遮蔽 `deps/`）并清理 `.lib` 与 `.pdb`，生成免安装包 `NaniKore-v{version}-win_amd64.zip`（未压缩交付物 ~40.69 MB，ZIP ~18.66 MB，exe ~20.83 MB）。
   - `scripts/dev.ps1 publish -Full`：从真实源 `deps/` 复制完整依赖，生成解压即可离线使用本地 OCR 的 `NaniKore-v{version}-win_amd64-full.zip`（ZIP ~67.24 MB）。
-  - 版本号读取自根目录 `config.template.yaml` 的 `version`；dev 构建只递增 build 段。
+  - 产品版本统一维护在 `src/NaniKore/NaniKore.csproj` 的 `<Version>` 元数据；About、诊断输出与发布 ZIP 共用该值，Debug 构建递增 build 段。
+  - `config.yaml` 以独立 `schema_version` 标记结构，启动时由集中迁移器按连续版本升级。
 - 提示词开发期工具链：`NaniKore.exe --dump-prompt [--text/--image/--kind/--target/--json]` 是「最终下发什么」的真值源；`scripts/prompt-preview.html` 托管预览。
 
 ## 已验证边界

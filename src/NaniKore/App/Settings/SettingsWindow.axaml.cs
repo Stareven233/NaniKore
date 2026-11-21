@@ -66,7 +66,6 @@ internal sealed partial class SettingsWindow : Window
         Func<IProgress<string>, CancellationToken, Task>? downloadDependencies = null,
         Func<string, IProgress<string>, CancellationToken, Task>? downloadPhoneticPack = null,
         IFavoriteService? favoriteService = null,
-        Func<string?>? templateVersion = null,
         SettingsTab initialTab = SettingsTab.General)
     {
         ArgumentNullException.ThrowIfNull(current);
@@ -98,7 +97,7 @@ internal sealed partial class SettingsWindow : Window
                 return hotkeys;
             }),
             new NavigationItem("生词本", "\uE734", () => new FavoritesPage(favoriteService)),
-            new NavigationItem("关于", "\uE946", () => new AboutPage { TemplateVersionProvider = templateVersion })
+            new NavigationItem("关于", "\uE946", () => new AboutPage())
         ];
 
         NavigationList.ItemsSource = _navItems;

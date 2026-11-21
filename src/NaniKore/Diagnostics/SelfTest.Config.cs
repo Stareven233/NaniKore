@@ -17,7 +17,6 @@ internal static partial class SelfTest
         {
             // 合法值：读盘恢复 + AtomicWrite 往返不丢、克隆保留
             File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
-                version: 0.1.1
                 windows:
                   result_panel_width: 960
                   result_panel_height: 640
@@ -38,7 +37,6 @@ internal static partial class SelfTest
 
             // 越界值：宽低于面板 MinWidth(440)、高超过上限(2160) → 归一化回退默认 700×520
             File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
-                version: 0.1.1
                 windows:
                   result_panel_width: 100
                   result_panel_height: 99999
@@ -67,16 +65,54 @@ internal static partial class SelfTest
         TestProfileDocumentOmitsDefaults();
         TestProfileWithOnlyNameGetsDefaults();
         TestConfigSeedsFromTemplateByteForByte();
+        TestConfigSchemaMigration0To1();
+        TestFutureConfigSchemaIsPreserved();
         TestConfigReadFailurePreservesOriginal();
         TestConfigUnreadableFileIsPreserved();
         TestDataDirectoryWritabilityRefusal();
         TestSecretStoreKeysBinEnvelope();
         TestSecretStoreIgnoresLegacyLayout();
         TestSecretRenameMovesProfileKey();
-        TestConfigVersionComparator();
-        // TestAboutPageDisplaysTemplateAndConfigVersions(); // 待 P4 关于页迁移至 Avalonia 后接回
         TestFavoritesDefaultDatabasePath();
         // TestApplicationIconResource(); // 待 P2 平台服务迁移至 Avalonia 后接回
+    }
+
+    private static void TestConfigSchemaMigration0To1()
+    {
+        var root = Path.Combine(Environment.CurrentDirectory, ".temp", "config-schema-migration-self-test");
+        var dataDirectory = Path.Combine(root, "data");
+        var templateDirectory = Path.Combine(root, "template");
+        Directory.CreateDirectory(dataDirectory);
+        Directory.CreateDirectory(templateDirectory);
+
+        var configPath = Path.Combine(dataDirectory, "config.yaml");
+        var originalConfig = Encoding.UTF8.GetBytes("""
+            version: 0.6.5
+            general:
+              auto_translate: true
+              target_language: 日本語
+            """);
+        File.WriteAllBytes(configPath, originalConfig);
+
+        var migrated = new ConfigStore(dataDirectory, templateDirectory);
+        var migratedText = File.ReadAllText(configPath);
+        var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(originalConfig))[..12]
+            .ToLowerInvariant();
+        var backupPath = $"{configPath}.schema-0-{digest}.bak";
+        Check(
+            "schema migration 0-to-1 adds marker and preserves known settings",
+            migrated.Current.General.AutoTranslate &&
+            migrated.Current.General.TargetLanguage == "日本語" &&
+            migratedText.Contains("schema_version: 1", StringComparison.Ordinal) &&
+            !migratedText.Contains("\nversion:", StringComparison.Ordinal) &&
+            File.ReadAllBytes(backupPath).AsSpan().SequenceEqual(originalConfig));
+
+        var reloaded = new ConfigStore(dataDirectory, templateDirectory);
+        Check(
+            "current schema startup does not rewrite migrated config",
+            File.ReadAllText(configPath) == migratedText &&
+            reloaded.Current.General.AutoTranslate &&
+            reloaded.Current.General.TargetLanguage == "日本語");
     }
 
     /// <summary>统一时长语法覆盖单位、零值与整数 tick 上限，拒绝符号、小数及内部空白。</summary>
@@ -164,6 +200,23 @@ internal static partial class SelfTest
                     loaded.Current.General.LocalResourceIdleTimeout == expected && loaded.LoadWarning is null);
             }
         });
+    }
+
+    private static void TestFutureConfigSchemaIsPreserved()
+    {
+        var root = Path.Combine(Environment.CurrentDirectory, ".temp", "future-config-schema-self-test");
+        var dataDirectory = Path.Combine(root, "data");
+        Directory.CreateDirectory(dataDirectory);
+        var configPath = Path.Combine(dataDirectory, "config.yaml");
+        byte[] original = Encoding.UTF8.GetBytes("schema_version: 2\ngeneral:\n  auto_translate: true\n");
+        File.WriteAllBytes(configPath, original);
+
+        var store = new ConfigStore(dataDirectory);
+        Check(
+            "future config schema is refused without changing the source file",
+            store.ReadFailed &&
+            File.ReadAllBytes(configPath).AsSpan().SequenceEqual(original) &&
+            ThrowsConfigWriteRefused(() => store.AtomicWrite(AppConfigCloner.Clone(store.Current))));
     }
 
     /// <summary>共用背景配置：缺省、路径修整、独立克隆与写盘往返均保留约定。</summary>
@@ -358,9 +411,7 @@ internal static partial class SelfTest
     {
         WithTempConfigDirectory((dataDirectory, templateDirectory) =>
         {
-            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
-                version: 0.2.11
-                """);
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), "{}\n");
             var defaults = new ConfigStore(dataDirectory, templateDirectory);
             Check(
                 "legacy config without phonetics section falls back to enabled + rare-only defaults",
@@ -369,7 +420,6 @@ internal static partial class SelfTest
                 defaults.LoadWarning?.Contains("读取 config.yaml 失败", StringComparison.Ordinal) != true);
 
             File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
-                version: 0.2.11
                 phonetics:
                   enabled: false
                   rare_only: false
@@ -397,7 +447,6 @@ internal static partial class SelfTest
         WithTempConfigDirectory((dataDirectory, templateDirectory) =>
         {
             File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
-                version: 0.2.11
                 hotkeys:
                   capture: Ctrl+Shift+A
                   paste: ~
@@ -446,7 +495,6 @@ internal static partial class SelfTest
         {
             // 显式 ~：收敛为空串，绝不替用户改回默认组合。
             File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
-                version: 0.2.11
                 hotkeys:
                   capture: Ctrl+Shift+A
                   paste: ~
@@ -458,7 +506,6 @@ internal static partial class SelfTest
 
             // 段内缺失 paste 键：反序列化保留 HotkeyConfig 的代码默认。
             File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
-                version: 0.2.11
                 hotkeys:
                   capture: Ctrl+Shift+A
                 """);
@@ -469,7 +516,6 @@ internal static partial class SelfTest
 
             // 显式空串：原样保留，且注册路径据此整体跳过。
             File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
-                version: 0.2.11
                 hotkeys:
                   capture: Ctrl+Shift+A
                   paste: ''
@@ -509,14 +555,13 @@ internal static partial class SelfTest
     /// <summary>
     /// 配置键迁移回归：prompts.vision_oneshot 已更名为 prompts.vision_base（009）。
     /// 用户旧配置里的旧键反序列化后无对应属性，必须被静默忽略并回落空串（= 用内置视觉 Base），
-    /// 不得抛异常、不得改动配置版本号；重写时只落新键，不把旧键以新名复活。
+    /// 不得抛异常或改动 schema 标记；重写时只落新键，不把旧键以新名复活。
     /// </summary>
     private static void TestLegacyVisionOneshotKeyIsIgnored()
     {
         WithTempConfigDirectory((dataDirectory, templateDirectory) =>
         {
             File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
-                version: 0.2.11
                 prompts:
                   vision_oneshot: '旧键：整段覆盖视觉提示词'
                   explain: ~
@@ -525,7 +570,6 @@ internal static partial class SelfTest
             Check(
                 "legacy vision_oneshot prompt key is ignored and falls back to the built-in vision base",
                 store.Current.Prompts.VisionBase is { Length: 0 } &&
-                store.Current.Version == "0.2.11" &&
                 store.LoadWarning?.Contains("读取 config.yaml 失败", StringComparison.Ordinal) != true);
 
             store.AtomicWrite(store.Current);
@@ -604,7 +648,6 @@ internal static partial class SelfTest
         WithTempConfigDirectory((dataDirectory, templateDirectory) =>
         {
             File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
-                version: 0.2.11
                 profiles:
                 - name: 只有名字
                 """);
@@ -633,7 +676,7 @@ internal static partial class SelfTest
         {
             const string template = """
                 # 模板注释：首启复制后必须原样保留
-                version: 9.9.9
+                schema_version: 1
                 profiles:
                 - name: 模板档
                   kind: claude
@@ -651,15 +694,15 @@ internal static partial class SelfTest
                 "the seeded config parses the template profiles",
                 store.Current.Profiles.Single().Name == "模板档" &&
                 store.Current.Profiles.Single().Kind == "claude" &&
-                store.Current.Version == "9.9.9");
+                store.Current.Profiles.Single().Model == "template-model");
 
             // 已有配置：原样不动
-            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), "version: 1.2.3\n");
+            File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), "schema_version: 1\n");
             var reloaded = new ConfigStore(dataDirectory, templateDirectory);
             Check(
                 "an existing config is never overwritten by the template",
-                reloaded.Current.Version == "1.2.3" &&
-                File.ReadAllText(Path.Combine(dataDirectory, "config.yaml")).Contains("1.2.3", StringComparison.Ordinal));
+                reloaded.Current.Profiles.Count == 3 &&
+                File.ReadAllText(Path.Combine(dataDirectory, "config.yaml")).Contains("schema_version: 1", StringComparison.Ordinal));
         });
 
         // 模板也缺失：写内置默认
@@ -822,7 +865,7 @@ internal static partial class SelfTest
         WithTempConfigDirectory((dataDirectory, templateDirectory) =>
         {
             var configPath = Path.Combine(dataDirectory, "config.yaml");
-            byte[] original = Encoding.UTF8.GetBytes("version: 1.2.3\n");
+            byte[] original = Encoding.UTF8.GetBytes("schema_version: 1\n");
             File.WriteAllBytes(configPath, original);
             using (new FileStream(configPath, FileMode.Open, FileAccess.Read, FileShare.None))
             {
@@ -888,36 +931,6 @@ internal static partial class SelfTest
         });
     }
 
-    /// <summary>版本差判定（issue 017 C 期）：major/minor 不同才判落后；仅 build 段不同不判；任一侧不可解析不判。</summary>
-    private static void TestConfigVersionComparator()
-    {
-        Check(
-            "major or minor drift marks the config as behind the template",
-            ConfigVersionComparator.IsBehind("0.4.0", "0.3.9") &&
-            ConfigVersionComparator.IsBehind("1.0.0", "0.9.9") &&
-            ConfigVersionComparator.IsBehind("0.6.1", "0.5.2"));
-        Check(
-            "build-only drift never marks the config as behind",
-            !ConfigVersionComparator.IsBehind("0.4.0+7", "0.4.0+3") &&
-            !ConfigVersionComparator.IsBehind("0.4.0", "0.4.0") &&
-            !ConfigVersionComparator.IsBehind("0.4.0+build.12", "0.4.0"));
-        Check(
-            "unparseable versions are not judged",
-            !ConfigVersionComparator.IsBehind(null, "0.4.0") &&
-            !ConfigVersionComparator.IsBehind("0.4.0", null) &&
-            !ConfigVersionComparator.IsBehind("dev", "0.4.0") &&
-            !ConfigVersionComparator.IsBehind("0.4.0", "nightly"));
-    }
-
-    /// <summary>
-    /// 「关于」页版本号：宿主注入模板版本时显示 v{A}({B})（A=模板/最新，B=配置），
-    /// 缺注入只显示 B；版本差给常驻一行提示，版本一致或任一侧不可解析时不显示。
-    /// </summary>
-    private static void TestAboutPageDisplaysTemplateAndConfigVersions()
-    {
-        // 待 P4 关于页迁移至 Avalonia 后重写并启用
-    }
-
     /// <summary>收藏库改名搬家（issue 017）：nanikore.db → 数据目录下的 collections.db。</summary>
     private static void TestFavoritesDefaultDatabasePath()
     {
@@ -933,7 +946,6 @@ internal static partial class SelfTest
         WithTempConfigDirectory((dataDirectory, templateDirectory) =>
         {
             File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
-                version: 0.1.1
                 general:
                   auto_translate: true
                   paste_auto_translate: false
@@ -963,8 +975,7 @@ internal static partial class SelfTest
                 """);
             var store = new ConfigStore(dataDirectory, templateDirectory);
             Check(
-                "YAML round-trip retains the manually maintained product version",
-                store.Current.Version == "0.1.1" &&
+                "YAML round-trip retains settings independently of product version",
                 store.Current.Windows.SettingsWidth == 800 &&
                 store.Current.Windows.SettingsHeight == 640 &&
                 store.LoadWarning?.Contains("读取 config.yaml 失败", StringComparison.Ordinal) != true);
@@ -1007,7 +1018,6 @@ internal static partial class SelfTest
 
             // 档名唯一化：重名追加 " (2)"，活动档按 name 匹配
             File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
-                version: 1
                 general:
                   paste_auto_translate: true
                 pipeline:
@@ -1031,7 +1041,6 @@ internal static partial class SelfTest
 
             // 活动档不中任何档名：回落第一个档
             File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
-                version: 1
                 general:
                   auto_translate: true
                 pipeline:
@@ -1049,7 +1058,6 @@ internal static partial class SelfTest
                 missingActive.Current.Pipeline.ActiveProfile == "第一个");
 
             File.WriteAllText(Path.Combine(dataDirectory, "config.yaml"), """
-                version: 0.1.3
                 translation:
                   active_profile: legacy
                   profiles:

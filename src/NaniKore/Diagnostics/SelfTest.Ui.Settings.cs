@@ -156,6 +156,9 @@ internal static partial class SelfTest
         Check(
             "about page repository button targets the project GitHub repository",
             AboutPage.RepositoryUrl == "https://github.com/Stareven233/NaniKore");
+        Check(
+            "about page reads the product version from assembly metadata",
+            page.DisplayText.StartsWith($"v{ProductVersion.Current}\r\n", StringComparison.Ordinal));
     }
 
     /// <summary>

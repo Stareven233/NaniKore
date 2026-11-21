@@ -61,14 +61,13 @@ internal sealed class ProviderProfileDocument
         };
     }
 }
-
 /// <summary>
 /// config.yaml 根级磁盘契约：读盘反序列化到本类型再 <see cref="ToRuntime"/>，写盘由 <see cref="ToDocument"/> 折叠而来。
 /// 非配置档小节沿用运行期类型（缺省省略只针对配置档字段，issue 017 目标 3）。
 /// </summary>
 internal sealed class AppConfigDocument
 {
-    public string? Version { get; set; }
+    public int SchemaVersion { get; set; } = ConfigMigrations.CurrentSchemaVersion;
 
     public GeneralConfig? General { get; set; }
 
@@ -90,7 +89,6 @@ internal sealed class AppConfigDocument
     {
         var config = new AppConfig
         {
-            Version = Version ?? AppConfig.CurrentProductVersion,
             General = General ?? new GeneralConfig(),
             Pipeline = Pipeline ?? new PipelineConfig(),
             Hotkeys = Hotkeys ?? new HotkeyConfig(),
@@ -115,7 +113,7 @@ internal sealed class AppConfigDocument
         ArgumentNullException.ThrowIfNull(config);
         return new AppConfigDocument
         {
-            Version = config.Version,
+            SchemaVersion = ConfigMigrations.CurrentSchemaVersion,
             General = config.General,
             Pipeline = config.Pipeline,
             Profiles = config.Profiles.Select(ProviderProfileDocument.ToDocument).ToList(),
@@ -125,35 +123,5 @@ internal sealed class AppConfigDocument
             Phonetics = config.Phonetics,
             Fonts = config.Fonts,
         };
-    }
-}
-
-/// <summary>
-/// 配置版本差判定（issue 017 C 期）：模板与配置的 version 在 major 或 minor 上不一致即视为落后；
-/// 仅 build 段不同不算（dev 构建每次只递增 build），任一侧解析不出版本号不判定（不误报）。
-/// </summary>
-internal static class ConfigVersionComparator
-{
-    public static bool IsBehind(string? templateVersion, string? configVersion)
-    {
-        var template = Parse(templateVersion);
-        var config = Parse(configVersion);
-        return template is not null && config is not null &&
-            (template.Value.Major != config.Value.Major || template.Value.Minor != config.Value.Minor);
-    }
-
-    /// <summary>取 +build 之前的两段；解析失败返回 null 表示「不判定」。</summary>
-    private static (int Major, int Minor)? Parse(string? version)
-    {
-        if (string.IsNullOrWhiteSpace(version))
-        {
-            return null;
-        }
-
-        var baseVersion = version.Split('+', 2)[0];
-        var parts = baseVersion.Split('.');
-        return parts.Length >= 2 && int.TryParse(parts[0], out var major) && int.TryParse(parts[1], out var minor)
-            ? (major, minor)
-            : null;
     }
 }

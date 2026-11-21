@@ -119,12 +119,6 @@ public partial class NaniKoreApp : Application
             _trayIcon.ShowWarning(_secretStore.LoadWarning ?? "密钥文件无法读取，已拒绝覆盖原始密文");
         }
 
-        // 读取失败时已在上面给出显著警示；不再叠加版本差提示，避免默认回退后的噪音。
-        if (!_configStore.ReadFailed && IsConfigVersionBehindTemplate())
-        {
-            _trayIcon.ShowWarning("检测到配置版本与模板版本不一致，详见 设置-关于");
-        }
-
         // 两个热键各自独立注册
         TryRegisterHotkey(HotkeySlot.Capture);
         TryRegisterHotkey(HotkeySlot.Paste);
@@ -182,10 +176,6 @@ public partial class NaniKoreApp : Application
             return false;
         }
     }
-
-    private bool IsConfigVersionBehindTemplate() => ConfigVersionComparator.IsBehind(
-        ConfigStore.ReadTemplateVersion(),
-        _configStore.Current.Version);
 
     private void OnCaptureHotkeyPressed()
     {
@@ -886,7 +876,6 @@ public partial class NaniKoreApp : Application
             DownloadOcrDependenciesAsync,
             DownloadPhoneticPackAsync,
             _favoriteService,
-            () => ConfigStore.ReadTemplateVersion(),
             tab);
         window.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow = window;

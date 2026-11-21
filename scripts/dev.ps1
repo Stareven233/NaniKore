@@ -35,16 +35,18 @@ $onnxRuntimeNativeFiles = @(
 function Get-NaniKoreProductVersion {
     param(
         [Parameter(Mandatory)]
-        [string]$ConfigPath
+        [string]$ProjectPath
     )
 
-    $configContent = Get-Content -LiteralPath $ConfigPath -Raw
-    $versionMatch = [regex]::Match($configContent, '(?m)^\s*version\s*:\s*["'']?(?<version>[^#\r\n"''\s]+)')
-    if (-not $versionMatch.Success) {
-        throw "Product version was not found in $ConfigPath."
+    [xml]$projectXml = Get-Content -LiteralPath $ProjectPath -Raw
+    $version = $projectXml.Project.PropertyGroup |
+        ForEach-Object { $_.Version } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($version)) {
+        throw "Product version was not found in $ProjectPath."
     }
 
-    $version = $versionMatch.Groups['version'].Value
     if ($version.IndexOfAny([System.IO.Path]::GetInvalidFileNameChars()) -ge 0) {
         throw "Product version '$version' contains characters that cannot be used in an archive filename."
     }
@@ -443,7 +445,7 @@ try {
             else {
                 # 默认 Debug 构建：快速增量编译，仅在源码变动或显式指定 -ForceBump 时递增 build 版本号
                 if ($ForceBump -or (Test-NaniKoreSourceChanged -OutputExecutable $debugExecutable -RootDirectory $root)) {
-                    & python (Join-Path $root 'scripts\update_version.py') --bump build
+                    & python (Join-Path $root 'scripts\update_version.py') --bump build --project $project
                     if ($LASTEXITCODE -ne 0) {
                         throw "Failed to update the product version."
                     }
@@ -515,7 +517,7 @@ try {
             Remove-NaniKoreGeneratedImportLibraries -OutputDirectory $publishOutput
 
             # 运行期数据（.data/config.yaml、keys.bin、collections.db）不再进交付物；发布只带配置模板与 NOTICE。
-            $productVersion = Get-NaniKoreProductVersion -ConfigPath (Join-Path $root 'config.template.yaml')
+            $productVersion = Get-NaniKoreProductVersion -ProjectPath $project
             $archivePath = New-NaniKoreReleaseArchive `
                 -PublishOutput $publishOutput `
                 -ArtifactsDirectory $artifactsDirectory `
