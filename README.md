@@ -1,161 +1,119 @@
-# NaniKore
+<div align="center">
+  <img src="resources/preview/logo.jpg" alt="Logo" width="128" />
+  <h2>NaniKore（这啥玩意）</h2>
+  本地优先的 OCR + 翻译、语言学习工具
+  <br/>
+  框选屏幕/划选/剪贴板取词·离线文字识别注音·自备 LLM 接口翻译/精讲（BYOK）
+</div>
 
-> 轻量的 Windows 截图 OCR 与翻译工具。
+<p align="center">
+  <img src="https://img.shields.io/badge/version-1.0.0-78c800" alt="version" />
+  <img src="https://img.shields.io/github/license/Stareven233/NaniKore" alt="license" />
+  <img src="https://img.shields.io/badge/.NET-11-512BD4?logo=dotnet" alt="dotnet" />
+  <img src="https://img.shields.io/badge/AvaloniaUI-12.1.6-165BFF?logo=avaloniaui" alt="avaloniaui" />
+  <!-- <img src="https://img.shields.io/github/stars/Stareven233/NaniKore?style=social" alt="stars" /> -->
+</p>
 
-按下全局快捷键后框选屏幕文字，NaniKore 会在本地完成 OCR，并可调用已配置的翻译服务显示流式结果。基于 .NET 11 / C# 15 与 Avalonia 12 UI 框架，采用 Native AOT 编译为精简原生机器码
+## 界面一览
+<div align="center">
+  <img src="resources/preview/example-result.png" alt="example result" width="960" />
+  <p>结果面板：NaniKore 借助 PP-OCRv6-small 识别选中文字，并提供简体中文拼音、日语振假名、英语 IPA三语注音功能，支持将单词收藏到本地数据库</p>
+  <br/>
+  <img src="resources/preview/example-setting-translation.png" alt="example setting translation" width="960" />
+  <p>设置面板-翻译页：翻译与精讲由配置的模型提供，同样可以通过llama.cpp/ollama/vllm/sglang等方案本地自部署，完全离线使用</p>
+</div>
+
+## 三步开始
+
+### 1 下载
+从 [GitHub Releases](https://github.com/Stareven233/NaniKore/releases) 下载压缩包
+
+| 包 | 用途 | 依赖下载 |
+| --- | --- | --- |
+| `NaniKore-v{版本}-win_amd64.zip` | 按需下载依赖 | OCR 及注音数据按需下载 |
+| `NaniKore-v{版本}-win_amd64-full.zip` | 无网络环境或希望开箱即用本地 OCR/注音 | 自带 OCR 与注音语言包 |
+| `NaniKore-v{版本}-win_amd64-patch.zip` | 更新已有安装目录 | 仅覆盖程序文件，不含依赖，不能单独启动 |
+
+推荐轻量包（`NaniKore-v*-win_amd64.zip`），尤其是仅通过vlm直接翻译截图的场景。翻译功能需在“设置 → 翻译”配置模型及 API Key。API Key 由当前 Windows 用户的 DPAPI 加密后保存在应用目录的 `.data/keys.bin`
+
+### 2 配置
+1. 若使用OCR、注音需要先到设置-通用页下载依赖
+2. 到设置-翻译页配置模型并填写 api key。零门槛快速体验可以直接用B站的Index-Translate，已填好预设，随便输入英文数字字符串作为key即可试用
+
+### 3 识别
+按下快捷键 `Ctrl+Shift+A` 并通过鼠标框选文字区域进行识别、翻译
 
 ## 功能
 
-- 全局快捷键 `Ctrl+Shift+A`，支持拖选、Esc 或右键取消。
-- 第二把全局快捷键 `Ctrl+Shift+S`（选取/剪贴板翻译）：模拟 Ctrl+C 抓选区文本，取不到时依次退回剪贴板文本、剪贴板图像，复用截图流程的同一套翻译服务、提示词与结果面板，面板锚在鼠标所在显示器。
-- 热键可留空即停用；截图与选取两把热键各自独立注册、录制与冲突提示（支持修饰键加标点、导航键、小键盘、多媒体键等；F1–F11 可单独绑定，F12 为系统保留键；裸 Esc 取消录制或解除选取热键绑定）。
-- 基于 Win32 BitBlt 与 SkiaSharp 物理像素直接处理全虚拟桌面截图（支持多屏负坐标与混合 DPI），选区浮层基于 Avalonia 自绘。
-- 通过 ONNX Runtime 直接运行 PP-OCRv6-small，不依赖 Python、OpenCV 或外部 OCR 服务。
-- 支持 OpenAI、Claude、Gemini 协议的流式翻译配置，以及 `local_ocr`、`vision_oneshot` 两条输入管线。
-- 结果自动复制到剪贴板；设置、热键和 API Key 可在应用内管理。
-- 结果卡精讲与正文划词均可一键收藏进本地生词本：SQLite 持久化（`.data/collections.db`），支持类别/语言/关键词筛选与就地编辑。
-- 原文区本地注音：日语标振假名、英语标国际音标、简体中文标拼音，由本地引擎叠加（三语注音数据都按需下载）；面板「注音」按钮可随时对当前原文重新标注并查看读音，无需先点「翻译」。短原文（可注音单词不足 10 个）视为短语，全部单词都注音，不再按难词过滤。
-- API Key 仅使用当前 Windows 用户的 DPAPI 保存，不会写入仓库、配置模板或 `.data/config.yaml`。DPAPI 绑定当前 Windows 账户，换用户或换机器后密文无法解密；此时程序不会覆盖原密文，会提示手动处理。
-- 程序目录根只放交付物（精简 exe、随包原生 DLL、`config.template.yaml`、`NOTICE`、`LICENSE`）；配置、密钥与收藏库全部收拢在 `程序目录\.data\`，解压覆盖升级碰不到它们。
+- 全局截图热键 `Ctrl+Shift+A`：拖动鼠标框选并识别屏幕文字，框选过程中按 `Esc` 或鼠标右键取消
+- 全局选取/剪贴板热键 `Alt+A`：优先读取选中文本，其次剪贴板文本或图像；识别到的文本默认由用户手动触发翻译
+- 本地注音：目前支持日语振假名、英语国际音标（IPA）、简体中文拼音
+- 可选模型服务：支持 OpenAI、Claude、Gemini 兼容协议的流式翻译配置，以及 本地ocr（`local_ocr`） 和 视觉语言模型处理截图（`vision_oneshot`） 两种输入方式
+- 翻译结果支持精讲与划词收藏，保存在本地 SQLite 数据库，可筛选和编辑
 
 ## 系统要求
 
-- Windows 10 version 2004（build 19041）或更高版本（x64）。
-- **运行发布包**：**解压即用，目标机器零 .NET 运行时依赖**（Native AOT 原生机器码编译）。
-- **源码开发**：.NET 11 SDK（`global.json` 当前要求 `11.0.100` 或同一 11.0 通道兼容的更高 feature band），默认使用正式版 C# 15。
-- 本地 OCR 依赖：PP-OCRv6-small 模型和 ONNX Runtime native DLL（设置页一键按需下载至 `deps/`，或直接使用 `-full` 完整离线包）。
+- 目前仅在 Windows 10/11 上测试，理论上应当也能编译到linux
+- 应用以 Native AOT 发布，不需要 .NET Runtime
 
-## 快速开始
+## 数据、备份与升级
+
+配置、密钥密文和收藏数据库均位于应用目录下的 `.data/`，不包含在发行 ZIP 中，仅需保存该文件夹即可实现备份，配置或密钥读取失败，应用会提示并拒绝覆盖无法读取的原文件
+
+但是 `.data/keys.bin` 依赖当前 Windows 用户的 DPAPI 保护，复制到另一 Windows 用户或另一台机器后，密钥通常无法解密，不过也只需要在新环境中重新填写 API Key，配置本身不会丢失
+
+## 从源码构建
+
+需要 .NET 11 SDK（`global.json` 要求 `11.0.100`，并允许同一通道更新的 feature band）、Git 和 Windows x64 Native AOT C++ 构建工具链（Visual Studio 2022 或 Build Tools，安装“使用 C++ 的桌面开发”工作负载及 Windows SDK）
+
+运行release发布的压缩包不需要上述开发工具
 
 ```powershell
-# 准备 .NET SDK 与 NuGet 缓存
-./scripts/bootstrap.ps1
-
-# 构建并运行
+# Debug 构建
 ./scripts/dev.ps1 build
-./scripts/dev.ps1 run
+
+# Native AOT Release 构建
+./scripts/dev.ps1 build -Release
+
+# 无 UI 自动化自测
+./scripts/dev.ps1 test
+
+# 生成轻量包、完整离线包或已有安装用补丁包
+./scripts/dev.ps1 publish
+./scripts/dev.ps1 publish -full
+./scripts/dev.ps1 publish -patch
 ```
 
-首次使用本地 OCR 时，打开设置页，在“通用”中点击“下载依赖”，确认后应用会从 ModelScope 下载所需模型和 DLL 到当前可执行程序目录的 `deps/`。应用不会静默联网；OCR 缺少依赖时只会提示执行这个设置操作。
+## 性能
 
-`bootstrap.ps1` 优先使用 `DOTNET_ROOT` 中的 SDK，并使用 `NUGET_PACKAGES` 指定的缓存；两个环境变量都未配置时才回退到 `Path`。运行时依赖的唯一真实源是当前可执行程序目录下的 `deps/`。
+以下为v1.0.0版本 Native AOT Release 实测，仅供参考
 
-## 常用命令
+| 指标 | 中文样例 | 英文样例 |
+| --- | ---: | ---: |
+| 输入图片 / 检出行数 | 186 × 91 / 4 行 | 325 × 60 / 11 行 |
+| 新进程至首次 OCR 结果，中位数（每组 7 次） | 1.27 s | 2.56 s |
+| OCR 核心耗时，中位数（每组 7 次） | 817 ms | 2.11 s |
+| 新进程 OCR 峰值工作集，中位数 | 193 MiB | 418 MiB |
+| 新进程 OCR 峰值私有内存，中位数 | 182 MiB | 423 MiB |
+| 已加载模型后的热识别 OCR 核心耗时，中位数（每种 22 次） | 877 ms | 2.27 s |
+| 热识别后工作集 / 私有内存，中位数 | 131 / 96 MiB | 191 / 158 MiB |
 
-| 命令 | 说明 |
-| --- | --- |
-| `./scripts/dev.ps1 build` | 快速构建 Debug 版本（递增项目产品版本号，供断点调试）。 |
-| `./scripts/dev.ps1 build -Release` | 编译 Native AOT Release 版本（生成至 `artifacts/win-x64`，不打包）。 |
-| `./scripts/dev.ps1 run` | 启动本地 Debug 桌面应用（后台脱手运行，不占用终端）。 |
-| `./scripts/dev.ps1 run -Release` | 启动本地已构建的 Native AOT Release 桌面应用。 |
-| `./scripts/dev.ps1 test` | 运行无 UI 全量自动化自测。 |
-| `./scripts/dev.ps1 publish` | 编译 Native AOT 并发布免安装轻量 ZIP（~20 MB，根目录 8 项，解压即用）。 |
-| `./scripts/dev.ps1 publish -full` | 编译 Native AOT 并发布包含完整 `deps/` 离线模型与注音数据的 Windows x64 ZIP（~82 MB）。 |
-| `./scripts/dev.ps1 publish -patch` | 编译 Native AOT 并发布已有安装目录覆盖更新用的补丁 ZIP（不含运行时 DLL，约 ~11 MB）。 |
+**应用启动与常驻内存：** 从启动发布版进程到应用输出初始化完成标记，中位数 **3.30 s**（5 次；OCR 模型按需加载，不包含模型加载）。应用空闲 3 秒后工作集约 **50.7 MiB**、私有内存约 **24.3 MiB**。首次模型加载及 OCR 期间，以 5 ms 间隔采样到的峰值中位数为工作集 **508 MiB**、私有内存 **480 MiB**（两轮完整应用测试）
 
-## 发布包
+**环境与口径：** Windows 10 22H2（build 19045）x64，Intel Core i5-8300H，15.8 GiB 内存，机械硬盘 + ONNX Runtime CPU，PP-OCRv6-small
 
-发布文件保存在 `artifacts/`。产品版本统一维护在 `src/NaniKore/NaniKore.csproj` 的 `<Version>` 元数据中，About 页、诊断输出和 ZIP 文件名都使用同一版本：
+两张样例图尺寸和识别行数不同，文字越多识别开销越大：PP-OCRv6 是一个检测 + 识别的两阶段流水线，det 模型负责定位每一行文字的位置，rec 模型则逐行识别（总耗时和内存占用随行数增加）
 
-- `./scripts/dev.ps1 publish`：`NaniKore-v{版本号}-win_amd64.zip`
-- `./scripts/dev.ps1 publish -full`：`NaniKore-v{版本号}-win_amd64-full.zip`
-- `./scripts/dev.ps1 publish -patch`：`NaniKore-v{版本号}-win_amd64-patch.zip`
+## 已知限制
 
-普通包与补丁包都将发布内容直接置于压缩包根目录。普通包根目录严格遵守 8 文件契约，完整包额外携带与仓库一致的 `deps/`；补丁包只包含程序文件、配置模板与许可声明，依赖目标目录中已有的运行时 DLL：
+- 多屏、负坐标虚拟桌面与混合 DPI 已有实现，但莫得多显示器测
+- OCR 结果会受文字尺寸、对比度、背景和裁剪范围影响，毕竟只是个跑在cpu上的small模型，不过总体准确度还是够用的
 
-```text
-NaniKore.exe                 # Native AOT 精简可执行文件（~22 MB，零 .NET 运行时依赖）
-libSkiaSharp.dll             # 随包原生图形渲染底座
-libHarfBuzzSharp.dll         # 随包原生文字排版与整形底座
-av_libglesv2.dll             # 随包原生 OpenGL ES 渲染底座
-e_sqlite3.dll                # 随包原生 SQLite 嵌入式数据库底座
-config.template.yaml         # 只读配置模板（首启按字节复制到 .data/config.yaml）
-NOTICE                       # 第三方组件与数据许可声明
-LICENSE                      # GNU GPL-3.0-or-later 许可全文（仓库自身代码）
-deps/                        # （仅 -full 完整包携带，或设置页按需下载）
-├─ ocr-onnx/pp-ocr-v6-small/
-│  ├─ det/inference.onnx
-│  ├─ det/inference.yml
-│  ├─ rec/inference.onnx
-│  └─ rec/inference.yml
-├─ onnxruntime/
-│  ├─ onnxruntime.dll
-│  └─ onnxruntime_providers_shared.dll
-└─ phonetics/                # 中/日/英三语注音数据（设置页按需下载，完整包含齐）
-   ├─ ja/、en/              # 日英原生语言包（DLL + pack.json + licenses/）
-   └─ zh/zh_pinyin.txt      # 中文拼音数据（远端 gzip 下载后解压）
-```
-
-补丁包根目录只有以下文件：
-
-```text
-NaniKore.exe
-config.template.yaml
-NOTICE
-LICENSE
-```
-
-补丁包不是独立安装包，解压到空目录无法启动；应覆盖到已有的轻量包或完整包目录中。补丁包同样不包含 `.data/`，不会覆盖用户配置、密钥或收藏库。
-
-发布包不含 `.data/`：首次启动时程序把 `config.template.yaml` 按字节原样复制到 `程序目录\.data\config.yaml` 作为用户配置，密钥落在 `.data/keys.bin`（整块 DPAPI 密文），收藏库是 `.data/collections.db`。因此解压覆盖升级不会冲掉任何本机数据。备份整个软件只需复制 `.data/`；但其中 `keys.bin` 由当前 Windows 用户的 DPAPI 加密，复制到其它 Windows 用户或其它机器后无法解密，需在目标机重新填写 API Key（程序不会覆盖无法解密的原文件，会提示手动处理）。
-
-轻量包需要用户在设置页确认下载依赖后才能进行本地 OCR；完整包解压后无需额外下载。
-
-## 配置与翻译服务
-
-根目录 `config.template.yaml` 是不含密钥、可审阅的配置模板，随包发布且程序永不写它。首次启动时它被字节级复制到 `程序目录\.data\config.yaml`（模板注释原样保留），之后只读写 `.data` 里的副本——已有配置时模板怎么改都不影响运行。若 `config.yaml` 或 `keys.bin` 读取失败（格式错误、无权限、被占用或无法解密），程序会明确提示并点出出错的配置行，且不会覆盖原文件；请手动修正或删除该文件后重启。
-
-每个配置档只需 `name` / `kind` / `base_url` / `model` 四行；`api_type` / `supports_vision` / `timeout_seconds` / `enable_thinking` 只在偏离缺省（`completions` / `true` / `30` 秒 / `false`）时才需要写。配置档的唯一身份是 `name`：`pipeline.active_profile`、翻译页下拉、错误提示与密钥索引全部用它。
-
-翻译服务、模型、目标语言和快捷键均可通过设置页调整。请只在自己信任的服务商端点中填写 API Key。翻译页「凭据」组可以一键打开 `.data` 目录、清除当前配置档的密钥。
-
-「热键」页分别录制两把全局快捷键：`hotkeys.capture`（截图 OCR，默认 `Ctrl+Shift+A`）与 `hotkeys.paste`（选取/剪贴板翻译，默认 `Ctrl+Shift+S`）。任一把留空即不注册该热键；录制框按 Esc 可解除绑定。选取翻译的输入优先级是「选区文本（模拟 Ctrl+C）→ 剪贴板文本 → 剪贴板图像」。选取/剪贴板取得的文本（含本地 OCR 结果）默认只呈现原文，由面板「翻译」按钮手动触发；可在「设置 → 翻译」开启「选取后自动翻译」。`vision_oneshot` 下，支持视觉的配置档仍会直接识别并翻译图像，不受该开关约束；不支持视觉时会提示切换配置档或改用本地 OCR。程序只在「前台程序响应了 Ctrl+C」与「本地 OCR 识别成功」两种情况下改写剪贴板，其余情况（含前台程序按 Ctrl+C 写空串）都会在轮询超时后把快照原样还原；还原失败时结果面板状态栏会给出说明。
-
-「关于」页显示当前程序产品版本。`config.yaml` 使用独立的 `schema_version` 标记配置结构；程序启动时自动迁移受支持的旧结构，产品版本变化本身不会改写配置。
-
-## 收藏与生词本
-
-收藏保存在数据目录 `程序目录\.data\collections.db`（SQLite 表 `favorites`，列为 `category`、`content`、`note`、`created_at`、`language`；绿色便携、覆盖升级不丢数据，删除该文件即回到空态。设置页「收藏」可按类别、语言、关键词组合筛选，支持复制全部、单条删除与失焦即保存的就地编辑。
-
-## OCR 诊断
-
-```powershell
-# 查看 ONNX 模型输入输出元数据
-dotnet run --project src\NaniKore\NaniKore.csproj -- --inspect-models
-
-# 直接识别图片（加 --json 输出与 HTTP 接口一致的 JSON）
-dotnet run --project src\NaniKore\NaniKore.csproj -- --ocr-file path\to\image.png [--json]
-```
-
-## 本地 OCR HTTP 服务（开发者选项）
-
-本地 OCR 引擎可以通过一个极简 HTTP 接口开放给同机其他程序复用，默认关闭。在 `.data/config.yaml` 填 `general.ocr_listen`（如 `127.0.0.1:23335`）即可开启，改完保存设置立即生效，清空即停止。
-
-```http
-GET  /health          → {"status":"ok"}
-POST /ocr             → {"text":"...","elapsed_ms":42.7,"lines":[{...}]}
-```
-
-`POST /ocr` 接受原始图片二进制，或 `?path=<本机路径>`，或 JSON body `{"path":"..."}`。接口只做识别，不翻译、不鉴权、不写任何数据。完整协议、错误码、各语言调用示例与安全提醒见 **[codestable/notes/ocr-http-service.md](codestable/notes/ocr-http-service.md)**。
-
-## 项目结构
-
-```text
-src/NaniKore/  应用、OCR、翻译与桌面 UI
-scripts/        工具链、模型准备和开发/发布命令
-deps/           唯一的本地 OCR 与 ONNX Runtime 依赖源
-.data/          本机运行期数据：配置、密钥密文、收藏库（Git 忽略）
-artifacts/      发布产物（Git 忽略）
-```
-
-## 已知边界
-
-- 已完成主显示器的真实键鼠截图与 OCR 验收，以及自动化冒烟自测。
-- 副显示器、负坐标虚拟桌面与混合 DPI 已有代码支持，但尚未完成实机回归。
-- 当前轻量 OCR 后处理面向水平游戏/UI 文本；旋转、弯曲和竖排文字不在保证范围内。
+## 致谢
+- [LinuxDo](https://linux.do/): 佬友个个都是人才，说话又好听，还有赛博鸡蛋领
+- [Index-Translate](https://index-translate.bilibili.com/): b站开源的翻译模型，支持文本/图片输入，又快又好，甚至还有免费api！
 
 ## 许可证与第三方声明
 
-仓库自身代码以 [GNU 通用公共许可证第 3 版或更高版本](LICENSE)（GPL-3.0-or-later）授权，完整文本见根目录 `LICENSE`。
-所引用的第三方组件、注音数据与模型权重的许可声明、归属与再分发口径见 [NOTICE](NOTICE)：日英注音语言包为 MisakiSharp（Apache-2.0）与 UniDic（BSD-3-Clause）；OCR 权重为 PaddlePaddle PP-OCRv6-small（Apache-2.0）；简体中文拼音数据由 pypinyin（MIT）、CC-CEDICT（CC BY-SA 4.0）与 Unihan（Unicode License v3）合并派生，与日英一样放在 `deps/phonetics/` 按需下载。
-分发本程序的二进制时，对应源码（Corresponding Source）可从 <https://github.com/Stareven233/NaniKore> 免费获取。
+- NaniKore 自身代码依据 [GNU GPL-3.0-or-later](LICENSE) 授权
+- 第三方程序、OCR 模型及注音数据的许可、归属和再分发说明见 [NOTICE](NOTICE)

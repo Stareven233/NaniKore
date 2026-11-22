@@ -15,11 +15,15 @@ general:
 pipeline:
   mode: local_ocr
   # mode: vision_oneshot
-  active_profile: OpenAI 默认
+  active_profile: index-translate
 profiles:
   # 每个配置档只需 name / kind / base_url / model 四行
   # api_type / supports_vision / timeout_seconds / enable_thinking 只在偏离缺省（completions / true / 30 / false）时才需要
   # API Key 不放在这里：以当前 Windows 用户的 DPAPI 密文整体保存在 .data/keys.bin（内部是 {配置档名: API Key} 的 JSON）
+  - name: index-translate
+    kind: openai
+    base_url: https://index-translate.bilibili.com/v1
+    model: Index-Translate-35B-A3B
   - name: OpenAI 默认
     kind: openai
     base_url: https://api.openai.com/v1

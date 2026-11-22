@@ -8,13 +8,12 @@
 *.dylib
 
 # Epic 002 的穿刺脚手架：一次性风险验证工程，结论沉淀在 codestable/，代码本身不入库
-# （工程基准与重建命令见各穿刺 issue，随时可按记录重来）
 /pierce/
 
 # 本地模型文件：模型清单保留，权重不提交
 deps/*
-**/.ms_upload_cache
 !/deps/README.md
+**/.ms_upload_cache
 
 # 临时文件与日志
 *.log
@@ -36,13 +35,13 @@ _todo.md
 .DS_Store
 Thumbs.db
 
-# 本地配置和密钥：运行期数据全部收拢在 .data（配置、keys.bin、collections.db），
-# git mv 之后根目录的 config.yaml 任何时候都不能再进仓库
+# 本地配置和密钥：运行期数据全部收拢在 .data（配置、keys.bin、collections.db）
 /.data/
 /config.yaml
 *.key
 *.pem
 /config/local*.yaml
 
-# 图标psd等中间产物
-resources/
+# 资源文件
+resources/*
+!/resources/preview/
