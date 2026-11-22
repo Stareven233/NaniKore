@@ -11,7 +11,7 @@
         ShowInTaskbar="True"
         WindowStartupLocation="CenterScreen"
         WindowDecorations="None"
-        Classes="image-background"
+        Classes="image-background settings-panel"
         Background="Transparent"
         TransparencyLevelHint="Transparent"
         FontSize="14"

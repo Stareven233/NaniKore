@@ -351,6 +351,37 @@
         <Setter Property="Background" Value="{DynamicResource Brush.Panel.Control}" />
     </Style>
 
+    <!-- 设置页控件默认收起描边，键盘聚焦时再用强调色提示焦点。 -->
+    <Style Selector="Window.settings-panel Button">
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Window.settings-panel Button:pointerover /template/ ContentPresenter">
+        <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Window.settings-panel Button:focus /template/ ContentPresenter">
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+    </Style>
+    <Style Selector="Window.settings-panel Button.accent">
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+    </Style>
+    <Style Selector="Window.settings-panel AutoCompleteBox">
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="Background" Value="{DynamicResource Brush.Control.Background}" />
+        <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
+    </Style>
+    <Style Selector="Window.settings-panel AutoCompleteBox:pointerover">
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Control.BorderHover}" />
+    </Style>
+    <Style Selector="Window.settings-panel AutoCompleteBox:focus-within">
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Accent}" />
+    </Style>
+    <Style Selector="Window.settings-panel NumericUpDown /template/ RepeatButton">
+        <Setter Property="Cursor" Value="Hand" />
+    </Style>
+
     <!-- 类别徽章 Border.badge -->
     <Style Selector="Border.badge">
         <Setter Property="Background" Value="{DynamicResource Brush.Accent.Subtle}" />
