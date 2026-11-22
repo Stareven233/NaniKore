@@ -4,10 +4,12 @@ using System.Threading;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
+using Avalonia.Controls.Presenters;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Point = Avalonia.Point;
 using Rect = Avalonia.Rect;
 using NaniKore.App;
@@ -38,6 +40,7 @@ internal static partial class SelfTest
         TestResultPanelRubyDualModeAndTranslationFlow();
         TestResultPanelResetDuringTranslation();
         TestResultPanelViewportLayout();
+        TestResultPanelToolbarAndTranslationFocus();
         TestResultPanelPlacementGeometry();
         TestAutomaticAnnotationPolicy();
         TestResultPanelAnnotateButton();
@@ -1003,6 +1006,39 @@ internal static partial class SelfTest
         Check(
             "collapsed explanation releases the viewport minimum height",
             page.MinHeight == 0 && page.RowDefinitions[6].Height.IsAuto);
+    }
+
+    private static void TestResultPanelToolbarAndTranslationFocus()
+    {
+        // Avalonia 只给已显示的窗口分配焦点；测试窗口放在屏幕外且不抢前台。
+        var panel = new ResultPanelWindow { ShowActivated = false, Opacity = 0, Position = new PixelPoint(-32000, -32000) };
+        try
+        {
+            panel.BeginTranslation();
+            panel.Show();
+
+            string[] toolbarButtons = ["SettingsButton", "NormalizeSourceButton", "AnnotateSourceButton", "TranslateButton"];
+            Check("result toolbar buttons and language picker are borderless",
+                toolbarButtons.All(name => Find<Button>(panel, name) is { BorderThickness: var thickness } && thickness == default) &&
+                Find<ComboBox>(panel, "SourceLanguageBox") is { BorderThickness: var pickerThickness } && pickerThickness == default);
+
+            var translation = Find<TextBox>(panel, "TranslationTextBox")!;
+            var textPresenter = translation.GetVisualDescendants().OfType<TextPresenter>().First();
+            var blank = Find<Grid>(panel, "FooterGrid")!;
+            var pointer = new Pointer(0, PointerType.Mouse, true);
+            Check("result translation can receive keyboard focus", translation.Focus() && translation.IsKeyboardFocusWithin);
+            panel.OnPanelPointerPressedForTest(NewPointerArgs(textPresenter, panel, pointer));
+            Check("clicking inside the translation template preserves focus", translation.IsKeyboardFocusWithin);
+            blank.RaiseEvent(NewPointerArgs(blank, panel, pointer));
+            Check("clicking a non-focusable area clears translation focus", !translation.IsKeyboardFocusWithin);
+            Check("translation can refocus after an outside click", translation.Focus() && translation.IsKeyboardFocusWithin);
+            panel.OnPanelDeactivatedForTest();
+            Check("deactivating the panel clears translation focus", !translation.IsKeyboardFocusWithin);
+        }
+        finally
+        {
+            panel.Close();
+        }
     }
 
     /// <summary>

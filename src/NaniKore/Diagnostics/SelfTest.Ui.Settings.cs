@@ -555,6 +555,7 @@ internal static partial class SelfTest
             Check("background test locates the real settings sidebar", sidebar is not null);
             var titleBars = layers.Select(image => ((Grid)image.Parent!).Children.OfType<Grid>()
                 .Single(grid => Grid.GetRow(grid) == 0)).ToArray();
+            var sourceViewer = Find<Border>(result, "SourceViewerBorder")!;
             var inputs = new[]
             {
                 Find<TextBox>(page, "BackgroundImageBox")!,
@@ -665,6 +666,7 @@ internal static partial class SelfTest
                             TryFindResource<ISolidColorBrush>(app, "Brush.Text.Primary", variant) is { } text &&
                             foreground.Color == text.Color);
                     }
+                    CheckBrush("result source viewer", sourceViewer.Background, "Control");
 
                     void CheckBrush(string target, IBrush? actual, string role)
                     {

@@ -8,6 +8,8 @@
         MinWidth="440"
         MinHeight="300"
         ShowInTaskbar="False"
+        Focusable="True"
+        IsTabStop="False"
         WindowStartupLocation="Manual"
         WindowDecorations="None"
         Classes="image-background"
@@ -17,6 +19,10 @@
     <Window.Styles>
         <Style Selector="TextBlock.status-error">
             <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
+        </Style>
+        <!-- 工具栏收起描边，仍用底色区分悬停、按下和翻译主按钮。 -->
+        <Style Selector="DockPanel.source-toolbar Button, DockPanel.source-toolbar ComboBox">
+            <Setter Property="BorderThickness" Value="0" />
         </Style>
     </Window.Styles>
     <!-- 12px 平滑大圆角自绘卡片容器（Windows 10/11 亚像素全抗锯齿渲染） -->
@@ -115,7 +121,7 @@
                     </Grid.RowDefinitions>
 
                     <!-- 0. 原文工具栏 -->
-                    <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                    <DockPanel Grid.Row="0" Classes="source-toolbar" Margin="0,0,0,8">
                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                             <!-- 源语言口径：默认按探测，也可手动指定 -->
                             <ComboBox x:Name="SourceLanguageBox"
@@ -148,7 +154,6 @@
                                 Classes="control"
                                 Padding="14,8,10,8"
                                 ClipToBounds="False"
-                                Background="Transparent"
                                 DoubleTapped="OnSourceViewerDoubleTapped">
                             <SelectableTextBlock x:Name="SourceViewer"
                                                  FontSize="15"

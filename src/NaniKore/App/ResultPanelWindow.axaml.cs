@@ -10,6 +10,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using NaniKore.App.Controls;
 using NaniKore.App.Settings;
 using NaniKore.App.Theme;
@@ -188,10 +189,10 @@ internal sealed partial class ResultPanelWindow : Window
         // 监听按键（Esc 返回或收起）
         KeyDown += OnPanelKeyDown;
 
-        // 监听失焦自动保存编辑
+        // 窗口失焦时清除译文焦点，并自动保存原文编辑
         Deactivated += OnPanelDeactivated;
 
-        // 监听全局指针按下：点击窗口其他区域时隐藏气泡或失焦保存
+        // 提前处理外部点击，避免空白处不接收焦点时译文仍保持聚焦
         AddHandler(PointerPressedEvent, OnPanelPointerPressed, RoutingStrategies.Tunnel);
 
         // 默认未翻译时译文框静默，防止误点与光标居中闪烁
@@ -231,6 +232,12 @@ internal sealed partial class ResultPanelWindow : Window
 
     private void OnPanelDeactivated(object? sender, EventArgs e)
     {
+        if (TranslationTextBox.IsKeyboardFocusWithin)
+        {
+            // 把焦点交还给窗口，重新激活时不会回到译文框。
+            Focus();
+        }
+
         // 若失焦时正处于编辑模式，提交保存修改
         if (_isEditingSource)
         {
@@ -982,6 +989,13 @@ internal sealed partial class ResultPanelWindow : Window
 
             // 仅在明确点击气泡外部区域时收起气泡
             SelectionBubble.Hide();
+        }
+
+        // 译文框模板内的文字、滚动条都算框内；放行本次点击，让目标控件照常接管焦点。
+        if (TranslationTextBox.IsKeyboardFocusWithin && e.Source != TranslationTextBox &&
+            (e.Source is not Visual target || !TranslationTextBox.IsVisualAncestorOf(target)))
+        {
+            Focus();
         }
 
         if (_isEditingSource && SourceTextBox.IsVisible)

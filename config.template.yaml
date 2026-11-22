@@ -1,19 +1,14 @@
-# NaniKore 配置模板：程序永不写本文件。首次启动时把它按字节原样复制到「程序目录/.data/config.yaml」作为用户配置，
-# 之后只读写 .data 里的副本；已有 .data/config.yaml 时本文件怎么改都不影响运行。发布包同样只带本模板。
-# 每个配置档只需 name / kind / base_url / model 四行；api_type / supports_vision / timeout_seconds /
-# enable_thinking 只在偏离缺省（completions / true / 30 / false）时才需要写，保存一次设置也不会反弹成更多行
-# API Key 不写在这里：以当前 Windows 用户的 DPAPI 密文整体保存在 .data/keys.bin（内部是 {配置档名: API Key} 的 JSON）。
+# NaniKore 配置模板：程序不写本文件，首次启动时把它复制到「.data/config.yaml」作为用户配置
 schema_version: 1
 general:
   auto_translate: false
-  # 选取/剪贴板翻译（Ctrl+Shift+S）读到内容后是否立即翻译；默认关，手动点击「翻译」，视觉直喂不受此约束。
+  # 选取/剪贴板翻译读到内容后是否立即翻译。默认关，需手动点击「翻译」，视觉直喂不受此约束
   paste_auto_translate: false
   auto_explain: false
-  # 识别完成（OCR/选取）后是否自动为原文叠加注音；关闭时原文只呈现纯文本，由「注音」按钮显式触发。
+  # 识别完成（OCR/选取）后是否自动为原文叠加注音。关闭时原文只呈现纯文本，需由「注音」按钮显式触发
   auto_annotate: true
   target_language: 中文（简体）
-  # 本地 OCR 与注音资源闲置多久后回收：非负整数秒或整数加 s/m/h（如 30s、10m、24h）；0 永不回收。
-  # 回收后下次使用需要重新加载，可能稍有延迟。
+  # 本地 OCR 与注音资源闲置多久后回收：非负整数秒或整数加 s/m/h（如 30s、10m、24h），0 永不回收
   local_resource_idle_timeout: "0"
   # 开发者选项：本地 OCR HTTP 监听地址（格式 host:port，如 127.0.0.1:23335 或 0.0.0.0:23335），留空表示不开启
   ocr_listen: ""
@@ -22,46 +17,48 @@ pipeline:
   # mode: vision_oneshot
   active_profile: OpenAI 默认
 profiles:
+  # 每个配置档只需 name / kind / base_url / model 四行
+  # api_type / supports_vision / timeout_seconds / enable_thinking 只在偏离缺省（completions / true / 30 / false）时才需要
+  # API Key 不放在这里：以当前 Windows 用户的 DPAPI 密文整体保存在 .data/keys.bin（内部是 {配置档名: API Key} 的 JSON）
   - name: OpenAI 默认
     kind: openai
     base_url: https://api.openai.com/v1
-    model: gpt-4o-mini
+    model: gpt-6-luna
     # api_type: completions
     # supports_vision: false
-    # timeout_seconds（秒，默认 30）：连接、等待响应头，流式正文只计连续收不到数据的空闲超时，不是总时长，慢模型或慢网络可调大。
+    # timeout_seconds（秒，默认 30）：连接、等待响应头，流式正文只计连续收不到数据的空闲超时，不是总时长，慢模型或慢网络可调大
     # timeout_seconds: 30
   - name: Claude 默认
     kind: claude
     base_url: https://api.anthropic.com
-    model: claude-haiku-4-5
+    model: claude-haiku-5-5
   - name: Gemini 默认
     kind: gemini
     base_url: https://generativelanguage.googleapis.com/v1beta
-    model: gemini-2.0-flash
+    model: gemini-4-hydrogen 
 hotkeys:
+  # 屏幕框选
   capture: Ctrl+Shift+A
-  # 选取/剪贴板翻译：按优先级取选区文本 → 剪贴板文本 → 剪贴板图像（配置档不支持视觉时本地 OCR 识别）。
-  # 留空即关闭该热键。
+  # 选取/剪贴板翻译：按优先级取选区文本 → 剪贴板文本 → 剪贴板图像
   paste: Alt+A
-# 本地注音（词典本体不随配置分发，按语言在设置页下载到 deps/phonetics/）。
 phonetics:
+  # 本地注音（注音包按语言在设置页下载到 deps/phonetics/）
   enabled: true
   rare_only: true
-# 字体族槽位（issue 033）：代码内不保留任何字体族常量，这里的值就是渲染真相。
-# 两个键留空 = 使用 Avalonia 平台默认字体，不回落任何内置值（也可写 ~）。
 fonts:
-  # 界面字体：应用于全部窗口与控件。可填任意已安装字体族名；英文逗号分隔即构成回退链。
+  # 两个键留空 = 使用 Avalonia 平台默认字体，不回落任何内置值（也可写 ~）
+  # 界面字体：应用于全部窗口与控件。可填任意已安装字体族名；英文逗号分隔即构成回退链
   ui: Microsoft YaHei UI
-  # 提示词编辑框等宽字体；英文逗号分隔即构成回退链（首项未安装时依次命中后续字体）。
+  # 提示词编辑框等宽字体；英文逗号分隔即构成回退链（首项未安装时依次命中后续字体）
   prompt: 'YaHei Monaco Hybird,Consolas'
 windows:
-  # 窗口共用背景图路径；留空或 ~ 表示不使用，首尾空白会自动去除。
+  # 窗口共用背景图路径；留空或 ~ 表示不使用，首尾空白会自动去除
   background_image: ""
-  # 背景图模糊程度：0～100，默认 0；非有限数或越界值恢复默认。
+  # 背景图模糊程度：0～100，默认 0；非有限数或越界值恢复默认
   background_blur: 0
-  # 仅背景图的不透明度：0～1，默认 1；非有限数或越界值恢复默认。
+  # 仅背景图的不透明度：0～1，默认 1；非有限数或越界值恢复默认
   background_opacity: 1
-  # 仅有有效背景图时控制面板背景不透明度：0～1，默认 1 保持当前效果；非有限数或越界值恢复默认。
+  # 仅有有效背景图时控制面板背景不透明度：0～1，默认 1 保持当前效果；非有限数或越界值恢复默认
   panel_background_opacity: 1
   # 窗口大小缩放后自动记忆，跨重启恢复
   settings_width: 1024
@@ -70,11 +67,11 @@ windows:
   result_panel_height: 500
   result_panel_pinned: false
 prompts:
-  # 提示词键一律留空即回落内置默认模板，填入非空内容时以本文件为准。可用占位符 {{target_language}} 会展开为目标语言。
+  # 提示词键一律留空即回落内置默认模板，填入非空内容时以本文件为准。占位符 {{target_language}} 会展开为目标语言
   base: ~
   japanese_plugin: ~
   english_plugin: ~
   chinese_plugin: ~
-  # 视觉 Base：单独组装成视觉链路的完整 system prompt。
+  # 视觉 Base：单独组装成视觉链路的完整 system prompt
   vision_base: ~
   explain: ~
