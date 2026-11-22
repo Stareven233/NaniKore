@@ -62,7 +62,8 @@ internal sealed record PasteInputRequest(
     Func<SKBitmap, OcrResult> Recognize,
     IClipboardGateway Clipboard,
     Action SendCopy,
-    PollTick Tick);
+    PollTick Tick,
+    Func<bool> WaitForModifiersReleased);
 
 /// <summary>
 /// 轮询节拍器：状态机每读完一次剪贴板调用一次，返回 false 表示预算耗尽、停止轮询。
@@ -197,6 +198,9 @@ internal static class PasteInputAcquirer
     /// <summary>轮询总预算：超过即认为前台窗口没有响应复制，转而采用剪贴板现有内容。</summary>
     internal static readonly TimeSpan PollTimeout = TimeSpan.FromMilliseconds(600);
 
+    /// <summary>触发热键的修饰键最多等待 2 秒；超时就不合成按键，避免把组合键带进 Ctrl+C。</summary>
+    internal static readonly TimeSpan ModifierReleaseTimeout = TimeSpan.FromSeconds(2);
+
     /// <summary>只算「文本类」格式：前台回应只剩空文本时，剪贴板等同于被清空。</summary>
     private static readonly HashSet<string> TextFormats =
         ["UnicodeText", "Text", "OEMText", "System.String", "Locale", "13", "1", "7"];
@@ -204,6 +208,9 @@ internal static class PasteInputAcquirer
     public static PasteInputOutcome Acquire(PasteInputRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        // 先等触发热键松开，避免模拟 Ctrl+C 被仍按住的 Shift/Alt/Win 改写成另一个组合键。
+        var canSendCopy = request.WaitForModifiersReleased();
 
         // 先全量快照再读序列号基准：Ctrl+C 可能写空串清掉用户剪贴板，快照是唯一的兜底来源。
         var snapshot = request.Clipboard.Snapshot();
@@ -254,9 +261,12 @@ internal static class PasteInputAcquirer
             return null;
         }
 
-        request.SendCopy();
+        if (canSendCopy)
+        {
+            request.SendCopy();
+        }
 
-        for (var attempt = 1; ; attempt++)
+        for (var attempt = 1; canSendCopy; attempt++)
         {
             if (TakeResponse() is { } outcome)
             {
@@ -285,7 +295,7 @@ internal static class PasteInputAcquirer
         }
 
         // 超时（或前台只回了空文本/空剪贴板）：还原快照，之后只从快照取内容。
-        var notice = RestoreSnapshot(request.Clipboard, snapshot);
+        var notice = canSendCopy ? RestoreSnapshot(request.Clipboard, snapshot) : null;
         if (snapshot is null)
         {
             return new PasteInputOutcome { Kind = PasteInputKind.Empty, Notice = notice };
@@ -825,6 +835,13 @@ internal sealed class SendInputCopySimulator
 {
     public static readonly SendInputCopySimulator Default = new();
 
+    private static readonly int[] ModifierVirtualKeys = [
+        0xA0, 0xA1, // 左右 Shift
+        0xA2, 0xA3, // 左右 Ctrl
+        0xA4, 0xA5, // 左右 Alt
+        0x5B, 0x5C, // 左右 Win
+    ];
+
     private const ushort VirtualKeyControl = 0x11;
     private const ushort VirtualKeyC = 0x43;
 
@@ -859,6 +876,23 @@ internal sealed class SendInputCopySimulator
         ];
         _ = NativeMethods.SendInput((uint)releases.Length, releases, size);
     }
+
+    public bool WaitForModifiersReleased()
+    {
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        do
+        {
+            if (ModifierVirtualKeys.All(static key => (NativeMethods.GetAsyncKeyState(key) & 0x8000) == 0))
+            {
+                return true;
+            }
+
+            Thread.Sleep(10);
+        }
+        while (stopwatch.Elapsed < PasteInputAcquirer.ModifierReleaseTimeout);
+
+        return ModifierVirtualKeys.All(static key => (NativeMethods.GetAsyncKeyState(key) & 0x8000) == 0);
+    }
 }
 
 /// <summary>
@@ -885,7 +919,8 @@ internal static class ClipboardInputSource
             recognize,
             new Win32ClipboardGateway(),
             SendInputCopySimulator.Default.SendCopy,
-            Tick);
+            Tick,
+            SendInputCopySimulator.Default.WaitForModifiersReleased);
 
         return RunOnWorkerThread(request);
     }

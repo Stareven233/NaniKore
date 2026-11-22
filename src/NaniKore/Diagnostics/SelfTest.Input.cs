@@ -324,6 +324,23 @@ internal static partial class SelfTest
             clipboardText.WrittenText is null &&
             clipboardText.Current?.Text == "剪贴板原文");
 
+        var skippedCopy = new FakeClipboardGateway { Current = ClipboardSnapshot.FromText("修饰键未松开时保留的剪贴板") };
+        var sendCopyCount = 0;
+        var skippedCopyRequest = new PasteInputRequest(
+            ClipboardImageRoute.LocalOcr,
+            FakeOcr,
+            skippedCopy,
+            () => sendCopyCount++,
+            _ => throw new InvalidOperationException("未确认修饰键释放时不应轮询选区"),
+            () => false);
+        var skippedCopyOutcome = PasteInputAcquirer.Acquire(skippedCopyRequest);
+        Check(
+            "clipboard fallback skips synthetic copy when hotkey modifiers remain held",
+            skippedCopyOutcome.Kind == PasteInputKind.ClipboardText &&
+            skippedCopyOutcome.Text == "修饰键未松开时保留的剪贴板" &&
+            skippedCopy.RestoreCount == 0 &&
+            sendCopyCount == 0);
+
         // 3) 剪贴板图像 × 视觉能力：PNG 直喂，剪贴板不动。
         using var rawImg = new SKBitmap(8, 6, SKColorType.Bgra8888, SKAlphaType.Premul);
         var visionClipboard = new FakeClipboardGateway { Current = ClipboardSnapshot.FromImage(rawImg) };
@@ -816,7 +833,7 @@ internal static partial class SelfTest
         FakeClipboardGateway clipboard,
         ClipboardImageRoute imageRoute,
         Func<SKBitmap, OcrResult> recognize) =>
-        new(imageRoute, recognize, clipboard, clipboard.ApplyCopy, _ => false);
+        new(imageRoute, recognize, clipboard, clipboard.ApplyCopy, _ => false, () => true);
 
     /// <summary>内存剪贴板：记录还原与写回，供断言剪贴板终态。</summary>
     private class FakeClipboardGateway : IClipboardGateway

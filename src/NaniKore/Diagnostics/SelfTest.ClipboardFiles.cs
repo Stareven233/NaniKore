@@ -111,7 +111,7 @@ internal static partial class SelfTest
                     if (timer.Elapsed >= PasteInputAcquirer.PollTimeout) return false;
                     Thread.Sleep(PasteInputAcquirer.PollInterval);
                     return true;
-                });
+                }, () => true);
         }
 
         try

@@ -11,7 +11,7 @@
         Classes="settings-panel"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource Brush.Window.Background}">
-    <Border Padding="20,20,28,20"
+    <Border Padding="20,28,28,28"
             CornerRadius="8"
             BorderBrush="{DynamicResource Brush.Card.Border}"
             BorderThickness="1">
@@ -36,9 +36,14 @@
                         Classes="subtle"
                         MinWidth="88"
                         Padding="12,5,20,5"
-                        Foreground="{DynamicResource Brush.Danger}"
+                        Background="{DynamicResource Brush.Control.Background}"
                         Click="OnConfirmClick" />
-                <Button x:Name="CancelButton" Classes="subtle" MinWidth="88" Content="取消" Click="OnCancelClick" />
+                <Button x:Name="CancelButton"
+                        Classes="subtle"
+                        MinWidth="88"
+                        Background="{DynamicResource Brush.Control.Background}"
+                        Content="取消"
+                        Click="OnCancelClick" />
             </StackPanel>
         </Grid>
     </Border>

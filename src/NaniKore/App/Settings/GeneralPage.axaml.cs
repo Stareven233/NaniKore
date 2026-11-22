@@ -269,7 +269,7 @@ internal sealed partial class GeneralPage : UserControl, ISettingsPage
     private async void OnDownloadDependenciesClick(object? sender, RoutedEventArgs e)
     {
         if (_downloadDependencies is null ||
-            !MessageDialog.Confirm(
+            !await MessageDialog.ConfirmAsync(
                 TopLevel.GetTopLevel(this) as Window,
                 "下载本地 OCR 依赖？",
                 "将从 ModelScope 下载 OCR 模型权重和 ONNX Runtime DLL，并保存到当前程序目录的 deps 文件夹",

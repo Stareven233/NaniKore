@@ -51,12 +51,6 @@ internal sealed partial class MessageDialog : Window
         return dialog._result;
     }
 
-    /// <summary>同步阻塞等待确认（兼容历史调用）。</summary>
-    public static bool Confirm(Window? owner, string headline, string? body, string confirmText, InfoSeverity severity)
-    {
-        return ConfirmAsync(owner, headline, body, confirmText, severity).GetAwaiter().GetResult();
-    }
-
     private static MessageDialog Create(Window? owner, string headline, string? body, InfoSeverity severity, string confirmText)
     {
         var dialog = new MessageDialog
