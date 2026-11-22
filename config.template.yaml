@@ -42,7 +42,7 @@ hotkeys:
   capture: Ctrl+Shift+A
   # 选取/剪贴板翻译：按优先级取选区文本 → 剪贴板文本 → 剪贴板图像（配置档不支持视觉时本地 OCR 识别）。
   # 留空即关闭该热键。
-  paste: Ctrl+Shift+S
+  paste: Alt+A
 # 本地注音（词典本体不随配置分发，按语言在设置页下载到 deps/phonetics/）。
 phonetics:
   enabled: true

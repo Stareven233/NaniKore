@@ -81,6 +81,18 @@
             </StackPanel>
         </controls:SettingsGroup>
 
+        <controls:SettingsGroup x:Name="LocalOcrDependenciesGroup" Header="本地 OCR 依赖">
+            <StackPanel>
+                <controls:SettingsRow Header="模型与运行库"
+                                      Description="下载到当前程序目录的 deps 文件夹；程序不会在后台自动联网。"
+                                      ContentWidth="96">
+                    <Button x:Name="DownloadDependenciesButton"
+                            Width="96" />
+                </controls:SettingsRow>
+                <controls:InfoBar x:Name="DependencyStatus" Margin="14,0,14,12" />
+            </StackPanel>
+        </controls:SettingsGroup>
+
         <controls:SettingsGroup x:Name="PhoneticsGroup" Header="原文注音">
             <StackPanel>
                 <controls:SettingsRow Header="允许本地注音"
@@ -135,18 +147,6 @@
                                  FilterMode="Contains"
                                  IsTextCompletionEnabled="False" />
             </controls:SettingsRow>
-        </controls:SettingsGroup>
-
-        <controls:SettingsGroup x:Name="LocalOcrDependenciesGroup" Header="本地 OCR 依赖">
-            <StackPanel>
-                <controls:SettingsRow Header="模型与运行库"
-                                      Description="下载到当前程序目录的 deps 文件夹；程序不会在后台自动联网。"
-                                      ContentWidth="96">
-                    <Button x:Name="DownloadDependenciesButton"
-                            Width="96" />
-                </controls:SettingsRow>
-                <controls:InfoBar x:Name="DependencyStatus" Margin="14,0,14,12" />
-            </StackPanel>
         </controls:SettingsGroup>
     </StackPanel>
 </UserControl>

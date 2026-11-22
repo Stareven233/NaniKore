@@ -12,7 +12,7 @@
     <ApplicationIcon>Assets\nanikore.ico</ApplicationIcon>
     <AssemblyName>NaniKore</AssemblyName>
     <RootNamespace>NaniKore</RootNamespace>
-    <Version>0.6.6+2</Version>
+    <Version>0.6.6+3</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
 
     <!-- 允许特定平台 API 警告由运行时 OperatingSystem.IsWindows() 守卫承载 -->

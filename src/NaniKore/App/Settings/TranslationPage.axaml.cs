@@ -32,14 +32,14 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         ProfileBox.SelectionChanged += (_, _) => SwitchProfile();
         KindBox.SelectionChanged += (_, _) => UpdateKindControls();
         AddButton.Click += (_, _) => AddProfile();
-        RemoveButton.Click += (_, _) => RemoveProfile();
+        RemoveButton.Click += async (_, _) => await RemoveProfileAsync();
         DuplicateButton.Click += (_, _) => DuplicateProfile();
         TestButton.Click += async (_, _) => await TestConnectionAsync();
         ToggleApiKeyVisibilityButton.Click += (_, _) => ToggleApiKeyVisibility();
         RestorePromptButton.Click += (_, _) => RestoreDefaultPrompt();
         RestoreVisionPromptButton.Click += (_, _) => RestoreDefaultVisionPrompt();
         OpenDataDirectoryButton.Click += (_, _) => OpenDataDirectory();
-        ClearSecretButton.Click += (_, _) => ClearCurrentSecret();
+        ClearSecretButton.Click += async (_, _) => await ClearCurrentSecretAsync();
     }
 
     public string Title => "翻译";
@@ -339,7 +339,7 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         ProfileBox.SelectedIndex = list.Count - 1;
     }
 
-    private void RemoveProfile()
+    private async Task RemoveProfileAsync()
     {
         SaveFields();
         if (_config is null || _config.Profiles.Count <= 1 || SelectedProfile is not { } selected)
@@ -347,7 +347,8 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
             return;
         }
 
-        if (!MessageDialog.Confirm(
+        // 异步等待确认，避免阻塞 Avalonia UI 线程导致弹窗无法响应。
+        if (!await MessageDialog.ConfirmAsync(
                 TopLevel.GetTopLevel(this) as Window,
                 $"删除配置档「{selected.Name}」？",
                 "该配置档已保存的 API Key 会在保存设置时一并删除",
@@ -385,14 +386,14 @@ internal sealed partial class TranslationPage : UserControl, ISettingsPage
         }
     }
 
-    private void ClearCurrentSecret()
+    private async Task ClearCurrentSecretAsync()
     {
         if (_editingProfile is not { } profile)
         {
             return;
         }
 
-        if (!MessageDialog.Confirm(
+        if (!await MessageDialog.ConfirmAsync(
                 TopLevel.GetTopLevel(this) as Window,
                 $"清除配置档「{profile.Name}」的 API Key？",
                 "保存设置后从 .data\\keys.bin 中移除该密钥，之后需要重新粘贴",
